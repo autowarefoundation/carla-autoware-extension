@@ -6,13 +6,13 @@ Everything in this repository is verified against a specific CARLA `ue5-dev` bui
 
 Branch: [`youtalk/carla` `feat/autoware-native-ros2-stack`](https://github.com/youtalk/carla/tree/feat/autoware-native-ros2-stack) — upstream `ue5-dev` plus, in order:
 
-| Content | Upstream reference |
-|---|---|
-| V2X sensor family + WalkerManager null guard | carla-simulator/carla#9757, #9758 (open drafts, tail of the merged #9743–#9756 native ROS 2 series) |
-| DDS middleware abstraction: CDR foundation → middleware abstraction → CycloneDDS → `--rmw=` runtime selection → Zenoh → `--ros-domain-id` → Fast-DDS 2.14.6 | carla-simulator/carla#9807–#9816 (open drafts, the #9762 series) |
-| Publisher durability QoS + latched `/carla/map` topic (`ue5-dev` port) | carla-simulator/carla#9786 (opened against `ue4-dev`) |
-| Ego vehicle status/info + odometry publishers (`ue5-dev` port; TF tree and traffic lights excluded) | carla-simulator/carla#9787 (opened against `ue4-dev`) |
-| Integration fixes: ego publisher constructors defined out-of-line so middleware creation succeeds; publisher Init failures logged at error severity; empty-mesh guard in `Map::GenerateChunkedMesh`; CycloneDDS `from_ser` sample reassembly | Found while stacking; reportable as review comments on the PRs above |
+| Content                                                                                                                                                                                                                                      | Upstream reference                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| V2X sensor family + WalkerManager null guard                                                                                                                                                                                                 | carla-simulator/carla#9757, #9758 (open drafts, tail of the merged #9743–#9756 native ROS 2 series) |
+| DDS middleware abstraction: CDR foundation → middleware abstraction → CycloneDDS → `--rmw=` runtime selection → Zenoh → `--ros-domain-id` → Fast-DDS 2.14.6                                                                                  | carla-simulator/carla#9807–#9816 (open drafts, the #9762 series)                                    |
+| Publisher durability QoS + latched `/carla/map` topic (`ue5-dev` port)                                                                                                                                                                       | carla-simulator/carla#9786 (opened against `ue4-dev`)                                               |
+| Ego vehicle status/info + odometry publishers (`ue5-dev` port; TF tree and traffic lights excluded)                                                                                                                                          | carla-simulator/carla#9787 (opened against `ue4-dev`)                                               |
+| Integration fixes: ego publisher constructors defined out-of-line so middleware creation succeeds; publisher Init failures logged at error severity; empty-mesh guard in `Map::GenerateChunkedMesh`; CycloneDDS `from_ser` sample reassembly | Found while stacking; reportable as review comments on the PRs above                                |
 
 Build the editor target (the binary `scripts/run_g0.sh` launches):
 
@@ -46,10 +46,10 @@ CARLA_ROOT=/path/to/carla bash scripts/run_g0.sh
 
 Environment variables consumed by `run_g0.sh`:
 
-| Variable | Required | Meaning |
-|---|---|---|
-| `CARLA_ROOT` | yes | CARLA source tree built from the reference branch |
-| `CARLA_UNREAL_ENGINE_PATH` | yes | CARLA-fork Unreal Engine 5 tree (standard CARLA build variable) |
-| `CARLA_VENV` | no | Python virtualenv with the matching `carla` client wheel; the spawner needs `import carla` to work in whatever Python runs the script |
+| Variable                   | Required | Meaning                                                                                                                               |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `CARLA_ROOT`               | yes      | CARLA source tree built from the reference branch                                                                                     |
+| `CARLA_UNREAL_ENGINE_PATH` | yes      | CARLA-fork Unreal Engine 5 tree (standard CARLA build variable)                                                                       |
+| `CARLA_VENV`               | no       | Python virtualenv with the matching `carla` client wheel; the spawner needs `import carla` to work in whatever Python runs the script |
 
 Pass criterion: `8/8 topics passed`, exit code 0.

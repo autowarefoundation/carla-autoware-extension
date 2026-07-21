@@ -17,12 +17,12 @@ This is the verified foundation (gate **G0** of the staged plan below) for the s
 
 ## Repository contents
 
-| Path | Purpose |
-|---|---|
-| `docker/` | Autoware container Compose file and the shared CycloneDDS profile |
+| Path       | Purpose                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| `docker/`  | Autoware container Compose file and the shared CycloneDDS profile                           |
 | `scripts/` | Interop gate: check library + CLI, topic contract, spike sensor stack, orchestration script |
-| `tests/` | pytest suite over the pure check logic (runs in CI) |
-| `docs/` | Architecture proposal, prerequisites, and captured verification records |
+| `tests/`   | pytest suite over the pure check logic (runs in CI)                                         |
+| `docs/`    | Architecture proposal, prerequisites, and captured verification records                     |
 
 ## Quick start
 
@@ -40,13 +40,13 @@ Expected output: a per-topic check table and `8/8 topics passed`.
 
 ## Roadmap
 
-| Gate | Content | Status |
-|---|---|---|
-| G0 | Native-DDS interop proven from inside the Autoware container | **Done** (assets in this repo) |
-| G1 | Extension publishes `/vehicle/status/*`; NDT localization tracks in Town10 | Future |
-| G2 | Closed loop: RViz route → engage → route completion via `/control/command/control_cmd` | Future |
-| G3 | LiDAR sustained at the configured rate; closed control loop at simulation rate | Future |
-| G4 | Packaged CARLA + extension `.so` drop-in reproduces G2 without rebuild | Future |
+| Gate | Content                                                                                | Status                         |
+| ---- | -------------------------------------------------------------------------------------- | ------------------------------ |
+| G0   | Native-DDS interop proven from inside the Autoware container                           | **Done** (assets in this repo) |
+| G1   | Extension publishes `/vehicle/status/*`; NDT localization tracks in Town10             | Future                         |
+| G2   | Closed loop: RViz route → engage → route completion via `/control/command/control_cmd` | Future                         |
+| G3   | LiDAR sustained at the configured rate; closed control loop at simulation rate         | Future                         |
+| G4   | Packaged CARLA + extension `.so` drop-in reproduces G2 without rebuild                 | Future                         |
 
 The semi-native core — the CARLA-core extension API, `libcarla-autoware-extension.so` (`extension/`), and the declarative runner (`runner/`) — lands in this repository in future phases; see [docs/architecture.md](docs/architecture.md).
 
