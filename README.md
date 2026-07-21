@@ -33,7 +33,7 @@ Requires a CARLA build from the prerequisite branch (see [docs/prerequisites.md]
 cd docker && docker compose up -d && cd ..
 
 # 2. Run the G0 interop gate (boots CARLA, spawns the spike sensors, checks all topics)
-CARLA_ROOT=/path/to/carla bash scripts/run_g0.sh
+CARLA_ROOT=/path/to/carla CARLA_UNREAL_ENGINE_PATH=/path/to/ue5 bash scripts/run_g0.sh
 ```
 
 Expected output: a per-topic check table and `8/8 topics passed`.
