@@ -41,7 +41,7 @@ CI runs lint and the pure-logic tests only; the interop gate itself needs a CARL
 
 ```bash
 cd docker && docker compose up -d && cd ..
-CARLA_ROOT=/path/to/carla bash scripts/run_g0.sh
+CARLA_ROOT=/path/to/carla CARLA_UNREAL_ENGINE_PATH=/path/to/ue5 bash scripts/run_g0.sh
 ```
 
 Environment variables consumed by `run_g0.sh`:
