@@ -18,9 +18,11 @@ find_library(CYCLONEDDS_LIB ddsc REQUIRED
 
 add_library(carla-autoware-extension SHARED
   src/version.cpp
-  # message library (Task 17), publishers (Task 18-19), subscribers (Task 20),
+  # Message library (Task 17): PODs + CDR serializers/deserializer + RIHS01
+  # type-info. The CDR codec itself (Cdr.h) is header-only, so there is no
+  # src/messages/Cdr.cpp. Publishers (Task 18-19), subscribers (Task 20),
   # engage (Task 21), and the init entrypoint (Task 22) are added here as they land:
-  # src/messages/Cdr.cpp src/messages/AutowareMessages.cpp
+  src/messages/AutowareMessages.cpp
   # src/publishers/StatusPublishers.cpp src/publishers/GnssPosePublisher.cpp
   # src/subscribers/ControlSubscribers.cpp src/engage/EngageStateMachine.cpp
   # src/ExtensionInit.cpp

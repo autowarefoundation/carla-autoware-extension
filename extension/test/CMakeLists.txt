@@ -26,7 +26,7 @@ else()
   FetchContent_MakeAvailable(googletest)
 endif()
 
-add_executable(extension_tests test_smoke.cpp)
+add_executable(extension_tests test_smoke.cpp test_messages.cpp)
 target_include_directories(extension_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(extension_tests PRIVATE GTest::gtest_main carla-autoware-extension)
 add_test(NAME extension_tests COMMAND extension_tests)
