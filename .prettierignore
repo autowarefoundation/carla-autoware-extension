@@ -3,3 +3,4 @@
 # and corrupting the file; it is regenerated verbatim by the compute step, never
 # hand-edited, so formatting it serves no purpose.
 extension/src/messages/AwGoldens.inc
+extension/src/publishers/GeoGoldens.inc

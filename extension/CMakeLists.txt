@@ -24,7 +24,7 @@ add_library(carla-autoware-extension SHARED
   # engage (Task 21), and the init entrypoint (Task 22) are added here as they land:
   src/messages/AutowareMessages.cpp
   src/publishers/StatusPublishers.cpp
-  # src/publishers/GnssPosePublisher.cpp
+  src/publishers/GnssPosePublisher.cpp
   # src/subscribers/ControlSubscribers.cpp src/engage/EngageStateMachine.cpp
   # src/ExtensionInit.cpp
 )
