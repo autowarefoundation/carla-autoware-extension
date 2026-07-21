@@ -2,3 +2,4 @@ __pycache__/
 .pytest_cache/
 reports/
 node_modules/
+extension/build/
