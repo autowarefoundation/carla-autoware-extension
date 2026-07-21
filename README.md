@@ -17,12 +17,14 @@ This is the verified foundation (gate **G0** of the staged plan below) for the s
 
 ## Repository contents
 
-| Path       | Purpose                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| `docker/`  | Autoware container Compose file and the shared CycloneDDS profile                           |
-| `scripts/` | Interop gate: check library + CLI, topic contract, spike sensor stack, orchestration script |
-| `tests/`   | pytest suite over the pure check logic (runs in CI)                                         |
-| `docs/`    | Architecture proposal, prerequisites, and captured verification records                     |
+| Path         | Purpose                                                                                                                                                                                                                                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker/`    | Autoware container Compose file and the shared CycloneDDS profile                                                                                                                                                                                                                                                               |
+| `scripts/`   | Interop gate: check library + CLI, topic contract, spike sensor stack, orchestration script                                                                                                                                                                                                                                     |
+| `extension/` | Out-of-tree CARLA ROS 2 extension `.so` (`libcarla-autoware-extension.so`): Autoware-vocabulary message PODs + CDR codec + pinned RIHS01 type hashes, the `/vehicle/status/*` and `/sensing/gnss/pose*` publishers, the `/control/command/*` and `/autoware/engage` subscribers, and the `carla_ros2_extension_init` entrypoint |
+| `runner/`    | Declarative Python CARLA-client runner: reads the sensor-kit calibration YAML as the source of truth, spawns the ego + sensor set with the right topic/QoS attributes, and owns the tick loop                                                                                                                                   |
+| `tests/`     | pytest suites over the pure check logic and the runner (kit math, spawn attributes, CLI); runs in CI                                                                                                                                                                                                                            |
+| `docs/`      | Architecture proposal, prerequisites, bring-up docs, and captured verification records                                                                                                                                                                                                                                          |
 
 ## Quick start
 
@@ -48,7 +50,7 @@ Expected output: a per-topic check table and `8/8 topics passed`.
 | G3   | LiDAR sustained at the configured rate; closed control loop at simulation rate                            | Future                         |
 | G4   | Packaged CARLA + extension `.so` drop-in reproduces G2 without rebuild                                    | Future                         |
 
-The semi-native core — the CARLA-core extension API, `libcarla-autoware-extension.so` (`extension/`), and the declarative runner (`runner/`) — lands in this repository in future phases; see [docs/architecture.md](docs/architecture.md).
+The semi-native core has two parts. **Tier A** — the CARLA-core extension API (the server `--ros2-extension` flag plus the `carla_ros2_extension_init` ABI) — is an upstream proposal against `carla-simulator/carla`, not yet merged. **Tier B and Tier C** — `libcarla-autoware-extension.so` (`extension/`) and the declarative runner (`runner/`) — have landed in this repository, built and unit-tested here (still local-only and unpublished). See [docs/architecture.md](docs/architecture.md).
 
 ## License
 

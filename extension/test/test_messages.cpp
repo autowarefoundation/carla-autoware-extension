@@ -169,7 +169,7 @@ TEST(messages, all_seven_type_hashes_are_wellformed_rihs01) {
 
 // SteeringReport.msg is a bare `builtin_interfaces/Time stamp` + float32 --
 // crucially there is NO std_msgs/Header, hence NO frame_id string. Asserting
-// the total size is exactly 16 pins that: had we (wrongly, per the brief draft)
+// the total size is exactly 16 pins that: had we (wrongly, as a naive draft would)
 // written a frame_id, the buffer would be far larger.
 TEST(messages, steering_report_serializes_without_frame_id) {
   SteeringReport m{};
@@ -260,7 +260,7 @@ TEST(messages, velocity_report_serializes_header_frame_id_and_floats) {
 
 // Build a byte-exact Control CDR buffer with distinct values for every field,
 // matching Control/Lateral/Longitudinal.msg (both control_time fields and every
-// trailing bool included -- the fields the brief draft omitted).
+// trailing bool included -- the fields a naive draft would omit).
 static std::vector<uint8_t> build_control_buffer(const Control& in) {
   CdrWriter w;
   w.i32(in.stamp.sec);

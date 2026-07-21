@@ -1,10 +1,10 @@
 """Companion spawn runner for the CARLA/Autoware native ROS 2 interop demo.
 
-Scaffolding placeholder (Task 16 of the M3 extension workstream). The runner
-is planned to become a declarative CARLA-client-API spawner that reads
-`carla_sensor_kit_description/config/sensor_kit_calibration.yaml` as the
-single source of truth for sensor placement, owns the synchronous tick loop,
-ego/sensor spawn, and per-map MGRS metadata — see the roadmap design doc
-(Phase 3, "Companion runner + map metadata") for the full scope. No runtime
-logic lives here yet; later M3 tasks populate this package incrementally.
+A declarative CARLA-client-API spawner that reads the sensor-kit calibration
+YAML (``sensor_kit_calibration.yaml`` / ``sensors_calibration.yaml`` under
+``runner/config``) as the single source of truth for sensor placement, and owns
+ego/sensor spawn, the per-map MGRS metadata, and the synchronous tick loop. The
+submodules are ``kit`` (kit YAML + frame math), ``spawn`` (blueprint/attribute
+construction + attach), and ``loop`` (the tick loop); ``__main__`` wires them
+into the CLI.
 """

@@ -1,8 +1,8 @@
 # Environment record
 
-Captured while bringing up the Autoware container for Task 6 of the
+Captured while bringing up the Autoware container for the
 CARLA/Autoware ROS 2 native interop spike (G0 gate). This file pins the
-exact environment later gate scripts (Task 7/8) assume, in particular
+exact environment the later gate scripts assume, in particular
 the golden REP-2011 RIHS01 type hashes, which are distro-specific.
 
 ## Host
@@ -71,5 +71,5 @@ source /opt/autoware/setup.bash
 
 - `python3 -c "import yaml; print(yaml.__version__)"` succeeds inside
   the container out of the box: PyYAML `5.4.1` is already installed as
-  part of the base image (no `pip install` needed). Task 7's
-  `interop_check.py` can rely on `import yaml` without extra setup.
+  part of the base image (no `pip install` needed). The
+  `interop_check.py` gate can rely on `import yaml` without extra setup.

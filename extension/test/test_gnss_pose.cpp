@@ -14,7 +14,7 @@
 using namespace carla::autoware;
 
 // ===========================================================================
-// MGRS offset transform (brief Step 1). Byte-identical to the verified
+// MGRS offset transform. Byte-identical to the verified
 // scripts/phase_b/verify_mgrs_handedness.py world_to_mgrs_local (cm frame).
 // ===========================================================================
 TEST(mgrs, origin_maps_to_offset) {
@@ -40,12 +40,12 @@ TEST(mgrs, x_and_z_are_not_flipped_and_scale_by_100) {
 }
 
 // ===========================================================================
-// Quaternion handedness (controller resolution 2). The position transform is a
+// Quaternion handedness. The position transform is a
 // mirror M = diag(1,-1,1); a rotation conjugates as R' = M R M, which for a
 // unit quaternion (qx,qy,qz,qw) is (-qx, qy, -qz, qw): roll (X) and yaw (Z)
 // negate, pitch (Y) is preserved. These tests PIN that mapping via known
 // angles -- if they contradict the (-qx,qy,-qz,qw) signs the implementation is
-// wrong, not the tests (resolution 2 is the authority).
+// wrong, not the tests (the tests are the authority for the sign convention).
 // ===========================================================================
 namespace {
 // ZYX yaw extracted from a quaternion, for the semantic heading assertion.

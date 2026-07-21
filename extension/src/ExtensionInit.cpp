@@ -1,21 +1,21 @@
 // The single exported symbol of libcarla-autoware-extension.so. The CARLA core
-// loader (CarlaRos2ExtensionLoader, integration-repo Task 11) dlopen's this .so
+// loader (CarlaRos2ExtensionLoader, in the CARLA integration repo) dlopen's this .so
 // and dlsym's `carla_ros2_extension_init`; core fills a CarlaRos2Host vtable,
 // calls this function, and -- on a 0 return with a matching out->api_version --
 // keeps the returned CarlaRos2Extension vtable for the episode lifetime.
 //
 // This TU is the one place the four otherwise-independent subsystems are wired
 // together:
-//   StatusPublishers  (Task 18) -- 6x /vehicle/status/* publishers
-//   GnssPosePublisher (Task 19) -- 2x /sensing/gnss/pose* publishers
-//   ControlSubscribers(Task 20) -- 4x /control/command/* subscribers
-//   EngageStateMachine(Task 21) -- 1x /autoware/engage subscriber
+//   StatusPublishers   -- 6x /vehicle/status/* publishers
+//   GnssPosePublisher  -- 2x /sensing/gnss/pose* publishers
+//   ControlSubscribers -- 4x /control/command/* subscribers
+//   EngageStateMachine -- 1x /autoware/engage subscriber
 // The status stream is synthesized from ONE host observer
 // (CARLA_ROS2_SENSOR_VEHICLE_STATUS): each frame, this file threads the engage
 // machine's control mode and the control subscribers' cached command bytes into
 // StatusInputs so the six status reports and both GNSS poses publish together.
 //
-// Contract mirrored from the Task 15 mock extension (integration repo
+// Contract mirrored from the mock extension (integration repo
 // LibCarla/source/test/ros2_mock_extension/mock_extension.cpp), which passed the
 // contract suite against the REAL host: check host + api_version, allocate an
 // opaque ext_ctx, register the observer, populate the out-vtable, return 0.
@@ -44,9 +44,9 @@ struct ExtensionState {
   carla::autoware::EngageStateMachine engage;
 };
 
-// Distinct nonzero return codes per failure class (Resolution 2). The header
+// Distinct nonzero return codes per failure class. The header
 // only mandates "0 == success, nonzero aborts the load" -- the specific nonzero
-// value is NOT contractual (the T15 mock returns 1 for every reject), so these
+// value is NOT contractual (the mock extension returns 1 for every reject), so these
 // codes exist purely to localize a load failure in a core log.
 enum InitResult {
   kOk = 0,
@@ -90,7 +90,7 @@ void ext_on_status(void* user, const CarlaRos2SensorSample* sample) {
 // on_tick: the UE world-clock per-frame hook. This extension is fully
 // event-driven -- status is synthesized from the observer, actuation from the
 // DDS subscriber callbacks -- so there is deliberately nothing to do per tick.
-// A no-op here is contract-legal (the T15 mock's on_tick is likewise a no-op).
+// A no-op here is contract-legal (the mock extension's on_tick is likewise a no-op).
 void ext_on_tick(void* /*ext_ctx*/, double /*sim_time_s*/) {}
 
 // on_shutdown: core has already run TeardownExtensionEndpoints() (host-owned
@@ -101,7 +101,7 @@ void ext_on_shutdown(void* ext_ctx) { delete static_cast<ExtensionState*>(ext_ct
 }  // namespace
 
 extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Extension* out) {
-  // Defensive argument + handshake checks (Resolution 2). None of these touch
+  // Defensive argument + handshake checks. None of these touch
   // `out` or allocate: a rejected load must leave the caller's out-struct
   // exactly as it was. Order matters -- the version compare dereferences host,
   // so the null-host check must precede it.
@@ -121,7 +121,7 @@ extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Ext
   st->control.Init(*host);
   st->engage.Init(*host);
 
-  // Register the observer LAST (Resolution 3): once registered, the host may
+  // Register the observer LAST: once registered, the host may
   // dispatch a status sample into ext_on_status at any time, so nothing may run
   // ahead of a fully-initialized state. The subscriber callbacks captured above
   // are likewise safe -- they only touch atomics that are alive from

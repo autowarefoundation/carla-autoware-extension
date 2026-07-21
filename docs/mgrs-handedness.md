@@ -1,8 +1,8 @@
-# CARLA-world <-> MGRS-local transform (Phase B, Task 5)
+# CARLA-world <-> MGRS-local transform (Phase B)
 
 Evidence for the #1 Phase B coordinate risk: the handedness / Y-flip and unit
 convention between CARLA world space and the OpenDRIVE/MGRS-local frame the
-Nishi-Shinjuku lanelet2 map lives in. The extension `.so` (Task 19) will
+Nishi-Shinjuku lanelet2 map lives in. The extension `.so` will
 synthesise `/sensing/gnss/pose*` from an ego world transform plus a static
 offset; the affine relation pinned here is what it reuses.
 
@@ -45,11 +45,11 @@ converter offset is a pure translation.
 - The extension **`.so`** sees UE **centimetres**, so the `/100` in
   `world_to_mgrs_local` is correct at that layer.
 
-Note on the brief: the brief's `world_to_mgrs_local(x_cm, ...)` with `/100` is
+Note on units: the `world_to_mgrs_local(x_cm, ...)` transform with `/100` is
 correct **for the extension .so (cm)**. It is _not_ a drop-in for raw PythonAPI
 transforms, which are metres — feeding PythonAPI metres without the x100 scale is
-a silent factor-of-100 error. This distinction is the one correction layered on
-top of the brief; the offset and the Y-flip sign are exactly as the brief states.
+a silent factor-of-100 error. This cm/m distinction is the one correction to
+watch; the offset and the Y-flip sign are exactly as concluded above.
 
 ## Offline evidence: xodr <header> vs planView bounds
 
@@ -86,7 +86,7 @@ plugin .so of HEAD `ca6e1994c`) serving `Carla/Maps/NishishinjukuMap` on
 `transform_to_geolocation((0,0,0))` returns **lat 0.000000, lon 136.511256**
 (Nishi-Shinjuku is ~35.69 N, 139.69 E). The loaded map does not carry the xodr's
 `+lat_0/+lon_0`, so CARLA's WGS84 output is unusable as a lat/lon ground truth.
-Consequence for Task 19: the extension must synthesise GNSS from the **affine
+Consequence for the extension `.so`: it must synthesise GNSS from the **affine
 offset** (`world_to_mgrs_local`), never from CARLA's own geolocation. This is why
 the live checks below verify against the xodr road geometry, not lat/lon.
 
@@ -154,7 +154,7 @@ reference line agree to a few centimetres everywhere on the map.
   OpenDRIVE/MGRS-local (right-handed); X and Z not flipped.
 - **Frame residual: PASS** -- sub-decimetre (median 0.009 m) across the map.
 - **Units:** CARLA PythonAPI = metres; extension .so = UE centimetres.
-- The affine map at the top of this document is the verified relation for Task 19.
+- The affine map at the top of this document is the verified relation the extension `.so` reuses.
 
 ## Reproduce
 

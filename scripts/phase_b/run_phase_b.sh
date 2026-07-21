@@ -6,11 +6,11 @@
 # foreground so it owns SIGINT directly. CARLA is torn down (SIGTERM -> bounded
 # wait -> SIGKILL) on every exit path via a PID file, never pgrep/pkill patterns.
 #
-# NOT exercised live by this task (Task 24): the editor .so is currently stale
+# NOT exercised live yet: the editor .so is currently stale
 # relative to the CARLA branch tip, and a --ros2/extension live run without a
 # fresh carla-unreal-editor rebuild is forbidden by this repo's rules. This
-# script is verified by `bash -n` + shellcheck + review only; the live E2E run is
-# M4's job (Tasks 26-28) after that rebuild. verify_editor_artifact.sh failing
+# script is verified by `bash -n` + shellcheck + review only; the live E2E run
+# waits on that rebuild. verify_editor_artifact.sh failing
 # loudly right now on the stale .so is CORRECT behaviour, not a bug to work around.
 set -euo pipefail
 

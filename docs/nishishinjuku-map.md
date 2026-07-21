@@ -25,7 +25,7 @@ converts Lanelet2 -> OpenDRIVE, not the other direction. The reusable scaffoldin
 future reverse converter is that same package's tag-mapping tables, MGRS projection
 utilities, and the `analyze` QC harness.
 
-## Phase B ego reconciliation (Task 23, live 2026-07-21)
+## Phase B ego reconciliation (live 2026-07-21)
 
 Live measurement on `NishishinjukuMap` (headless `UnrealEditor ... -game -nosound`, CARLA
 0.10 / UE5 Chaos, integration branch `feat/autoware-seminative-phase-b`; Python API only, no
@@ -33,20 +33,20 @@ Live measurement on `NishishinjukuMap` (headless `UnrealEditor ... -game -nosoun
 `verify_editor_artifact.sh` was deliberately skipped). Port 2000 came up in ~16 s; the map
 exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
 
-### Ego blueprint (closes spec open item #1)
+### Ego blueprint (resolves the open question of which vehicle to spawn)
 
 - **`vehicle.lincoln.mkz`** — the Lincoln MKZ the ported `AutowareSteeringCompensation.h`
-  LERP table (Task 20) was measured on. The CARLA 0.10 blueprint library drops the 0.9-era
-  year suffix, so the brief's `vehicle.lincoln.mkz_2020` **does not exist** in this build
+  LERP table was measured on. The CARLA 0.10 blueprint library drops the 0.9-era
+  year suffix, so `vehicle.lincoln.mkz_2020` **does not exist** in this build
   (verified live: 17 vehicle blueprints enumerated; only `vehicle.lincoln.mkz` is the MKZ).
   Finding the `_2020` id raises, which was the initial 4b spawn failure; `runner/spawn.py`
   now uses `vehicle.lincoln.mkz`. Front wheels are physics-control indices 0/1
   (`axle_type` 1, steered, `max_steer_angle` 70°), rear 2/3 (`axle_type` 2, unsteered);
   `wheel_radius` 0.355 m; `center_of_mass` (0.15, 0.0, 0.35) m.
 
-### Wheelbase reconcile (spec open item #2) — method unavailable in 0.10
+### Wheelbase reconcile (open question: reconciling measured vs assumed wheelbase) — method unavailable in 0.10
 
-- The brief's planned measurement (physics-control wheel positions ÷ 100 cm→m) **cannot run
+- The planned measurement (physics-control wheel positions ÷ 100 cm→m) **cannot run
   on CARLA 0.10 Chaos**: every wheel's `location`, `offset` and `old_location` report
   `(0, 0, 0)`, and there is no `get_wheel_position` client API (wheel geometry lives in the
   vehicle's binary skeletal-mesh sockets). `runner.spawn.ego_wheelbase()` therefore returns
@@ -67,7 +67,7 @@ exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
 
 - Top LiDAR spawned attached to the ego at its kit-composed pose
   (`velodyne_top_base_link` → base_link (0.9, 0, 2.0) → vehicle centre (2.295, 0, 2.0)).
-  TRANSLATION/Z live world transforms (original T23 run, identity-attach): ego
+  TRANSLATION/Z live world transforms (original identity-attach run): ego
   `(-278.390, 220.540, -0.052)`, lidar `(-276.510, 219.224, 1.948)` → lidar−ego delta
   `(1.880, -1.316, 2.000)`, **horizontal distance 2.295 m** (= 0.9 + 2.79/2) and **dz
   2.000 m** — matches the composition exactly, no gross Z error. (That run attached at
@@ -77,9 +77,9 @@ exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
   the CARLA vehicle origin sits at the body bottom (ground = base_link height). No Z
   correction constant is needed in `base_link_to_vehicle_center`.
 
-### Sensor mount rotations — now APPLIED (Fix 1, live re-verified 2026-07-21)
+### Sensor mount rotations — now APPLIED (live re-verified 2026-07-21)
 
-Autoware owns the TF tree: the Task-24 runner calls `world.set_publish_tf(False)` before
+Autoware owns the TF tree: the runner calls `world.set_publish_tf(False)` before
 spawning, and Autoware generates each sensor's TF from the SAME committed kit yamls (which
 carry large mounts — `velodyne_top` yaw 1.575 rad ≈ 90°, `tamagawa/imu_link` roll/yaw π).
 The physical CARLA sensor frame must therefore be attached WITH those rotations, or the top
@@ -92,7 +92,7 @@ cloud arrives ~90°-rotated in base_link (NDT/G1 dead on arrival) and the IMU ax
   left-handed (Y right) vs ROS right-handed (Y left), related by the Y-flip `M = diag(1,-1,1)`;
   conjugating by M plus UE's left-handed Rotator sign convention nets a componentwise mapping
   **roll:+, pitch:−, yaw:−** (identical to carla-ros-bridge's `carla_rotation_to_RPY` inverse,
-  consistent with the Task-19 quaternion pin `carla_quat_to_mgrs = (-qx, qy, -qz, qw)`, an
+  consistent with the quaternion pin `carla_quat_to_mgrs = (-qx, qy, -qz, qw)`, an
   involution derived via `R(θ,n) → R(θ,-Mn)`). NEVER map the two yamls' rpy entries
   componentwise before composing — extrinsic `Rz·Ry·Rx` does not commute.
 - **Composed CARLA mounts (from the committed yamls):** top LiDAR
@@ -103,7 +103,7 @@ cloud arrives ~90°-rotated in base_link (NDT/G1 dead on arrival) and the IMU ax
 -nosound`, API-only so a stale editor `.so` is acceptable; `ROS_DOMAIN_ID=0`; default project
   map `Town10HD_Opt`, spawn point yaw −89.609°; PID-file teardown via SIGINT, port 2000 released
   cleanly):** the top LiDAR and IMU spawned via the REAL `runner.spawn` native-attribute path
-  (`native_attr_path=True` — this build carries the M1 attrs, so Fix 2 did not fire). For BOTH
+  (`native_attr_path=True` — this build already carries the native sensor attributes, so the attribute-injection fallback did not fire). For BOTH
   sensors the child WORLD transform equalled `ego_world ∘ local_attach` to a **max 4×4 matrix
   element diff of 3e-6** (PASS < 1e-3). Top-LiDAR **world_yaw − ego_yaw = −88.156°** (equals the
   composed local yaw, and crucially NOT 0° as an identity attach would give); IMU
@@ -116,4 +116,4 @@ cloud arrives ~90°-rotated in base_link (NDT/G1 dead on arrival) and the IMU ax
 The editor was stopped by SIGTERM to the recorded PID (never `pkill`/`pgrep -f`). A
 shutdown-time SIGSEGV (Chaos teardown) core-dumps _after_ the measurement has completed and
 printed all results — benign to the measurement, but recorded as a live-run watch item
-(distinct from the Task 4 boot-time "Signal 11 caught" UnrealTraceServer artifact).
+(distinct from the boot-time "Signal 11 caught" UnrealTraceServer artifact).
