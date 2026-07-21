@@ -27,7 +27,7 @@ else()
 endif()
 
 add_executable(extension_tests test_smoke.cpp test_messages.cpp test_status_publishers.cpp
-  test_gnss_pose.cpp test_control_conversion.cpp test_engage.cpp)
+  test_gnss_pose.cpp test_control_conversion.cpp test_engage.cpp test_init.cpp)
 # include/ holds the public headers; src/ is added so the tests can reach
 # implementation-detail headers (e.g. publishers/StatusPublishers.h) that live
 # next to their .cpp rather than under the public include tree.
