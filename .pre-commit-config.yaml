@@ -25,11 +25,15 @@ repos:
     hooks:
       - id: prettier
         args: [--no-error-on-unmatched-pattern]
+        # Verbatim copies of the lab repo's G0 interop contract; must stay
+        # byte-identical to their source, not reformatted to house style.
+        exclude: ^scripts/(expected_topics\.yaml|spike_stack\.json)$
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
     hooks:
       - id: yamllint
+        exclude: ^scripts/expected_topics\.yaml$
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
