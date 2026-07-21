@@ -25,8 +25,8 @@ add_library(carla-autoware-extension SHARED
   src/messages/AutowareMessages.cpp
   src/publishers/StatusPublishers.cpp
   src/publishers/GnssPosePublisher.cpp
-  # src/subscribers/ControlSubscribers.cpp src/engage/EngageStateMachine.cpp
-  # src/ExtensionInit.cpp
+  src/subscribers/ControlSubscribers.cpp
+  # src/engage/EngageStateMachine.cpp src/ExtensionInit.cpp
 )
 target_include_directories(carla-autoware-extension PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
