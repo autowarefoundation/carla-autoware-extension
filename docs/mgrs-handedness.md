@@ -169,6 +169,5 @@ python3 scripts/phase_b/verify_mgrs_handedness.py \
 # live measurement (CARLA must be up on :2000 with NishishinjukuMap available)
 export ROS_DOMAIN_ID=0
 python3 scripts/phase_b/probe_carla_mgrs.py \
-  --osm ~/autoware_map/nishishinjuku/lanelet2_map.osm \
   --xodr ~/src/carla-autoware-integration/Unreal/CarlaUnreal/Content/Carla/Maps/OpenDrive/NishishinjukuMap.xodr
 ```
