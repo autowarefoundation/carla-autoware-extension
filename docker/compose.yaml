@@ -12,4 +12,5 @@ services:
       - ../scripts:/work/scripts:ro
       - ../reports:/work/reports
       - ~/autoware_map/nishishinjuku:/autoware_map/nishishinjuku:ro
+      - ../extension/build:/work/extension:ro
     command: sleep infinity
