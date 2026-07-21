@@ -210,8 +210,28 @@ def spawn_sensors(
 
     Returns the spawned sensor actors. The GNSS pose is supplied by the extension, so no
     CARLA GNSS sensor is spawned.
+
+    Spawned ONE AT A TIME and accumulated in ``spawned`` as each succeeds, rather than built
+    as a single list-literal return: if a LATER sensor spawn raises (e.g. the IMU spawn fails
+    after the top LiDAR already succeeded), a list-literal return would lose the reference to
+    the already-spawned LiDAR entirely -- this function never returns on the exception path,
+    so the caller's ``sensors`` variable stays whatever it was before the call (typically
+    ``[]``), its finally-teardown has nothing to destroy, and the orphaned LiDAR actor keeps
+    running as a duplicate ROS 2 publisher for every subsequent run. So: on any exception here,
+    destroy every actor already spawned in THIS call (each destroy in its own try/except, so a
+    secondary destroy failure can never mask the original spawn error or stop the rest from
+    being destroyed), then re-raise the original exception unchanged so the caller still sees
+    the real failure.
     """
-    return [
-        spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase),
-        spawn_imu(world, blueprint_library, ego, kit, wheelbase),
-    ]
+    spawned = []
+    try:
+        spawned.append(spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase))
+        spawned.append(spawn_imu(world, blueprint_library, ego, kit, wheelbase))
+    except Exception:
+        for actor in spawned:
+            try:
+                actor.destroy()
+            except Exception:
+                pass
+        raise
+    return spawned

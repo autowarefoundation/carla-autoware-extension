@@ -315,3 +315,42 @@ def test_apply_attributes_applies_all_when_present():
     bp = _FakeBlueprint(declared=set(top_lidar_attributes()))
     _apply_attributes(bp, top_lidar_attributes())
     assert bp.applied == top_lidar_attributes()
+
+
+# --- spawn_sensors partial-spawn safety (Task 24 fix wave 2, Fix A) ---
+
+
+def test_spawn_sensors_destroys_already_spawned_actor_on_partial_failure(monkeypatch):
+    # If a LATER sensor spawn raises, an EARLIER already-spawned actor must not leak: spawn_
+    # sensors is itself responsible for destroying its own partial spawns, because on the
+    # exception path it never returns, so the caller's ``sensors`` list stays whatever it was
+    # (typically ``[]``) and its finally-teardown has nothing to destroy.
+    #
+    # Faked at the spawn_top_lidar/spawn_imu boundary (module-level functions spawn_sensors
+    # calls), not at world/blueprint_library/carla.Transform: runner.spawn only imports carla
+    # lazily INSIDE _spawn_sensor, so patching spawn_top_lidar/spawn_imu directly keeps this
+    # test carla-free without needing to fake CARLA transform construction.
+    import runner.spawn as spawn_mod
+
+    class _FakeActor:
+        def __init__(self):
+            self.destroyed = False
+
+        def destroy(self):
+            self.destroyed = True
+
+    first_actor = _FakeActor()
+
+    def fake_spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase):
+        return first_actor
+
+    def fake_spawn_imu(world, blueprint_library, ego, kit, wheelbase):
+        raise RuntimeError("imu spawn exploded")
+
+    monkeypatch.setattr(spawn_mod, "spawn_top_lidar", fake_spawn_top_lidar)
+    monkeypatch.setattr(spawn_mod, "spawn_imu", fake_spawn_imu)
+
+    with pytest.raises(RuntimeError, match="imu spawn exploded"):
+        spawn_mod.spawn_sensors(world=None, blueprint_library=None, ego=None, kit=load_kit())
+
+    assert first_actor.destroyed is True
