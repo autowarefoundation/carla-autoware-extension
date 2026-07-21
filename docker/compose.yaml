@@ -1,0 +1,14 @@
+services:
+  autoware:
+    image: ghcr.io/autowarefoundation/autoware:universe-devel
+    container_name: autoware
+    network_mode: host
+    ipc: host
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///work/docker/cyclonedds.xml
+    volumes:
+      - ./:/work/docker:ro
+      - ../scripts:/work/scripts:ro
+      - ../reports:/work/reports
+    command: sleep infinity
