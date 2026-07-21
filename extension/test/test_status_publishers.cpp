@@ -12,7 +12,7 @@
 using namespace carla::autoware;
 
 // ===========================================================================
-// Value helpers (the two free functions the brief pins). Declared in the SAME
+// Value helpers (the two free functions under test). Declared in the SAME
 // namespace they are defined in (StatusPublishers.cpp) so they link -- a bare
 // global-scope declaration would NOT resolve against the namespaced definition.
 // ===========================================================================
@@ -28,7 +28,7 @@ float velocity_report_longitudinal(double body_velocity_mps);
 // CarlaRos2Extension.h: steering_tire_angle_rad "positive = left (Autoware
 // convention, already applied by the host -- do NOT negate again)". So the
 // extension passes the view value through UNCHANGED; it must NOT re-flip the
-// sign (the pre-observer brief draft's -0.1f expectation was the double
+// sign (an earlier pre-observer draft's -0.1f expectation was the double
 // negation this corrects).
 TEST(status, steering_angle_is_passed_through_not_flipped) {
   EXPECT_FLOAT_EQ(steering_report_tire_angle(0.1), 0.1f);

@@ -70,7 +70,7 @@ not copied from a draft:
   `awsim_sensor_kit_description`/`_launch` AND
   `awsim_labs_sensor_kit_description`/`_launch`; the runner's committed
   `runner/config/sensor_kit_calibration.yaml`/`sensors_calibration.yaml` were
-  extracted verbatim from `awsim_labs_sensor_kit_description` (Task 23), so
+  extracted verbatim from `awsim_labs_sensor_kit_description`, so
   the kit name given to Autoware must match what the runner actually spawns
   (frame names `camera0..5/camera_link`, `velodyne_top/left/right_base_link`,
   `gnss_link`, `tamagawa/imu_link`). The image also ships an unrelated

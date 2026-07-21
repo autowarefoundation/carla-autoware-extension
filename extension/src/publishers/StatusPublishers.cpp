@@ -98,19 +98,19 @@ void StatusPublishers::OnVehicleStatus(const CarlaRos2VehicleStatusView& v, cons
 
   ControlModeReport cm{};
   cm.stamp = stamp;
-  cm.mode = in.control_mode;  // from the engage state machine (Task 21)
+  cm.mode = in.control_mode;  // from the engage state machine
   cdr_serialize(cm, buf);
   emit(mode_);
 
   TurnIndicatorsReport ti{};
   ti.stamp = stamp;
-  ti.report = in.turn_indicators;  // cached from the control subscribers (Task 20)
+  ti.report = in.turn_indicators;  // cached from the control subscribers
   cdr_serialize(ti, buf);
   emit(turn_);
 
   HazardLightsReport hl{};
   hl.stamp = stamp;
-  hl.report = in.hazard_lights;  // cached from the control subscribers (Task 20)
+  hl.report = in.hazard_lights;  // cached from the control subscribers
   cdr_serialize(hl, buf);
   emit(hazard_);
 }

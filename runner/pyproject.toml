@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "carla-autoware-runner"
 version = "0.0.0"
-description = "Declarative CARLA spawn runner for the Autoware native ROS 2 interop demo (scaffolding; populated across later M3 tasks)."
+description = "Declarative CARLA spawn runner for the Autoware native ROS 2 interop demo."
 requires-python = ">=3.10"
 license = "MIT"
 

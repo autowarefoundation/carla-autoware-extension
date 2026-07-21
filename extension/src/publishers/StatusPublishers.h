@@ -14,9 +14,9 @@ namespace carla {
 namespace autoware {
 
 // Per-frame state the status publishers need BEYOND the ego observer view: the
-// control mode from the engage state machine (Task 21) and the latest cached
-// command reports from the control subscribers (Task 20). The entrypoint
-// (Task 22) threads these in alongside each observer callback. Defaults are the
+// control mode from the engage state machine and the latest cached
+// command reports from the control subscribers. The init entrypoint
+// threads these in alongside each observer callback. Defaults are the
 // safe "vehicle idle, not engaged" state so a frame that arrives before any
 // command still publishes a coherent status.
 struct StatusInputs {

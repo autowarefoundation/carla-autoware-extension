@@ -122,12 +122,12 @@ RIHS01 algorithm either way — but the standard types carry a redundant
 independent cross-check that the `carla_msgs` types do not.
 
 Because all four match, **no test code was changed**. The pinned literals in
-`test_type_hash.cpp` (introduced by the #9787 port, Task 5) are verified correct
+`test_type_hash.cpp` (introduced by the #9787 port) are verified correct
 against the canonical definitions.
 
 **By-name compile-in gate.** `LibCarla/CMakeLists.txt` globs `test/server/*.cpp`
 **without** `CONFIGURE_DEPENDS`, so a stale CMake cache could silently omit
-`test_type_hash.cpp` while a brief-format run still reported exit 0. To defend
+`test_type_hash.cpp` while a test run still reported exit 0. To defend
 against that, the golden suite is gated by exact name:
 
 ```bash
@@ -162,13 +162,12 @@ produced by this task; the golden hashes required no fix.
 
 ## Deviations from the plan
 
-- **`test_type_hash.cpp` step became verification, not authoring.** The Task 8
-  brief's Step 3 called for _replacing_ format-only assertions with `EXPECT_EQ`
-  against literal hashes. That was already done: the #9787 port (Task 5) ships
-  the pinned golden literals and `TypeHash.GoldenValuesMatchCanonicalPackages`
-  was already green. This task therefore _verified_ the pinned literals against
-  container/Jazzy-computed canonical hashes (all match) rather than adding them.
-  No test code changed.
+- **`test_type_hash.cpp` step became verification, not authoring.** The planned
+  step to _replace_ format-only assertions with `EXPECT_EQ` against literal
+  hashes was already satisfied: the #9787 port ships the pinned golden literals
+  and `TypeHash.GoldenValuesMatchCanonicalPackages` was already green. This gate
+  therefore _verified_ the pinned literals against container/Jazzy-computed
+  canonical hashes (all match) rather than adding them. No test code changed.
 - **gtest benchmark exclusion (user-approved).** All gtest checkpoints run with
   `--gtest_filter='-benchmark_streaming.*'`. Those benchmarks assert >=90%
   delivery of 12 concurrent 1920x1080 streams @90 FPS, fail on an idle 24-core

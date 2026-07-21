@@ -5,7 +5,7 @@ these tests collect and run under a bare ``python3 -m pytest`` with no CARLA egg
 lesson -- see ``tests/phase_b/test_runner_kit.py`` for the same rule on the spawn side). The
 tick-loop tests use a minimal fake ``world`` object (get_settings/apply_settings/tick/
 wait_for_tick) rather than a real CARLA connection, since the live E2E run is deliberately
-out of scope for this task (M4's job, per the task brief).
+out of scope here (M4's job).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import pytest
 from runner.__main__ import main as runner_main
 from runner.loop import extension_exports_init, run_async_loop, run_sync_loop
 
-# --- --extension-check: negative path (mandatory, brief Step 1) ---
+# --- --extension-check: negative path (mandatory) ---
 
 
 def test_extension_check_detects_missing_symbol(tmp_path):
@@ -36,7 +36,7 @@ def test_extension_check_detects_nonexistent_path(tmp_path):
 # --- --extension-check: positive path against the REAL built extension .so ---
 #
 # The extension is built at extension/build/libcarla-autoware-extension.so on this dev
-# machine (Task 9-13's C++ work) but is NOT built in CI, so this test is gated on the
+# machine (the extension's C++ build) but is NOT built in CI, so this test is gated on the
 # artifact's presence -- same env/data-gated-skip precedent as the NuRec test suite
 # (X2_PARAMS / N2_RUN_STORE-gated tests), applied here to a build artifact instead of a
 # captured-data fixture.

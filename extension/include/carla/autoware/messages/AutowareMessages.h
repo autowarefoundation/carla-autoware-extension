@@ -5,7 +5,7 @@
 //
 // Field layouts are pinned to the EXACT .msg definitions the target Humble
 // image ships (extension/msg/**), NOT to any local checkout -- the two diverge.
-// Several structs here deliberately differ from the Task-17 brief's draft PODs;
+// Several structs here deliberately differ from an earlier draft's PODs;
 // each deviation is annotated inline with the .msg field it was forced by.
 // Getting a layout wrong is silent: Autoware would misparse or drop the sample.
 //
@@ -46,7 +46,7 @@ struct VelocityReport {
 };
 
 // SteeringReport.msg is a BARE `builtin_interfaces/Time stamp` + float32 --
-// there is NO std_msgs/Header and NO frame_id (the brief's draft POD/serializer
+// there is NO std_msgs/Header and NO frame_id (a naive draft POD/serializer
 // wrongly gave it a Header + "base_link"; refuted by SteeringReport.msg line 1).
 struct SteeringReport {
   Time stamp;
@@ -76,7 +76,7 @@ struct HazardLightsReport {
 //
 // Lateral.msg / Longitudinal.msg / Control.msg each carry a SECOND
 // `builtin_interfaces/Time control_time` field and trailing `bool` flags that
-// the brief's draft PODs omitted entirely. They are on the wire, so the
+// a naive draft's PODs would omit entirely. They are on the wire, so the
 // deserializer MUST account for them or every field after the first gap
 // decodes from the wrong offset.
 struct Lateral {

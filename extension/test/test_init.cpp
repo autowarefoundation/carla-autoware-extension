@@ -9,7 +9,7 @@
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
 // The single exported entrypoint under test (ExtensionInit.cpp). Declared here
-// with C linkage exactly as the core loader (Task 11) dlsym's it, rather than
+// with C linkage exactly as the core loader dlsym's it, rather than
 // pulling in a private header -- the seam is the symbol, not a C++ signature.
 extern "C" int carla_ros2_extension_init(const CarlaRos2Host*, CarlaRos2Extension*);
 
@@ -154,7 +154,7 @@ class InitTest : public ::testing::Test {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Defensive argument / handshake rejections (Resolution 2). Each failure class
+// Defensive argument / handshake rejections. Each failure class
 // returns a distinct nonzero code, and NONE of them touch `out`: a rejected
 // load must leave the caller's out-struct exactly as it was (zeroed here).
 // ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ TEST_F(InitTest, rejects_bad_version_and_leaves_out_zeroed) {
   h.api_version = 999u;
   CarlaRos2Extension e{};
   EXPECT_NE(carla_ros2_extension_init(&h, &e), 0);
-  // Resolution 2: version mismatch must not touch out or allocate.
+  // Version mismatch must not touch out or allocate.
   EXPECT_EQ(e.api_version, 0u);
   EXPECT_EQ(e.ext_ctx, nullptr);
   EXPECT_EQ(e.on_tick, nullptr);
@@ -224,7 +224,7 @@ TEST_F(InitTest, accepts_and_fully_populates_out) {
   EXPECT_EQ(state_.pubs.size(), 8u);  // 6 status + 2 GNSS
   EXPECT_EQ(state_.subs.size(), 5u);  // 4 control + 1 engage
 
-  // on_tick is a documented no-op (Resolution 1) -- callable without effect.
+  // on_tick is a documented no-op -- callable without effect.
   e.on_tick(e.ext_ctx, 1.0);
   EXPECT_TRUE(state_.published.empty());
 
@@ -254,8 +254,8 @@ TEST_F(InitTest, registers_observer_once_for_vehicle_status_with_ext_ctx_user) {
 // sample is delivered to the captured observer. All EIGHT publishes fire on the
 // first frame (6 status + 2 GNSS), and the ControlModeReport / GearReport bytes
 // parse back to the values that were threaded in from the OTHER subsystems --
-// proving the engage machine (Task 21) and control subscribers (Task 20) reach
-// the status publishers (Task 18) through the entrypoint's StatusInputs wiring.
+// proving the engage machine and control subscribers reach
+// the status publishers through the entrypoint's StatusInputs wiring.
 // ---------------------------------------------------------------------------
 TEST_F(InitTest, end_to_end_threads_engage_and_gear_into_status_publishes) {
   CarlaRos2Host h = MakeFakeHost();

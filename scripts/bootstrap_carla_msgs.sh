@@ -12,8 +12,7 @@ docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true \
 docker exec "$CONTAINER" bash -lc '
   # NOTE: no "-u" here (deliberately not set -euo pipefail): /opt/ros/humble/setup.bash
   # references $AMENT_TRACE_SETUP_FILES without a default and dies under nounset.
-  # Same reason the docker-exec sourcing block in run_g0.sh and Step 4 of this
-  # bootstrap brief never set -u either.
+  # Same reason the docker-exec sourcing block in run_g0.sh never set -u either.
   set -eo pipefail
   if [ -f ~/carla_msgs_ws/install/setup.bash ]; then
     echo "carla_msgs already built"; exit 0

@@ -78,15 +78,15 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
   CarlaRos2Qos qos{1u, 0u, 1u};
 
   // /control/command/control_cmd -> Control -> Ackermann -> ego actuation.
-  // The type_hash is the REAL Control RIHS01 golden (Task 17), so this reader's
+  // The type_hash is the REAL Control RIHS01 golden, so this reader's
   // topic type registration matches the real Autoware publisher at the M4 gates.
   //
   // The callback runs on the DDS listener thread. Applying inline is the
   // intended host design: the host stages the pod last-wins and drains it at
-  // SetFrame (Task 14), so there is no cross-thread hazard in calling
+  // SetFrame, so there is no cross-thread hazard in calling
   // apply_ackermann_control directly here. Malformed CDR or "no ego yet" both
   // drop silently (fire-and-forget, per the ABI's apply_ackermann_control
-  // contract and the Task 18/19 precedent) -- return values are not surfaced.
+  // contract and the status/GNSS publisher precedent) -- return values are not surfaced.
   host_.create_subscriber(
       host_.host_ctx, "/control/command/control_cmd", AwTopicInfo<Control>::type_name(),
       AwTopicInfo<Control>::type_hash(), &qos,
@@ -101,8 +101,8 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
       },
       this);
 
-  // The three command subscribers cache their uint8 for the status publishers
-  // (Task 18). The CycloneDDS blob subscriber ignores type_hash (Task 13), so
+  // The three command subscribers cache their uint8 for the status publishers.
+  // The CycloneDDS blob subscriber ignores type_hash, so
   // "" is correct here -- Humble puts no type hash on the wire for these, and no
   // RIHS01 golden was computed for the *Command types. The caches are atomic:
   // written here on the DDS listener thread, read on the game thread.

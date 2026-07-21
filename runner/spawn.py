@@ -21,12 +21,12 @@ from runner.kit import (
 )
 
 # Ego blueprint: the Lincoln MKZ the ported steering-compensation LERP table
-# (AutowareSteeringCompensation.h, Task 20) was measured on. In the CARLA 0.10 (UE5)
+# (AutowareSteeringCompensation.h) was measured on. In the CARLA 0.10 (UE5)
 # blueprint library the vehicle is id'd WITHOUT the 0.9-era year suffix -- it is
 # "vehicle.lincoln.mkz", NOT "vehicle.lincoln.mkz_2020" (0.10 dropped the year suffix on
 # every vehicle, e.g. dodge.charger, mini.cooper). The _2020 id does not exist in this
 # build (verified live: 17 vehicle blueprints enumerated, only vehicle.lincoln.mkz present);
-# finding it raises, which was the Task 23 4b spawn failure until corrected. Its measured
+# finding it raises, which was the initial live spawn failure until corrected. Its measured
 # wheelbase is reconciled against the sample_vehicle 2.79 m that base_link_to_vehicle_center
 # assumes; the accepted delta is recorded in docs/nishishinjuku-map.md, not silently absorbed.
 EGO_BLUEPRINT = "vehicle.lincoln.mkz"
@@ -47,7 +47,7 @@ _LIDAR_QOS_DURABILITY = "volatile"
 _LIDAR_QOS_HISTORY_DEPTH = "5"
 
 # Velodyne VLS-128 top lidar: 128 channels, 10 Hz spin (the AWSIM top-lidar publish rate,
-# NOT the brief-draft's 20 -- the Autoware topic contract is 10 Hz best_effort).
+# NOT a naively-assumed 20 -- the Autoware topic contract is 10 Hz best_effort).
 _TOP_LIDAR_CHANNELS = "128"
 _TOP_LIDAR_ROTATION_FREQUENCY = "10"
 _TOP_LIDAR_RANGE = "120.0"
@@ -140,7 +140,7 @@ def ego_wheelbase(ego) -> float:
     0.10 the field was renamed ``WheelPhysicsControl.position`` -> ``.location``, so read
     ``wheel.location`` here.
 
-    IMPORTANT (verified live, Task 23 4b): the CARLA 0.10 (UE5/Chaos) build does NOT
+    IMPORTANT (verified live): the CARLA 0.10 (UE5/Chaos) build does NOT
     populate wheel geometry -- ``location``, ``offset`` and ``old_location`` are all
     (0, 0, 0) for every wheel and there is no ``get_wheel_position`` client API (the
     geometry lives in the vehicle's binary skeletal-mesh sockets). This therefore returns
