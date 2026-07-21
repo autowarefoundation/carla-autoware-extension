@@ -1,0 +1,35 @@
+# G0 interop matrix for the CARLA native-DDS -> Autoware (ROS 2 Humble,
+# rmw_cyclonedds_cpp) spike. This is the gate contract: every topic here must be
+# present, correctly typed, QoS-correct and deserializable from inside the
+# Autoware container.
+#
+# Names/types/durability/reliability were captured from a live discovery run
+# (CARLA integration branch launched with `--ros2 --rmw=cyclonedds`, spike stack
+# spawned from scripts/spike_stack.json) via `ros2 topic list -t` and
+# `ros2 topic info --verbose` inside the container.
+#
+# All eight topics below are observed, correctly typed, QoS-correct and
+# deserializable on a live discovery run against the fixed branch (the ego
+# publishers' PublisherImpl now builds with the DDS vendor macros in scope, so
+# MiddlewareFactory::CreatePublisher no longer returns nullptr for them).
+#
+# Reliability: sensor point-cloud streams are BEST_EFFORT (matches #9786); every
+# other stream is RELIABLE. Durability is only pinned on the topics the contract
+# latches (TRANSIENT_LOCAL).
+#
+# /tf and /carla/ego/vehicle_control_cmd are observed but intentionally excluded
+# from the matrix:
+#   - /tf carries per-sensor transforms published by the pre-existing
+#     CarlaTransformPublisher; the ego TF tree (map -> odom -> base_link) is
+#     what this branch excludes, and /tf_static is correctly absent.
+#   - /carla/ego/vehicle_control_cmd is CARLA's control-input subscription
+#     (zero publishers), not something this gate can observe as a topic.
+topics:
+  - {name: /clock,                              type: rosgraph_msgs/msg/Clock,               echo: true, reliability: RELIABLE}
+  - {name: /carla/map,                          type: std_msgs/msg/String,                   echo: true, reliability: RELIABLE, durability: TRANSIENT_LOCAL}
+  - {name: /carla/ego/lidar_top/point_cloud,    type: sensor_msgs/msg/PointCloud2,           echo: true, reliability: BEST_EFFORT, min_hz: 15.0}
+  - {name: /carla/ego/imu,                      type: sensor_msgs/msg/Imu,                   echo: true, reliability: RELIABLE}
+  - {name: /carla/ego/gnss,                     type: sensor_msgs/msg/NavSatFix,             echo: true, reliability: RELIABLE}
+  - {name: /carla/ego/vehicle_status,           type: carla_msgs/msg/CarlaEgoVehicleStatus,  echo: true, reliability: RELIABLE}
+  - {name: /carla/ego/vehicle_info,             type: carla_msgs/msg/CarlaEgoVehicleInfo,    echo: true, reliability: RELIABLE, durability: TRANSIENT_LOCAL}
+  - {name: /carla/ego/odometry,                 type: nav_msgs/msg/Odometry,                 echo: true, reliability: RELIABLE}
