@@ -1,0 +1,52 @@
+name: build-toolchain-image
+
+# Manual-only: the toolchain changes rarely (bump = new TOOLCHAIN_VERSION /
+# LIBCXX sha pins in docker/toolchain/Toolchain.Dockerfile, then re-dispatch).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: toolchain-image
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/carla-ue5-toolchain
+  UBUNTU_VERSION: "24.04"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: |
+          docker build -f docker/toolchain/Toolchain.Dockerfile \
+            -t "${REGISTRY}/${IMAGE_NAME}:${UBUNTU_VERSION}" \
+            -t "${REGISTRY}/${IMAGE_NAME}:${UBUNTU_VERSION}-${GITHUB_SHA::12}" \
+            .
+
+      - name: Push
+        run: |
+          docker push "${REGISTRY}/${IMAGE_NAME}:${UBUNTU_VERSION}"
+          docker push "${REGISTRY}/${IMAGE_NAME}:${UBUNTU_VERSION}-${GITHUB_SHA::12}"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Toolchain image pushed"
+            echo "- \`${REGISTRY}/${IMAGE_NAME}:${UBUNTU_VERSION}\` (moving)"
+            echo "- \`${REGISTRY}/${IMAGE_NAME}:${UBUNTU_VERSION}-${GITHUB_SHA::12}\` (immutable)"
+          } >> "$GITHUB_STEP_SUMMARY"
