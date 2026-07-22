@@ -5,7 +5,12 @@
 #include <utility>
 #include <vector>
 
-#include "carla/autoware/messages/Cdr.h"
+#include <autoware_vehicle_msgs/msg/control_mode_report.hpp>
+#include <autoware_vehicle_msgs/msg/engage.hpp>
+#include <autoware_vehicle_msgs/msg/gear_command.hpp>
+#include <autoware_vehicle_msgs/msg/gear_report.hpp>
+
+#include "carla/autoware/messages/RosIdl.h"
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
 // The single exported entrypoint under test (ExtensionInit.cpp). Declared here
@@ -107,22 +112,30 @@ CarlaRos2Host MakeFakeHost() {
   return host;
 }
 
-// Engage.msg / *Command.msg CDR builders (mirror test_engage.cpp /
-// test_control_conversion.cpp; re-authored locally to avoid cross-TU coupling).
+// Engage.msg / *Command.msg CDR builders via the rosidl codec (mirror
+// test_engage.cpp / test_control_conversion.cpp; re-authored locally to avoid
+// cross-TU coupling).
 std::vector<uint8_t> serialize_engage(int32_t sec, uint32_t nsec, bool engaged) {
-  CdrWriter w;
-  w.i32(sec);
-  w.u32(nsec);
-  w.boolean(engaged);
-  return w.bytes();
+  autoware_vehicle_msgs::msg::Engage m;
+  m.stamp.sec = sec;
+  m.stamp.nanosec = nsec;
+  m.engage = engaged;
+  std::vector<uint8_t> b;
+  cdr_serialize(m, b);
+  return b;
 }
 
+// CmdT selects the concrete generated *Command type (all share the same
+// { builtin_interfaces/Time stamp; uint8 command } layout).
+template <typename CmdT>
 std::vector<uint8_t> serialize_command(int32_t sec, uint32_t nsec, uint8_t cmd) {
-  CdrWriter w;
-  w.i32(sec);
-  w.u32(nsec);
-  w.u8(cmd);
-  return w.bytes();
+  CmdT m;
+  m.stamp.sec = sec;
+  m.stamp.nanosec = nsec;
+  m.command = cmd;
+  std::vector<uint8_t> b;
+  cdr_serialize(m, b);
+  return b;
 }
 
 // Locate the subscriber / registered publisher buffer by topic, so assertions
@@ -272,7 +285,8 @@ TEST_F(InitTest, end_to_end_threads_engage_and_gear_into_status_publishes) {
   // Drive gear_cmd=2 (DRIVE) -> the control subscribers cache gear 2.
   const FakeSub* gear = SubForTopic("/control/command/gear_cmd");
   ASSERT_NE(gear, nullptr);
-  const std::vector<uint8_t> gc = serialize_command(2, 0u, 2u);
+  const std::vector<uint8_t> gc =
+      serialize_command<autoware_vehicle_msgs::msg::GearCommand>(2, 0u, 2u);
   gear->cb(gear->user, gc.data(), gc.size());
 
   // Deliver one vehicle-status frame to the captured observer.
@@ -297,22 +311,18 @@ TEST_F(InitTest, end_to_end_threads_engage_and_gear_into_status_publishes) {
   const std::vector<uint8_t>* mode_buf = PublishedForTopic("/vehicle/status/control_mode");
   ASSERT_NE(mode_buf, nullptr);
   {
-    CdrReader r(mode_buf->data(), mode_buf->size());
-    (void)r.i32();  // stamp.sec
-    (void)r.u32();  // stamp.nanosec
-    EXPECT_EQ(r.u8(), 1u);  // AUTONOMOUS, threaded from EngageStateMachine::Mode()
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::ControlModeReport m;
+    ASSERT_TRUE(cdr_deserialize(mode_buf->data(), mode_buf->size(), m));
+    EXPECT_EQ(m.mode, 1u);  // AUTONOMOUS, threaded from EngageStateMachine::Mode()
   }
 
   // GearReport carries the control subscribers' cached gear: bare Time + uint8.
   const std::vector<uint8_t>* gear_buf = PublishedForTopic("/vehicle/status/gear_status");
   ASSERT_NE(gear_buf, nullptr);
   {
-    CdrReader r(gear_buf->data(), gear_buf->size());
-    (void)r.i32();  // stamp.sec
-    (void)r.u32();  // stamp.nanosec
-    EXPECT_EQ(r.u8(), 2u);  // DRIVE, threaded from ControlSubscribers::CachedGear()
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::GearReport m;
+    ASSERT_TRUE(cdr_deserialize(gear_buf->data(), gear_buf->size(), m));
+    EXPECT_EQ(m.report, 2u);  // DRIVE, threaded from ControlSubscribers::CachedGear()
   }
 
   // on_shutdown is callable once after a live frame without crashing.

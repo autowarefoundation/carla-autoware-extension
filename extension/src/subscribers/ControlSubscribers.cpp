@@ -3,8 +3,13 @@
 #include <cmath>
 #include <cstdint>
 
+#include <autoware_control_msgs/msg/control.hpp>
+#include <autoware_vehicle_msgs/msg/gear_command.hpp>
+#include <autoware_vehicle_msgs/msg/hazard_lights_command.hpp>
+#include <autoware_vehicle_msgs/msg/turn_indicators_command.hpp>
+
 #include "carla/autoware/control/AutowareSteeringCompensation.h"
-#include "carla/autoware/messages/Cdr.h"
+#include "carla/autoware/messages/RosIdl.h"
 
 namespace carla {
 namespace autoware {
@@ -34,7 +39,7 @@ namespace autoware {
 // Control is a TARGET-BASED controller that consumes a target speed together
 // with the accel/jerk limits -- per this milestone's plan contract. This
 // difference is an M4 tuning watch-point.
-CarlaRos2AckermannPod control_to_ackermann(const Control& c) {
+CarlaRos2AckermannPod control_to_ackermann(const autoware_control_msgs::msg::Control& c) {
   CarlaRos2AckermannPod p{};
 
   // Longitudinal: all three forwarded (plan contract; see note above).
@@ -55,18 +60,14 @@ CarlaRos2AckermannPod control_to_ackermann(const Control& c) {
   return p;
 }
 
-// Parse a { builtin_interfaces/Time stamp; uint8 command } message and return
-// the command byte, or the fallback if the sample is short/malformed. We read
-// by POSITION with the bounds-checked CdrReader rather than trusting "the last
-// byte": DDS may pad the payload up to a 4-byte boundary, so the final wire byte
-// can be a pad byte, not the command. The reader simply stops after the u8 and
-// leaves any trailing padding unconsumed.
-static uint8_t parse_command_byte(const uint8_t* cdr, size_t len, uint8_t fallback) {
-  CdrReader r(cdr, len);
-  (void)r.i32();  // stamp.sec
-  (void)r.u32();  // stamp.nanosec
-  const uint8_t cmd = r.u8();
-  return r.ok() ? cmd : fallback;
+// Deserialize a { builtin_interfaces/Time stamp; uint8 command } message and
+// return the command byte, or the fallback if the sample is short/malformed.
+// The typed deserializer reads by position and ignores any trailing DDS
+// padding, mirroring the old bounds-checked positional parser.
+template <typename CmdT>
+static uint8_t parse_command(const uint8_t* cdr, size_t len, uint8_t fallback) {
+  CmdT m;
+  return cdr_deserialize(cdr, len, m) ? m.command : fallback;
 }
 
 void ControlSubscribers::Init(const CarlaRos2Host& host) {
@@ -88,11 +89,12 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
   // drop silently (fire-and-forget, per the ABI's apply_ackermann_control
   // contract and the status/GNSS publisher precedent) -- return values are not surfaced.
   host_.create_subscriber(
-      host_.host_ctx, "/control/command/control_cmd", AwTopicInfo<Control>::type_name(),
-      AwTopicInfo<Control>::type_hash(), &qos,
+      host_.host_ctx, "/control/command/control_cmd",
+      dds_type_name<autoware_control_msgs::msg::Control>(),
+      rihs01_hash<autoware_control_msgs::msg::Control>().c_str(), &qos,
       [](void* user, const uint8_t* cdr, size_t len) {
         auto* self = static_cast<ControlSubscribers*>(user);
-        Control c{};
+        autoware_control_msgs::msg::Control c;
         if (!cdr_deserialize(cdr, len, c)) return;  // truncated/garbage -> drop
         const uint32_t ego = self->host_.get_ego_actor_id(self->host_.host_ctx);
         if (ego == 0u) return;  // no ego registered -> drop
@@ -102,17 +104,19 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
       this);
 
   // The three command subscribers cache their uint8 for the status publishers.
-  // The CycloneDDS blob subscriber ignores type_hash, so
-  // "" is correct here -- Humble puts no type hash on the wire for these, and no
-  // RIHS01 golden was computed for the *Command types. The caches are atomic:
+  // The CycloneDDS blob subscriber ignores type_hash, so "" is correct here --
+  // Humble puts no type hash on the wire for these. The runtime RIHS01 hash is
+  // now available via rihs01_hash<T>() but is deliberately NOT sent, to stay
+  // bit-compatible with the G0-verified registration. The caches are atomic:
   // written here on the DDS listener thread, read on the game thread.
   host_.create_subscriber(
       host_.host_ctx, "/control/command/gear_cmd",
       "autoware_vehicle_msgs::msg::dds_::GearCommand_", "", &qos,
       [](void* user, const uint8_t* cdr, size_t len) {
         auto* self = static_cast<ControlSubscribers*>(user);
-        self->gear_.store(parse_command_byte(cdr, len, self->CachedGear()),
-                          std::memory_order_relaxed);
+        self->gear_.store(
+            parse_command<autoware_vehicle_msgs::msg::GearCommand>(cdr, len, self->CachedGear()),
+            std::memory_order_relaxed);
       },
       this);
   host_.create_subscriber(
@@ -120,8 +124,10 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
       "autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_", "", &qos,
       [](void* user, const uint8_t* cdr, size_t len) {
         auto* self = static_cast<ControlSubscribers*>(user);
-        self->turn_.store(parse_command_byte(cdr, len, self->CachedTurnIndicators()),
-                          std::memory_order_relaxed);
+        self->turn_.store(
+            parse_command<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>(
+                cdr, len, self->CachedTurnIndicators()),
+            std::memory_order_relaxed);
       },
       this);
   host_.create_subscriber(
@@ -129,8 +135,10 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
       "autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_", "", &qos,
       [](void* user, const uint8_t* cdr, size_t len) {
         auto* self = static_cast<ControlSubscribers*>(user);
-        self->hazard_.store(parse_command_byte(cdr, len, self->CachedHazardLights()),
-                            std::memory_order_relaxed);
+        self->hazard_.store(
+            parse_command<autoware_vehicle_msgs::msg::HazardLightsCommand>(
+                cdr, len, self->CachedHazardLights()),
+            std::memory_order_relaxed);
       },
       this);
 }

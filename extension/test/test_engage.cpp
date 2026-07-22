@@ -4,7 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "carla/autoware/messages/Cdr.h"
+#include <autoware_vehicle_msgs/msg/engage.hpp>
+
+#include "carla/autoware/messages/RosIdl.h"
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 #include "engage/EngageStateMachine.h"
 
@@ -61,14 +63,17 @@ CarlaRos2Host MakeFakeHost() {
   return host;
 }
 
-// Engage.msg (extracted extension/msg/autoware_vehicle_msgs/Engage.msg):
-// { builtin_interfaces/Time stamp; bool engage }.
+// Engage.msg (autoware_vehicle_msgs/msg/Engage): { builtin_interfaces/Time
+// stamp; bool engage }. Serialized through the rosidl codec (replaces the
+// former hand CdrWriter builder now that Engage is a generated message type).
 std::vector<uint8_t> serialize_engage(int32_t sec, uint32_t nsec, bool engaged) {
-  CdrWriter w;
-  w.i32(sec);
-  w.u32(nsec);
-  w.boolean(engaged);
-  return w.bytes();
+  autoware_vehicle_msgs::msg::Engage m;
+  m.stamp.sec = sec;
+  m.stamp.nanosec = nsec;
+  m.engage = engaged;
+  std::vector<uint8_t> b;
+  cdr_serialize(m, b);
+  return b;
 }
 
 class EngageStateMachineTest : public ::testing::Test {
@@ -136,8 +141,9 @@ TEST_F(EngageStateMachineTest, engage_false_sets_mode_manual) {
 }
 
 // DDS may pad the payload to a 4-byte boundary; a buffer with 3 trailing pad
-// bytes after the bool must still decode correctly -- CdrReader stops reading
-// after the bool (parse_engage), leaving the pad bytes simply unconsumed.
+// bytes after the bool must still decode correctly -- the typed deserializer
+// (parse_engage) reads only the message's own fields, leaving the pad bytes
+// simply unconsumed.
 TEST_F(EngageStateMachineTest, padded_buffer_still_decodes) {
   EngageStateMachine machine;
   machine.Init(MakeFakeHost());
