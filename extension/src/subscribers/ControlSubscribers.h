@@ -13,7 +13,8 @@
 #include <atomic>
 #include <cstdint>
 
-#include "carla/autoware/messages/AutowareMessages.h"
+#include <autoware_control_msgs/msg/control.hpp>
+
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
 namespace carla {
@@ -21,7 +22,7 @@ namespace autoware {
 
 // Pure Control -> CarlaRos2AckermannPod conversion (sign ownership + steering
 // compensation live here). Declared for the unit test; defined in the .cpp.
-CarlaRos2AckermannPod control_to_ackermann(const Control& c);
+CarlaRos2AckermannPod control_to_ackermann(const autoware_control_msgs::msg::Control& c);
 
 class ControlSubscribers {
  public:

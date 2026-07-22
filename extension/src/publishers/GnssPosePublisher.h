@@ -17,16 +17,6 @@
 namespace carla {
 namespace autoware {
 
-// Type identity for the two published geometry_msgs. The RIHS01 goldens
-// (GeoGoldens.inc, generated from the pinned Humble image) are pulled into
-// exactly ONE TU -- GnssPosePublisher.cpp -- mirroring AwTopicInfo; these
-// accessors expose them so a test binds to that single source of truth rather
-// than duplicating the 64-hex hash string.
-const char* pose_stamped_type_name();
-const char* pose_stamped_type_hash();
-const char* pose_with_covariance_stamped_type_name();
-const char* pose_with_covariance_stamped_type_hash();
-
 class GnssPosePublisher {
  public:
   // Creates both GNSS pose publishers on `host`. Must be called once, from the

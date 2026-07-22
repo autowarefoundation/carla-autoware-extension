@@ -8,10 +8,11 @@
 // constructor; odr-using it would silently pull DDS-vendor code into, and
 // thus force a DDS-vendor link onto, whichever TU calls it).
 // No C++ types cross the boundary: only PODs and function pointers.
-// SAME-ARCH-ONLY CONTRACT: the seam is a same-process dlopen of a .so built
-// against the same compiler/ABI as the host, not a network or cross-arch
-// wire format, so plain `size_t`/`int` (platform-width C types) are safe at
-// the boundary — there is no independent "extension platform" to skew them.
+// SAME-ARCH-ONLY CONTRACT: the seam is a same-process dlopen of a .so sharing
+// the platform C ABI with the host (the seam is pure C, so the C++ toolchains
+// on either side may differ), not a network or cross-arch wire format, so
+// plain `size_t`/`int` (platform-width C types) are safe at the boundary —
+// there is no independent "extension platform" to skew them.
 // The POD view structs (CarlaRos2Qos, CarlaRos2Transform,
 // CarlaRos2VehicleStatusView, CarlaRos2AckermannPod, CarlaRos2SensorSample)
 // deliberately carry NO size/reserved forward-compat padding fields: the ABI

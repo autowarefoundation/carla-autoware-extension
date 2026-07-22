@@ -6,9 +6,13 @@
 #include <utility>
 #include <vector>
 
+#include <autoware_control_msgs/msg/control.hpp>
+#include <autoware_vehicle_msgs/msg/gear_command.hpp>
+#include <autoware_vehicle_msgs/msg/hazard_lights_command.hpp>
+#include <autoware_vehicle_msgs/msg/turn_indicators_command.hpp>
+
 #include "carla/autoware/control/AutowareSteeringCompensation.h"
-#include "carla/autoware/messages/AutowareMessages.h"
-#include "carla/autoware/messages/Cdr.h"
+#include "carla/autoware/messages/RosIdl.h"
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 #include "subscribers/ControlSubscribers.h"
 
@@ -65,7 +69,7 @@ TEST(steering_compensation, forward_then_inverse_is_identity_on_mid_range) {
 // ===========================================================================
 
 TEST(control_conversion, longitudinal_maps_speed_accel_jerk) {
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.longitudinal.velocity = 5.0f;
   c.longitudinal.acceleration = 1.5f;
   c.longitudinal.jerk = 0.25f;
@@ -78,7 +82,7 @@ TEST(control_conversion, longitudinal_maps_speed_accel_jerk) {
 }
 
 TEST(control_conversion, steering_is_sign_flipped_and_compensated) {
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.lateral.steering_tire_angle = 0.2f;  // Autoware positive = left
   const CarlaRos2AckermannPod p = control_to_ackermann(c);
   // Autoware +left -> CARLA -steer; magnitude is the inverse-lookup compensation
@@ -90,7 +94,7 @@ TEST(control_conversion, steering_is_sign_flipped_and_compensated) {
 }
 
 TEST(control_conversion, negative_target_yields_positive_carla_steer) {
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.lateral.steering_tire_angle = -0.2f;
   const CarlaRos2AckermannPod p = control_to_ackermann(c);
   EXPECT_GT(p.steer, 0.0f);
@@ -98,7 +102,7 @@ TEST(control_conversion, negative_target_yields_positive_carla_steer) {
 }
 
 TEST(control_conversion, steer_speed_zero_when_rate_undefined) {
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.lateral.steering_tire_rotation_rate = 1.0f;
   c.lateral.is_defined_steering_tire_rotation_rate = false;
   const CarlaRos2AckermannPod p = control_to_ackermann(c);
@@ -106,7 +110,7 @@ TEST(control_conversion, steer_speed_zero_when_rate_undefined) {
 }
 
 TEST(control_conversion, steer_speed_negated_when_rate_defined) {
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.lateral.steering_tire_rotation_rate = 0.3f;
   c.lateral.is_defined_steering_tire_rotation_rate = true;
   const CarlaRos2AckermannPod p = control_to_ackermann(c);
@@ -162,42 +166,26 @@ CarlaRos2Host MakeFakeHost() {
   return host;
 }
 
-// Byte-exact Control CDR buffer (Control/Lateral/Longitudinal.msg field order,
-// both control_time fields + every trailing bool). Mirrors test_messages.cpp's
-// helper; re-authored locally to avoid cross-TU coupling.
-std::vector<uint8_t> serialize_control(const Control& c) {
-  CdrWriter w;
-  w.i32(c.stamp.sec);
-  w.u32(c.stamp.nanosec);
-  w.i32(c.control_time.sec);
-  w.u32(c.control_time.nanosec);
-  w.i32(c.lateral.stamp.sec);
-  w.u32(c.lateral.stamp.nanosec);
-  w.i32(c.lateral.control_time.sec);
-  w.u32(c.lateral.control_time.nanosec);
-  w.f32(c.lateral.steering_tire_angle);
-  w.f32(c.lateral.steering_tire_rotation_rate);
-  w.boolean(c.lateral.is_defined_steering_tire_rotation_rate);
-  w.i32(c.longitudinal.stamp.sec);
-  w.u32(c.longitudinal.stamp.nanosec);
-  w.i32(c.longitudinal.control_time.sec);
-  w.u32(c.longitudinal.control_time.nanosec);
-  w.f32(c.longitudinal.velocity);
-  w.f32(c.longitudinal.acceleration);
-  w.f32(c.longitudinal.jerk);
-  w.boolean(c.longitudinal.is_defined_acceleration);
-  w.boolean(c.longitudinal.is_defined_jerk);
-  return w.bytes();
+// Byte-exact Control CDR buffer via the rosidl codec (replaces the former hand
+// serializer now that Control is a generated message type).
+std::vector<uint8_t> serialize_control(const autoware_control_msgs::msg::Control& c) {
+  std::vector<uint8_t> b;
+  cdr_serialize(c, b);
+  return b;
 }
 
 // GearCommand/TurnIndicatorsCommand/HazardLightsCommand are all
-// { builtin_interfaces/Time stamp; uint8 command }.
+// { builtin_interfaces/Time stamp; uint8 command }; CmdT selects the concrete
+// generated type so the codec picks the right rosidl typesupport.
+template <typename CmdT>
 std::vector<uint8_t> serialize_command(int32_t sec, uint32_t nsec, uint8_t cmd) {
-  CdrWriter w;
-  w.i32(sec);
-  w.u32(nsec);
-  w.u8(cmd);
-  return w.bytes();
+  CmdT m;
+  m.stamp.sec = sec;
+  m.stamp.nanosec = nsec;
+  m.command = cmd;
+  std::vector<uint8_t> b;
+  cdr_serialize(m, b);
+  return b;
 }
 
 class ControlSubscribersTest : public ::testing::Test {
@@ -226,8 +214,8 @@ TEST_F(ControlSubscribersTest, init_creates_four_subscribers_with_topics_typeinf
     const char* type_hash;
   };
   const Expected expected[4] = {
-      {"/control/command/control_cmd", AwTopicInfo<Control>::type_name(),
-       AwTopicInfo<Control>::type_hash()},
+      {"/control/command/control_cmd", dds_type_name<autoware_control_msgs::msg::Control>(),
+       rihs01_hash<autoware_control_msgs::msg::Control>().c_str()},
       {"/control/command/gear_cmd", "autoware_vehicle_msgs::msg::dds_::GearCommand_", ""},
       {"/control/command/turn_indicators_cmd",
        "autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_", ""},
@@ -259,7 +247,7 @@ TEST_F(ControlSubscribersTest, control_callback_applies_converted_pod_to_ego) {
   ASSERT_EQ(state_.subs.size(), 4u);
   state_.ego_id = 42u;
 
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.lateral.steering_tire_angle = 0.2f;
   c.lateral.steering_tire_rotation_rate = 0.3f;
   c.lateral.is_defined_steering_tire_rotation_rate = true;
@@ -292,7 +280,7 @@ TEST_F(ControlSubscribersTest, control_callback_drops_when_no_ego) {
   sub.Init(MakeFakeHost());
   state_.ego_id = 0u;  // no ego
 
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.longitudinal.velocity = 4.0f;
   const std::vector<uint8_t> b = serialize_control(c);
   const FakeSub& s = state_.subs[0];
@@ -307,7 +295,7 @@ TEST_F(ControlSubscribersTest, control_callback_drops_truncated_cdr) {
   sub.Init(MakeFakeHost());
   state_.ego_id = 42u;
 
-  Control c{};
+  autoware_control_msgs::msg::Control c;
   c.longitudinal.velocity = 4.0f;
   const std::vector<uint8_t> b = serialize_control(c);
   const FakeSub& s = state_.subs[0];
@@ -322,9 +310,13 @@ TEST_F(ControlSubscribersTest, command_callbacks_update_atomic_caches) {
   sub.Init(MakeFakeHost());
   ASSERT_EQ(state_.subs.size(), 4u);
 
-  const std::vector<uint8_t> gear = serialize_command(1, 2u, 2u);         // DRIVE
-  const std::vector<uint8_t> turn = serialize_command(3, 4u, 3u);         // ENABLE_RIGHT
-  const std::vector<uint8_t> hazard = serialize_command(5, 6u, 2u);       // ENABLE
+  const std::vector<uint8_t> gear =
+      serialize_command<autoware_vehicle_msgs::msg::GearCommand>(1, 2u, 2u);  // DRIVE
+  const std::vector<uint8_t> turn =
+      serialize_command<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>(3, 4u,
+                                                                            3u);  // ENABLE_RIGHT
+  const std::vector<uint8_t> hazard =
+      serialize_command<autoware_vehicle_msgs::msg::HazardLightsCommand>(5, 6u, 2u);  // ENABLE
   state_.subs[1].cb(state_.subs[1].user, gear.data(), gear.size());
   state_.subs[2].cb(state_.subs[2].user, turn.data(), turn.size());
   state_.subs[3].cb(state_.subs[3].user, hazard.data(), hazard.size());
@@ -335,13 +327,15 @@ TEST_F(ControlSubscribersTest, command_callbacks_update_atomic_caches) {
 }
 
 // DDS may pad the payload to a 4-byte boundary; the last byte can be a pad byte,
-// so the command byte must be parsed by position (CdrReader), not read as the
-// last byte. A buffer with 3 trailing pad bytes must still decode correctly.
+// so the command byte must be parsed by position (the typed deserializer), not
+// read as the last byte. A buffer with 3 trailing pad bytes must still decode
+// correctly.
 TEST_F(ControlSubscribersTest, command_callback_tolerates_trailing_padding) {
   ControlSubscribers sub;
   sub.Init(MakeFakeHost());
 
-  std::vector<uint8_t> gear = serialize_command(7, 8u, 22u);  // PARK
+  std::vector<uint8_t> gear =
+      serialize_command<autoware_vehicle_msgs::msg::GearCommand>(7, 8u, 22u);  // PARK
   gear.push_back(0);
   gear.push_back(0);
   gear.push_back(0);  // 3 middleware pad bytes

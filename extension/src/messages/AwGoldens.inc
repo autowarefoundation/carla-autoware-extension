@@ -1,9 +1,0 @@
-// GENERATED from the committed .msg files (extension/msg/**, extracted from the
-// pinned Humble image) by extension/scripts/compute_type_hash.sh. Do not edit by hand.
-#define AW_GOLDEN_VelocityReport "RIHS01_9052adda949c32f4a98500abc1fb5bd23f2560e321eebdfbb25318d6108d4ce4"
-#define AW_GOLDEN_SteeringReport "RIHS01_aa3acc9ca95ebc4daf9dec0ecf87911ad9c196392857c3026bfead589db65a94"
-#define AW_GOLDEN_GearReport "RIHS01_4d14bc3f186c1a6af6a732bb5ebd540cdd742a56770012f4c3cb9e762de8f391"
-#define AW_GOLDEN_ControlModeReport "RIHS01_968feaa6441be3c3b161f2eb65972a4b15394d0a7ddc4664318551280d1ff222"
-#define AW_GOLDEN_TurnIndicatorsReport "RIHS01_c05a54cd244f1c9d683613b11c87a5b3ef816eed7a5f207368301221731a0964"
-#define AW_GOLDEN_HazardLightsReport "RIHS01_01ce3b4293a5c2799fd7483b2d62a790e26fe8f2b5d60e48149163475685f28a"
-#define AW_GOLDEN_Control "RIHS01_7818be59aa790ebb777db06e55a2c15e3756de4cc35c80b1e8271afc5bab2e9d"

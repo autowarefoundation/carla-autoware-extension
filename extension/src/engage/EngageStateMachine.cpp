@@ -1,6 +1,8 @@
 #include "EngageStateMachine.h"
 
-#include "carla/autoware/messages/Cdr.h"
+#include <autoware_vehicle_msgs/msg/engage.hpp>
+
+#include "carla/autoware/messages/RosIdl.h"
 
 namespace carla {
 namespace autoware {
@@ -9,21 +11,15 @@ uint8_t engage_to_mode(bool engaged) {
   return engaged ? 1 /*ControlModeReport::AUTONOMOUS*/ : 4 /*ControlModeReport::MANUAL*/;
 }
 
-// Parse a { builtin_interfaces/Time stamp; bool engage } message (extracted
-// extension/msg/autoware_vehicle_msgs/Engage.msg) and report the engaged bool
-// via `out`, returning whether the parse succeeded. Mirrors ControlSubscribers'
-// parse_command_byte: read by POSITION with the bounds-checked CdrReader
-// rather than trusting "the last byte" -- DDS may pad the payload up to a
-// 4-byte boundary, so the final wire byte can be a pad byte, not the engage
-// bool. On any malformed/truncated input this returns false and leaves `out`
-// untouched, so the caller can leave the cached mode unchanged.
+// Deserialize a { builtin_interfaces/Time stamp; bool engage } message and
+// report the engaged bool via `out`, returning whether the parse succeeded.
+// Trailing DDS padding is ignored by the positional typed deserializer. On
+// malformed/truncated input this returns false and leaves `out` untouched,
+// so the caller keeps the cached mode unchanged.
 static bool parse_engage(const uint8_t* cdr, size_t len, bool& out) {
-  CdrReader r(cdr, len);
-  (void)r.i32();  // stamp.sec
-  (void)r.u32();  // stamp.nanosec
-  const bool engaged = r.boolean();
-  if (!r.ok()) return false;
-  out = engaged;
+  autoware_vehicle_msgs::msg::Engage m;
+  if (!cdr_deserialize(cdr, len, m)) return false;
+  out = m.engage;
   return true;
 }
 
@@ -48,7 +44,7 @@ void EngageStateMachine::Init(const CarlaRos2Host& host) {
   // autoware_vehicle_msgs/Engage. Like ControlSubscribers' *Command topics,
   // the CycloneDDS blob subscriber ignores type_hash, so "" is
   // correct -- no RIHS01 golden was computed for Engage (out of scope here;
-  // see the AwGoldens.inc message-golden precedent for how one would be added).
+  // see test_rosidl.cpp's RIHS01 golden precedent for how one would be added).
   host_.create_subscriber(
       host_.host_ctx, "/autoware/engage", "autoware_vehicle_msgs::msg::dds_::Engage_", "", &qos,
       [](void* user, const uint8_t* cdr, size_t len) {

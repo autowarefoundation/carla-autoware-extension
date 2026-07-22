@@ -82,6 +82,11 @@ jobs:
           cmake --build /tmp/build-ci -j"$(nproc)"
       - name: Run extension unit tests
         run: |
+          # Each step is a fresh shell, so re-source ROS: the rosidl-backed
+          # message codec links libautoware_*__rosidl_generator_c.so, which
+          # live under /opt/ros/jazzy/lib and must be on the loader path when
+          # the test binary runs.
+          source /opt/ros/jazzy/setup.bash
           set +e
           out=$(/tmp/build-ci/test/extension_tests); status=$?
           set -e
