@@ -62,11 +62,13 @@ The LibCxx release asset is produced offline, by a UE licensee, on a machine wit
 3. Upload `ue5-libcxx.tar.gz` as an asset on the `ue5-libcxx-v1` GitHub Release on `autowarefoundation/carla-autoware-extension` (create the release if it does not exist yet, using the template in the next section as its description).
 4. Update `LIBCXX_SHA256` in `docker/toolchain/Toolchain.Dockerfile` to the value printed by the script (also written to `ue5-libcxx.tar.gz.sha256`), then follow the rebuild procedure above to publish a new image with the updated tarball.
 
+The tarball is byte-reproducible: the script pipes a deterministic `tar` invocation (`--sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner`) through `gzip -n` (no embedded timestamp), so regenerating it from the same UE checkout reproduces the exact bytes, and therefore the same `LIBCXX_SHA256`, every time.
+
 ## 5. Merge-order note
 
 The image mechanism and the code that depends on it are deliberately decoupled, and they land in this order:
 
-1. **PR A** — the toolchain-image mechanism (`docker/toolchain/`, `scripts/toolchain/`, `build-toolchain-image.yml`, the `cpp-tests` job in `ci.yaml`, and this document) — merges to `main` on its own. Its new `cpp-tests` job stays dormant, guarded by `hashFiles('extension/**') != ''`, because `extension/` does not exist on `main` yet.
+1. **PR A** — the toolchain-image mechanism (`docker/toolchain/`, `scripts/toolchain/`, `build-toolchain-image.yml`, the `cpp-tests` job in `ci.yaml`, and this document) — merges to `main` on its own. Its new `cpp-tests` job stays dormant: a `detect` job checks `git ls-files extension/` and exposes `has_ext` as a job output, and `cpp-tests` carries `needs: detect` plus `if: needs.detect.outputs.has_ext == 'true'` at the job level. Because `extension/` does not exist on `main` yet, `has_ext` resolves to `false` and the whole `cpp-tests` job — including its `container:` — is skipped outright; no toolchain image is pulled. This is a job-level gate, not a step-level guard: a step-level `if` (such as `hashFiles('extension/**') != ''` on individual steps) cannot stop the job's `container:` from being pulled at job initialization, since container pull happens before any step's `if` is evaluated, so only gating the whole job keeps the mechanism truly dormant.
 2. **Release asset upload** — the `ue5-libcxx-v1` release is created and the LibCxx tarball from the tarball-regeneration procedure is attached.
 3. **Image build and public flip** — `build-toolchain-image` is dispatched, and the resulting GHCR package is flipped public.
 4. **The Phase B PR stack (#7–#11) and the ddsc-link-removal PR** merge afterward. Only once the stack lands does `extension/` exist on `main`, at which point `cpp-tests` stops being dormant.
