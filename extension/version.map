@@ -1,0 +1,6 @@
+CARLA_ROS2_EXTENSION_1 {
+  global:
+    carla_ros2_extension_init;
+    carla_autoware_extension_abi_version;
+  local: *;
+};
