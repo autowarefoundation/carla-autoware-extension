@@ -5,8 +5,14 @@
 #include <utility>
 #include <vector>
 
-#include "carla/autoware/messages/AutowareMessages.h"
-#include "carla/autoware/messages/Cdr.h"
+#include <autoware_vehicle_msgs/msg/control_mode_report.hpp>
+#include <autoware_vehicle_msgs/msg/gear_report.hpp>
+#include <autoware_vehicle_msgs/msg/hazard_lights_report.hpp>
+#include <autoware_vehicle_msgs/msg/steering_report.hpp>
+#include <autoware_vehicle_msgs/msg/turn_indicators_report.hpp>
+#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
+
+#include "carla/autoware/messages/RosIdl.h"
 #include "publishers/StatusPublishers.h"
 
 using namespace carla::autoware;
@@ -101,24 +107,31 @@ TEST_F(StatusPublishersTest, init_creates_six_publishers_with_topics_typeinfo_an
 
   ASSERT_EQ(state_.pubs.size(), 6u);
 
+  using autoware_vehicle_msgs::msg::ControlModeReport;
+  using autoware_vehicle_msgs::msg::GearReport;
+  using autoware_vehicle_msgs::msg::HazardLightsReport;
+  using autoware_vehicle_msgs::msg::SteeringReport;
+  using autoware_vehicle_msgs::msg::TurnIndicatorsReport;
+  using autoware_vehicle_msgs::msg::VelocityReport;
+
   struct Expected {
     const char* topic;
     const char* type_name;
     const char* type_hash;
   };
   const Expected expected[6] = {
-      {"/vehicle/status/velocity_status", AwTopicInfo<VelocityReport>::type_name(),
-       AwTopicInfo<VelocityReport>::type_hash()},
-      {"/vehicle/status/steering_status", AwTopicInfo<SteeringReport>::type_name(),
-       AwTopicInfo<SteeringReport>::type_hash()},
-      {"/vehicle/status/gear_status", AwTopicInfo<GearReport>::type_name(),
-       AwTopicInfo<GearReport>::type_hash()},
-      {"/vehicle/status/control_mode", AwTopicInfo<ControlModeReport>::type_name(),
-       AwTopicInfo<ControlModeReport>::type_hash()},
-      {"/vehicle/status/turn_indicators_status", AwTopicInfo<TurnIndicatorsReport>::type_name(),
-       AwTopicInfo<TurnIndicatorsReport>::type_hash()},
-      {"/vehicle/status/hazard_lights_status", AwTopicInfo<HazardLightsReport>::type_name(),
-       AwTopicInfo<HazardLightsReport>::type_hash()},
+      {"/vehicle/status/velocity_status", dds_type_name<VelocityReport>(),
+       rihs01_hash<VelocityReport>().c_str()},
+      {"/vehicle/status/steering_status", dds_type_name<SteeringReport>(),
+       rihs01_hash<SteeringReport>().c_str()},
+      {"/vehicle/status/gear_status", dds_type_name<GearReport>(),
+       rihs01_hash<GearReport>().c_str()},
+      {"/vehicle/status/control_mode", dds_type_name<ControlModeReport>(),
+       rihs01_hash<ControlModeReport>().c_str()},
+      {"/vehicle/status/turn_indicators_status", dds_type_name<TurnIndicatorsReport>(),
+       rihs01_hash<TurnIndicatorsReport>().c_str()},
+      {"/vehicle/status/hazard_lights_status", dds_type_name<HazardLightsReport>(),
+       rihs01_hash<HazardLightsReport>().c_str()},
   };
 
   for (int i = 0; i < 6; ++i) {
@@ -172,60 +185,60 @@ TEST_F(StatusPublishersTest, on_vehicle_status_publishes_six_samples_with_expect
 
   // [0] VelocityReport: Header stamp + frame_id "base_link" + 3 floats.
   {
-    const auto& b = state_.published[0].second;
-    CdrReader r(b.data(), b.size());
-    EXPECT_EQ(r.i32(), kSec);
-    EXPECT_EQ(r.u32(), kNsec);
-    EXPECT_EQ(r.str(), "base_link");
-    EXPECT_FLOAT_EQ(r.f32(), 3.5f);    // longitudinal_velocity
-    EXPECT_FLOAT_EQ(r.f32(), -1.25f);  // lateral_velocity
-    EXPECT_FLOAT_EQ(r.f32(), 0.5f);    // heading_rate
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::VelocityReport m;
+    const auto& bytes = state_.published[0].second;
+    ASSERT_TRUE(cdr_deserialize(bytes.data(), bytes.size(), m));
+    EXPECT_EQ(m.header.stamp.sec, kSec);
+    EXPECT_EQ(m.header.stamp.nanosec, kNsec);
+    EXPECT_EQ(m.header.frame_id, "base_link");
+    EXPECT_FLOAT_EQ(m.longitudinal_velocity, 3.5f);
+    EXPECT_FLOAT_EQ(m.lateral_velocity, -1.25f);
+    EXPECT_FLOAT_EQ(m.heading_rate, 0.5f);
   }
   // [1] SteeringReport: bare Time stamp + steering_tire_angle (NO Header/frame_id).
   {
-    const auto& b = state_.published[1].second;
-    CdrReader r(b.data(), b.size());
-    EXPECT_EQ(r.i32(), kSec);
-    EXPECT_EQ(r.u32(), kNsec);
-    EXPECT_FLOAT_EQ(r.f32(), 0.1f);  // passed through, NOT -0.1f
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::SteeringReport m;
+    const auto& bytes = state_.published[1].second;
+    ASSERT_TRUE(cdr_deserialize(bytes.data(), bytes.size(), m));
+    EXPECT_EQ(m.stamp.sec, kSec);
+    EXPECT_EQ(m.stamp.nanosec, kNsec);
+    EXPECT_FLOAT_EQ(m.steering_tire_angle, 0.1f);  // passed through, NOT -0.1f
   }
   // [2] GearReport: bare Time stamp + uint8 report.
   {
-    const auto& b = state_.published[2].second;
-    CdrReader r(b.data(), b.size());
-    EXPECT_EQ(r.i32(), kSec);
-    EXPECT_EQ(r.u32(), kNsec);
-    EXPECT_EQ(r.u8(), 2u);  // DRIVE from StatusInputs::gear
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::GearReport m;
+    const auto& bytes = state_.published[2].second;
+    ASSERT_TRUE(cdr_deserialize(bytes.data(), bytes.size(), m));
+    EXPECT_EQ(m.stamp.sec, kSec);
+    EXPECT_EQ(m.stamp.nanosec, kNsec);
+    EXPECT_EQ(m.report, 2u);  // DRIVE from StatusInputs::gear
   }
   // [3] ControlModeReport: bare Time stamp + uint8 mode.
   {
-    const auto& b = state_.published[3].second;
-    CdrReader r(b.data(), b.size());
-    EXPECT_EQ(r.i32(), kSec);
-    EXPECT_EQ(r.u32(), kNsec);
-    EXPECT_EQ(r.u8(), 1u);  // AUTONOMOUS from StatusInputs::control_mode
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::ControlModeReport m;
+    const auto& bytes = state_.published[3].second;
+    ASSERT_TRUE(cdr_deserialize(bytes.data(), bytes.size(), m));
+    EXPECT_EQ(m.stamp.sec, kSec);
+    EXPECT_EQ(m.stamp.nanosec, kNsec);
+    EXPECT_EQ(m.mode, 1u);  // AUTONOMOUS from StatusInputs::control_mode
   }
   // [4] TurnIndicatorsReport: bare Time stamp + uint8 report.
   {
-    const auto& b = state_.published[4].second;
-    CdrReader r(b.data(), b.size());
-    EXPECT_EQ(r.i32(), kSec);
-    EXPECT_EQ(r.u32(), kNsec);
-    EXPECT_EQ(r.u8(), 2u);  // ENABLE_LEFT from StatusInputs::turn_indicators
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::TurnIndicatorsReport m;
+    const auto& bytes = state_.published[4].second;
+    ASSERT_TRUE(cdr_deserialize(bytes.data(), bytes.size(), m));
+    EXPECT_EQ(m.stamp.sec, kSec);
+    EXPECT_EQ(m.stamp.nanosec, kNsec);
+    EXPECT_EQ(m.report, 2u);  // ENABLE_LEFT from StatusInputs::turn_indicators
   }
   // [5] HazardLightsReport: bare Time stamp + uint8 report.
   {
-    const auto& b = state_.published[5].second;
-    CdrReader r(b.data(), b.size());
-    EXPECT_EQ(r.i32(), kSec);
-    EXPECT_EQ(r.u32(), kNsec);
-    EXPECT_EQ(r.u8(), 2u);  // ENABLE from StatusInputs::hazard_lights
-    EXPECT_TRUE(r.ok());
+    autoware_vehicle_msgs::msg::HazardLightsReport m;
+    const auto& bytes = state_.published[5].second;
+    ASSERT_TRUE(cdr_deserialize(bytes.data(), bytes.size(), m));
+    EXPECT_EQ(m.stamp.sec, kSec);
+    EXPECT_EQ(m.stamp.nanosec, kNsec);
+    EXPECT_EQ(m.report, 2u);  // ENABLE from StatusInputs::hazard_lights
   }
 }
 
@@ -240,14 +253,24 @@ TEST_F(StatusPublishersTest, on_vehicle_status_uses_safe_defaults_for_uncommande
   pub.OnVehicleStatus(v, StatusInputs{});
 
   ASSERT_EQ(state_.published.size(), 6u);
-  auto tail_u8 = [](const std::vector<uint8_t>& b) {
-    CdrReader r(b.data(), b.size());
-    (void)r.i32();  // stamp.sec
-    (void)r.u32();  // stamp.nanosec
-    return r.u8();
-  };
-  EXPECT_EQ(tail_u8(state_.published[2].second), 0u);  // gear NONE
-  EXPECT_EQ(tail_u8(state_.published[3].second), 4u);  // control_mode MANUAL
-  EXPECT_EQ(tail_u8(state_.published[4].second), 1u);  // turn_indicators DISABLE
-  EXPECT_EQ(tail_u8(state_.published[5].second), 1u);  // hazard_lights DISABLE
+
+  autoware_vehicle_msgs::msg::GearReport gear_m;
+  ASSERT_TRUE(cdr_deserialize(state_.published[2].second.data(),
+                               state_.published[2].second.size(), gear_m));
+  EXPECT_EQ(gear_m.report, 0u);  // gear NONE
+
+  autoware_vehicle_msgs::msg::ControlModeReport mode_m;
+  ASSERT_TRUE(cdr_deserialize(state_.published[3].second.data(),
+                               state_.published[3].second.size(), mode_m));
+  EXPECT_EQ(mode_m.mode, 4u);  // control_mode MANUAL
+
+  autoware_vehicle_msgs::msg::TurnIndicatorsReport turn_m;
+  ASSERT_TRUE(cdr_deserialize(state_.published[4].second.data(),
+                               state_.published[4].second.size(), turn_m));
+  EXPECT_EQ(turn_m.report, 1u);  // turn_indicators DISABLE
+
+  autoware_vehicle_msgs::msg::HazardLightsReport hazard_m;
+  ASSERT_TRUE(cdr_deserialize(state_.published[5].second.data(),
+                               state_.published[5].second.size(), hazard_m));
+  EXPECT_EQ(hazard_m.report, 1u);  // hazard_lights DISABLE
 }
