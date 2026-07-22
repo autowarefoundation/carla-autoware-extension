@@ -23,9 +23,13 @@ add_library(carla-autoware-extension SHARED
   # src/messages/Cdr.cpp. Publishers (Task 18-19), subscribers (Task 20),
   # engage (Task 21), and the init entrypoint (Task 22) are added here as they land:
   src/messages/AutowareMessages.cpp
-  # src/publishers/StatusPublishers.cpp src/publishers/GnssPosePublisher.cpp
-  # src/subscribers/ControlSubscribers.cpp src/engage/EngageStateMachine.cpp
-  # src/ExtensionInit.cpp
+  src/publishers/StatusPublishers.cpp
+  src/publishers/GnssPosePublisher.cpp
+  src/subscribers/ControlSubscribers.cpp
+  src/engage/EngageStateMachine.cpp
+  # Init entrypoint (Task 22): the single exported carla_ros2_extension_init
+  # symbol that wires all four subsystems together for the core loader.
+  src/ExtensionInit.cpp
 )
 target_include_directories(carla-autoware-extension PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include)

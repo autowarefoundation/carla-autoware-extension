@@ -26,7 +26,13 @@ else()
   FetchContent_MakeAvailable(googletest)
 endif()
 
-add_executable(extension_tests test_smoke.cpp test_messages.cpp)
-target_include_directories(extension_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_executable(extension_tests test_smoke.cpp test_messages.cpp test_status_publishers.cpp
+  test_gnss_pose.cpp test_control_conversion.cpp test_engage.cpp test_init.cpp)
+# include/ holds the public headers; src/ is added so the tests can reach
+# implementation-detail headers (e.g. publishers/StatusPublishers.h) that live
+# next to their .cpp rather than under the public include tree.
+target_include_directories(extension_tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(extension_tests PRIVATE GTest::gtest_main carla-autoware-extension)
 add_test(NAME extension_tests COMMAND extension_tests)
