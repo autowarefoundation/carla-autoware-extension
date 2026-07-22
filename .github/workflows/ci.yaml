@@ -45,30 +45,35 @@ jobs:
     needs: detect
     if: ${{ needs.detect.outputs.has_ext == 'true' }}
     runs-on: ubuntu-latest
-    # Slim UE5 toolchain image (third-party OSS only; see docs/toolchain-image.md).
-    # Moving tag by design until the first image build publishes an immutable
-    # tag; a follow-up commit may pin the digest.
+    # Stock ROS 2 Jazzy: the extension builds with the system toolchain and the
+    # apt-distributed Autoware message packages. The CARLA seam is a pure C ABI
+    # (extension/include/carla/ros2/extension/CarlaRos2Extension.h), so no UE
+    # toolchain is required; a libstdc++ .so coexists with the libc++ host.
     container:
-      image: ghcr.io/autowarefoundation/carla-ue5-toolchain:24.04
+      image: ros:jazzy
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch pinned CARLA CMake toolchain (upstream, sparse)
+      - name: Install build and message dependencies
         run: |
-          git init /tmp/carla
-          git -C /tmp/carla remote add origin https://github.com/carla-simulator/carla.git
-          git -C /tmp/carla sparse-checkout set CMake
-          git -C /tmp/carla fetch --filter=blob:none --depth 1 origin 0a5ce0d5b4952bd8294a163c12d49f197bdb2aba
-          git -C /tmp/carla checkout FETCH_HEAD
-          test -f /tmp/carla/CMake/Toolchain.cmake
-      - name: Install CycloneDDS (bridge — extension references no dds_* symbols)
-        run: |
+          # cyclonedds-dev satisfies the `find_library(ddsc REQUIRED)` in the
+          # Phase B stack extensions that have not yet dropped the CycloneDDS
+          # link (#8-#11); the extension references no dds_ symbols, so the
+          # package is inert for the ddsc-dropped tip (#13) and beyond.
           apt-get update
-          apt-get install -y --no-install-recommends cyclonedds-dev
+          apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build libgtest-dev ca-certificates \
+            cyclonedds-dev \
+            ros-jazzy-autoware-control-msgs ros-jazzy-autoware-vehicle-msgs \
+            ros-jazzy-geometry-msgs
       - name: Configure and build extension
         run: |
-          export CARLA_ROOT=/tmp/carla
-          cmake -S extension -B /tmp/build-ci -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/extension/toolchain/CarlaExtension.cmake"
+          # CARLA_ROOT is read only by the pre-migration extension CMake (a
+          # hard env check); it becomes inert once phase-b/7-ros2-msgs lands
+          # and can be dropped in a follow-up housekeeping PR.
+          export CARLA_ROOT=/tmp/carla-stub
+          mkdir -p "$CARLA_ROOT"
+          source /opt/ros/jazzy/setup.bash
+          cmake -S extension -B /tmp/build-ci -G Ninja
           cmake --build /tmp/build-ci -j"$(nproc)"
       - name: Run extension unit tests
         run: |
