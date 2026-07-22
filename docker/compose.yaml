@@ -11,4 +11,5 @@ services:
       - ./:/work/docker:ro
       - ../scripts:/work/scripts:ro
       - ../reports:/work/reports
+      - ~/autoware_map/nishishinjuku:/autoware_map/nishishinjuku:ro
     command: sleep infinity
