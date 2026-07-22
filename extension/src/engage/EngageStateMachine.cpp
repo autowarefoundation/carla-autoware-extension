@@ -31,7 +31,7 @@ void EngageStateMachine::Init(const CarlaRos2Host& host) {
   host_ = host;
 
   // reliable/VOLATILE/keep-last-1 (CarlaRos2Qos: reliability 0 = reliable,
-  // durability 0 = volatile, history_depth 1), NOT the brief's transient_local.
+  // durability 0 = volatile, history_depth 1), NOT transient_local (an earlier draft's choice).
   // A transient_local SUBSCRIBER does not match a volatile PUBLISHER (requested
   // durability must be <= offered durability), and the G2 harness engages via
   // `ros2 topic pub`, whose default QoS is reliable/volatile -- a
@@ -46,9 +46,9 @@ void EngageStateMachine::Init(const CarlaRos2Host& host) {
 
   // Topic/type pinned in Step 1 (see header comment): /autoware/engage,
   // autoware_vehicle_msgs/Engage. Like ControlSubscribers' *Command topics,
-  // the CycloneDDS blob subscriber ignores type_hash (Task 13), so "" is
-  // correct -- no RIHS01 golden was computed for Engage (out of this task's
-  // scope; see Task 17 precedent for how one would be added).
+  // the CycloneDDS blob subscriber ignores type_hash, so "" is
+  // correct -- no RIHS01 golden was computed for Engage (out of scope here;
+  // see the AwGoldens.inc message-golden precedent for how one would be added).
   host_.create_subscriber(
       host_.host_ctx, "/autoware/engage", "autoware_vehicle_msgs::msg::dds_::Engage_", "", &qos,
       [](void* user, const uint8_t* cdr, size_t len) {

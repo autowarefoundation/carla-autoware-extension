@@ -29,7 +29,7 @@ Frame notes:
       - ROTATION is now applied (``carla_attach_rotation``): the composed base_link->sensor
         orientation is converted to a CARLA/UE Rotator via the M-conjugation mapping
         (roll:+, pitch:-, yaw:-; see ``ros_rpy_to_carla_rotation``). This is load-bearing:
-        the runner calls ``world.set_publish_tf(False)`` (Task 24) so Autoware owns the TF
+        the runner calls ``world.set_publish_tf(False)`` so Autoware owns the TF
         tree and generates sensor TF from these SAME yamls; if CARLA attached at identity the
         top cloud would arrive ~90deg-rotated in base_link (NDT/G1 dead on arrival) and the
         IMU axes flipped (ekf/G2 corrupted). The kit mount rotations (velodyne_top yaw 1.575,
@@ -211,7 +211,7 @@ def ros_rpy_to_carla_rotation(roll: float, pitch: float, yaw: float) -> tuple[fl
     a rotation about each axis; the UE Rotator's own left-handed sign convention then re-flips
     the ROLL axis, so the NET componentwise mapping is ``roll:+, pitch:-, yaw:-``. This is
     identical to carla-ros-bridge's ``carla_rotation_to_RPY`` inverse and consistent with the
-    Task-19 quaternion pin ``carla_quat_to_mgrs = (-qx, qy, -qz, qw)`` (an involution derived
+    quaternion pin ``carla_quat_to_mgrs = (-qx, qy, -qz, qw)`` (an involution derived
     via ``R(theta, n) -> R(theta, -M n)``).
 
     CRITICAL: apply this ONCE, to the fully composed base_link->sensor rpy -- never map the two

@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.map not in world.get_map().name:  # the harness may already have loaded it
         world = client.load_world(args.map)
 
-    # Autoware owns the localization TF tree: suppress ALL CARLA-side ROS 2 TF (Task 8) BEFORE
+    # Autoware owns the localization TF tree: suppress ALL CARLA-side ROS 2 TF BEFORE
     # spawning any actor, so map->odom->base_link is never double-published on /tf alongside
     # the Autoware-side TF that Autoware itself generates from these same kit yamls.
     world.set_publish_tf(False)

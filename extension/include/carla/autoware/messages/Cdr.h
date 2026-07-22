@@ -62,7 +62,7 @@ class CdrWriter {
 // short/truncated input the reader latches an error (ok() -> false) and returns
 // a zero-valued default instead of reading out of bounds. This is load-bearing:
 // the Control deserializer feeds raw, attacker-influenceable DDS network bytes
-// straight into this reader (Task 20), so an overrun must be impossible.
+// straight into this reader, so an overrun must be impossible.
 class CdrReader {
  public:
   CdrReader(const uint8_t* p, size_t n)

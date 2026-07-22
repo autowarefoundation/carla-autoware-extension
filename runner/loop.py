@@ -72,7 +72,7 @@ def run_sync_loop(
                 on_tick()
             dt = time.perf_counter() - t0
             if dt < fixed_delta:
-                time.sleep(fixed_delta - dt)  # real-time pacing (20 Hz cadence, Task 28)
+                time.sleep(fixed_delta - dt)  # real-time pacing (20 Hz cadence)
     finally:
         settings.synchronous_mode = prev_sync
         settings.fixed_delta_seconds = prev_fixed_delta

@@ -4,8 +4,8 @@
 // bodies are the single source of the pinned hashes.
 //
 // Every field order/type below matches the extracted .msg files under
-// extension/msg/** byte-for-byte. Where that differs from the Task-17 brief's
-// draft, the deviation is called out inline; each was proven load-bearing by a
+// extension/msg/** byte-for-byte. Where that differs from an earlier draft
+// layout, the deviation is called out inline; each was proven load-bearing by a
 // test in test_messages.cpp (the draft layout fails those tests).
 #include "carla/autoware/messages/AutowareMessages.h"
 
@@ -36,7 +36,7 @@ const char* AwTopicInfo<Control>::type_hash() { return AW_GOLDEN_Control; }
 // VelocityReport carries a std_msgs/Header, so the frame_id string IS on the
 // wire. The status publishers always report in "base_link"; that frame is a
 // publisher policy, not per-sample data, so it is written here rather than
-// stored on the POD (Task 18 owns frame semantics).
+// stored on the POD (the status publishers own frame semantics).
 size_t cdr_serialize(const VelocityReport& m, std::vector<uint8_t>& out) {
   CdrWriter w;
   w.i32(m.header.stamp.sec);
@@ -50,7 +50,7 @@ size_t cdr_serialize(const VelocityReport& m, std::vector<uint8_t>& out) {
 }
 
 // SteeringReport.msg has a BARE builtin_interfaces/Time stamp and NO frame_id
-// -- so no string is written (contrast VelocityReport above). The brief draft
+// -- so no string is written (contrast VelocityReport above). A naive draft
 // wrongly appended one; test steering_report_serializes_without_frame_id pins
 // the exact 16-byte layout that forbids it.
 size_t cdr_serialize(const SteeringReport& m, std::vector<uint8_t>& out) {
@@ -101,8 +101,8 @@ size_t cdr_serialize(const HazardLightsReport& m, std::vector<uint8_t>& out) {
 // --- Deserializer (subscriber side).
 //
 // Reads the FULL Control/Lateral/Longitudinal layout: both control_time fields
-// and every trailing bool, in .msg order. Omitting any of them (as the brief
-// draft did) shifts every following field off its wire offset. The reader is
+// and every trailing bool, in .msg order. Omitting any of them (as a naive
+// draft would) shifts every following field off its wire offset. The reader is
 // bounds-checked, so a truncated network sample fails here rather than reading
 // out of bounds; r.ok() is the verdict.
 bool cdr_deserialize(const uint8_t* p, size_t n, Control& m) {

@@ -3,7 +3,7 @@
 
 The #1 Phase B coordinate risk is the handedness / Y-flip between CARLA
 (left-handed, Z-up) and OpenDRIVE / MGRS-local (right-handed, Z-up). The
-extension's GNSS pose synthesis (runner/extension Task 19) reuses
+extension's GNSS pose synthesis (runner + extension) reuses
 ``world_to_mgrs_local()`` verbatim, so this transform is pinned here first and
 its handedness is measured against the Nishi-Shinjuku map by the companion
 ``probe_carla_mgrs.py`` (results recorded in ``docs/mgrs-handedness.md``).

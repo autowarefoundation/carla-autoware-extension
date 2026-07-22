@@ -7,7 +7,7 @@
 //   /control/command/turn_indicators_cmd  (uint8 command, cached)
 //   /control/command/hazard_lights_cmd    (uint8 command, cached)
 // The three cached command bytes are read back by the status publishers
-// (Task 18/22) via the accessors below. This header is an implementation detail
+// via the accessors below. This header is an implementation detail
 // of the extension .so, not part of the frozen C ABI seam.
 
 #include <atomic>

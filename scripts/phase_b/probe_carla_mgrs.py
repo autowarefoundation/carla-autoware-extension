@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live measurement of the CARLA-world <-> OpenDRIVE/MGRS transform (Nishi-Shinjuku).
 
-Step 5 "live handedness check" for Task 5. It *measures* the handedness (Y-flip)
+The live handedness check. It *measures* the handedness (Y-flip)
 and unit convention that ``verify_mgrs_handedness.world_to_mgrs_local`` encodes,
 using the running CARLA map as ground truth. The projection-free CARLA<->
 OpenDRIVE comparison is the pivot; the offline xodr-header analysis (see

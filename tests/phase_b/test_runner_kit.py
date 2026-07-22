@@ -39,7 +39,7 @@ from runner.spawn import (
     top_lidar_attributes,
 )
 
-# --- base_link -> vehicle-origin longitudinal conversion (brief Step 1) ---
+# --- base_link -> vehicle-origin longitudinal conversion ---
 
 
 def test_base_link_offset_is_half_wheelbase_forward():
@@ -123,7 +123,7 @@ def test_ego_attributes():
 
 
 def test_ego_blueprint_is_measured_lincoln():
-    # The Lincoln MKZ the ported steering-compensation LERP table (Task 20) was measured on.
+    # The Lincoln MKZ the ported steering-compensation LERP table was measured on.
     # CARLA 0.10 ids it without the 0.9-era year suffix (mkz_2020 does not exist in the 0.10
     # blueprint library, verified live in Step 4b); it is "vehicle.lincoln.mkz".
     assert EGO_BLUEPRINT == "vehicle.lincoln.mkz"
@@ -155,7 +155,7 @@ def test_imu_attributes():
 # arrive rotated in base_link. CARLA/UE is left-handed (Y right) vs ROS right-handed (Y left):
 # the two are related by M = diag(1,-1,1); conjugation R_ue = M.R_ros.M plus UE's left-handed
 # Rotator sign convention nets a componentwise mapping roll:+, pitch:-, yaw:- -- identical to
-# carla-ros-bridge's carla_rotation_to_RPY inverse and consistent with the Task-19 quaternion
+# carla-ros-bridge's carla_rotation_to_RPY inverse and consistent with the quaternion
 # pin (-qx, qy, -qz, qw). These four pins fix the sign convention independently.
 
 
@@ -317,7 +317,7 @@ def test_apply_attributes_applies_all_when_present():
     assert bp.applied == top_lidar_attributes()
 
 
-# --- spawn_sensors partial-spawn safety (Task 24 fix wave 2, Fix A) ---
+# --- spawn_sensors partial-spawn safety ---
 
 
 def test_spawn_sensors_destroys_already_spawned_actor_on_partial_failure(monkeypatch):

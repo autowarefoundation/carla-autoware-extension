@@ -11,7 +11,7 @@
 using namespace carla::autoware;
 
 // ===========================================================================
-// engage_to_mode: pure bool -> ControlModeReport mode mapping (Task 17's
+// engage_to_mode: pure bool -> ControlModeReport mode mapping (the
 // ControlModeReport.msg constants).
 // ===========================================================================
 
@@ -82,8 +82,8 @@ class EngageStateMachineTest : public ::testing::Test {
 
 // ---------------------------------------------------------------------------
 // Init wires exactly one subscriber, at the Step-1-pinned topic/type, "" hash
-// (no RIHS01 golden -- out of this task's scope, mirrors ControlSubscribers'
-// *Command topics), reliable/volatile/keep-last-1 QoS (resolution 3), with the
+// (no RIHS01 golden -- out of scope here, mirrors ControlSubscribers'
+// *Command topics), reliable/volatile/keep-last-1 QoS, with the
 // machine as the user pointer.
 // ---------------------------------------------------------------------------
 TEST_F(EngageStateMachineTest, init_creates_one_subscriber_with_topic_typeinfo_and_qos) {
