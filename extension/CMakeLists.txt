@@ -8,13 +8,12 @@ if(NOT DEFINED ENV{CARLA_ROOT})
 endif()
 set(CARLA_ROOT $ENV{CARLA_ROOT})
 
-# CARLA's own Ros2Native build vendors CycloneDDS 0.10.5 with the identical
-# UE-clang + static-libc++ toolchain this project builds with (see
-# toolchain/CarlaExtension.cmake); HINTS points find_library there first so we
-# link the ABI-matching copy instead of whatever CycloneDDS the host's ROS 2
-# distro happens to ship (falls back to default search paths if absent).
-find_library(CYCLONEDDS_LIB ddsc REQUIRED
-  HINTS ${CARLA_ROOT}/Build/Development/Ros2Native/install/lib)
+# No DDS link: the extension performs zero direct DDS calls — every publish/
+# subscribe crosses the host vtable (carla_cdr_* function pointers handed over
+# by CARLA at carla_ros2_extension_init time), so the .so references no dds_*
+# symbols (verify: nm -D | grep ' U dds_' is empty). Linking CycloneDDS here
+# would only add a spurious DT_NEEDED entry and an unsatisfiable rpath at
+# test-link time.
 
 add_library(carla-autoware-extension SHARED
   src/version.cpp
@@ -33,7 +32,6 @@ add_library(carla-autoware-extension SHARED
 )
 target_include_directories(carla-autoware-extension PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(carla-autoware-extension PRIVATE ${CYCLONEDDS_LIB})
 set_target_properties(carla-autoware-extension PROPERTIES
   OUTPUT_NAME carla-autoware-extension)
 
