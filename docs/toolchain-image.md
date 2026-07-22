@@ -63,28 +63,3 @@ The LibCxx release asset is produced offline, by a UE licensee, on a machine wit
 4. Update `LIBCXX_SHA256` in `docker/toolchain/Toolchain.Dockerfile` to the value printed by the script (also written to `ue5-libcxx.tar.gz.sha256`), then follow the rebuild procedure above to publish a new image with the updated tarball.
 
 The tarball is byte-reproducible: the script pipes a deterministic `tar` invocation (`--sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner`) through `gzip -n` (no embedded timestamp), so regenerating it from the same UE checkout reproduces the exact bytes, and therefore the same `LIBCXX_SHA256`, every time.
-
-## 5. Merge-order note
-
-The image mechanism and the code that depends on it are deliberately decoupled, and they land in this order:
-
-1. **PR A** — the toolchain-image mechanism (`docker/toolchain/`, `scripts/toolchain/`, `build-toolchain-image.yml`, the `cpp-tests` job in `ci.yaml`, and this document) — merges to `main` on its own. Its new `cpp-tests` job stays dormant: a `detect` job checks `git ls-files extension/` and exposes `has_ext` as a job output, and `cpp-tests` carries `needs: detect` plus `if: needs.detect.outputs.has_ext == 'true'` at the job level. Because `extension/` does not exist on `main` yet, `has_ext` resolves to `false` and the whole `cpp-tests` job — including its `container:` — is skipped outright; no toolchain image is pulled. This is a job-level gate, not a step-level guard: a step-level `if` (such as `hashFiles('extension/**') != ''` on individual steps) cannot stop the job's `container:` from being pulled at job initialization, since container pull happens before any step's `if` is evaluated, so only gating the whole job keeps the mechanism truly dormant.
-2. **Release asset upload** — the `ue5-libcxx-v1` release is created and the LibCxx tarball from the tarball-regeneration procedure is attached.
-3. **Image build and public flip** — `build-toolchain-image` is dispatched, and the resulting GHCR package is flipped public.
-4. **The Phase B PR stack (#7–#11) and the ddsc-link-removal PR** merge afterward. Only once the stack lands does `extension/` exist on `main`, at which point `cpp-tests` stops being dormant.
-
-Two consequences follow from this order. First, `cpp-tests` stays dormant for the entire time the stack PRs are open and being tested: each stack PR's CI runs against a merge ref built from its own stacked base, which predates PR A, so none of the stack PRs individually execute the new job — it is dormant on every one of them, not merely skipped once. Second, the first push to `main` after the full stack merges is therefore the actual canary: it is the first CI run where `extension/**` is non-empty, where the public image is pulled anonymously with no secrets involved, and where `cpp-tests` is expected to build the extension and pass 67/67 GTest cases end-to-end for the first time on this repository's own infrastructure.
-
-## Release-body template (ue5-libcxx-v1)
-
-Paste the block below as-is into the `ue5-libcxx-v1` GitHub Release description, filling in the sha256 line first.
-
-```markdown
-This asset (`ue5-libcxx.tar.gz`) is a repacked copy of the UE-tree libc++/libc++abi headers and x86_64 static libraries (`Engine/Source/ThirdParty/Unix/LibCxx`), produced by `scripts/toolchain/make_libcxx_tarball.sh`, for use by the `ghcr.io/autowarefoundation/carla-ue5-toolchain` CI toolchain image.
-It is EULA-safe: Epic's own `libcxx.tps` classifies `Engine/Source/ThirdParty/Unix/LibCxx` as Third Party Software, not Engine Code or Engine Tools, and the UIUC/MIT dual license text (`libcxx_License.txt`) is included in this tarball.
-The Unreal Engine EULA states that additional third-party license terms take precedence over the EULA on any inconsistency with regard to that Third Party Software, and the libc++/libc++abi license grants redistribution.
-The build recipe for these artifacts, `BuildLibCxx.sh`, is itself publicly distributed by Epic inside the same CDN-hosted native toolchain tarball this image downloads, so nothing about the recipe or the artifacts here is confidential.
-This tarball contains no Unreal Engine Code and no Engine Tools: only the third-party libc++/libc++abi build output, its license text, Epic's TPS metadata, and a provenance note.
-SHA256: <fill at upload time from scripts/toolchain/make_libcxx_tarball.sh output>
-Sources: [UE EULA](https://www.unrealengine.com/eula/unreal), [UE EULA (PDF)](https://cdn2.unrealengine.com/unreal-engine-end-user-license-agreement-d2812e10c642.pdf), [Unreal Containers: EULA Restrictions](https://unrealcontainers.com/docs/obtaining-images/eula-restrictions), [UE Native Toolchain docs](https://dev.epicgames.com/documentation/en-us/unreal-engine/native-toolchain?application_version=4.27).
-```
