@@ -9,9 +9,12 @@ carla-ros-bridge involved. This doc is the one-command-per-step bring-up.
 - CARLA editor: `cmake --build Build/Development --target carla-unreal-editor`
   (checked by `scripts/phase_b/verify_editor_artifact.sh`, which fails loudly
   if the editor plugin `.so` is stale relative to CARLA HEAD).
-- Extension: `CARLA_ROOT=~/src/carla-autoware-integration CARLA_UNREAL_ENGINE_PATH=~/src/UnrealEngine cmake --build extension/build -j`
-  (produces `extension/build/libcarla-autoware-extension.so`, entrypoint
-  `carla_ros2_extension_init`).
+- Extension: `source /opt/ros/jazzy/setup.bash && cmake -S extension -B extension/build -G Ninja && cmake --build extension/build -j`
+  (needs `ros-jazzy-autoware-control-msgs`, `ros-jazzy-autoware-vehicle-msgs`, and
+  `ros-jazzy-geometry-msgs` installed; produces
+  `extension/build/libcarla-autoware-extension.so`, entrypoint
+  `carla_ros2_extension_init`. The build-tree RUNPATH points at the ROS
+  libraries, so carla-server dlopens the `.so` without extra environment.)
 
 ## 2. Container up + carla_msgs
 
