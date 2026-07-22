@@ -72,11 +72,6 @@ jobs:
             ros-jazzy-geometry-msgs
       - name: Configure and build extension
         run: |
-          # CARLA_ROOT is read only by the pre-migration extension CMake (a
-          # hard env check); it becomes inert once phase-b/7-ros2-msgs lands
-          # and can be dropped in a follow-up housekeeping PR.
-          export CARLA_ROOT=/tmp/carla-stub
-          mkdir -p "$CARLA_ROOT"
           source /opt/ros/jazzy/setup.bash
           cmake -S extension -B /tmp/build-ci -G Ninja
           cmake --build /tmp/build-ci -j"$(nproc)"
