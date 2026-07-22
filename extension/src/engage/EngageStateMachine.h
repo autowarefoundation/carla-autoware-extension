@@ -25,9 +25,9 @@
 //   $ ros2 interface show autoware_vehicle_msgs/msg/Engage
 //   builtin_interfaces/Time stamp
 //   bool engage
-// matches the expected field order exactly; extracted verbatim into
-// extension/msg/autoware_vehicle_msgs/Engage.msg (same .msg-extraction
-// precedent as the other committed message types).
+// matches the expected field order exactly, as used directly via the
+// rosidl-generated autoware_vehicle_msgs::msg::Engage type (no hand-copied
+// .msg extraction needed now that the rosidl codec is the message layer).
 //
 // PUBLISHER-SIDE DURABILITY: no node in the image PUBLISHES `/autoware/engage`
 // (it is fed externally -- by design, since it is the deprecated topic path);

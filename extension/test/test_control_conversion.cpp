@@ -167,7 +167,7 @@ CarlaRos2Host MakeFakeHost() {
 }
 
 // Byte-exact Control CDR buffer via the rosidl codec (replaces the former hand
-// CdrWriter builder now that Control is a generated message type).
+// serializer now that Control is a generated message type).
 std::vector<uint8_t> serialize_control(const autoware_control_msgs::msg::Control& c) {
   std::vector<uint8_t> b;
   cdr_serialize(c, b);

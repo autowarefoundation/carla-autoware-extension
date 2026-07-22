@@ -24,7 +24,6 @@ set(ROS_MSG_LIBS
 # from the test binary.
 add_library(extension-objects OBJECT
   src/version.cpp
-  src/messages/AutowareMessages.cpp
   src/messages/RosIdl.cpp
   src/publishers/StatusPublishers.cpp
   src/publishers/GnssPosePublisher.cpp

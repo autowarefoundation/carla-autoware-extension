@@ -1,6 +1,0 @@
-# Generated C preprocessor include of pinned RIHS01 goldens. Prettier
-# has no C parser and prose-wraps it, splitting `#define` directives across lines
-# and corrupting the file; it is regenerated verbatim by the compute step, never
-# hand-edited, so formatting it serves no purpose.
-extension/src/messages/AwGoldens.inc
-extension/src/publishers/GeoGoldens.inc

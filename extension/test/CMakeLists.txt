@@ -2,7 +2,7 @@
 # distro's prebuilt libraries link cleanly — no from-source build needed.
 find_package(GTest REQUIRED)
 
-add_executable(extension_tests test_smoke.cpp test_messages.cpp test_status_publishers.cpp
+add_executable(extension_tests test_smoke.cpp test_status_publishers.cpp
   test_gnss_pose.cpp test_control_conversion.cpp test_engage.cpp test_init.cpp
   test_rosidl.cpp)
 # src/ is added so the tests can reach implementation-detail headers (e.g.

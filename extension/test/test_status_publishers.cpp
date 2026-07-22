@@ -98,7 +98,7 @@ class StatusPublishersTest : public ::testing::Test {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Init wires exactly six publishers: right topic, right AwTopicInfo type name /
+// Init wires exactly six publishers: right topic, right type name /
 // hash, and the status QoS (reliable / volatile / keep-last-1) on every one.
 // ---------------------------------------------------------------------------
 TEST_F(StatusPublishersTest, init_creates_six_publishers_with_topics_typeinfo_and_qos) {

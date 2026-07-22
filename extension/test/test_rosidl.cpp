@@ -26,10 +26,11 @@ namespace ac = autoware_control_msgs::msg;
 namespace gm = geometry_msgs::msg;
 
 // ===========================================================================
-// RIHS01 hash equivalence. The pinned strings are the former AwGoldens.inc /
-// GeoGoldens.inc goldens, computed from the .msg closure extracted out of the
-// pinned Humble Autoware image and verified against real Autoware wiring at
-// the G0 gate. The runtime hashes from the Jazzy apt packages MUST equal them:
+// RIHS01 hash equivalence. The pinned strings are the former hand-computed
+// RIHS01 goldens (previously carried in generated .inc headers), computed
+// from the .msg closure extracted out of the pinned Humble Autoware image
+// and verified against real Autoware wiring at the G0 gate. The runtime
+// hashes from the Jazzy apt packages MUST equal them:
 // this is the proof that the apt-installed definitions are wire-identical to
 // what the Humble container speaks.
 // ===========================================================================

@@ -65,7 +65,7 @@ CarlaRos2Host MakeFakeHost() {
 
 // Engage.msg (autoware_vehicle_msgs/msg/Engage): { builtin_interfaces/Time
 // stamp; bool engage }. Serialized through the rosidl codec (replaces the
-// former hand CdrWriter builder now that Engage is a generated message type).
+// former hand serializer now that Engage is a generated message type).
 std::vector<uint8_t> serialize_engage(int32_t sec, uint32_t nsec, bool engaged) {
   autoware_vehicle_msgs::msg::Engage m;
   m.stamp.sec = sec;

@@ -44,7 +44,7 @@ void EngageStateMachine::Init(const CarlaRos2Host& host) {
   // autoware_vehicle_msgs/Engage. Like ControlSubscribers' *Command topics,
   // the CycloneDDS blob subscriber ignores type_hash, so "" is
   // correct -- no RIHS01 golden was computed for Engage (out of scope here;
-  // see the AwGoldens.inc message-golden precedent for how one would be added).
+  // see test_rosidl.cpp's RIHS01 golden precedent for how one would be added).
   host_.create_subscriber(
       host_.host_ctx, "/autoware/engage", "autoware_vehicle_msgs::msg::dds_::Engage_", "", &qos,
       [](void* user, const uint8_t* cdr, size_t len) {
