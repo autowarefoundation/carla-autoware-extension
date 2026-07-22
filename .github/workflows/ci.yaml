@@ -27,7 +27,23 @@ jobs:
       - if: ${{ hashFiles('tests/**') != '' }}
         run: pytest tests/ -v
 
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has_ext: ${{ steps.check.outputs.has_ext }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -n "$(git ls-files extension/)" ]; then
+            echo "has_ext=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_ext=false" >> "$GITHUB_OUTPUT"
+          fi
+
   cpp-tests:
+    needs: detect
+    if: ${{ needs.detect.outputs.has_ext == 'true' }}
     runs-on: ubuntu-latest
     # Slim UE5 toolchain image (third-party OSS only; see docs/toolchain-image.md).
     # Moving tag by design until the first image build publishes an immutable
@@ -36,10 +52,7 @@ jobs:
       image: ghcr.io/autowarefoundation/carla-ue5-toolchain:24.04
     steps:
       - uses: actions/checkout@v4
-      # extension/ lands with the Phase B PR stack; until then every step
-      # below is skipped (same hashFiles guard pattern as the pytest job).
-      - if: ${{ hashFiles('extension/**') != '' }}
-        name: Fetch pinned CARLA CMake toolchain (upstream, sparse)
+      - name: Fetch pinned CARLA CMake toolchain (upstream, sparse)
         run: |
           git init /tmp/carla
           git -C /tmp/carla remote add origin https://github.com/carla-simulator/carla.git
@@ -47,20 +60,17 @@ jobs:
           git -C /tmp/carla fetch --filter=blob:none --depth 1 origin 0a5ce0d5b4952bd8294a163c12d49f197bdb2aba
           git -C /tmp/carla checkout FETCH_HEAD
           test -f /tmp/carla/CMake/Toolchain.cmake
-      - if: ${{ hashFiles('extension/**') != '' }}
-        name: Install CycloneDDS (bridge — extension references no dds_* symbols)
+      - name: Install CycloneDDS (bridge — extension references no dds_* symbols)
         run: |
           apt-get update
           apt-get install -y --no-install-recommends cyclonedds-dev
-      - if: ${{ hashFiles('extension/**') != '' }}
-        name: Configure and build extension
+      - name: Configure and build extension
         run: |
           export CARLA_ROOT=/tmp/carla
           cmake -S extension -B /tmp/build-ci -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/extension/toolchain/CarlaExtension.cmake"
           cmake --build /tmp/build-ci -j"$(nproc)"
-      - if: ${{ hashFiles('extension/**') != '' }}
-        name: Run extension unit tests
+      - name: Run extension unit tests
         run: |
           set +e
           out=$(/tmp/build-ci/test/extension_tests); status=$?
