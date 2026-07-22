@@ -34,4 +34,4 @@ Ubuntu 24.04 base plus distro packages (build-essential, ninja-build, cmake,
 git, curl), under their respective Ubuntu/upstream licenses.
 
 Full analysis: `docs/toolchain-image.md` in
-https://github.com/autowarefoundation/carla-autoware-extension
+<https://github.com/autowarefoundation/carla-autoware-extension>
