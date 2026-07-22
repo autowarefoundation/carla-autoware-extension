@@ -3,22 +3,15 @@
 #include <cstdint>
 #include <vector>
 
-#include "GeoGoldens.inc"  // GENERATED: AW_GOLDEN_PoseStamped / _PoseWithCovarianceStamped
+#include <builtin_interfaces/msg/time.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+
 #include "carla/autoware/geo/MgrsOffset.h"
-#include "carla/autoware/messages/Cdr.h"
+#include "carla/autoware/messages/RosIdl.h"
 
 namespace carla {
 namespace autoware {
-
-// DDS type names (rmw_cyclonedds convention: `pkg::msg::dds_::Type_`), matching
-// the AutowareMessages.cpp style. These are hand-authored; the RIHS01 hashes are
-// the generated goldens. This .cpp is the ONE TU that includes GeoGoldens.inc.
-const char* pose_stamped_type_name() { return "geometry_msgs::msg::dds_::PoseStamped_"; }
-const char* pose_stamped_type_hash() { return AW_GOLDEN_PoseStamped; }
-const char* pose_with_covariance_stamped_type_name() {
-  return "geometry_msgs::msg::dds_::PoseWithCovarianceStamped_";
-}
-const char* pose_with_covariance_stamped_type_hash() { return AW_GOLDEN_PoseWithCovarianceStamped; }
 
 // AWSIM GNSS QoS: RELIABLE / VOLATILE / KEEP_LAST depth 1 (same encoding as the
 // status publishers; CarlaRos2Extension.h documents the field meanings --
@@ -26,35 +19,19 @@ const char* pose_with_covariance_stamped_type_hash() { return AW_GOLDEN_PoseWith
 static CarlaRos2Qos GnssQos() { return CarlaRos2Qos{/*reliability=*/0u, /*durability=*/0u,
                                                     /*history_depth=*/1u}; }
 
-// geometry_msgs/Pose in the `map` frame: Header(stamp, frame_id "map") then
-// Point(x,y,z) + Quaternion(x,y,z,w), all float64. This is the shared prefix of
-// BOTH published messages -- PoseStamped ends here; PoseWithCovarianceStamped
-// appends the covariance. frame_id is publisher policy ("map"), written here
-// rather than carried on a POD.
-static void write_map_pose_prefix(CdrWriter& w, int32_t sec, uint32_t nanosec, double x, double y,
-                                  double z, double qx, double qy, double qz, double qw) {
-  w.i32(sec);
-  w.u32(nanosec);
-  w.str("map");
-  w.f64(x);
-  w.f64(y);
-  w.f64(z);
-  w.f64(qx);
-  w.f64(qy);
-  w.f64(qz);
-  w.f64(qw);
-}
-
 void GnssPosePublisher::Init(const CarlaRos2Host& host) {
   host_ = host;
+  using geometry_msgs::msg::PoseStamped;
+  using geometry_msgs::msg::PoseWithCovarianceStamped;
   // create_publisher takes `const CarlaRos2Qos*`; bind an lvalue whose lifetime
   // spans both synchronous calls (never pass the address of a temporary).
   const CarlaRos2Qos qos = GnssQos();
-  pose_ = host_.create_publisher(host_.host_ctx, "/sensing/gnss/pose", pose_stamped_type_name(),
-                                 pose_stamped_type_hash(), &qos);
+  pose_ = host_.create_publisher(host_.host_ctx, "/sensing/gnss/pose",
+                                 dds_type_name<PoseStamped>(),
+                                 rihs01_hash<PoseStamped>().c_str(), &qos);
   pose_cov_ = host_.create_publisher(host_.host_ctx, "/sensing/gnss/pose_with_covariance",
-                                     pose_with_covariance_stamped_type_name(),
-                                     pose_with_covariance_stamped_type_hash(), &qos);
+                                     dds_type_name<PoseWithCovarianceStamped>(),
+                                     rihs01_hash<PoseWithCovarianceStamped>().c_str(), &qos);
 }
 
 void GnssPosePublisher::OnVehicleStatus(const CarlaRos2VehicleStatusView& v) {
@@ -79,27 +56,39 @@ void GnssPosePublisher::OnVehicleStatus(const CarlaRos2VehicleStatusView& v) {
   const auto [qx, qy, qz, qw] = carla_quat_to_mgrs(v.transform.qx, v.transform.qy, v.transform.qz,
                                                    v.transform.qw);
 
-  // Split the ROS 2 sim clock into builtin_interfaces/Time (sec, nanosec).
-  const int32_t sec = static_cast<int32_t>(t);
-  const uint32_t nanosec = static_cast<uint32_t>((t - static_cast<double>(sec)) * 1e9);
+  // geometry_msgs/PoseStamped in the `map` frame; the frame is publisher
+  // policy, set explicitly on the message header.
+  geometry_msgs::msg::PoseStamped ps;
+  ps.header.stamp.sec = static_cast<int32_t>(t);
+  ps.header.stamp.nanosec =
+      static_cast<uint32_t>((t - static_cast<double>(ps.header.stamp.sec)) * 1e9);
+  ps.header.frame_id = "map";
+  ps.pose.position.x = mx;
+  ps.pose.position.y = my;
+  ps.pose.position.z = mz;
+  ps.pose.orientation.x = qx;
+  ps.pose.orientation.y = qy;
+  ps.pose.orientation.z = qz;
+  ps.pose.orientation.w = qw;
 
-  CdrWriter wp;
-  write_map_pose_prefix(wp, sec, nanosec, mx, my, mz, qx, qy, qz, qw);
-  host_.publish(host_.host_ctx, pose_, wp.bytes().data(), wp.bytes().size());
+  std::vector<uint8_t> buf;
+  cdr_serialize(ps, buf);
+  host_.publish(host_.host_ctx, pose_, buf.data(), buf.size());
 
-  CdrWriter wc;
-  write_map_pose_prefix(wc, sec, nanosec, mx, my, mz, qx, qy, qz, qw);  // same header+pose prefix
-  // PoseWithCovariance appends a float64[36] row-major covariance. It is a
-  // FIXED-size array, so there is NO uint32 length prefix -- the 36 f64 are
-  // written straight. A small diagonal (x,y,z, roll,pitch,yaw) marks the pose as
+  // PoseWithCovarianceStamped shares header + pose; the float64[36] row-major
+  // covariance gets a small diagonal (x,y,z, roll,pitch,yaw) marking the pose
   // trustworthy-but-not-perfect; off-diagonal terms are zero.
+  geometry_msgs::msg::PoseWithCovarianceStamped pc;
+  pc.header = ps.header;
+  pc.pose.pose = ps.pose;
   const double diag[6] = {0.1, 0.1, 0.1, 0.05, 0.05, 0.05};
   for (int row = 0; row < 6; ++row) {
     for (int col = 0; col < 6; ++col) {
-      wc.f64(row == col ? diag[row] : 0.0);
+      pc.pose.covariance[row * 6 + col] = (row == col) ? diag[row] : 0.0;
     }
   }
-  host_.publish(host_.host_ctx, pose_cov_, wc.bytes().data(), wc.bytes().size());
+  cdr_serialize(pc, buf);
+  host_.publish(host_.host_ctx, pose_cov_, buf.data(), buf.size());
 }
 
 }  // namespace autoware

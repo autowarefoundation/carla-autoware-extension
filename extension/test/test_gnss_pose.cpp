@@ -7,8 +7,11 @@
 #include <utility>
 #include <vector>
 
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+
 #include "carla/autoware/geo/MgrsOffset.h"
-#include "carla/autoware/messages/Cdr.h"
+#include "carla/autoware/messages/RosIdl.h"
 #include "publishers/GnssPosePublisher.h"
 
 using namespace carla::autoware;
@@ -165,6 +168,9 @@ class GnssPoseTest : public ::testing::Test {
 // the computed RIHS01 goldens, and AWSIM GNSS QoS (reliable/volatile/depth-1).
 // ---------------------------------------------------------------------------
 TEST_F(GnssPoseTest, init_creates_two_publishers_with_topics_typeinfo_and_qos) {
+  using geometry_msgs::msg::PoseStamped;
+  using geometry_msgs::msg::PoseWithCovarianceStamped;
+
   GnssPosePublisher pub;
   pub.Init(MakeFakeHost());
 
@@ -173,18 +179,17 @@ TEST_F(GnssPoseTest, init_creates_two_publishers_with_topics_typeinfo_and_qos) {
   const FakePub& p0 = state_.pubs[0];
   EXPECT_EQ(p0.topic, "/sensing/gnss/pose");
   EXPECT_EQ(p0.type_name, "geometry_msgs::msg::dds_::PoseStamped_");
-  EXPECT_EQ(p0.type_name, pose_stamped_type_name());
-  EXPECT_EQ(p0.type_hash, pose_stamped_type_hash());
+  EXPECT_EQ(p0.type_name, dds_type_name<PoseStamped>());
+  EXPECT_EQ(p0.type_hash, rihs01_hash<PoseStamped>());
 
   const FakePub& p1 = state_.pubs[1];
   EXPECT_EQ(p1.topic, "/sensing/gnss/pose_with_covariance");
   EXPECT_EQ(p1.type_name, "geometry_msgs::msg::dds_::PoseWithCovarianceStamped_");
-  EXPECT_EQ(p1.type_name, pose_with_covariance_stamped_type_name());
-  EXPECT_EQ(p1.type_hash, pose_with_covariance_stamped_type_hash());
+  EXPECT_EQ(p1.type_name, dds_type_name<PoseWithCovarianceStamped>());
+  EXPECT_EQ(p1.type_hash, rihs01_hash<PoseWithCovarianceStamped>());
 
   // Both goldens are real RIHS01_<64hex> (never an empty/placeholder string).
-  for (const char* h : {pose_stamped_type_hash(), pose_with_covariance_stamped_type_hash()}) {
-    const std::string s = h;
+  for (const std::string& s : {rihs01_hash<PoseStamped>(), rihs01_hash<PoseWithCovarianceStamped>()}) {
     EXPECT_EQ(s.substr(0, 7), "RIHS01_");
     EXPECT_EQ(s.size(), 7u + 64u);
   }
@@ -199,10 +204,10 @@ TEST_F(GnssPoseTest, init_creates_two_publishers_with_topics_typeinfo_and_qos) {
 }
 
 // ---------------------------------------------------------------------------
-// (b) OnVehicleStatus at t=0 publishes BOTH; the PoseStamped bytes parse back to
-// stamp (sec/nsec), frame_id "map", position = MGRS transform of the input cm
-// values, orientation = the mapped quaternion. Fields are read in wire order
-// (the reader handles alignment) rather than hardcoding byte offsets.
+// (b) OnVehicleStatus at t=0 publishes BOTH; the PoseStamped bytes deserialize
+// back to stamp (sec/nsec), frame_id "map", position = MGRS transform of the
+// input cm values, orientation = the mapped quaternion. cdr_deserialize walks
+// the generated rosidl layout (no hardcoded byte offsets).
 // ---------------------------------------------------------------------------
 TEST_F(GnssPoseTest, on_vehicle_status_publishes_pose_stamped_with_expected_fields) {
   GnssPosePublisher pub;
@@ -222,18 +227,18 @@ TEST_F(GnssPoseTest, on_vehicle_status_publishes_pose_stamped_with_expected_fiel
   const auto [eqx, eqy, eqz, eqw] = carla_quat_to_mgrs(0.0, 0.0, kS45, kS45);
 
   const auto& b = state_.published[0].second;
-  CdrReader r(b.data(), b.size());
-  EXPECT_EQ(r.i32(), 0);        // stamp.sec
-  EXPECT_EQ(r.u32(), 0u);       // stamp.nanosec
-  EXPECT_EQ(r.str(), "map");    // header.frame_id
-  EXPECT_DOUBLE_EQ(r.f64(), mx);
-  EXPECT_DOUBLE_EQ(r.f64(), my);
-  EXPECT_DOUBLE_EQ(r.f64(), mz);
-  EXPECT_DOUBLE_EQ(r.f64(), eqx);
-  EXPECT_DOUBLE_EQ(r.f64(), eqy);
-  EXPECT_DOUBLE_EQ(r.f64(), eqz);
-  EXPECT_DOUBLE_EQ(r.f64(), eqw);
-  EXPECT_TRUE(r.ok());
+  geometry_msgs::msg::PoseStamped m;
+  ASSERT_TRUE(cdr_deserialize(b.data(), b.size(), m));
+  EXPECT_EQ(m.header.stamp.sec, 0);        // stamp.sec
+  EXPECT_EQ(m.header.stamp.nanosec, 0u);   // stamp.nanosec
+  EXPECT_EQ(m.header.frame_id, "map");     // header.frame_id
+  EXPECT_DOUBLE_EQ(m.pose.position.x, mx);
+  EXPECT_DOUBLE_EQ(m.pose.position.y, my);
+  EXPECT_DOUBLE_EQ(m.pose.position.z, mz);
+  EXPECT_DOUBLE_EQ(m.pose.orientation.x, eqx);
+  EXPECT_DOUBLE_EQ(m.pose.orientation.y, eqy);
+  EXPECT_DOUBLE_EQ(m.pose.orientation.z, eqz);
+  EXPECT_DOUBLE_EQ(m.pose.orientation.w, eqw);
   // Exact wire size: 4 encaps + [sec4 nsec4 str(4+4)] + 7*f64 = 4 + 16 + 56 = 76.
   EXPECT_EQ(b.size(), 76u);
 }
@@ -241,9 +246,9 @@ TEST_F(GnssPoseTest, on_vehicle_status_publishes_pose_stamped_with_expected_fiel
 // ---------------------------------------------------------------------------
 // (c) The PoseWithCovarianceStamped payload = the SAME header+pose prefix, then
 // EXACTLY 36 float64 covariance values (fixed-size float64[36] -> NO length
-// prefix) with the small diagonal {0.1,0.1,0.1,0.05,0.05,0.05} and zeros
-// elsewhere. Total byte size is asserted so a stray length prefix or missing
-// element is caught.
+// prefix in the wire form) with the small diagonal {0.1,0.1,0.1,0.05,0.05,0.05}
+// and zeros elsewhere. Total byte size is asserted so a stray length prefix or
+// missing element is caught.
 // ---------------------------------------------------------------------------
 TEST_F(GnssPoseTest, pose_with_covariance_has_36_element_diagonal_no_length_prefix) {
   GnssPosePublisher pub;
@@ -258,28 +263,28 @@ TEST_F(GnssPoseTest, pose_with_covariance_has_36_element_diagonal_no_length_pref
   const auto [eqx, eqy, eqz, eqw] = carla_quat_to_mgrs(0.0, 0.0, kS45, kS45);
 
   const auto& b = state_.published[1].second;
-  CdrReader r(b.data(), b.size());
-  EXPECT_EQ(r.i32(), 0);
-  EXPECT_EQ(r.u32(), 0u);
-  EXPECT_EQ(r.str(), "map");
-  EXPECT_DOUBLE_EQ(r.f64(), mx);
-  EXPECT_DOUBLE_EQ(r.f64(), my);
-  EXPECT_DOUBLE_EQ(r.f64(), mz);
-  EXPECT_DOUBLE_EQ(r.f64(), eqx);
-  EXPECT_DOUBLE_EQ(r.f64(), eqy);
-  EXPECT_DOUBLE_EQ(r.f64(), eqz);
-  EXPECT_DOUBLE_EQ(r.f64(), eqw);
+  geometry_msgs::msg::PoseWithCovarianceStamped m;
+  ASSERT_TRUE(cdr_deserialize(b.data(), b.size(), m));
+  EXPECT_EQ(m.header.stamp.sec, 0);
+  EXPECT_EQ(m.header.stamp.nanosec, 0u);
+  EXPECT_EQ(m.header.frame_id, "map");
+  EXPECT_DOUBLE_EQ(m.pose.pose.position.x, mx);
+  EXPECT_DOUBLE_EQ(m.pose.pose.position.y, my);
+  EXPECT_DOUBLE_EQ(m.pose.pose.position.z, mz);
+  EXPECT_DOUBLE_EQ(m.pose.pose.orientation.x, eqx);
+  EXPECT_DOUBLE_EQ(m.pose.pose.orientation.y, eqy);
+  EXPECT_DOUBLE_EQ(m.pose.pose.orientation.z, eqz);
+  EXPECT_DOUBLE_EQ(m.pose.pose.orientation.w, eqw);
 
-  // float64[36] is a FIXED-size array: read 36 f64 straight, NO u32 length.
+  // float64[36] is a FIXED-size array: exactly 36 elements, NO length prefix.
   const double diag[6] = {0.1, 0.1, 0.1, 0.05, 0.05, 0.05};
   for (int row = 0; row < 6; ++row) {
     for (int col = 0; col < 6; ++col) {
-      const double got = r.f64();
+      const double got = m.pose.covariance[row * 6 + col];
       const double want = (row == col) ? diag[row] : 0.0;
       EXPECT_DOUBLE_EQ(got, want) << "covariance[" << row << "][" << col << "]";
     }
   }
-  EXPECT_TRUE(r.ok());
   // 4 encaps + 16 header + 56 pose + 36*8 covariance = 4 + 16 + 56 + 288 = 364.
   EXPECT_EQ(b.size(), 364u);
 }
