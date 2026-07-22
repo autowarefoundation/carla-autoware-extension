@@ -51,6 +51,11 @@ jobs:
     # toolchain is required; a libstdc++ .so coexists with the libc++ host.
     container:
       image: ros:jazzy
+    # ros:jazzy resolves the default step shell to dash; force bash so that
+    # `source /opt/ros/jazzy/setup.bash` (a bash script) is available.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Install build and message dependencies
