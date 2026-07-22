@@ -46,6 +46,7 @@ built by Epic's publicly distributed BuildLibCxx.sh. x86_64 only.
 EOF
 
 mkdir -p "$OUT_DIR"
-tar -C "$STAGE" -czf "$OUT_DIR/ue5-libcxx.tar.gz" Unix Licenses
+tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+  -C "$STAGE" -cf - Unix Licenses | gzip -n > "$OUT_DIR/ue5-libcxx.tar.gz"
 (cd "$OUT_DIR" && sha256sum ue5-libcxx.tar.gz | tee ue5-libcxx.tar.gz.sha256)
 echo "OK: wrote $OUT_DIR/ue5-libcxx.tar.gz"

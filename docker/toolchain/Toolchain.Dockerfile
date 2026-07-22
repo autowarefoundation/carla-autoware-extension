@@ -27,7 +27,7 @@ RUN mkdir -p /unreal-engine/Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x
     rm /tmp/toolchain.tar.gz
 
 ARG LIBCXX_URL=https://github.com/autowarefoundation/carla-autoware-extension/releases/download/ue5-libcxx-v1/ue5-libcxx.tar.gz
-ARG LIBCXX_SHA256=06f68f0ee55daafde8ec391952d8ced9049408878e7c779cad83920f45ab90d5
+ARG LIBCXX_SHA256=9c454632d46ba5085904368c5ee4347da2b1d277e9c74cfbf3a7a0072c96c1fc
 # LibCxx bundle repacked by scripts/toolchain/make_libcxx_tarball.sh
 # (license text, Epic TPS metadata, and PROVENANCE.md ride inside).
 RUN mkdir -p /unreal-engine/Engine/Source/ThirdParty && \
