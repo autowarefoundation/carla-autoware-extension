@@ -43,6 +43,89 @@ bash "$REPO/scripts/phase_b/verify_editor_artifact.sh"
 # line to diagnose it from.
 python3 -m runner --extension-check --extension-so "$EXT_SO"
 
+# Preflight: the host `carla` python module must expose carla.World.set_publish_tf.
+#
+# runner/__main__.py calls `world.set_publish_tf(False)` UNCONDITIONALLY, before
+# spawning any actor (so Autoware -- not CARLA -- owns the localization TF tree).
+# The carla wheel pip-installed into ~/.local (May 15) PREDATES that API and
+# lacks the method, so the runner would AttributeError mid-spawn -- but only
+# AFTER the 2-5 min editor boot, with the ego half-attached and CARLA already
+# up. Catch it here, cheaply, before the boot is ever paid for.
+#
+# The fork ships a fresh wheel, but it bundles the native `carla*.so` extension
+# module, so it CANNOT be imported zip-style off PYTHONPATH (CPython will not
+# dlopen a .so from inside a .whl/zip) -- it must be EXTRACTED to a real
+# directory first, and that directory prepended to PYTHONPATH. A PYTHONPATH
+# entry sorts ahead of ~/.local/site-packages in sys.path, so the stale install
+# is SHADOWED without uninstalling it (leaving the operator's pip state alone).
+CARLA_WHEEL_CACHE=/tmp/carla-phase-b-carla-wheel
+carla_has_set_publish_tf() {
+  # 0 = fresh (method present); non-zero = stale OR carla not importable at all
+  # (both cases want the wheel injected below). stderr hushed so a bare "no
+  # carla installed" ImportError does not masquerade as a script error.
+  python3 - <<'PY' 2>/dev/null
+import sys
+try:
+    import carla
+except Exception:
+    sys.exit(1)
+sys.exit(0 if hasattr(carla.World, "set_publish_tf") else 1)
+PY
+}
+
+if carla_has_set_publish_tf; then
+  echo "OK: host carla module already exposes World.set_publish_tf"
+else
+  # Locate the fork's fresh wheel. Glob (not a literal path) because the cp312
+  # ABI tag moves with the interpreter; the pinned dist dir only ever holds the
+  # one 0.10.0 build. Fail loudly with the expected path so a missing/never-built
+  # PythonAPI is diagnosable, not a silent stale-import that surfaces mid-spawn.
+  shopt -s nullglob
+  wheels=("$CARLA_ROOT"/Build/Development/PythonAPI/dist/carla-0.10.0-*.whl)
+  shopt -u nullglob
+  if [ "${#wheels[@]}" -eq 0 ]; then
+    echo "PREFLIGHT FAIL: host carla lacks World.set_publish_tf and no fork wheel found at" >&2
+    echo "  $CARLA_ROOT/Build/Development/PythonAPI/dist/carla-0.10.0-*.whl" >&2
+    echo "  build the fork PythonAPI first (in \$CARLA_ROOT: make PythonAPI)." >&2
+    exit 1
+  fi
+  WHEEL="${wheels[0]}"
+
+  # Idempotent extract: re-extract ONLY when the wheel is newer than our marker.
+  # `touch` stamps the marker at extraction time, so an unchanged wheel is never
+  # "newer" and the (comparatively slow) unzip is skipped on repeat runs; a
+  # rebuilt PythonAPI bumps the wheel mtime past the marker and refreshes the
+  # cache automatically.
+  MARKER="$CARLA_WHEEL_CACHE/.extracted"
+  if [ ! -e "$MARKER" ] || [ "$WHEEL" -nt "$MARKER" ]; then
+    rm -rf "$CARLA_WHEEL_CACHE"
+    mkdir -p "$CARLA_WHEEL_CACHE"
+    # `python3 -m zipfile -e`, not `unzip`: python3 is already a hard dependency
+    # of this harness (it runs the runner), whereas unzip may not be installed.
+    python3 -m zipfile -e "$WHEEL" "$CARLA_WHEEL_CACHE"
+    touch "$MARKER"
+    echo "OK: extracted fork carla wheel -> $CARLA_WHEEL_CACHE ($(basename "$WHEEL"))"
+  else
+    echo "OK: reusing extracted fork carla wheel at $CARLA_WHEEL_CACHE"
+  fi
+
+  # Prepend so it shadows the stale ~/.local install for THIS process and the
+  # runner it execs at the end. Also PRINTED because the G1-G3 gate scripts run
+  # `python3 ... import carla` on the host in the OPERATOR's shell -- a separate
+  # process this export cannot reach -- so they need the same recipe applied by
+  # hand (copy the `export` line below into that shell before running a gate).
+  export PYTHONPATH="$CARLA_WHEEL_CACHE${PYTHONPATH:+:$PYTHONPATH}"
+  echo "OK: export PYTHONPATH=$CARLA_WHEEL_CACHE:\$PYTHONPATH  # gate scripts in this shell need this too"
+
+  if ! carla_has_set_publish_tf; then
+    echo "PREFLIGHT FAIL: injected fork wheel STILL lacks World.set_publish_tf" >&2
+    echo "  extracted: $CARLA_WHEEL_CACHE   wheel: $WHEEL" >&2
+    echo "  the fork PythonAPI build is itself stale -- rebuild it (in \$CARLA_ROOT: make PythonAPI)." >&2
+    exit 1
+  fi
+  echo "OK: fork carla wheel injected; World.set_publish_tf present"
+fi
+
 port_bound() {
   local out
   # Captured into a variable rather than piped to `grep -q`: grep -q can close its
