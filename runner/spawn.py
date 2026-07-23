@@ -71,6 +71,17 @@ _TOP_LIDAR_CHANNELS = "128"
 _TOP_LIDAR_ROTATION_FREQUENCY = "10"
 _TOP_LIDAR_RANGE = "120.0"
 
+# sensor_tick pins the capture period (sim seconds) so each cloud is a fixed 0.05 s
+# accumulation REGARDLESS of the host loop mode. In sync (0.05 fixed delta) this matches the
+# tick, so it is a no-op -- one ~half-rotation cloud per tick at ~20 Hz. In ASYNC (the G2
+# propulsion mode) the server free-runs at ~140 fps, and WITHOUT this the native LiDAR emits
+# one thin ~25-deg, ~2k-point slice PER SERVER FRAME (~140 Hz). NDT cannot match those
+# fragments (transform_probability ~3.97, pose jittered ~4 m off ground truth), which would
+# fail G2's 1.0 m goal tolerance even though the ego drives the route. Pinning sensor_tick
+# restores full 0.05 s clouds (~15k points) at 20 Hz in async too, so NDT locks the same as
+# sync. Verified live 2026-07-23. Applied to the IMU as well so it does not flood at ~140 Hz.
+_SENSOR_TICK = "0.05"
+
 
 def ego_attributes() -> dict[str, str]:
     """Ego blueprint attributes: named-ego hero + native Ackermann control opt-in.
@@ -102,6 +113,7 @@ def top_lidar_attributes() -> dict[str, str]:
         "channels": _TOP_LIDAR_CHANNELS,
         "rotation_frequency": _TOP_LIDAR_ROTATION_FREQUENCY,
         "range": _TOP_LIDAR_RANGE,
+        "sensor_tick": _SENSOR_TICK,
     }
 
 
@@ -110,6 +122,7 @@ def imu_attributes() -> dict[str, str]:
     from the extension), so no CARLA GNSS sensor/topic is spawned here."""
     return {
         "ros_topic_name": IMU_TOPIC,
+        "sensor_tick": _SENSOR_TICK,
     }
 
 

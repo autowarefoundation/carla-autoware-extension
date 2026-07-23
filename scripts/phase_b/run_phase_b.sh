@@ -44,6 +44,16 @@ export CYCLONEDDS_URI="file://$REPO/docker/cyclonedds.xml"
 # and the ego spawn, so carla_interface's one-shot load_world cannot wipe the ego.
 WITH_AUTOWARE="${WITH_AUTOWARE:-0}"
 
+# Opt-in async tick loop (the documented G2 fallback -- see the runner launch comment at the
+# foot of this script). Default 0 keeps sync pacing (0.05 fixed delta = 20 Hz), which is what
+# G3's LiDAR-cadence check requires. Set RUNNER_ASYNC=1 for the G2 closed-loop route gate:
+# CARLA 0.10/Chaos vehicles do NOT propel in synchronous mode on this build (control delivered,
+# wheels configured, ego stays at 0 m/s), so route completion is only measurable in async, where
+# MPC-style steering-delay compensation absorbs the loop latency.
+RUNNER_ASYNC="${RUNNER_ASYNC:-0}"
+RUNNER_MODE_ARGS=()
+[ "$RUNNER_ASYNC" = "1" ] && RUNNER_MODE_ARGS+=(--async)
+
 # Fails loudly if the editor plugin .so is older than CARLA HEAD (see the script's
 # own header for the carla-unreal-vs-carla-unreal-editor trap it guards against).
 bash "$REPO/scripts/phase_b/verify_editor_artifact.sh"
@@ -245,7 +255,8 @@ fi
 # the committed runner/config/ copies (see runner/__main__.py), so this harness
 # has nothing kit-specific to override. Sync mode is the runner's default; CARLA
 # 0.10/Chaos vehicles have been observed NOT to propel in synchronous mode on
-# this build (control delivered, wheels configured, ego stays at 0 m/s) -- if a
-# live run reproduces that, rerun with `--async` appended below (the validated
-# fallback; MPC-style steering-delay compensation absorbs the loop latency).
-python3 -m runner --host localhost --port 2000 --map "$MAP"
+# this build (control delivered, wheels configured, ego stays at 0 m/s) -- for the
+# G2 closed-loop route gate set RUNNER_ASYNC=1 (appends --async here; the validated
+# fallback, MPC-style steering-delay compensation absorbs the loop latency). G3's
+# LiDAR-cadence check stays on the sync default so 20 Hz means a real paced cadence.
+python3 -m runner --host localhost --port 2000 --map "$MAP" "${RUNNER_MODE_ARGS[@]}"
