@@ -13,8 +13,12 @@ carla-ros-bridge involved. This doc is the one-command-per-step bring-up.
   (needs `ros-jazzy-autoware-control-msgs`, `ros-jazzy-autoware-vehicle-msgs`, and
   `ros-jazzy-geometry-msgs` installed; produces
   `extension/build/libcarla-autoware-extension.so`, entrypoint
-  `carla_ros2_extension_init`. The build-tree RUNPATH points at the ROS
-  libraries, so carla-server dlopens the `.so` without extra environment.)
+  `carla_ros2_extension_init`. The build links with
+  `-Wl,--disable-new-dtags`, so the `.so` carries a build-tree `DT_RPATH`
+  (not the default `DT_RUNPATH`) pointing at the ROS libraries; unlike
+  `DT_RUNPATH`, which only resolves an object's direct dependencies,
+  `DT_RPATH` propagates to the transitive rosidl/typesupport deps too, so
+  carla-server dlopens the `.so` without extra environment.)
 
 ## 2. Container up + carla_msgs
 

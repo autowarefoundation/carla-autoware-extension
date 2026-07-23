@@ -41,7 +41,21 @@ target_link_libraries(carla-autoware-extension PRIVATE ${ROS_MSG_LIBS})
 # Export ONLY the C ABI entry points: the rosidl/fastcdr internals stay local
 # so they can never cross-bind against same-named symbols inside the
 # carla-server host process (which bundles its own fastcdr).
+#
+# --disable-new-dtags: carla-server dlopen()s this .so from a plain process
+# with NO ROS environment sourced (no setup.bash, no LD_LIBRARY_PATH). CMake's
+# default build-tree tagging uses the modern DT_RUNPATH, which only resolves
+# the object's DIRECT DT_NEEDED entries and does NOT propagate to transitive
+# dependencies. The rosidl typesupport libs we link
+# (libautoware_*__rosidl_typesupport_*.so) carry no RUNPATH of their own, so
+# without this flag THEIR deps (libautoware_*__rosidl_generator_c.so,
+# librosidl_runtime_c.so, ...) are unresolved and the dlopen fails with
+# "cannot open shared object file". The classic DT_RPATH this flag emits
+# instead applies to the WHOLE resolution subtree loaded beneath the object,
+# so transitive deps resolve too. Verified live against carla-server on
+# 2026-07-22 (see docs/running-phase-b.md).
 target_link_options(carla-autoware-extension PRIVATE
+  -Wl,--disable-new-dtags
   -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/version.map)
 set_target_properties(carla-autoware-extension PROPERTIES
   OUTPUT_NAME carla-autoware-extension)
