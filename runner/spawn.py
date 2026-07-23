@@ -47,12 +47,19 @@ IMU_TOPIC = "/sensing/imu/tamagawa/imu_raw"
 # builds from the sensor kit (which has only base_link / sensor_kit_base_link /
 # velodyne_{top,left,right,rear}), so `crop_box_filter_self` cannot transform the cloud
 # and silently drops every frame -- killing the entire localization chain. Naming the
-# frame "velodyne_top" (the kit's top-LiDAR frame, per the report's proven diagnostic)
-# slots the cloud into that tree. The runner owns no TF (`set_publish_tf(False)`), so
-# Autoware places velodyne_top from the SAME kit yamls the mount pose is composed from;
-# the residual velodyne_top vs velodyne_top_base_link offset is sub-cm and immaterial to
-# the G1 gross-error gate. `ros_name` is a real, settable blueprint attribute in the fork
-# (ActorBlueprintFunctionLibrary.cpp:230), so this needs no CARLA rebuild.
+# frame "velodyne_top" (the kit's top-LiDAR sensor frame, per the report's proven
+# diagnostic and the AWSIM convention) slots the cloud into that tree. `ros_name` is a
+# real, settable blueprint attribute in the fork (ActorBlueprintFunctionLibrary.cpp:230),
+# so this needs no CARLA rebuild.
+#
+# KNOWN RESIDUAL (bounded, within the gate): the runner mounts the sensor at the
+# velodyne_top_base_link calibration pose (TOP_LIDAR_FRAME below), but the VLS-128 URDF
+# places the `velodyne_top` sensor frame +0.06611 m in Z above velodyne_top_base_link
+# (vls_description VLS-128.urdf.xacro base_scan_joint). So Autoware's TF interprets the
+# cloud ~6.6 cm higher than the sensor physically sits -- a systematic Z bias well inside
+# the G1 gross-error gate (max_err <= 0.5 m, XY). Zeroing it (mount at velodyne_top by
+# adding that sensor-frame offset, or label the cloud velodyne_top_base_link) is a
+# precision refinement to confirm against the live TF tree in the staged E2E re-run.
 TOP_LIDAR_ROS_NAME = "velodyne_top"
 
 # LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
