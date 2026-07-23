@@ -408,6 +408,58 @@ G2 runs in sync (perfect NDT) and async is not needed — the reverse of the M4-
 - Teleporting the ego (`set_transform`) to reset it desyncs NDT/ekf; reseed `/initialpose` to
   re-lock, and expect the motion-planning trajectory to need a fresh route afterward.
 
+### G2 on-lanelet respawn — original root cause FIXED, gate still FAILs on a new one
+
+Follow-up to the G2 FAIL above. The recorded root cause was that the map's single spawn point
+sits ~7.5 m off the lanelet2 centerline. That was addressed directly (rather than by choosing
+a goal that flatters the gate) by seeding the ego on the centerline via the runner's existing
+`--initial-pose`, plumbed through `run_phase_b.sh` as `RUNNER_EXTRA_ARGS`.
+
+**The targeted root cause is fixed, measured:**
+
+| Quantity                             | Before      | After                |
+| ------------------------------------ | ----------- | -------------------- |
+| Spawn offset from lanelet centerline | **7.478 m** | **0.002 m**          |
+| NDT error at spawn                   | —           | 0.011–0.03 m         |
+| Route planned to an independent goal | —           | 31 segments, 213.8 m |
+
+The 7.478 m figure was measured independently here (segment-wise projection of the ego onto
+lanelet 253's centerline), confirming the earlier ~7.5 m estimate.
+
+**The strict gate still FAILs, for a different and newly-exposed reason.** Best
+`closest_approach` across three runs: **172.05 m** (tol 1.0 m). The ego drives cleanly for
+~36 s under a rock-solid NDT lock (0.02–0.06 m), then **wedges at the first left turn** and
+never recovers. Evidence, from a 5 Hz ground-truth + NDT + control time series:
+
+- **It is a physical obstruction, not a commanded stop.** At the stall the ego holds throttle
+  0.74 with brake **0.00** and displaces 0.000 m. Earlier, speed collapses 3.35 → 0.02 m/s in
+  0.4 s _while throttle is applied and no brake is commanded_ — a collision signature, not
+  deceleration.
+- **Both LEFT corners of the footprint are off the drivable surface** (`project_to_road=False`
+  → NO; front-left 2.497 m and rear-left 2.061 m from lane centre), while both right corners
+  are on it. The ego cut the turn and put its left side onto non-drivable geometry.
+- **Geometry is tight map-wide:** the turn lane is **2.64 m** (map-wide median 3.04 m, min
+  2.00 m over 8490 sampled driving waypoints) against a **1.84 m wide × 4.9 m long** ego —
+  0.40 m clearance per side.
+- **Not speed-induced.** Capping planning to 2.0 m/s (peak 4.14 → 2.31 m/s) moved the stall
+  point only ~2 m further; all three runs wedge at the same corner (~81399–81400, 49933–49935).
+- **NDT divergence is a consequence, not a cause.** NDT held 0.02–0.06 m for the entire 36 s
+  of driving and only diverged (2.0 m, drifting to 3.5 m) _after_ the impact impulse. The
+  earlier `mrm_state 3/2` MRM latch is likewise downstream: on a clean re-seed the stack arms
+  at MRM NORMAL/NONE with a genuine drive command (+0.53 accel).
+
+Per this repo's evidence discipline the FAIL is recorded as measured. Three independent
+attempts (on-lanelet spawn; + MRM suppression; + velocity limit) all terminate at the same
+geometric point, so the remaining blocker is **lane geometry vs vehicle footprint through this
+turn**, not spawn placement, localization, speed, or the false MRM. Closing it is a separate
+workstream (a route whose turns the footprint can clear, a narrower ego, or a
+controller/path-shape change) and is NOT claimed here.
+
+**Also verified this session:** the IMU frame fix does **not** remove the need for
+`use_emergency_handling:=false` — armed without it, the run still ended in MRM (state 3,
+behavior 2) with `is_autonomous_mode_available: false`. The perception-off diagnostics remain
+an independent contributor, exactly as hedged below.
+
 ### IMU frame fix — the `ray_cast__` twin (root-caused + live-verified 2026-07-23)
 
 The false MRM above had a second, structural contributor: the IMU carried `frame_id: imu3`.

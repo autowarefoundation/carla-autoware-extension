@@ -79,8 +79,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--async",
         dest="async_mode",
         action="store_true",
-        help="run the async tick loop (validated fallback: CARLA 0.10/Chaos vehicles do not "
-        "propel in synchronous mode in this build)",
+        help="run the async tick loop. NOT the G2 path: the sync ego does propel given a "
+        "valid drive command (445 m closed-loop drive, 2026-07-23), while async breaks NDT "
+        "(0/34 samples within 1.0 m under a ~140 Hz free-running /clock)",
     )
     return p
 

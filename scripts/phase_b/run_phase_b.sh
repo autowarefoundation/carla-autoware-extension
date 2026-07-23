@@ -61,6 +61,17 @@ RUNNER_ASYNC="${RUNNER_ASYNC:-0}"
 RUNNER_MODE_ARGS=()
 [ "$RUNNER_ASYNC" = "1" ] && RUNNER_MODE_ARGS+=(--async)
 
+# Optional pass-through of extra `python3 -m runner` flags. Added for the G2 on-lanelet spawn:
+# the map exposes exactly ONE spawn point and it sits 7.478 m off the lanelet2 centerline
+# (measured), so the ego starts in a driving lane parallel to any routable goal's lane and the
+# strict 1.0 m goal-arrival gate cannot close. `--initial-pose` seeds the ego on the centerline
+# instead. Example:
+#   RUNNER_EXTRA_ARGS="--initial-pose -284.597 224.709 0.0 0 0 -34.187"
+# Deliberately word-split (unquoted expansion is what allows a multi-flag string); it is an
+# operator-supplied local value, not untrusted input.
+# shellcheck disable=SC2206
+RUNNER_EXTRA_ARGS_ARR=(${RUNNER_EXTRA_ARGS:-})
+
 # Fails loudly if the editor plugin .so is older than CARLA HEAD (see the script's
 # own header for the carla-unreal-vs-carla-unreal-editor trap it guards against).
 bash "$REPO/scripts/phase_b/verify_editor_artifact.sh"
@@ -265,4 +276,5 @@ fi
 # (445 m closed-loop drive, 2026-07-23 -- see the RUNNER_ASYNC comment above for
 # the refutation of the old "sync does not propel" prior), and G3's LiDAR-cadence
 # check needs sync so 20 Hz means a real paced cadence rather than a free-run.
-python3 -m runner --host localhost --port 2000 --map "$MAP" "${RUNNER_MODE_ARGS[@]}"
+python3 -m runner --host localhost --port 2000 --map "$MAP" \
+  "${RUNNER_MODE_ARGS[@]}" "${RUNNER_EXTRA_ARGS_ARR[@]}"
