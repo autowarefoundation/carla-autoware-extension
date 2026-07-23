@@ -6,6 +6,15 @@
 # foreground so it owns SIGINT directly. CARLA is torn down (SIGTERM -> bounded
 # wait -> SIGKILL) on every exit path via a PID file, never pgrep/pkill patterns.
 #
+# BRING-UP ORDER (M4-blocker #4, docs/phase-b-report.md): with WITH_AUTOWARE=1 this
+# harness enforces the load-bearing sequence CARLA -> Autoware -> ego. autoware_carla_interface
+# (pulled in by simulator_type:=carla) calls client.load_world() at startup, WIPING any actor
+# already present; if the runner spawned the ego first, that reload would destroy it. So we
+# boot CARLA (ego-less), THEN launch Autoware via launch_autoware.sh -- which blocks until the
+# stack is up and carla_interface has fired-and-died -- and ONLY THEN run the spawn+tick
+# runner. Without WITH_AUTOWARE=1 the harness keeps its original CARLA+runner smoke behaviour
+# (no Autoware), for extension-only publisher checks.
+#
 # NOT exercised live yet: the editor .so is currently stale
 # relative to the CARLA branch tip, and a --ros2/extension live run without a
 # fresh carla-unreal-editor rebuild is forbidden by this repo's rules. This
@@ -29,6 +38,39 @@ MAP=NishishinjukuMap
 # discovered. Pin both explicitly, same as run_g0.sh.
 export ROS_DOMAIN_ID=0
 export CYCLONEDDS_URI="file://$REPO/docker/cyclonedds.xml"
+
+# Opt-in Autoware bring-up (M4-blocker #4 ordering). Default 0 keeps the CARLA+runner-only
+# smoke path; set WITH_AUTOWARE=1 to bring Autoware up (Autoware-first) between the CARLA boot
+# and the ego spawn, so carla_interface's one-shot load_world cannot wipe the ego.
+WITH_AUTOWARE="${WITH_AUTOWARE:-0}"
+
+# Opt-in async tick loop. Default 0 keeps sync pacing (0.05 fixed delta = 20 Hz) -- which is
+# what BOTH G3's LiDAR-cadence check AND the G2 closed-loop route gate require.
+#
+# REFUTED (2026-07-23 G2 campaign, docs/phase-b-report.md): this flag used to be documented as
+# the G2 path because "CARLA 0.10/Chaos vehicles do not propel in synchronous mode". That claim
+# was never tested with a VALID DRIVE COMMAND -- M4 had no trajectory, so the command under
+# test was always a stop. Given a real one, the sync ego drove a 445 m mission-planned route at
+# up to 4.39 m/s, fully closed-loop under NDT. Sync propels.
+#
+# Async is now the WRONG choice for G2: it breaks NDT outright (18-65 m error, median 51 m,
+# 0/34 samples within 1.0 m, iteration_num maxed) because /clock free-runs at ~140 Hz and the
+# async cloud is malformed for scan-matching even with the sensor_tick fix. Keep this flag only
+# for deliberate async experiments; do NOT reach for it to make the ego move.
+RUNNER_ASYNC="${RUNNER_ASYNC:-0}"
+RUNNER_MODE_ARGS=()
+[ "$RUNNER_ASYNC" = "1" ] && RUNNER_MODE_ARGS+=(--async)
+
+# Optional pass-through of extra `python3 -m runner` flags. Added for the G2 on-lanelet spawn:
+# the map exposes exactly ONE spawn point and it sits 7.478 m off the lanelet2 centerline
+# (measured), so the ego starts in a driving lane parallel to any routable goal's lane and the
+# strict 1.0 m goal-arrival gate cannot close. `--initial-pose` seeds the ego on the centerline
+# instead. Example:
+#   RUNNER_EXTRA_ARGS="--initial-pose -284.597 224.709 0.0 0 0 -34.187"
+# Deliberately word-split (unquoted expansion is what allows a multi-flag string); it is an
+# operator-supplied local value, not untrusted input.
+# shellcheck disable=SC2206
+RUNNER_EXTRA_ARGS_ARR=(${RUNNER_EXTRA_ARGS:-})
 
 # Fails loudly if the editor plugin .so is older than CARLA HEAD (see the script's
 # own header for the carla-unreal-vs-carla-unreal-editor trap it guards against).
@@ -156,6 +198,12 @@ port_bound && echo "WARN: port 2000 still bound after 60s (crashed CARLA?)" >&2
 # a documented gotcha in this project. SIGTERM first, then a bounded wait, then
 # SIGKILL if it's still alive (mirrors run_g0.sh's wait_for_port_release escalation).
 cleanup() {
+  # Stop the Autoware launch FIRST (if we started it): its carla_interface holds no ego, but
+  # its ros2 launch tree should not outlive this harness. --stop uses a recorded container PID,
+  # never pkill -f. Best-effort; a failure here must not skip the CARLA teardown below.
+  if [ "$WITH_AUTOWARE" = "1" ]; then
+    bash "$REPO/scripts/phase_b/launch_autoware.sh" --stop 2>/dev/null || true
+  fi
   if [ -f "$CARLA_PID_FILE" ]; then
     local pid
     pid="$(cat "$CARLA_PID_FILE")"
@@ -208,15 +256,25 @@ until port_bound; do
 done
 echo "OK: CARLA RPC port 2000 bound after ${elapsed}s"
 
+# M4-blocker #4 ordering: with WITH_AUTOWARE=1, bring Autoware up NOW -- after CARLA is bound
+# but BEFORE the runner spawns the ego. launch_autoware.sh blocks until the stack is up and
+# autoware_carla_interface has fired its one-shot load_world and exited, so the reload happens
+# on the still-ego-less world and cannot wipe the ego the runner is about to spawn. cleanup()
+# tears this launch down on every exit path (registered above).
+if [ "$WITH_AUTOWARE" = "1" ]; then
+  bash "$REPO/scripts/phase_b/launch_autoware.sh"
+fi
+
 # Run the spawn+tick runner in the FOREGROUND (never `nohup ... &`): backgrounding
 # it here would leave it immune to this shell's Ctrl-C (an OS-level
 # ignored-SIGINT gotcha documented in this project), so a live operator's Ctrl-C
 # would kill this script's wait but leave the runner (and thus the ego/sensors)
 # running headless. No kit-calibration flags are passed: the runner defaults to
 # the committed runner/config/ copies (see runner/__main__.py), so this harness
-# has nothing kit-specific to override. Sync mode is the runner's default; CARLA
-# 0.10/Chaos vehicles have been observed NOT to propel in synchronous mode on
-# this build (control delivered, wheels configured, ego stays at 0 m/s) -- if a
-# live run reproduces that, rerun with `--async` appended below (the validated
-# fallback; MPC-style steering-delay compensation absorbs the loop latency).
-python3 -m runner --host localhost --port 2000 --map "$MAP"
+# has nothing kit-specific to override. Sync mode is the runner's default and is
+# correct for BOTH gates: the sync ego DOES propel given a valid drive command
+# (445 m closed-loop drive, 2026-07-23 -- see the RUNNER_ASYNC comment above for
+# the refutation of the old "sync does not propel" prior), and G3's LiDAR-cadence
+# check needs sync so 20 Hz means a real paced cadence rather than a free-run.
+python3 -m runner --host localhost --port 2000 --map "$MAP" \
+  "${RUNNER_MODE_ARGS[@]}" "${RUNNER_EXTRA_ARGS_ARR[@]}"

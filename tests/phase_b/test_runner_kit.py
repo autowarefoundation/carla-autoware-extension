@@ -20,7 +20,6 @@ from runner.kit import (
     SENSOR_KIT_PACKAGE,
     TOP_LIDAR_FRAME,
     KitConfig,
-    base_link_to_vehicle_center,
     carla_attach_location,
     carla_attach_rotation,
     load_kit,
@@ -30,34 +29,15 @@ from runner.kit import (
 )
 from runner.spawn import (
     EGO_BLUEPRINT,
+    IMU_ROS_NAME,
     IMU_TOPIC,
-    SAMPLE_VEHICLE_WHEELBASE,
+    TOP_LIDAR_ROS_NAME,
     TOP_LIDAR_TOPIC,
     _apply_attributes,
     ego_attributes,
     imu_attributes,
     top_lidar_attributes,
 )
-
-# --- base_link -> vehicle-origin longitudinal conversion ---
-
-
-def test_base_link_offset_is_half_wheelbase_forward():
-    # sample_vehicle wheel_base = 2.79 -> a sensor at base_link moves +1.395 m in X
-    # (base_link is the rear-axle centre; CARLA attaches relative to the vehicle origin,
-    # ~mid-wheelbase, so shift +wheelbase/2 forward).
-    x, y, z = base_link_to_vehicle_center((0.0, 0.0, 0.0), wheelbase=2.79)
-    assert abs(x - 1.395) < 1e-6
-    assert y == 0.0 and z == 0.0
-
-
-def test_base_link_offset_passes_y_and_z_through():
-    # Only X is shifted; Y and Z are carried through unchanged (the documented Z
-    # pass-through assumes the CARLA vehicle origin sits at base_link height).
-    x, y, z = base_link_to_vehicle_center((1.0, 0.5, 2.0), wheelbase=2.85)
-    assert abs(x - (1.0 + 1.425)) < 1e-6
-    assert y == 0.5 and z == 2.0
-
 
 # --- kit yaml loading against the committed real calibration ---
 
@@ -105,12 +85,17 @@ def test_composition_applies_kit_rotation_for_offcentre_sensor():
 
 
 def test_carla_attach_location_top_lidar():
-    # Full pipeline: compose in base_link, then shift to the CARLA vehicle origin.
+    # base_link is pinned to the CARLA vehicle origin: the attach location IS the composed
+    # base_link pose with NO vehicle-centre shift (an earlier +wheelbase/2 shift was the
+    # 1.44 m G1 near-miss -- docs/phase-b-report.md issue #6). So the top LiDAR attaches at
+    # exactly sensor_in_base_link (0.9, 0, 2.0), not the old 2.295.
     kit = load_kit()
-    x, y, z = carla_attach_location(kit, TOP_LIDAR_FRAME, wheelbase=SAMPLE_VEHICLE_WHEELBASE)
-    assert math.isclose(x, 0.9 + SAMPLE_VEHICLE_WHEELBASE / 2.0, abs_tol=1e-9)  # 2.295
+    x, y, z = carla_attach_location(kit, TOP_LIDAR_FRAME)
+    assert math.isclose(x, 0.9, abs_tol=1e-9)
     assert math.isclose(y, 0.0, abs_tol=1e-9)
     assert math.isclose(z, 2.0, abs_tol=1e-9)
+    # Identity with the composed base_link pose (no shift applied on top).
+    assert carla_attach_location(kit, TOP_LIDAR_FRAME) == sensor_in_base_link(kit, TOP_LIDAR_FRAME)
 
 
 # --- spawn attribute assembly (pure; no CARLA connection) ---
@@ -127,7 +112,6 @@ def test_ego_blueprint_is_measured_lincoln():
     # CARLA 0.10 ids it without the 0.9-era year suffix (mkz_2020 does not exist in the 0.10
     # blueprint library, verified live in Step 4b); it is "vehicle.lincoln.mkz".
     assert EGO_BLUEPRINT == "vehicle.lincoln.mkz"
-    assert SAMPLE_VEHICLE_WHEELBASE == 2.79
 
 
 def test_top_lidar_attributes_native():
@@ -141,10 +125,51 @@ def test_top_lidar_attributes_native():
     assert all(isinstance(v, str) for v in attrs.values())
 
 
+def test_top_lidar_ros_name_sets_the_tf_frame():
+    # M4-blocker #1 (docs/phase-b-report.md): the raw cloud flowed at 20 Hz but its
+    # header.frame_id defaulted to the mangled blueprint id "ray_cast__", which is NOT
+    # in the Autoware TF tree (only base_link / sensor_kit_base_link / velodyne_* exist),
+    # so crop_box_filter_self could not transform it and dropped every frame -> the whole
+    # localization chain went silent. The fork's ActorDispatcher uses the `ros_name`
+    # attribute verbatim as BOTH ros_name and header.frame_id; setting it to the kit frame
+    # "velodyne_top" slots the cloud into the TF tree Autoware generates from the same kit.
+    attrs = top_lidar_attributes()
+    assert attrs["ros_name"] == TOP_LIDAR_ROS_NAME == "velodyne_top"
+
+
 def test_imu_attributes():
     attrs = imu_attributes()
     assert attrs["ros_topic_name"] == IMU_TOPIC == "/sensing/imu/tamagawa/imu_raw"
     assert all(isinstance(v, str) for v in attrs.values())
+
+
+def test_imu_ros_name_sets_the_tf_frame():
+    # The `ray_cast__` twin of M4-blocker #1, on the IMU (G2/G3 campaign, 2026-07-23).
+    # Without `ros_name` the fork mangles the blueprint id through TWO stages:
+    # ActorDispatcher.cpp:275-288 sees RosName == id and rewrites "sensor.other.imu" to the
+    # placeholder "imu__" (last dot-token + "__"), registering it as BOTH ros_name and
+    # frame_id; then ROS2.cpp's InertialMeasurementUnit branch calls resolve("imu") ->
+    # ResolveAutoStreamSuffix (ROS2.cpp:555-572) which rewrites the placeholder to
+    # "imu<stream_id>" -- the live-observed "imu3". CarlaIMUPublisher.cpp:45 stamps that as
+    # header.frame_id. "imu3" is absent from the TF tree Autoware builds from the kit yamls,
+    # so gyro_bias_estimator/imu_corrector cannot transform the sample and
+    # /sensing/imu/imu_data never forms -> AEB + system diagnostics go ERROR -> the
+    # vehicle_cmd_gate raises a FALSE MRM that overrides the drive command, which is why the
+    # G2 drive needed `use_emergency_handling:=false`.
+    #
+    # Naming the frame "tamagawa/imu_link" (kit.py IMU_FRAME, the frame the committed
+    # sensor_kit_calibration.yaml declares) slots the sample into that tree. Three fork
+    # properties make this safe and rebuild-free: `ros_name` is registered for EVERY actor
+    # definition in FillIdAndTags (ActorBlueprintFunctionLibrary.cpp:230), not just lidars;
+    # ResolveAutoStreamSuffix early-returns unless ros_name is exactly the "imu__"
+    # placeholder, so the unconditional resolve("imu") cannot clobber an explicit name; and
+    # BuildBaseTopicName (ROS2.cpp:538-541) returns the verbatim `ros_topic_name` override,
+    # so the embedded slash never reaches DDS topic construction.
+    attrs = imu_attributes()
+    assert attrs["ros_name"] == IMU_ROS_NAME == "tamagawa/imu_link"
+    # The frame MUST equal the kit frame the mount pose is derived from -- if these two ever
+    # diverge, Autoware would interpret the sample in a frame the runner did not mount it at.
+    assert IMU_ROS_NAME == IMU_FRAME
 
 
 # --- ROS rpy -> CARLA/UE Rotator conversion pins (Y-flip M-conjugation) ---
@@ -341,10 +366,10 @@ def test_spawn_sensors_destroys_already_spawned_actor_on_partial_failure(monkeyp
 
     first_actor = _FakeActor()
 
-    def fake_spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase):
+    def fake_spawn_top_lidar(world, blueprint_library, ego, kit):
         return first_actor
 
-    def fake_spawn_imu(world, blueprint_library, ego, kit, wheelbase):
+    def fake_spawn_imu(world, blueprint_library, ego, kit):
         raise RuntimeError("imu spawn exploded")
 
     monkeypatch.setattr(spawn_mod, "spawn_top_lidar", fake_spawn_top_lidar)

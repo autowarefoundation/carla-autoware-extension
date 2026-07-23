@@ -26,11 +26,8 @@ from runner.kit import (
 # "vehicle.lincoln.mkz", NOT "vehicle.lincoln.mkz_2020" (0.10 dropped the year suffix on
 # every vehicle, e.g. dodge.charger, mini.cooper). The _2020 id does not exist in this
 # build (verified live: 17 vehicle blueprints enumerated, only vehicle.lincoln.mkz present);
-# finding it raises, which was the initial live spawn failure until corrected. Its measured
-# wheelbase is reconciled against the sample_vehicle 2.79 m that base_link_to_vehicle_center
-# assumes; the accepted delta is recorded in docs/nishishinjuku-map.md, not silently absorbed.
+# finding it raises, which was the initial live spawn failure until corrected.
 EGO_BLUEPRINT = "vehicle.lincoln.mkz"
-SAMPLE_VEHICLE_WHEELBASE = 2.79  # sample_vehicle_description/vehicle_info.param.yaml wheel_base
 
 TOP_LIDAR_BLUEPRINT = "sensor.lidar.ray_cast"
 IMU_BLUEPRINT = "sensor.other.imu"
@@ -39,6 +36,55 @@ IMU_BLUEPRINT = "sensor.other.imu"
 # PointXYZIRCAEDT "_ex" cloud at 10 Hz best_effort; the IMU is the tamagawa raw feed.
 TOP_LIDAR_TOPIC = "/sensing/lidar/top/pointcloud_raw_ex"
 IMU_TOPIC = "/sensing/imu/tamagawa/imu_raw"
+
+# Top LiDAR header.frame_id. This is the M4-blocker-#1 fix (docs/phase-b-report.md):
+# without a `ros_name` attribute the fork's ActorDispatcher (ActorDispatcher.cpp:275-293)
+# mangles the blueprint id into "ray_cast__" and uses THAT as both ros_name and the
+# published cloud's header.frame_id. "ray_cast__" is absent from the TF tree Autoware
+# builds from the sensor kit (which has only base_link / sensor_kit_base_link /
+# velodyne_{top,left,right,rear}), so `crop_box_filter_self` cannot transform the cloud
+# and silently drops every frame -- killing the entire localization chain. Naming the
+# frame "velodyne_top" (the kit's top-LiDAR sensor frame, per the report's proven
+# diagnostic and the AWSIM convention) slots the cloud into that tree. `ros_name` is a
+# real, settable blueprint attribute in the fork (ActorBlueprintFunctionLibrary.cpp:230),
+# so this needs no CARLA rebuild.
+#
+# KNOWN RESIDUAL (bounded, within the gate): the runner mounts the sensor at the
+# velodyne_top_base_link calibration pose (TOP_LIDAR_FRAME below), but the VLS-128 URDF
+# places the `velodyne_top` sensor frame +0.06611 m in Z above velodyne_top_base_link
+# (vls_description VLS-128.urdf.xacro base_scan_joint). So Autoware's TF interprets the
+# cloud ~6.6 cm higher than the sensor physically sits -- a systematic Z bias well inside
+# the G1 gross-error gate (max_err <= 0.5 m, XY). Zeroing it (mount at velodyne_top by
+# adding that sensor-frame offset, or label the cloud velodyne_top_base_link) is a
+# precision refinement to confirm against the live TF tree in the staged E2E re-run.
+TOP_LIDAR_ROS_NAME = "velodyne_top"
+
+# IMU header.frame_id -- the same defect as the LiDAR's above, on the second native sensor
+# (found in the G2/G3 live campaign, 2026-07-23). Without `ros_name` the fork mangles the
+# blueprint id in TWO stages: ActorDispatcher (ActorDispatcher.cpp:275-288) sees RosName == id
+# and rewrites "sensor.other.imu" to the placeholder "imu__" (last dot-token + "__"), used as
+# both ros_name and frame_id; then ROS2::GetOrCreateSensor's InertialMeasurementUnit branch
+# calls resolve("imu") -> ResolveAutoStreamSuffix (ROS2.cpp:555-572), which rewrites the
+# placeholder to "imu<stream_id>" -- the live-observed "imu3". (This second stage is why the
+# IMU's mangled name has a digit and the LiDAR's does not: the lidar branch skips resolve()
+# when a ros_topic_name override is present, the IMU branch calls it unconditionally.)
+# CarlaIMUPublisher.cpp:45 then stamps that as header.frame_id.
+#
+# "imu3" is absent from the TF tree Autoware builds from the kit yamls, so gyro_bias_estimator
+# / imu_corrector cannot transform the sample and /sensing/imu/imu_data never forms. That
+# leaves AEB and the system diagnostics in ERROR, which makes vehicle_cmd_gate raise a FALSE
+# MRM COMFORTABLE_STOP over a genuine drive command -- the reason the G2 drive had to be armed
+# with `use_emergency_handling:=false`.
+#
+# Bound to kit.IMU_FRAME (not a duplicated literal) so the published frame can never drift
+# from the frame whose calibration the sensor is physically mounted at. Rebuild-free, like the
+# LiDAR fix: `ros_name` is declared for EVERY actor definition by FillIdAndTags
+# (ActorBlueprintFunctionLibrary.cpp:230), not just lidars. Two fork properties make the
+# slash-bearing name safe: ResolveAutoStreamSuffix early-returns unless ros_name is exactly
+# the "imu__" placeholder, so the unconditional resolve("imu") cannot clobber it; and
+# BuildBaseTopicName (ROS2.cpp:538-541) emits the verbatim `ros_topic_name` override, so the
+# slash never reaches DDS topic construction.
+IMU_ROS_NAME = IMU_FRAME
 
 # LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
 # (the concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans.
@@ -51,6 +97,17 @@ _LIDAR_QOS_HISTORY_DEPTH = "5"
 _TOP_LIDAR_CHANNELS = "128"
 _TOP_LIDAR_ROTATION_FREQUENCY = "10"
 _TOP_LIDAR_RANGE = "120.0"
+
+# sensor_tick pins the capture period (sim seconds) so each cloud is a fixed 0.05 s
+# accumulation REGARDLESS of the host loop mode. In sync (0.05 fixed delta) this matches the
+# tick, so it is a no-op -- one ~half-rotation cloud per tick at ~20 Hz. In ASYNC (the G2
+# propulsion mode) the server free-runs at ~140 fps, and WITHOUT this the native LiDAR emits
+# one thin ~25-deg, ~2k-point slice PER SERVER FRAME (~140 Hz). NDT cannot match those
+# fragments (transform_probability ~3.97, pose jittered ~4 m off ground truth), which would
+# fail G2's 1.0 m goal tolerance even though the ego drives the route. Pinning sensor_tick
+# restores full 0.05 s clouds (~15k points) at 20 Hz in async too, so NDT locks the same as
+# sync. Verified live 2026-07-23. Applied to the IMU as well so it does not flood at ~140 Hz.
+_SENSOR_TICK = "0.05"
 
 
 def ego_attributes() -> dict[str, str]:
@@ -69,14 +126,21 @@ def ego_attributes() -> dict[str, str]:
 def top_lidar_attributes() -> dict[str, str]:
     """Native ROS 2 attributes + geometry for the top LiDAR (all values are strings)."""
     return {
+        # Required M1-discriminator attrs first: `_apply_attributes` raises its named,
+        # actionable error on these BEFORE mutating the blueprint, so a stock build lacking
+        # the native-ROS2 patches fails loudly rather than half-configured. `ros_name`
+        # (the blocker-1 frame_id fix) is a naming attr set unconditionally like role_name,
+        # so it deliberately follows the two required discriminators.
         "ros_topic_name": TOP_LIDAR_TOPIC,
         "ros2_extended_lidar": "true",
+        "ros_name": TOP_LIDAR_ROS_NAME,
         "ros2_qos_reliability": _LIDAR_QOS_RELIABILITY,
         "ros2_qos_durability": _LIDAR_QOS_DURABILITY,
         "ros2_qos_history_depth": _LIDAR_QOS_HISTORY_DEPTH,
         "channels": _TOP_LIDAR_CHANNELS,
         "rotation_frequency": _TOP_LIDAR_ROTATION_FREQUENCY,
         "range": _TOP_LIDAR_RANGE,
+        "sensor_tick": _SENSOR_TICK,
     }
 
 
@@ -85,6 +149,10 @@ def imu_attributes() -> dict[str, str]:
     from the extension), so no CARLA GNSS sensor/topic is spawned here."""
     return {
         "ros_topic_name": IMU_TOPIC,
+        # frame_id fix -- see IMU_ROS_NAME. Set unconditionally (a naming attr like
+        # role_name), following the required native discriminator as on the LiDAR.
+        "ros_name": IMU_ROS_NAME,
+        "sensor_tick": _SENSOR_TICK,
     }
 
 
@@ -133,27 +201,6 @@ def spawn_ego(world, blueprint_library, spawn_transform):
     return world.spawn_actor(blueprint, spawn_transform)
 
 
-def ego_wheelbase(ego) -> float:
-    """Best-effort measured CARLA wheelbase (m) from physics-control wheel positions.
-
-    Wheel positions are reported in world-scale CENTIMETRES, so divide by 100. In CARLA
-    0.10 the field was renamed ``WheelPhysicsControl.position`` -> ``.location``, so read
-    ``wheel.location`` here.
-
-    IMPORTANT (verified live): the CARLA 0.10 (UE5/Chaos) build does NOT
-    populate wheel geometry -- ``location``, ``offset`` and ``old_location`` are all
-    (0, 0, 0) for every wheel and there is no ``get_wheel_position`` client API (the
-    geometry lives in the vehicle's binary skeletal-mesh sockets). This therefore returns
-    0.0 on 0.10; treat a ~0.0 result as "wheelbase unavailable, fall back to the bounding
-    box / the sample_vehicle value" rather than a real measurement. The helper is retained
-    for builds/versions that DO expose wheel locations. See the "Phase B ego reconciliation"
-    section of docs/nishishinjuku-map.md for the live evidence and the reconcile decision.
-    """
-    physics = ego.get_physics_control()
-    xs = [wheel.location.x / 100.0 for wheel in physics.wheels]
-    return abs(max(xs) - min(xs))
-
-
 def _spawn_sensor(world, blueprint_library, ego, blueprint_id, attrs, location, rotation):
     """Attach a sensor to ``ego`` at (``location`` [m], ``rotation`` [deg]) with ``attrs``.
 
@@ -174,12 +221,10 @@ def _spawn_sensor(world, blueprint_library, ego, blueprint_id, attrs, location, 
     return world.spawn_actor(blueprint, transform, attach_to=ego)
 
 
-def spawn_top_lidar(
-    world, blueprint_library, ego, kit: KitConfig, wheelbase=SAMPLE_VEHICLE_WHEELBASE
-):
+def spawn_top_lidar(world, blueprint_library, ego, kit: KitConfig):
     """Spawn the top LiDAR at its kit-derived pose (translation + mount rotation) with native
     ROS 2 attributes."""
-    location = carla_attach_location(kit, TOP_LIDAR_FRAME, wheelbase)
+    location = carla_attach_location(kit, TOP_LIDAR_FRAME)
     rotation = carla_attach_rotation(kit, TOP_LIDAR_FRAME)
     return _spawn_sensor(
         world,
@@ -192,20 +237,18 @@ def spawn_top_lidar(
     )
 
 
-def spawn_imu(world, blueprint_library, ego, kit: KitConfig, wheelbase=SAMPLE_VEHICLE_WHEELBASE):
+def spawn_imu(world, blueprint_library, ego, kit: KitConfig):
     """Spawn the IMU at its kit-derived pose (translation + mount rotation) with the tamagawa
     raw topic. The IMU mount is a ~180deg flip (kit roll/yaw pi), so the rotation is NOT
     cosmetic -- an identity attach would invert the IMU axes and corrupt the ekf."""
-    location = carla_attach_location(kit, IMU_FRAME, wheelbase)
+    location = carla_attach_location(kit, IMU_FRAME)
     rotation = carla_attach_rotation(kit, IMU_FRAME)
     return _spawn_sensor(
         world, blueprint_library, ego, IMU_BLUEPRINT, imu_attributes(), location, rotation
     )
 
 
-def spawn_sensors(
-    world, blueprint_library, ego, kit: KitConfig, wheelbase=SAMPLE_VEHICLE_WHEELBASE
-):
+def spawn_sensors(world, blueprint_library, ego, kit: KitConfig):
     """Spawn the native sensor rig (top LiDAR + IMU) attached to ``ego``.
 
     Returns the spawned sensor actors. The GNSS pose is supplied by the extension, so no
@@ -225,8 +268,8 @@ def spawn_sensors(
     """
     spawned = []
     try:
-        spawned.append(spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase))
-        spawned.append(spawn_imu(world, blueprint_library, ego, kit, wheelbase))
+        spawned.append(spawn_top_lidar(world, blueprint_library, ego, kit))
+        spawned.append(spawn_imu(world, blueprint_library, ego, kit))
     except Exception:
         for actor in spawned:
             try:

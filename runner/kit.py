@@ -17,13 +17,20 @@ sensor_kit_base_link origin (kit offset 0,0,0), the composed result reduces to t
 base_link->sensor_kit_base_link translation exactly, independent of the rotation.
 
 Frame notes:
-  * base_link is the REAR-AXLE centre (Autoware / ROS: X forward, Y left, Z up).
-  * CARLA attaches sensors relative to the vehicle ORIGIN (~mid-wheelbase). The
-    base_link -> vehicle-origin conversion shifts +wheelbase/2 forward in X
-    (``base_link_to_vehicle_center``). Z passes through unchanged -- this ASSUMES the
-    CARLA vehicle origin sits at base_link height (ground); the assumption is validated
-    live by comparing the spawned top-lidar world transform to the ego's (see the
-    "Phase B ego reconciliation" section of docs/nishishinjuku-map.md).
+  * base_link is the REAR-AXLE centre in Autoware's URDF (X forward, Y left, Z up), but for
+    THIS integration base_link is pinned to the CARLA vehicle ORIGIN: sensors attach at their
+    raw base_link-frame coordinates relative to the ego, with NO longitudinal shift. CARLA
+    places attached sensors relative to the vehicle origin AND reports that same origin from
+    ``Actor.get_transform()`` (the G1 ground truth), so the two share one reference. Because
+    Autoware rebuilds the sensor TF from the SAME kit yamls (base_link->sensor, no vehicle
+    term), NDT back-solves ``base_link = sensor_world - TF(base_link->sensor)`` and converges
+    to the CARLA vehicle origin exactly -- G1 error ~0 -- REGARDLESS of where that origin sits
+    on the chassis (the offset cancels in the NDT<->GT comparison). An earlier +wheelbase/2
+    "base_link -> vehicle-centre" shift was uncompensated in Autoware's TF and biased NDT's
+    base_link by exactly wheelbase/2, which is the 1.44 m G1 near-miss root-caused and removed
+    in docs/phase-b-report.md (issue #6). Z likewise passes through: the CARLA vehicle origin
+    sits at base_link height (ground), validated live in the "Phase B ego reconciliation"
+    section of docs/nishishinjuku-map.md.
   * Handedness: CARLA's vehicle frame is left-handed (Y to the RIGHT) while base_link is
     right-handed (Y to the LEFT), related by the Y-flip M = diag(1,-1,1).
       - ROTATION is now applied (``carla_attach_rotation``): the composed base_link->sensor
@@ -233,23 +240,14 @@ def carla_attach_rotation(kit: KitConfig, sensor_frame: str) -> tuple[float, flo
     return ros_rpy_to_carla_rotation(*sensor_rotation_in_base_link(kit, sensor_frame))
 
 
-def base_link_to_vehicle_center(xyz, wheelbase: float):
-    """Shift a base_link-referenced ``(x, y, z)`` to the CARLA vehicle origin.
+def carla_attach_location(kit: KitConfig, sensor_frame: str) -> tuple[float, float, float]:
+    """Return the ``(x, y, z)`` a CARLA sensor should be attached at, relative to the ego.
 
-    base_link is the rear-axle centre; CARLA attaches sensors relative to the vehicle
-    origin (~mid-wheelbase), so shift +wheelbase/2 forward in X. Y and Z pass through
-    unchanged (the Z pass-through assumes the vehicle origin sits at base_link height;
-    validated live -- see docs/nishishinjuku-map.md).
+    The sensor's base_link-frame pose composed across both kit yamls IS its CARLA attach
+    location: base_link is pinned to the CARLA vehicle origin, so there is no vehicle-centre
+    shift (see the module docstring for why this is what makes G1's NDT<->GT error ~0, and
+    why the removed +wheelbase/2 shift was the 1.44 m near-miss). Handedness: for the
+    centreline sensors this runner spawns (kit Y = 0) the ROS vs CARLA Y sign is immaterial
+    and carried through verbatim.
     """
-    x, y, z = xyz
-    return (x + wheelbase / 2.0, y, z)
-
-
-def carla_attach_location(kit: KitConfig, sensor_frame: str, wheelbase: float):
-    """Full pipeline: compose the sensor pose in base_link, then shift to vehicle origin.
-
-    Returns the ``(x, y, z)`` a CARLA sensor should be attached at, relative to the ego
-    vehicle. Handedness: for the centreline sensors this runner spawns (kit Y = 0) the ROS
-    vs CARLA Y sign is immaterial and carried through verbatim (see module docstring).
-    """
-    return base_link_to_vehicle_center(sensor_in_base_link(kit, sensor_frame), wheelbase)
+    return sensor_in_base_link(kit, sensor_frame)
