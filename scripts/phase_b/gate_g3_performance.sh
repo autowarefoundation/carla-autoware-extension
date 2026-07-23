@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # G3: LiDAR sustained at 20 Hz; control loop at sim rate. ros2 topic hz measures
-# WALL-CLOCK arrival, so the runner MUST be real-time-paced (Task 24) for 20 Hz to
-# mean cadence. Captures both hz outputs to files and feeds each through
+# WALL-CLOCK arrival, so the runner's real-time pacing MUST hold for 20 Hz to mean cadence.
+# Captures both hz outputs to files and feeds each through
 # measure_rates.py, which EXITS NON-ZERO when a rate leaves its band (so an 80 Hz
 # free-running LiDAR FAILS instead of reading as PASS). Record which was measured.
 set -euo pipefail

@@ -40,7 +40,7 @@ for _ in range(100):
 else:
     raise RuntimeError("no ego actor found after warm-up retries")
 end=time.time()+win; rows=[]
-# +81655.73 / +50137.43 is the MGRS-local map-frame origin (Task 5 / MgrsOffset.h); CARLA
+# +81655.73 / +50137.43 is the MGRS-local map-frame origin; see extension MgrsOffset.h. CARLA
 # reports metres, so this is a pure offset (Y also flips sign) -- do not strip it.
 while time.time()<end:
     t=ego.get_transform().location; rows.append(f"{time.time():.3f} {81655.73 + t.x:.4f} {50137.43 - t.y:.4f}")

@@ -46,7 +46,8 @@ else:
     raise RuntimeError("no ego actor found after warm-up retries")
 end=time.time()+win; rows=[]
 # gx,gy are in the MGRS-local map frame, so the ego must be mapped too before comparing:
-# +81655.73 / +50137.43 is the map-frame origin (Task 5 / MgrsOffset.h) -- do not strip it.
+# +81655.73 / +50137.43 is the MGRS-local map-frame origin; see extension MgrsOffset.h -- do
+# not strip it.
 while time.time()<end:
     t=ego.get_transform().location
     rows.append(f"{math.hypot((81655.73 + t.x) - gx, (50137.43 - t.y) - gy):.4f}")

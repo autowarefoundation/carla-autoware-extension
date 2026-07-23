@@ -87,6 +87,12 @@ layer was replaced by generated ROS 2 `rosidl` packages, and remain green on thi
 | G3 LiDAR cadence     | 20 Hz +-1 (real-time paced) | 19.95 Hz                                           | **PASS** | sync-paced     |
 | G3 control loop      | ~60 Hz (+-15)               | 19.96 Hz sync / 30.5 Hz async                      | **FAIL** | sync / async   |
 
+The G3 control-loop threshold (60±15 Hz) is carried over from an earlier assumption and has
+not been independently validated against this stack; the 30.55 Hz async free-running
+measurement suggests ~30 Hz may be Autoware Humble's actual
+`/control/command/control_cmd` design rate, and the target should be re-validated before the
+next campaign.
+
 ## Root-caused blockers
 
 Four causes were isolated during the campaign; the first two are jointly binding for G1, the
@@ -112,8 +118,8 @@ bring-up gotcha rather than a data-path defect.
    `pointcloud_raw_ex` have publisher count 0. Even with the frame alias feeding
    `top/pointcloud_before_sync` at 20 Hz, `concatenated/pointcloud` stayed SILENT, so NDT
    still has no input.
-3. **GNSS `/sensing/gnss/pose_with_covariance` is ~275 m off the true ego position
-   (seed-path finding, not the binding blocker).** Extension GNSS pose = map
+3. **GNSS `/sensing/gnss/pose_with_covariance` is ~350 m (≈276 m in X) off the true ego
+   position (seed-path finding, not the binding blocker).** Extension GNSS pose = map
    `(81652.95, 50135.22, 42.49)`; true ego (spawn point 0) = carla `(-278.39, 220.54, -1.26)`
    -> affine map `(81377.34, 49916.89, 41.24)`. The offset is a consistent divide-by-100
    scale error (the extension acts as if `carla=(-2.78, 2.21, -0.01)`) in the host-side
@@ -121,7 +127,7 @@ bring-up gotcha rather than a data-path defect.
    documented-as-centimetres `transform.x_cm`, and the extension divides by 100). The
    **orientation is correct** — the published quaternion `(0, 0, 0.3007, 0.9537)` = yaw +35 deg
    = -carla_yaw, matching the hand-derived single-Y-flip quaternion exactly. Seeding
-   `/initialpose` from GNSS therefore placed the NDT guess 275 m from the real LiDAR — but
+   `/initialpose` from GNSS therefore placed the NDT guess ~350 m from the real LiDAR — but
    seeding at the **true GT** pose instead did **not** rescue convergence either, confirming
    the binding blocker is the dead cloud chain (#1/#2), not the seed.
 4. **`autoware_carla_interface` (pulled in by `simulator_type:=carla`) calls
@@ -148,7 +154,7 @@ control toward either way.
 | Hypothesis                                                                                               | Verdict                       | Evidence                                                                                                                                                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Sync-mode non-propulsion is the binding G2 blocker (CARLA 0.10/Chaos vehicles don't propel in sync mode) | **Refuted as binding**        | Sync non-propulsion is real (`velocity 0.0`), but async _also_ gives peak 0.000 m/s — because the autonomous command is a stop (no trajectory). The binding blocker is localization, not the tick mode.                                                        |
-| NDT non-convergence is the Task-19 GNSS **yaw-sign** bug (the brief's anticipated cause)                 | **Refuted**                   | GNSS orientation is correct (quaternion = -carla_yaw, matches exactly). The GNSS **position** is wrong (~275 m, divide-by-100 scale). NDT fails to converge even seeded at true GT — the seed is not the blocker.                                              |
+| NDT non-convergence is the anticipated GNSS **yaw-sign** bug                                             | **Refuted**                   | GNSS orientation is correct (quaternion = -carla_yaw, matches exactly). The GNSS **position** is wrong (~350 m, divide-by-100 scale). NDT fails to converge even seeded at true GT — the seed is not the blocker.                                              |
 | LiDAR preprocessing dropped due to **QoS mismatch**                                                      | **Refuted**                   | Publisher and `crop_box_filter_self` subscriber are both BEST_EFFORT / KEEP_LAST(5) / VOLATILE — compatible.                                                                                                                                                   |
 | LiDAR dropped due to **missing point fields** (no ring/time)                                             | **Refuted**                   | Raw cloud has the full `PointXYZIRCAEDT` field set.                                                                                                                                                                                                            |
 | Empty-perception environment (`perception:=false`) is the cause                                          | **Carried but not the cause** | Perception is intentionally off; the actual break is in **sensing preprocessing** (frame_id + concatenator), upstream of perception. Localization does not depend on perception.                                                                               |
