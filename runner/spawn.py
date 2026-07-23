@@ -40,6 +40,21 @@ IMU_BLUEPRINT = "sensor.other.imu"
 TOP_LIDAR_TOPIC = "/sensing/lidar/top/pointcloud_raw_ex"
 IMU_TOPIC = "/sensing/imu/tamagawa/imu_raw"
 
+# Top LiDAR header.frame_id. This is the M4-blocker-#1 fix (docs/phase-b-report.md):
+# without a `ros_name` attribute the fork's ActorDispatcher (ActorDispatcher.cpp:275-293)
+# mangles the blueprint id into "ray_cast__" and uses THAT as both ros_name and the
+# published cloud's header.frame_id. "ray_cast__" is absent from the TF tree Autoware
+# builds from the sensor kit (which has only base_link / sensor_kit_base_link /
+# velodyne_{top,left,right,rear}), so `crop_box_filter_self` cannot transform the cloud
+# and silently drops every frame -- killing the entire localization chain. Naming the
+# frame "velodyne_top" (the kit's top-LiDAR frame, per the report's proven diagnostic)
+# slots the cloud into that tree. The runner owns no TF (`set_publish_tf(False)`), so
+# Autoware places velodyne_top from the SAME kit yamls the mount pose is composed from;
+# the residual velodyne_top vs velodyne_top_base_link offset is sub-cm and immaterial to
+# the G1 gross-error gate. `ros_name` is a real, settable blueprint attribute in the fork
+# (ActorBlueprintFunctionLibrary.cpp:230), so this needs no CARLA rebuild.
+TOP_LIDAR_ROS_NAME = "velodyne_top"
+
 # LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
 # (the concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans.
 _LIDAR_QOS_RELIABILITY = "best_effort"
@@ -69,8 +84,14 @@ def ego_attributes() -> dict[str, str]:
 def top_lidar_attributes() -> dict[str, str]:
     """Native ROS 2 attributes + geometry for the top LiDAR (all values are strings)."""
     return {
+        # Required M1-discriminator attrs first: `_apply_attributes` raises its named,
+        # actionable error on these BEFORE mutating the blueprint, so a stock build lacking
+        # the native-ROS2 patches fails loudly rather than half-configured. `ros_name`
+        # (the blocker-1 frame_id fix) is a naming attr set unconditionally like role_name,
+        # so it deliberately follows the two required discriminators.
         "ros_topic_name": TOP_LIDAR_TOPIC,
         "ros2_extended_lidar": "true",
+        "ros_name": TOP_LIDAR_ROS_NAME,
         "ros2_qos_reliability": _LIDAR_QOS_RELIABILITY,
         "ros2_qos_durability": _LIDAR_QOS_DURABILITY,
         "ros2_qos_history_depth": _LIDAR_QOS_HISTORY_DEPTH,

@@ -32,6 +32,7 @@ from runner.spawn import (
     EGO_BLUEPRINT,
     IMU_TOPIC,
     SAMPLE_VEHICLE_WHEELBASE,
+    TOP_LIDAR_ROS_NAME,
     TOP_LIDAR_TOPIC,
     _apply_attributes,
     ego_attributes,
@@ -139,6 +140,18 @@ def test_top_lidar_attributes_native():
     assert attrs["ros2_qos_history_depth"] == "5"
     # All attribute values are strings (CARLA set_attribute takes strings).
     assert all(isinstance(v, str) for v in attrs.values())
+
+
+def test_top_lidar_ros_name_sets_the_tf_frame():
+    # M4-blocker #1 (docs/phase-b-report.md): the raw cloud flowed at 20 Hz but its
+    # header.frame_id defaulted to the mangled blueprint id "ray_cast__", which is NOT
+    # in the Autoware TF tree (only base_link / sensor_kit_base_link / velodyne_* exist),
+    # so crop_box_filter_self could not transform it and dropped every frame -> the whole
+    # localization chain went silent. The fork's ActorDispatcher uses the `ros_name`
+    # attribute verbatim as BOTH ros_name and header.frame_id; setting it to the kit frame
+    # "velodyne_top" slots the cloud into the TF tree Autoware generates from the same kit.
+    attrs = top_lidar_attributes()
+    assert attrs["ros_name"] == TOP_LIDAR_ROS_NAME == "velodyne_top"
 
 
 def test_imu_attributes():
