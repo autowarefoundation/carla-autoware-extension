@@ -1,5 +1,7 @@
 from __future__ import annotations
-import argparse, sys
+import argparse
+import sys
+
 
 def ndt_pass(errors_m: list[float], max_err_m: float) -> bool:
     """G1 passes iff we got NDT poses AND every error stays under the threshold.
@@ -7,6 +9,7 @@ def ndt_pass(errors_m: list[float], max_err_m: float) -> bool:
     if not errors_m:
         return False
     return max(errors_m) <= max_err_m
+
 
 def _load_series(path):
     """Each line: '<t> <x> <y>' (seconds, metres). Returns list[(t,x,y)]."""
@@ -18,6 +21,7 @@ def _load_series(path):
                 out.append((float(p[0]), float(p[1]), float(p[2])))
     return out
 
+
 def errors_from_series(ndt, gt):
     """Per NDT sample, nearest-in-time ground-truth; Euclidean XY error (metres)."""
     errs = []
@@ -25,6 +29,7 @@ def errors_from_series(ndt, gt):
         tg, xg, yg = min(gt, key=lambda g: abs(g[0] - tn))
         errs.append(((xn - xg) ** 2 + (yn - yg) ** 2) ** 0.5)
     return errs
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -36,9 +41,12 @@ def main() -> int:
     errs = errors_from_series(ndt, gt) if (ndt and gt) else []
     ok = ndt_pass(errs, a.max_err_m)
     mx = max(errs) if errs else float("nan")
-    print(f"G1 NDT: ndt_samples={len(ndt)} gt_samples={len(gt)} "
-          f"max_err={mx:.3f} m threshold={a.max_err_m} m -> {'PASS' if ok else 'FAIL'}")
+    print(
+        f"G1 NDT: ndt_samples={len(ndt)} gt_samples={len(gt)} "
+        f"max_err={mx:.3f} m threshold={a.max_err_m} m -> {'PASS' if ok else 'FAIL'}"
+    )
     return 0 if ok else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
