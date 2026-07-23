@@ -6,6 +6,15 @@
 # foreground so it owns SIGINT directly. CARLA is torn down (SIGTERM -> bounded
 # wait -> SIGKILL) on every exit path via a PID file, never pgrep/pkill patterns.
 #
+# BRING-UP ORDER (M4-blocker #4, docs/phase-b-report.md): with WITH_AUTOWARE=1 this
+# harness enforces the load-bearing sequence CARLA -> Autoware -> ego. autoware_carla_interface
+# (pulled in by simulator_type:=carla) calls client.load_world() at startup, WIPING any actor
+# already present; if the runner spawned the ego first, that reload would destroy it. So we
+# boot CARLA (ego-less), THEN launch Autoware via launch_autoware.sh -- which blocks until the
+# stack is up and carla_interface has fired-and-died -- and ONLY THEN run the spawn+tick
+# runner. Without WITH_AUTOWARE=1 the harness keeps its original CARLA+runner smoke behaviour
+# (no Autoware), for extension-only publisher checks.
+#
 # NOT exercised live yet: the editor .so is currently stale
 # relative to the CARLA branch tip, and a --ros2/extension live run without a
 # fresh carla-unreal-editor rebuild is forbidden by this repo's rules. This
@@ -29,6 +38,11 @@ MAP=NishishinjukuMap
 # discovered. Pin both explicitly, same as run_g0.sh.
 export ROS_DOMAIN_ID=0
 export CYCLONEDDS_URI="file://$REPO/docker/cyclonedds.xml"
+
+# Opt-in Autoware bring-up (M4-blocker #4 ordering). Default 0 keeps the CARLA+runner-only
+# smoke path; set WITH_AUTOWARE=1 to bring Autoware up (Autoware-first) between the CARLA boot
+# and the ego spawn, so carla_interface's one-shot load_world cannot wipe the ego.
+WITH_AUTOWARE="${WITH_AUTOWARE:-0}"
 
 # Fails loudly if the editor plugin .so is older than CARLA HEAD (see the script's
 # own header for the carla-unreal-vs-carla-unreal-editor trap it guards against).
@@ -156,6 +170,12 @@ port_bound && echo "WARN: port 2000 still bound after 60s (crashed CARLA?)" >&2
 # a documented gotcha in this project. SIGTERM first, then a bounded wait, then
 # SIGKILL if it's still alive (mirrors run_g0.sh's wait_for_port_release escalation).
 cleanup() {
+  # Stop the Autoware launch FIRST (if we started it): its carla_interface holds no ego, but
+  # its ros2 launch tree should not outlive this harness. --stop uses a recorded container PID,
+  # never pkill -f. Best-effort; a failure here must not skip the CARLA teardown below.
+  if [ "$WITH_AUTOWARE" = "1" ]; then
+    bash "$REPO/scripts/phase_b/launch_autoware.sh" --stop 2>/dev/null || true
+  fi
   if [ -f "$CARLA_PID_FILE" ]; then
     local pid
     pid="$(cat "$CARLA_PID_FILE")"
@@ -207,6 +227,15 @@ until port_bound; do
   elapsed=$((elapsed + 1))
 done
 echo "OK: CARLA RPC port 2000 bound after ${elapsed}s"
+
+# M4-blocker #4 ordering: with WITH_AUTOWARE=1, bring Autoware up NOW -- after CARLA is bound
+# but BEFORE the runner spawns the ego. launch_autoware.sh blocks until the stack is up and
+# autoware_carla_interface has fired its one-shot load_world and exited, so the reload happens
+# on the still-ego-less world and cannot wipe the ego the runner is about to spawn. cleanup()
+# tears this launch down on every exit path (registered above).
+if [ "$WITH_AUTOWARE" = "1" ]; then
+  bash "$REPO/scripts/phase_b/launch_autoware.sh"
+fi
 
 # Run the spawn+tick runner in the FOREGROUND (never `nohup ... &`): backgrounding
 # it here would leave it immune to this shell's Ctrl-C (an OS-level
