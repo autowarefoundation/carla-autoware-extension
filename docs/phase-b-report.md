@@ -215,15 +215,40 @@ fixed to get there.
   integers** — floats (`80000.0`) throw `yaml-cpp: bad conversion` and crash the whole
   `pointcloud_map_loader` node. With integers the map loads and `No InputTarget` disappears.
   (Not committed — map data lives outside the repo.)
-- **6. base_link ↔ CARLA vehicle-origin frame offset — the residual 1.44 m.** NDT tracks
-  steadily at `max_err 1.441 m`, essentially constant (min 1.386, mean 1.407) and along the
-  ego heading — i.e. ≈ wheelbase/2 (1.395 m). NDT places `base_link` ~wheelbase/2 *ahead* of
-  CARLA's reported vehicle origin (correcting the GT by −wheelbase/2 makes it *worse*, 2.84 m).
-  This traces to `runner/kit.py::base_link_to_vehicle_center` shifting the sensor mount
-  **+wheelbase/2**; now that localization is alive, that shift biases NDT's `base_link`.
-  Determining CARLA 0.10's vehicle-origin convention (rear-axle vs mid-wheelbase) and
-  correcting the shift sign (or the gate's GT reference) is the remaining work to turn G1's
-  1.44 m into a PASS.
+- **6. base_link ↔ CARLA vehicle-origin frame offset — the residual 1.44 m. ROOT-CAUSED AND
+  FIXED IN CODE (2026-07-23); live re-confirmation pending.** NDT tracks steadily at
+  `max_err 1.441 m`, essentially constant (min 1.386, mean 1.407) and along the ego heading —
+  i.e. ≈ wheelbase/2 (1.395 m). NDT places `base_link` ~wheelbase/2 *ahead* of CARLA's reported
+  vehicle origin (correcting the GT by −wheelbase/2 makes it *worse*, 2.84 m).
+
+  **Geometry (why it is exactly wheelbase/2, and why removing the shift is the fix).** The G1
+  ground truth is `ego.get_transform()` — the CARLA vehicle origin. NDT publishes `base_link`.
+  CARLA places attached sensors relative to that same vehicle origin, so the physical top-LiDAR
+  world position was `ego_origin + (x_bl + wheelbase/2)`, where `x_bl` is the sensor's composed
+  base_link X (0.9 m) and the `+wheelbase/2` came from `runner/kit.py::base_link_to_vehicle_center`.
+  Autoware rebuilds the sensor TF from the SAME kit yamls — `base_link → sensor = x_bl`, with **no
+  vehicle term** — so NDT back-solves `base_link = sensor_world − x_bl = ego_origin + wheelbase/2`.
+  Against `GT = ego_origin` that is a constant `+wheelbase/2` error along heading, matching the
+  measurement, and it is *independent of where the true vehicle origin sits on the chassis*
+  (that offset appears identically in both the sensor placement and the GT, so it cancels). The
+  `+wheelbase/2` was a pure uncompensated offset Autoware never saw; its "validated live" claim
+  was circular (it only confirmed the attach number matched the formula, not a ground truth).
+
+  **Fix (commit on `phase-b/10-close-m4-blockers`).** Removed the shift: `carla_attach_location`
+  now returns the composed base_link pose verbatim (`(0.9, 0, 2.0)`, was `(2.295, 0, 2.0)`),
+  pinning `base_link` to the CARLA vehicle origin. Then `base_link_ndt = ego_origin + 0 = GT`,
+  so the modelled error collapses to ~0 regardless of the chassis origin convention (rear-axle
+  vs mid-wheelbase), which is un-measurable on CARLA 0.10 anyway (wheel geometry is empty). The
+  now-moot `base_link_to_vehicle_center`, `SAMPLE_VEHICLE_WHEELBASE`, and `ego_wheelbase()` were
+  removed with them. **Unit-verified** (`pytest tests/phase_b/` 55 passed; `test_runner_kit`
+  pins `carla_attach_location == sensor_in_base_link`) and geometrically proven above;
+  **the live G1 re-run to confirm `max_err ≤ 0.5 m` is still pending** — the table above keeps
+  the measured FAIL until that run lands. Alternative considered and rejected: correcting the
+  gate's GT reference instead would paper over a real +1.4 m sensor misplacement (the physical
+  LiDAR would still sit wheelbase/2 ahead of where Autoware's TF claims). Second-order note for
+  G2: pinning base_link to the vehicle origin means the control bicycle-model's rear-axle
+  reference may be off by up to wheelbase/2 if CARLA's origin is not the rear axle — bounded and
+  re-examinable if G2 path tracking is poor.
 
 ### Operational finding: DDS ghost nodes across bring-up cycles
 

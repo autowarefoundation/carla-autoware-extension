@@ -49,33 +49,41 @@ exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
 - The planned measurement (physics-control wheel positions ÷ 100 cm→m) **cannot run
   on CARLA 0.10 Chaos**: every wheel's `location`, `offset` and `old_location` report
   `(0, 0, 0)`, and there is no `get_wheel_position` client API (wheel geometry lives in the
-  vehicle's binary skeletal-mesh sockets). `runner.spawn.ego_wheelbase()` therefore returns
-  `0.0` here — documented in-code as "unavailable, fall back to bbox / sample_vehicle".
+  vehicle's binary skeletal-mesh sockets). This is why a measured wheelbase was never
+  available on this build.
 - **Corroborating geometry (live):** bounding box `extent (2.446, 0.918, 0.762)` →
   full length **4.892 m**. The real Lincoln MKZ wheelbase is ~**2.85 m** (spec open-item
   value); 2.85 m + ~1.0 m front + ~1.05 m rear overhang ≈ 4.9 m is fully consistent with the
   measured length, but the length alone does not isolate the wheelbase.
-- **Reconcile decision:** keep `SAMPLE_VEHICLE_WHEELBASE = 2.79`
-  (`base_link_to_vehicle_center` shift = +1.395 m). Nominal delta vs the ~2.85 m real MKZ is
-  **0.06 m**, i.e. a per-sensor forward-offset impact of **delta/2 = 0.03 m** — under the
-  0.15 m STOP threshold. Concern: the exact delta is not directly measurable in 0.10, and the
-  coarser question (whether the extension publishes base_link AT the CARLA vehicle origin,
-  which would zero the +wheelbase/2 shift entirely) is a placement-convention item deferred
-  to the G1 NDT gate.
+- **RESOLVED by the G1 NDT gate (2026-07-23):** the deferred "coarser question — whether to
+  publish base_link AT the CARLA vehicle origin, zeroing the +wheelbase/2 shift entirely" is
+  now answered **yes**. The live G1 run localized but tracked a steady **1.44 m ≈ wheelbase/2**
+  error along the ego heading; it root-caused to exactly the `+wheelbase/2`
+  `base_link_to_vehicle_center` shift, which Autoware's TF (rebuilt from the same kit yamls,
+  base_link→sensor with no vehicle term) never compensated, so NDT back-solved base_link
+  wheelbase/2 ahead of the CARLA vehicle origin that the gate reads as ground truth. The shift
+  (and the now-moot wheelbase reconcile, `SAMPLE_VEHICLE_WHEELBASE`, and `ego_wheelbase()`)
+  were **removed**: `carla_attach_location` now returns the composed base_link pose verbatim,
+  pinning base_link to the CARLA vehicle origin. This makes the NDT↔GT error cancel to ~0
+  regardless of where the vehicle origin sits on the chassis, so the un-measurable wheelbase
+  no longer matters for G1. See `docs/phase-b-report.md` issue #6 for the full geometry.
 
 ### Attach math + Z-origin (gross-error gate) — PASS
 
-- Top LiDAR spawned attached to the ego at its kit-composed pose
-  (`velodyne_top_base_link` → base_link (0.9, 0, 2.0) → vehicle centre (2.295, 0, 2.0)).
+- Top LiDAR spawned attached to the ego at its kit-composed pose. **NOTE (superseded by the
+  G1 fix above):** this run predates the shift removal, so it attached at `vehicle centre
+  (2.295, 0, 2.0)` (= 0.9 + 2.79/2). The current runner attaches at the composed base_link
+  pose `(0.9, 0, 2.0)` with NO shift; the historical numbers below are kept as the live
+  translation/Z evidence, but the horizontal offset is now 0.9 m, not 2.295 m.
   TRANSLATION/Z live world transforms (original identity-attach run): ego
   `(-278.390, 220.540, -0.052)`, lidar `(-276.510, 219.224, 1.948)` → lidar−ego delta
   `(1.880, -1.316, 2.000)`, **horizontal distance 2.295 m** (= 0.9 + 2.79/2) and **dz
-  2.000 m** — matches the composition exactly, no gross Z error. (That run attached at
-  identity rotation, so lidar yaw then equalled the ego's; mount rotations are now APPLIED —
+  2.000 m** — matched the composition-with-shift exactly, no gross Z error. (That run attached
+  at identity rotation, so lidar yaw then equalled the ego's; mount rotations are now APPLIED —
   see the next subsection, which re-verifies the attach on the current build.)
 - Z pass-through assumption **validated**: ego `bbox.location.z 0.763 ≈ extent.z 0.762`, so
   the CARLA vehicle origin sits at the body bottom (ground = base_link height). No Z
-  correction constant is needed in `base_link_to_vehicle_center`.
+  correction constant is needed (the composed base_link Z is used verbatim at attach).
 
 ### Sensor mount rotations — now APPLIED (live re-verified 2026-07-21)
 

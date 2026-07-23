@@ -26,11 +26,8 @@ from runner.kit import (
 # "vehicle.lincoln.mkz", NOT "vehicle.lincoln.mkz_2020" (0.10 dropped the year suffix on
 # every vehicle, e.g. dodge.charger, mini.cooper). The _2020 id does not exist in this
 # build (verified live: 17 vehicle blueprints enumerated, only vehicle.lincoln.mkz present);
-# finding it raises, which was the initial live spawn failure until corrected. Its measured
-# wheelbase is reconciled against the sample_vehicle 2.79 m that base_link_to_vehicle_center
-# assumes; the accepted delta is recorded in docs/nishishinjuku-map.md, not silently absorbed.
+# finding it raises, which was the initial live spawn failure until corrected.
 EGO_BLUEPRINT = "vehicle.lincoln.mkz"
-SAMPLE_VEHICLE_WHEELBASE = 2.79  # sample_vehicle_description/vehicle_info.param.yaml wheel_base
 
 TOP_LIDAR_BLUEPRINT = "sensor.lidar.ray_cast"
 IMU_BLUEPRINT = "sensor.other.imu"
@@ -161,27 +158,6 @@ def spawn_ego(world, blueprint_library, spawn_transform):
     return world.spawn_actor(blueprint, spawn_transform)
 
 
-def ego_wheelbase(ego) -> float:
-    """Best-effort measured CARLA wheelbase (m) from physics-control wheel positions.
-
-    Wheel positions are reported in world-scale CENTIMETRES, so divide by 100. In CARLA
-    0.10 the field was renamed ``WheelPhysicsControl.position`` -> ``.location``, so read
-    ``wheel.location`` here.
-
-    IMPORTANT (verified live): the CARLA 0.10 (UE5/Chaos) build does NOT
-    populate wheel geometry -- ``location``, ``offset`` and ``old_location`` are all
-    (0, 0, 0) for every wheel and there is no ``get_wheel_position`` client API (the
-    geometry lives in the vehicle's binary skeletal-mesh sockets). This therefore returns
-    0.0 on 0.10; treat a ~0.0 result as "wheelbase unavailable, fall back to the bounding
-    box / the sample_vehicle value" rather than a real measurement. The helper is retained
-    for builds/versions that DO expose wheel locations. See the "Phase B ego reconciliation"
-    section of docs/nishishinjuku-map.md for the live evidence and the reconcile decision.
-    """
-    physics = ego.get_physics_control()
-    xs = [wheel.location.x / 100.0 for wheel in physics.wheels]
-    return abs(max(xs) - min(xs))
-
-
 def _spawn_sensor(world, blueprint_library, ego, blueprint_id, attrs, location, rotation):
     """Attach a sensor to ``ego`` at (``location`` [m], ``rotation`` [deg]) with ``attrs``.
 
@@ -202,12 +178,10 @@ def _spawn_sensor(world, blueprint_library, ego, blueprint_id, attrs, location, 
     return world.spawn_actor(blueprint, transform, attach_to=ego)
 
 
-def spawn_top_lidar(
-    world, blueprint_library, ego, kit: KitConfig, wheelbase=SAMPLE_VEHICLE_WHEELBASE
-):
+def spawn_top_lidar(world, blueprint_library, ego, kit: KitConfig):
     """Spawn the top LiDAR at its kit-derived pose (translation + mount rotation) with native
     ROS 2 attributes."""
-    location = carla_attach_location(kit, TOP_LIDAR_FRAME, wheelbase)
+    location = carla_attach_location(kit, TOP_LIDAR_FRAME)
     rotation = carla_attach_rotation(kit, TOP_LIDAR_FRAME)
     return _spawn_sensor(
         world,
@@ -220,20 +194,18 @@ def spawn_top_lidar(
     )
 
 
-def spawn_imu(world, blueprint_library, ego, kit: KitConfig, wheelbase=SAMPLE_VEHICLE_WHEELBASE):
+def spawn_imu(world, blueprint_library, ego, kit: KitConfig):
     """Spawn the IMU at its kit-derived pose (translation + mount rotation) with the tamagawa
     raw topic. The IMU mount is a ~180deg flip (kit roll/yaw pi), so the rotation is NOT
     cosmetic -- an identity attach would invert the IMU axes and corrupt the ekf."""
-    location = carla_attach_location(kit, IMU_FRAME, wheelbase)
+    location = carla_attach_location(kit, IMU_FRAME)
     rotation = carla_attach_rotation(kit, IMU_FRAME)
     return _spawn_sensor(
         world, blueprint_library, ego, IMU_BLUEPRINT, imu_attributes(), location, rotation
     )
 
 
-def spawn_sensors(
-    world, blueprint_library, ego, kit: KitConfig, wheelbase=SAMPLE_VEHICLE_WHEELBASE
-):
+def spawn_sensors(world, blueprint_library, ego, kit: KitConfig):
     """Spawn the native sensor rig (top LiDAR + IMU) attached to ``ego``.
 
     Returns the spawned sensor actors. The GNSS pose is supplied by the extension, so no
@@ -253,8 +225,8 @@ def spawn_sensors(
     """
     spawned = []
     try:
-        spawned.append(spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase))
-        spawned.append(spawn_imu(world, blueprint_library, ego, kit, wheelbase))
+        spawned.append(spawn_top_lidar(world, blueprint_library, ego, kit))
+        spawned.append(spawn_imu(world, blueprint_library, ego, kit))
     except Exception:
         for actor in spawned:
             try:

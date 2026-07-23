@@ -20,7 +20,6 @@ from runner.kit import (
     SENSOR_KIT_PACKAGE,
     TOP_LIDAR_FRAME,
     KitConfig,
-    base_link_to_vehicle_center,
     carla_attach_location,
     carla_attach_rotation,
     load_kit,
@@ -31,7 +30,6 @@ from runner.kit import (
 from runner.spawn import (
     EGO_BLUEPRINT,
     IMU_TOPIC,
-    SAMPLE_VEHICLE_WHEELBASE,
     TOP_LIDAR_ROS_NAME,
     TOP_LIDAR_TOPIC,
     _apply_attributes,
@@ -39,26 +37,6 @@ from runner.spawn import (
     imu_attributes,
     top_lidar_attributes,
 )
-
-# --- base_link -> vehicle-origin longitudinal conversion ---
-
-
-def test_base_link_offset_is_half_wheelbase_forward():
-    # sample_vehicle wheel_base = 2.79 -> a sensor at base_link moves +1.395 m in X
-    # (base_link is the rear-axle centre; CARLA attaches relative to the vehicle origin,
-    # ~mid-wheelbase, so shift +wheelbase/2 forward).
-    x, y, z = base_link_to_vehicle_center((0.0, 0.0, 0.0), wheelbase=2.79)
-    assert abs(x - 1.395) < 1e-6
-    assert y == 0.0 and z == 0.0
-
-
-def test_base_link_offset_passes_y_and_z_through():
-    # Only X is shifted; Y and Z are carried through unchanged (the documented Z
-    # pass-through assumes the CARLA vehicle origin sits at base_link height).
-    x, y, z = base_link_to_vehicle_center((1.0, 0.5, 2.0), wheelbase=2.85)
-    assert abs(x - (1.0 + 1.425)) < 1e-6
-    assert y == 0.5 and z == 2.0
-
 
 # --- kit yaml loading against the committed real calibration ---
 
@@ -106,12 +84,17 @@ def test_composition_applies_kit_rotation_for_offcentre_sensor():
 
 
 def test_carla_attach_location_top_lidar():
-    # Full pipeline: compose in base_link, then shift to the CARLA vehicle origin.
+    # base_link is pinned to the CARLA vehicle origin: the attach location IS the composed
+    # base_link pose with NO vehicle-centre shift (an earlier +wheelbase/2 shift was the
+    # 1.44 m G1 near-miss -- docs/phase-b-report.md issue #6). So the top LiDAR attaches at
+    # exactly sensor_in_base_link (0.9, 0, 2.0), not the old 2.295.
     kit = load_kit()
-    x, y, z = carla_attach_location(kit, TOP_LIDAR_FRAME, wheelbase=SAMPLE_VEHICLE_WHEELBASE)
-    assert math.isclose(x, 0.9 + SAMPLE_VEHICLE_WHEELBASE / 2.0, abs_tol=1e-9)  # 2.295
+    x, y, z = carla_attach_location(kit, TOP_LIDAR_FRAME)
+    assert math.isclose(x, 0.9, abs_tol=1e-9)
     assert math.isclose(y, 0.0, abs_tol=1e-9)
     assert math.isclose(z, 2.0, abs_tol=1e-9)
+    # Identity with the composed base_link pose (no shift applied on top).
+    assert carla_attach_location(kit, TOP_LIDAR_FRAME) == sensor_in_base_link(kit, TOP_LIDAR_FRAME)
 
 
 # --- spawn attribute assembly (pure; no CARLA connection) ---
@@ -128,7 +111,6 @@ def test_ego_blueprint_is_measured_lincoln():
     # CARLA 0.10 ids it without the 0.9-era year suffix (mkz_2020 does not exist in the 0.10
     # blueprint library, verified live in Step 4b); it is "vehicle.lincoln.mkz".
     assert EGO_BLUEPRINT == "vehicle.lincoln.mkz"
-    assert SAMPLE_VEHICLE_WHEELBASE == 2.79
 
 
 def test_top_lidar_attributes_native():
@@ -354,10 +336,10 @@ def test_spawn_sensors_destroys_already_spawned_actor_on_partial_failure(monkeyp
 
     first_actor = _FakeActor()
 
-    def fake_spawn_top_lidar(world, blueprint_library, ego, kit, wheelbase):
+    def fake_spawn_top_lidar(world, blueprint_library, ego, kit):
         return first_actor
 
-    def fake_spawn_imu(world, blueprint_library, ego, kit, wheelbase):
+    def fake_spawn_imu(world, blueprint_library, ego, kit):
         raise RuntimeError("imu spawn exploded")
 
     monkeypatch.setattr(spawn_mod, "spawn_top_lidar", fake_spawn_top_lidar)
