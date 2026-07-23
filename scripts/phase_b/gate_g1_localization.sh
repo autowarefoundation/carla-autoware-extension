@@ -30,10 +30,20 @@ python3 - "$WIN" "$GT" <<'PY' &
 import sys, time, carla
 win=float(sys.argv[1]); out=sys.argv[2]
 w=carla.Client("localhost",2000).get_world()
-ego=next(a for a in w.get_actors().filter("vehicle.*") if a.attributes.get("role_name")=="ego")
+w.wait_for_tick()  # sync mode: a cold client sees an empty snapshot (frame 0) until ticked
+for _ in range(100):
+    try:
+        ego=next(a for a in w.get_actors().filter("vehicle.*") if a.attributes.get("role_name")=="ego")
+        break
+    except StopIteration:
+        time.sleep(0.1)
+else:
+    raise RuntimeError("no ego actor found after warm-up retries")
 end=time.time()+win; rows=[]
+# +81655.73 / +50137.43 is the MGRS-local map-frame origin (Task 5 / MgrsOffset.h); CARLA
+# reports metres, so this is a pure offset (Y also flips sign) -- do not strip it.
 while time.time()<end:
-    t=ego.get_transform().location; rows.append(f"{time.time():.3f} {t.x:.4f} {-t.y:.4f}")  # Y-flip to map frame
+    t=ego.get_transform().location; rows.append(f"{time.time():.3f} {81655.73 + t.x:.4f} {50137.43 - t.y:.4f}")
     time.sleep(0.05)
 open(out,"w").write("\n".join(rows)+"\n"); print(f"gt_rows={len(rows)}")
 PY

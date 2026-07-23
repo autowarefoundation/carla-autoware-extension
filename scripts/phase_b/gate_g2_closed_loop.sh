@@ -14,23 +14,42 @@ WIN=120   # seconds to reach the goal
 DIST=/tmp/g2_dist.txt
 
 # Engage + assert control_cmd is actually flowing (a hard precondition for actuation).
+# `ros2 topic hz` never self-terminates, so `timeout` SIGKILLs it and returns 124 on the
+# expected/healthy path -- that is NOT a failure. The real liveness test is whether the
+# captured output contains an "average rate:" line; a 124 with rate lines present means
+# control_cmd IS live, so proceed. Only a genuinely silent topic (no rate lines) is FAIL.
 docker compose -f "$COMPOSE" exec -T autoware bash -lc '
   source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0
   ros2 topic pub -1 /autoware/engage autoware_vehicle_msgs/msg/Engage "{engage: true}"
   echo "engaged; checking control_cmd liveness:"
-  timeout 10 ros2 topic hz /control/command/control_cmd --window 30 \
-    || { echo "G2 FAIL: no control_cmd (vehicle_cmd_gate not commanding)"; exit 1; }'
+  set +o pipefail
+  timeout 10 ros2 topic hz /control/command/control_cmd --window 30 > /tmp/g2_hz.txt 2>&1; rc=$?
+  set -o pipefail
+  cat /tmp/g2_hz.txt
+  grep -q "average rate:" /tmp/g2_hz.txt \
+    || { echo "G2 FAIL: no control_cmd (vehicle_cmd_gate not commanding)"; exit 1; }
+  [ "$rc" -eq 124 ] || [ "$rc" -eq 0 ] || { echo "G2 FAIL: ros2 topic hz errored rc=$rc"; exit "$rc"; }'
 
 # Ego-to-goal distance series (map frame; CARLA Y is flipped to map).
 python3 - "$WIN" "$GOAL_X" "$GOAL_Y" "$DIST" <<'PY'
 import sys, time, math, carla
 win=float(sys.argv[1]); gx=float(sys.argv[2]); gy=float(sys.argv[3]); out=sys.argv[4]
 w=carla.Client("localhost",2000).get_world()
-ego=next(a for a in w.get_actors().filter("vehicle.*") if a.attributes.get("role_name")=="ego")
+w.wait_for_tick()  # sync mode: a cold client sees an empty snapshot (frame 0) until ticked
+for _ in range(100):
+    try:
+        ego=next(a for a in w.get_actors().filter("vehicle.*") if a.attributes.get("role_name")=="ego")
+        break
+    except StopIteration:
+        time.sleep(0.1)
+else:
+    raise RuntimeError("no ego actor found after warm-up retries")
 end=time.time()+win; rows=[]
+# gx,gy are in the MGRS-local map frame, so the ego must be mapped too before comparing:
+# +81655.73 / +50137.43 is the map-frame origin (Task 5 / MgrsOffset.h) -- do not strip it.
 while time.time()<end:
     t=ego.get_transform().location
-    rows.append(f"{math.hypot(t.x-gx, (-t.y)-gy):.4f}")
+    rows.append(f"{math.hypot((81655.73 + t.x) - gx, (50137.43 - t.y) - gy):.4f}")
     time.sleep(0.1)
 open(out,"w").write("\n".join(rows)+"\n"); print(f"dist_rows={len(rows)}")
 PY

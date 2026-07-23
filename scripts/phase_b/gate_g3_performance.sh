@@ -11,12 +11,29 @@ REPO="$(cd "$HERE/../.." && pwd)"
 COMPOSE="$REPO/docker/compose.yaml"
 LHZ=/tmp/g3_lidar_hz.txt CHZ=/tmp/g3_control_hz.txt
 
+# `ros2 topic hz` never self-terminates, so `timeout` SIGKILLs it and returns 124 on the
+# expected/healthy path -- under `set -e`+`pipefail` that 124 would otherwise abort the
+# script right after the LiDAR capture, before measure_rates.py or the control capture
+# ever run. Scope pipefail off around each tee pipe, read the real exit code via
+# PIPESTATUS (tee itself exits 0), and treat 124 (timeout fired, as expected) the same as
+# 0 (clean exit) -- any OTHER rc is a genuine failure (e.g. the topic doesn't exist).
+# The control topic is autoware_control_msgs/msg/Control, so its capture also needs the
+# Autoware overlay sourced (matches gate_g1/gate_g2); sourcing it for LiDAR too is harmless.
+set +o pipefail
 docker compose -f "$COMPOSE" exec -T autoware bash -lc '
-  source /opt/ros/humble/setup.bash && export ROS_DOMAIN_ID=0
+  source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0
   timeout 12 ros2 topic hz /sensing/lidar/top/pointcloud_raw_ex --window 40' | tee "$LHZ"
+rc=${PIPESTATUS[0]}
+set -o pipefail
+[ "$rc" -eq 124 ] || [ "$rc" -eq 0 ] || { echo "G3 FAIL: LiDAR ros2 topic hz failed rc=$rc"; exit "$rc"; }
+
+set +o pipefail
 docker compose -f "$COMPOSE" exec -T autoware bash -lc '
-  source /opt/ros/humble/setup.bash && export ROS_DOMAIN_ID=0
+  source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0
   timeout 12 ros2 topic hz /control/command/control_cmd --window 60' | tee "$CHZ"
+rc=${PIPESTATUS[0]}
+set -o pipefail
+[ "$rc" -eq 124 ] || [ "$rc" -eq 0 ] || { echo "G3 FAIL: control ros2 topic hz failed rc=$rc"; exit "$rc"; }
 
 rc=0
 python3 "$HERE/measure_rates.py" --hz-file "$LHZ" --target 20 --tol 1  --label LiDAR   || rc=1
