@@ -29,6 +29,7 @@ from runner.kit import (
 )
 from runner.spawn import (
     EGO_BLUEPRINT,
+    IMU_ROS_NAME,
     IMU_TOPIC,
     TOP_LIDAR_ROS_NAME,
     TOP_LIDAR_TOPIC,
@@ -140,6 +141,35 @@ def test_imu_attributes():
     attrs = imu_attributes()
     assert attrs["ros_topic_name"] == IMU_TOPIC == "/sensing/imu/tamagawa/imu_raw"
     assert all(isinstance(v, str) for v in attrs.values())
+
+
+def test_imu_ros_name_sets_the_tf_frame():
+    # The `ray_cast__` twin of M4-blocker #1, on the IMU (G2/G3 campaign, 2026-07-23).
+    # Without `ros_name` the fork mangles the blueprint id through TWO stages:
+    # ActorDispatcher.cpp:275-288 sees RosName == id and rewrites "sensor.other.imu" to the
+    # placeholder "imu__" (last dot-token + "__"), registering it as BOTH ros_name and
+    # frame_id; then ROS2.cpp's InertialMeasurementUnit branch calls resolve("imu") ->
+    # ResolveAutoStreamSuffix (ROS2.cpp:555-572) which rewrites the placeholder to
+    # "imu<stream_id>" -- the live-observed "imu3". CarlaIMUPublisher.cpp:45 stamps that as
+    # header.frame_id. "imu3" is absent from the TF tree Autoware builds from the kit yamls,
+    # so gyro_bias_estimator/imu_corrector cannot transform the sample and
+    # /sensing/imu/imu_data never forms -> AEB + system diagnostics go ERROR -> the
+    # vehicle_cmd_gate raises a FALSE MRM that overrides the drive command, which is why the
+    # G2 drive needed `use_emergency_handling:=false`.
+    #
+    # Naming the frame "tamagawa/imu_link" (kit.py IMU_FRAME, the frame the committed
+    # sensor_kit_calibration.yaml declares) slots the sample into that tree. Three fork
+    # properties make this safe and rebuild-free: `ros_name` is registered for EVERY actor
+    # definition in FillIdAndTags (ActorBlueprintFunctionLibrary.cpp:230), not just lidars;
+    # ResolveAutoStreamSuffix early-returns unless ros_name is exactly the "imu__"
+    # placeholder, so the unconditional resolve("imu") cannot clobber an explicit name; and
+    # BuildBaseTopicName (ROS2.cpp:538-541) returns the verbatim `ros_topic_name` override,
+    # so the embedded slash never reaches DDS topic construction.
+    attrs = imu_attributes()
+    assert attrs["ros_name"] == IMU_ROS_NAME == "tamagawa/imu_link"
+    # The frame MUST equal the kit frame the mount pose is derived from -- if these two ever
+    # diverge, Autoware would interpret the sample in a frame the runner did not mount it at.
+    assert IMU_ROS_NAME == IMU_FRAME
 
 
 # --- ROS rpy -> CARLA/UE Rotator conversion pins (Y-flip M-conjugation) ---

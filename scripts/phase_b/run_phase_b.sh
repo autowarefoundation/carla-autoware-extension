@@ -44,12 +44,19 @@ export CYCLONEDDS_URI="file://$REPO/docker/cyclonedds.xml"
 # and the ego spawn, so carla_interface's one-shot load_world cannot wipe the ego.
 WITH_AUTOWARE="${WITH_AUTOWARE:-0}"
 
-# Opt-in async tick loop (the documented G2 fallback -- see the runner launch comment at the
-# foot of this script). Default 0 keeps sync pacing (0.05 fixed delta = 20 Hz), which is what
-# G3's LiDAR-cadence check requires. Set RUNNER_ASYNC=1 for the G2 closed-loop route gate:
-# CARLA 0.10/Chaos vehicles do NOT propel in synchronous mode on this build (control delivered,
-# wheels configured, ego stays at 0 m/s), so route completion is only measurable in async, where
-# MPC-style steering-delay compensation absorbs the loop latency.
+# Opt-in async tick loop. Default 0 keeps sync pacing (0.05 fixed delta = 20 Hz) -- which is
+# what BOTH G3's LiDAR-cadence check AND the G2 closed-loop route gate require.
+#
+# REFUTED (2026-07-23 G2 campaign, docs/phase-b-report.md): this flag used to be documented as
+# the G2 path because "CARLA 0.10/Chaos vehicles do not propel in synchronous mode". That claim
+# was never tested with a VALID DRIVE COMMAND -- M4 had no trajectory, so the command under
+# test was always a stop. Given a real one, the sync ego drove a 445 m mission-planned route at
+# up to 4.39 m/s, fully closed-loop under NDT. Sync propels.
+#
+# Async is now the WRONG choice for G2: it breaks NDT outright (18-65 m error, median 51 m,
+# 0/34 samples within 1.0 m, iteration_num maxed) because /clock free-runs at ~140 Hz and the
+# async cloud is malformed for scan-matching even with the sensor_tick fix. Keep this flag only
+# for deliberate async experiments; do NOT reach for it to make the ego move.
 RUNNER_ASYNC="${RUNNER_ASYNC:-0}"
 RUNNER_MODE_ARGS=()
 [ "$RUNNER_ASYNC" = "1" ] && RUNNER_MODE_ARGS+=(--async)
@@ -253,10 +260,9 @@ fi
 # would kill this script's wait but leave the runner (and thus the ego/sensors)
 # running headless. No kit-calibration flags are passed: the runner defaults to
 # the committed runner/config/ copies (see runner/__main__.py), so this harness
-# has nothing kit-specific to override. Sync mode is the runner's default; CARLA
-# 0.10/Chaos vehicles have been observed NOT to propel in synchronous mode on
-# this build (control delivered, wheels configured, ego stays at 0 m/s) -- for the
-# G2 closed-loop route gate set RUNNER_ASYNC=1 (appends --async here; the validated
-# fallback, MPC-style steering-delay compensation absorbs the loop latency). G3's
-# LiDAR-cadence check stays on the sync default so 20 Hz means a real paced cadence.
+# has nothing kit-specific to override. Sync mode is the runner's default and is
+# correct for BOTH gates: the sync ego DOES propel given a valid drive command
+# (445 m closed-loop drive, 2026-07-23 -- see the RUNNER_ASYNC comment above for
+# the refutation of the old "sync does not propel" prior), and G3's LiDAR-cadence
+# check needs sync so 20 Hz means a real paced cadence rather than a free-run.
 python3 -m runner --host localhost --port 2000 --map "$MAP" "${RUNNER_MODE_ARGS[@]}"

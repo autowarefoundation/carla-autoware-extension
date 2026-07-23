@@ -59,6 +59,33 @@ IMU_TOPIC = "/sensing/imu/tamagawa/imu_raw"
 # precision refinement to confirm against the live TF tree in the staged E2E re-run.
 TOP_LIDAR_ROS_NAME = "velodyne_top"
 
+# IMU header.frame_id -- the same defect as the LiDAR's above, on the second native sensor
+# (found in the G2/G3 live campaign, 2026-07-23). Without `ros_name` the fork mangles the
+# blueprint id in TWO stages: ActorDispatcher (ActorDispatcher.cpp:275-288) sees RosName == id
+# and rewrites "sensor.other.imu" to the placeholder "imu__" (last dot-token + "__"), used as
+# both ros_name and frame_id; then ROS2::GetOrCreateSensor's InertialMeasurementUnit branch
+# calls resolve("imu") -> ResolveAutoStreamSuffix (ROS2.cpp:555-572), which rewrites the
+# placeholder to "imu<stream_id>" -- the live-observed "imu3". (This second stage is why the
+# IMU's mangled name has a digit and the LiDAR's does not: the lidar branch skips resolve()
+# when a ros_topic_name override is present, the IMU branch calls it unconditionally.)
+# CarlaIMUPublisher.cpp:45 then stamps that as header.frame_id.
+#
+# "imu3" is absent from the TF tree Autoware builds from the kit yamls, so gyro_bias_estimator
+# / imu_corrector cannot transform the sample and /sensing/imu/imu_data never forms. That
+# leaves AEB and the system diagnostics in ERROR, which makes vehicle_cmd_gate raise a FALSE
+# MRM COMFORTABLE_STOP over a genuine drive command -- the reason the G2 drive had to be armed
+# with `use_emergency_handling:=false`.
+#
+# Bound to kit.IMU_FRAME (not a duplicated literal) so the published frame can never drift
+# from the frame whose calibration the sensor is physically mounted at. Rebuild-free, like the
+# LiDAR fix: `ros_name` is declared for EVERY actor definition by FillIdAndTags
+# (ActorBlueprintFunctionLibrary.cpp:230), not just lidars. Two fork properties make the
+# slash-bearing name safe: ResolveAutoStreamSuffix early-returns unless ros_name is exactly
+# the "imu__" placeholder, so the unconditional resolve("imu") cannot clobber it; and
+# BuildBaseTopicName (ROS2.cpp:538-541) emits the verbatim `ros_topic_name` override, so the
+# slash never reaches DDS topic construction.
+IMU_ROS_NAME = IMU_FRAME
+
 # LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
 # (the concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans.
 _LIDAR_QOS_RELIABILITY = "best_effort"
@@ -122,6 +149,9 @@ def imu_attributes() -> dict[str, str]:
     from the extension), so no CARLA GNSS sensor/topic is spawned here."""
     return {
         "ros_topic_name": IMU_TOPIC,
+        # frame_id fix -- see IMU_ROS_NAME. Set unconditionally (a naming attr like
+        # role_name), following the required native discriminator as on the LiDAR.
+        "ros_name": IMU_ROS_NAME,
         "sensor_tick": _SENSOR_TICK,
     }
 

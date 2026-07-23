@@ -369,8 +369,9 @@ Sequence: engage via `/autoware/engage` → `control_mode` AUTONOMOUS(1), op-mod
 (this legacy path flips autonomous even though the system-diagnostics graph withholds it).
 The `vehicle_cmd_gate` then MRM-overrode the drive command with an emergency stop
 (`velocity 0, accel −1.5`) — a **false** emergency from the perception-off diagnostics + an
-IMU-frame gap (the extension publishes the IMU as `frame_id: imu3`, absent from the kit TF
-tree, so `/sensing/imu/imu_data` never forms, mirroring the M4-blocker-#1 LiDAR-frame bug).
+IMU-frame gap (the extension published the IMU as `frame_id: imu3`, absent from the kit TF
+tree, so `/sensing/imu/imu_data` never forms, mirroring the M4-blocker-#1 LiDAR-frame bug —
+root-caused and fixed after the campaign, see "IMU frame fix" below).
 The **raw** trajectory-follower output was already a genuine drive command (`velocity 0.25,
 accel +0.59`); setting `vehicle_cmd_gate use_emergency_handling:=false` (a false-emergency
 suppression on a confirmed-clear route) let it reach the ego.
@@ -406,3 +407,55 @@ G2 runs in sync (perfect NDT) and async is not needed — the reverse of the M4-
   `carla_interface`'s `load_world` holds the RPC); it clears once the stack is up.
 - Teleporting the ego (`set_transform`) to reset it desyncs NDT/ekf; reseed `/initialpose` to
   re-lock, and expect the motion-planning trajectory to need a fresh route afterward.
+
+### IMU frame fix — the `ray_cast__` twin (root-caused + live-verified 2026-07-23)
+
+The false MRM above had a second, structural contributor: the IMU carried `frame_id: imu3`.
+Traced through the fork, the name is mangled in **two** stages, which is why it has a digit
+where the LiDAR's `ray_cast__` does not:
+
+| #   | Layer                                | Behaviour                                                                                                              |
+| --- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| 1   | `runner/spawn.py` `imu_attributes()` | omitted `ros_name` (the LiDAR set it)                                                                                  |
+| 2   | `ActorDispatcher.cpp:275-288`        | `RosName == id` → placeholder `imu__` (last dot-token + `__`), registered as **both** ros_name and frame_id            |
+| 3   | `ROS2.cpp:655` IMU branch            | calls `resolve("imu")` → `ResolveAutoStreamSuffix` (`ROS2.cpp:555-572`) → `imu` + stream_id = **`imu3`**               |
+| 4   | `CarlaIMUPublisher.cpp:45`           | `header.frame_id = GetFrameId()`                                                                                       |
+| 5   | Autoware                             | `imu3` ∉ kit TF tree → gyro_bias/imu_corrector dead → no `/sensing/imu/imu_data` → AEB + diagnostics ERROR → false MRM |
+
+Stage 3 is IMU-specific: the lidar/radar/DVS/semantic-lidar branches skip `resolve()` when a
+`ros_topic_name` override is present, the IMU branch calls it unconditionally.
+
+**Fix:** `runner/spawn.py` sets `ros_name` on the IMU, bound to `kit.IMU_FRAME`
+(`tamagawa/imu_link`) rather than a duplicated literal, so the published frame cannot drift
+from the calibration the sensor is mounted at. No CARLA rebuild — `ros_name` is declared for
+every actor definition by `FillIdAndTags` (`ActorBlueprintFunctionLibrary.cpp:230`), not just
+lidars. Two fork properties were verified in source to make the slash-bearing name safe:
+`ResolveAutoStreamSuffix` early-returns unless ros_name is exactly the `imu__` placeholder (so
+the unconditional `resolve("imu")` cannot clobber an explicit name), and `BuildBaseTopicName`
+(`ROS2.cpp:538-541`) emits the verbatim `ros_topic_name` override (so the slash never reaches
+DDS topic construction).
+
+**Verification — LIVE, on a cold-started sync stack** (container `405225eda6`, 169 nodes,
+concat relay up). 67 pytest pass (incl. a regression pin that the IMU `ros_name` equals
+`IMU_FRAME`), and the live stack confirms every link of the chain:
+
+| Check                                        | Before (campaign)  | After (this fix)                                    |
+| -------------------------------------------- | ------------------ | --------------------------------------------------- |
+| `/sensing/imu/tamagawa/imu_raw` frame_id     | `imu3`             | **`tamagawa/imu_link`**                             |
+| `/sensing/imu/imu_data`                      | never formed       | **19.96 Hz**                                        |
+| TF `base_link` → `tamagawa/imu_link`         | absent             | resolves: `[0.900, 0.000, 2.000]`, ~180° mount flip |
+| `aeb_emergency_stop` diagnostic              | ERROR              | **OK (0)**                                          |
+| `gyro_odometer_status` diagnostic            | ERROR (chain dead) | **OK (0)**                                          |
+| `vehicle_cmd_gate: emergency_stop_operation` | —                  | **OK (0)**                                          |
+
+The TF translation/rotation match the committed kit calibration (the IMU mount is the ~180°
+roll/yaw flip `spawn.py` documents), confirming the frame is not merely _accepted_ but
+_correctly placed_. `gyro_bias_scale_validator` sits at WARN (`0x01`), not ERROR — expected
+with the ego stationary, since bias estimation needs motion.
+
+So the **IMU-driven contributor to the false MRM is cleared**: AEB and gyro_odometer are OK
+and the gate reports no emergency-stop operation. The perception-off diagnostics remain a
+separate contributor, so whether `use_emergency_handling:=false` can be dropped from the G2
+arm recipe entirely is **not** claimed here — that needs a re-run of the full G2 arm sequence
+(synthetic perception + all-green signals + route + engage), which this verification did not
+perform.
