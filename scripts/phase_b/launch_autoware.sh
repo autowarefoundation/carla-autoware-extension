@@ -28,36 +28,57 @@ export ROS_DOMAIN_ID=0
 
 AW_LOG=/tmp/phase-b-autoware.log            # container-side launch log
 AW_PIDFILE=/tmp/phase-b-autoware.cpid       # container-side ros2-launch PID (for --stop)
+RELAY_PIDFILE=/tmp/phase-b-concat-relay.cpid  # container-side single-LiDAR relay PID
 CARLA_INTERFACE_NODE="/autoware_carla_interface"
-READY_NODE_THRESHOLD=50                     # Autoware e2e brings up ~170 nodes; 50 = "core up"
-READY_TIMEOUT_S=240                         # bounded; a slow cold container can take minutes
+# The e2e stack settles at ~168 nodes. Wait for it to be NEARLY complete (>= 150) AND stable
+# before declaring ready: a too-eager threshold (e.g. 50) lets the runner spawn + the relay
+# start while the sensing composable nodes (crop_box/distortion/ring) are still loading, and
+# the DDS discovery churn from that has been observed to make some of those loads silently
+# fail (empty pointcloud_container -> dead per-LiDAR chain). Requiring a high, settled count
+# lets sensing finish loading first.
+READY_NODE_THRESHOLD=150
+READY_TIMEOUT_S=300                         # bounded; a slow cold container can take minutes
 
-# AW_LOG / AW_PIDFILE are CONTAINER-side paths; pass them (and the domain) in via -e so the
-# single-quoted container scripts below expand them in the container -- no host-string
-# injection, which is fragile and reads as a shellcheck SC2016 false positive.
+# M4-blocker #2 (single-LiDAR concatenation): the awsim_labs concatenate node
+# (PointCloudConcatenateDataSynchronizerComponent) HARD-REQUIRES >= 2 input topics -- with one
+# it throws "Only one topic given. Need at least two topics to continue." and never loads. The
+# Phase B rig has ONE top LiDAR, so instead of concatenating we RELAY the single per-LiDAR
+# cloud straight to the concatenated topic the localization chain consumes. This is
+# frame-correct: /sensing/lidar/top/pointcloud_before_sync is already in base_link (the concat
+# node's own output_frame), so the relay needs no transform. (The concat node is left with its
+# stock 3-topic config; per the M4 report it stays silent with a single publisher, so the relay
+# is the sole publisher on the concatenated topic -- verified live after bring-up.)
+RELAY_IN=/sensing/lidar/top/pointcloud_before_sync
+RELAY_OUT=/sensing/lidar/concatenated/pointcloud
+
+# Container-side paths passed in via -e so the single-quoted container scripts below expand
+# them in the container -- no host-string injection (fragile + a shellcheck SC2016 false
+# positive).
 compose_exec() {
   docker compose -f "$COMPOSE" exec -T \
     -e ROS_DOMAIN_ID=0 -e AW_LOG="$AW_LOG" -e AW_PIDFILE="$AW_PIDFILE" \
+    -e RELAY_PIDFILE="$RELAY_PIDFILE" -e RELAY_IN="$RELAY_IN" -e RELAY_OUT="$RELAY_OUT" \
     autoware bash -lc "$1"
 }
 
 # --stop: tear the launch down (kill the recorded container-side ros2-launch PID). Uses the
 # PID file, NEVER pkill -f, which self-matches the exec's own command line (project gotcha).
 if [ "${1:-}" = "--stop" ]; then
-  # $AW_PIDFILE/$pid are expanded IN THE CONTAINER (compose_exec passes -e AW_PIDFILE); the
-  # single quotes are deliberate so the host does not expand them first.
+  # $AW_PIDFILE/$RELAY_PIDFILE/$pid are expanded IN THE CONTAINER (compose_exec passes them via
+  # -e); the single quotes are deliberate so the host does not expand them first.
   # shellcheck disable=SC2016
   compose_exec '
-    if [ -f "$AW_PIDFILE" ]; then
-      pid="$(cat "$AW_PIDFILE")"
+    for pf in "$RELAY_PIDFILE" "$AW_PIDFILE"; do
+      [ -f "$pf" ] || continue
+      pid="$(cat "$pf")"
       if kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null || true
         for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
         kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
       fi
-      rm -f "$AW_PIDFILE"
-    fi
-    echo "autoware launch stopped"'
+      rm -f "$pf"
+    done
+    echo "autoware launch + concat relay stopped"'
   exit 0
 fi
 
@@ -115,8 +136,20 @@ while [ "$elapsed" -lt "$READY_TIMEOUT_S" ]; do
   count="$(printf '%s\n' "$nodes" | grep -c '^/' || true)"
   if [ "$count" -ge "$READY_NODE_THRESHOLD" ] && ! printf '%s\n' "$nodes" | grep -qx "$CARLA_INTERFACE_NODE"; then
     consecutive_ready=$((consecutive_ready + 1))
-    if [ "$consecutive_ready" -ge 2 ]; then
+    if [ "$consecutive_ready" -ge 3 ]; then
       echo "OK: Autoware up ($count nodes); $CARLA_INTERFACE_NODE has fired-and-died -- safe to spawn the native ego"
+      # Start the single-LiDAR concat relay (M4-blocker #2). It subscribes to $RELAY_IN, which
+      # does not exist until the runner spawns the LiDAR moments from now -- topic_tools relay
+      # waits for the publisher and begins forwarding once it appears, so starting it here (ego
+      # not yet up) is correct. Record its PID for --stop.
+      echo "OK: starting single-LiDAR concat relay $RELAY_IN -> $RELAY_OUT"
+      # $RELAY_* / $! expand IN THE CONTAINER (passed via -e); single quotes intentional.
+      # shellcheck disable=SC2016
+      compose_exec '
+        source /opt/ros/humble/setup.bash 2>/dev/null; export ROS_DOMAIN_ID=0
+        nohup ros2 run topic_tools relay "$RELAY_IN" "$RELAY_OUT" >/tmp/phase-b-concat-relay.log 2>&1 &
+        echo $! >"$RELAY_PIDFILE"
+        echo "concat relay pid $(cat "$RELAY_PIDFILE")"'
       exit 0
     fi
   else

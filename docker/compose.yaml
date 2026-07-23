@@ -13,9 +13,4 @@ services:
       - ../reports:/work/reports
       - ~/autoware_map/nishishinjuku:/autoware_map/nishishinjuku:ro
       - ../extension/build:/work/extension:ro
-      # Phase B M4-blocker #2: overlay the single-LiDAR concatenate config over the kit's
-      # shipped 3-LiDAR one so the concat node fires with the one top LiDAR CARLA provides
-      # (see the file header + docs/phase-b-report.md). pointcloud_preprocessor.launch.py
-      # loads this exact path by default, so the overlay needs no launch-line change.
-      - ./overlay/awsim_labs_sensor_kit_launch/config/concatenate_and_time_sync_node.param.yaml:/opt/autoware/share/awsim_labs_sensor_kit_launch/config/concatenate_and_time_sync_node.param.yaml:ro
     command: sleep infinity
