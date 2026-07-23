@@ -72,7 +72,7 @@ exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
 
 - Top LiDAR spawned attached to the ego at its kit-composed pose. **NOTE (superseded by the
   G1 fix above):** this run predates the shift removal, so it attached at `vehicle centre
-  (2.295, 0, 2.0)` (= 0.9 + 2.79/2). The current runner attaches at the composed base_link
+(2.295, 0, 2.0)` (= 0.9 + 2.79/2). The current runner attaches at the composed base_link
   pose `(0.9, 0, 2.0)` with NO shift; the historical numbers below are kept as the live
   translation/Z evidence, but the horizontal offset is now 0.9 m, not 2.295 m.
   TRANSLATION/Z live world transforms (original identity-attach run): ego

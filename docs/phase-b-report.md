@@ -21,7 +21,7 @@ GNSS position-scale bug; see [Root-caused blockers](#root-caused-blockers). **Up
 [Blocker closure — verified in a live re-run](#blocker-closure--verified-in-a-live-re-run-2026-07-22).
 The dead sensing/localization chain now runs end-to-end: **NDT localizes at ~20 Hz (400
 samples, was `ndt_samples=0`)** with the full ekf-fused `kinematic_state`. G1 is now a
-*measured* FAIL at **1.44 m** (threshold 0.5 m) — root-caused to a base_link↔vehicle-origin
+_measured_ FAIL at **1.44 m** (threshold 0.5 m) — root-caused to a base_link↔vehicle-origin
 frame offset (≈wheelbase/2), a precise near-miss rather than a dead chain. The M4 Gates table
 below is preserved as the original campaign record; the live re-run results are in the closure
 section.
@@ -88,16 +88,16 @@ layer was replaced by generated ROS 2 `rosidl` packages, and remain green on thi
 
 ## Gates
 
-| Gate                 | Threshold                   | Measured                                           | Result   | Mode           |
-| -------------------- | --------------------------- | -------------------------------------------------- | -------- | -------------- |
+| Gate                 | Threshold                   | Measured                                                                                                         | Result     | Mode           |
+| -------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- | -------------- |
 | G1 NDT localization  | max err <= 0.5 m            | M4: `ndt_samples=0` (dead chain) → after closure + base_link fix (2026-07-23): `max_err=0.077 m`, 400 samples ×2 | **PASS** † | sync-paced     |
-| G2 closed-loop route | reach goal <= 1.0 m         | `closest_approach 40.008 m`; ego peak 0.000 m/s    | **FAIL** | sync AND async |
-| G3 LiDAR cadence     | 20 Hz +-1 (real-time paced) | 19.95 Hz                                           | **PASS** | sync-paced     |
-| G3 control loop      | ~60 Hz (+-15)               | 19.96 Hz sync / 30.5 Hz async                      | **FAIL** | sync / async   |
+| G2 closed-loop route | reach goal <= 1.0 m         | `closest_approach 40.008 m`; ego peak 0.000 m/s                                                                  | **FAIL**   | sync AND async |
+| G3 LiDAR cadence     | 20 Hz +-1 (real-time paced) | 19.95 Hz                                                                                                         | **PASS**   | sync-paced     |
+| G3 control loop      | ~60 Hz (+-15)               | 19.96 Hz sync / 30.5 Hz async                                                                                    | **FAIL**   | sync / async   |
 
 † G1's raw M4-campaign measurement was a dead chain (`ndt_samples=0`); the **PASS** is the
-post-closure result after the four blocker fixes AND the base_link↔vehicle-origin fix (issue
-#6), live-verified 2026-07-23 on two consecutive 400-sample runs (`max_err` 0.077 / 0.076 m).
+post-closure result after the four blocker fixes AND the base_link↔vehicle-origin fix (issue 6),
+live-verified 2026-07-23 on two consecutive 400-sample runs (`max_err` 0.077 / 0.076 m).
 See [Blocker closure](#blocker-closure--verified-in-a-live-re-run-2026-07-22).
 
 The G3 control-loop threshold (60±15 Hz) is carried over from an earlier assumption and has
@@ -196,7 +196,7 @@ The four blockers were fixed, and a full live E2E re-run was then executed (fres
 `carla-unreal-editor` rebuild carrying the blocker-1/3 fixes, RTX 5090, Autoware
 `universe-devel` container). **Result: the sensing/localization chain that was dead in M4 now
 runs end-to-end — NDT localizes at ~20 Hz (400 samples, vs M4's `ndt_samples=0`) with the
-full ekf-fused `kinematic_state` at 19.97 Hz.** That re-run left G1 a *measured* 1.44 m
+full ekf-fused `kinematic_state` at 19.97 Hz.** That re-run left G1 a _measured_ 1.44 m
 near-miss, itself root-caused to a base_link frame offset (issue #6 below). **A follow-up
 re-run on 2026-07-23, after removing that offset, closes G1 to a live-verified PASS: two
 consecutive 400-sample gate runs gave `max_err = 0.077 m` and `0.076 m` (min 0.011 / mean
@@ -204,12 +204,12 @@ consecutive 400-sample gate runs gave `max_err = 0.077 m` and `0.076 m` (min 0.0
 mount and NDT noise, not a frame error. Two additional issues, invisible in M4 because the
 cloud chain was dead, surfaced and were fixed to get there.
 
-| # | Root cause | Fix (where) | Live verification |
-| - | ---------- | ----------- | ----------------- |
-| 1 | LiDAR `frame_id = ray_cast__` absent from TF tree | `runner/spawn.py`: `top_lidar_attributes()` sets `ros_name = "velodyne_top"`, which the fork's `ActorDispatcher` uses verbatim as the cloud `header.frame_id`. No fork rebuild — `ros_name` is an existing blueprint attribute (`ActorBlueprintFunctionLibrary.cpp:230`). | **VERIFIED**: raw cloud `header.frame_id = velodyne_top`; the previously-dead per-LiDAR chain (`self_cropped`→…→`pointcloud_before_sync`) is alive at ~20 Hz. `tests/phase_b/test_runner_kit.py` 60/60. |
-| 2 | Concatenator can't run on 1 LiDAR | **Corrected from the planned overlay to a relay.** The concat node HARD-REQUIRES ≥2 topics (`"Only one topic given…"`) so `input_topics=[top]` makes it fail to load; with the stock 3-topic config it loads but stays silent (waiting for left/right) — so concatenation is impossible either way. `launch_autoware.sh` instead relays the single `…/top/pointcloud_before_sync` (already `base_link`) to `…/concatenated/pointcloud`. | **VERIFIED**: `concatenated/pointcloud` at ~20 Hz; localization chain fed. Overlay removed. |
-| 3 | GNSS pose ~350 m off (÷100 scale) | CARLA fork `ROS2.cpp` `ProcessDataFromVehicle` scaled `carla::geom` **metres** into the ABI's cm fields via `MakeExtensionTransformMetresDeg` (`extension/ExtensionTransform.h`); extension unchanged. Fork commit `cb769ba0f`. | **VERIFIED**: `/sensing/gnss/pose_with_covariance = (81377.34, 49916.89)` — an *exact* match to the ego GT affine (was ~`(81652, 50135)` in M4). `test_ros2_extension_transform.*` + libcarla gate 323/323. |
-| 4 | `autoware_carla_interface.load_world()` wipes the ego | `launch_autoware.sh` brings Autoware up **after** CARLA and blocks until the stack is up AND `/autoware_carla_interface` has fired-and-died; `run_phase_b.sh WITH_AUTOWARE=1` sequences CARLA → Autoware → ego. | **VERIFIED**: ego spawns at spawn-point-0 `(-278.39, 220.54)` and is not wiped; `carla_interface` fired-and-died before the runner spawned. |
+| #   | Root cause                                            | Fix (where)                                                                                                                                                                                                                                                                                                                                                                                                                             | Live verification                                                                                                                                                                                           |
+| --- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | LiDAR `frame_id = ray_cast__` absent from TF tree     | `runner/spawn.py`: `top_lidar_attributes()` sets `ros_name = "velodyne_top"`, which the fork's `ActorDispatcher` uses verbatim as the cloud `header.frame_id`. No fork rebuild — `ros_name` is an existing blueprint attribute (`ActorBlueprintFunctionLibrary.cpp:230`).                                                                                                                                                               | **VERIFIED**: raw cloud `header.frame_id = velodyne_top`; the previously-dead per-LiDAR chain (`self_cropped`→…→`pointcloud_before_sync`) is alive at ~20 Hz. `tests/phase_b/test_runner_kit.py` 60/60.     |
+| 2   | Concatenator can't run on 1 LiDAR                     | **Corrected from the planned overlay to a relay.** The concat node HARD-REQUIRES ≥2 topics (`"Only one topic given…"`) so `input_topics=[top]` makes it fail to load; with the stock 3-topic config it loads but stays silent (waiting for left/right) — so concatenation is impossible either way. `launch_autoware.sh` instead relays the single `…/top/pointcloud_before_sync` (already `base_link`) to `…/concatenated/pointcloud`. | **VERIFIED**: `concatenated/pointcloud` at ~20 Hz; localization chain fed. Overlay removed.                                                                                                                 |
+| 3   | GNSS pose ~350 m off (÷100 scale)                     | CARLA fork `ROS2.cpp` `ProcessDataFromVehicle` scaled `carla::geom` **metres** into the ABI's cm fields via `MakeExtensionTransformMetresDeg` (`extension/ExtensionTransform.h`); extension unchanged. Fork commit `cb769ba0f`.                                                                                                                                                                                                         | **VERIFIED**: `/sensing/gnss/pose_with_covariance = (81377.34, 49916.89)` — an _exact_ match to the ego GT affine (was ~`(81652, 50135)` in M4). `test_ros2_extension_transform.*` + libcarla gate 323/323. |
+| 4   | `autoware_carla_interface.load_world()` wipes the ego | `launch_autoware.sh` brings Autoware up **after** CARLA and blocks until the stack is up AND `/autoware_carla_interface` has fired-and-died; `run_phase_b.sh WITH_AUTOWARE=1` sequences CARLA → Autoware → ego.                                                                                                                                                                                                                         | **VERIFIED**: ego spawns at spawn-point-0 `(-278.39, 220.54)` and is not wiped; `carla_interface` fired-and-died before the runner spawned.                                                                 |
 
 ### Two further issues found during the live re-run (beyond the original four)
 
@@ -226,8 +226,8 @@ cloud chain was dead, surfaced and were fixed to get there.
 - **6. base_link ↔ CARLA vehicle-origin frame offset — the residual 1.44 m. ROOT-CAUSED,
   FIXED, AND LIVE-VERIFIED (2026-07-23): G1 now PASSES at max_err 0.077 m.** NDT tracked steadily at
   `max_err 1.441 m`, essentially constant (min 1.386, mean 1.407) and along the ego heading —
-  i.e. ≈ wheelbase/2 (1.395 m). NDT places `base_link` ~wheelbase/2 *ahead* of CARLA's reported
-  vehicle origin (correcting the GT by −wheelbase/2 makes it *worse*, 2.84 m).
+  i.e. ≈ wheelbase/2 (1.395 m). NDT places `base_link` ~wheelbase/2 _ahead_ of CARLA's reported
+  vehicle origin (correcting the GT by −wheelbase/2 makes it _worse_, 2.84 m).
 
   **Geometry (why it is exactly wheelbase/2, and why removing the shift is the fix).** The G1
   ground truth is `ego.get_transform()` — the CARLA vehicle origin. NDT publishes `base_link`.
@@ -237,7 +237,7 @@ cloud chain was dead, surfaced and were fixed to get there.
   Autoware rebuilds the sensor TF from the SAME kit yamls — `base_link → sensor = x_bl`, with **no
   vehicle term** — so NDT back-solves `base_link = sensor_world − x_bl = ego_origin + wheelbase/2`.
   Against `GT = ego_origin` that is a constant `+wheelbase/2` error along heading, matching the
-  measurement, and it is *independent of where the true vehicle origin sits on the chassis*
+  measurement, and it is _independent of where the true vehicle origin sits on the chassis_
   (that offset appears identically in both the sensor placement and the GT, so it cancels). The
   `+wheelbase/2` was a pure uncompensated offset Autoware never saw; its "validated live" claim
   was circular (it only confirmed the attach number matched the formula, not a ground truth).
@@ -293,7 +293,7 @@ command to actuate at any rate, not because the loop itself cannot reach 60 Hz. 
 four root causes are gate-tooling artifacts — the R3 script fixes (`dcd4de0`) make the
 committed scripts measure correctly, and they reproduce the same FAILs. On the M4 contract
 as scoped, **M4 is a FAIL**, root-caused to the sensing-integration gaps listed in
-[Deferred integration work](#deferred-integration-work-future).
+[Root-caused blockers](#root-caused-blockers).
 
 ### Post-closure status (2026-07-23)
 
