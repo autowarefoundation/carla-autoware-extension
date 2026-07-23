@@ -65,7 +65,8 @@ docker compose -f docker/compose.yaml exec autoware bash -lc '
   ros2 launch autoware_launch e2e_simulator.launch.xml \
     map_path:=/autoware_map/nishishinjuku \
     sensor_model:=awsim_labs_sensor_kit vehicle_model:=sample_vehicle \
-    simulator_type:=carla launch_vehicle_interface:=false use_sim_time:=true'
+    simulator_type:=carla launch_vehicle_interface:=false use_sim_time:=true \
+    perception:=false rviz:=false'
 ```
 
 These launch args were verified inside the running `autoware` container
@@ -98,6 +99,41 @@ not copied from a draft:
   `SAMPLE_VEHICLE_WHEELBASE` in `runner/spawn.py`, so either vehicle package
   gives the same ego geometry — `sample_vehicle` is used as the simpler,
   non-AWSIM-branded name.
+
+`perception:=false rviz:=false` were added after a 2026-07-22 spike found the
+documented full-perception line cannot come up on this `-devel` image. Two
+independent hard blockers live entirely inside the perception subtree, so the
+top-level perception toggle is the one stock-argument lever that clears both:
+
+- `tier4_perception_launch/.../ground_segmentation.launch.py:649-653` resolves
+  `FindPackageShare("autoware_ground_segmentation_cuda")` inside a
+  `DeclareLaunchArgument` DEFAULT. Humble evaluates that default eagerly at
+  launch time regardless of the `use_cuda_ground_segmentation:=false` gate, and
+  the package is only stub-installed here (env-hook shells, no
+  `package.xml`/lib/ament marker), so the launch aborts before it runs.
+- `/root/autoware_data` is entirely absent, so every DNN detector `mode`
+  (`perception.launch.xml`, default `camera_lidar_fusion`) is missing its model
+  artifacts, and there is **no** non-ML perception mode — the cascade inside
+  the perception subtree is effectively unbounded.
+
+`perception:=false` (`e2e_simulator.launch.xml` → `launch_perception`) skips
+the whole perception group, so neither the CUDA `FindPackageShare` nor any
+`autoware_data` model path is ever evaluated. What it costs: **G1 NDT
+localization is unaffected** — localization is not under perception, so
+`ndt_scan_matcher`/`ekf_localizer`/`gyro_odometer` all still launch and NDT
+still subscribes the raw LiDAR cloud. **G2 route + engage still runs** — the
+full mission/scenario/behavior/motion planning + control + operation-mode stack
+launches — but against an EMPTY perceived environment: nothing publishes
+`/perception/object_recognition/objects` or the obstacle-segmentation occupancy
+grid, so there is no dynamic-obstacle detection, avoidance, or obstacle stop. A
+clear-route engage-and-drive test is exercised; any test that must perceive or
+avoid an obstacle is not. Full perception requires a CUDA-enabled,
+model-artifact-bearing Autoware image variant (a `*-cuda` and/or non-`-devel`
+`:universe` tag with `autoware_data` baked in) — future work, not this image.
+`rviz:=false` is headless-environment convenience only (no `DISPLAY` in the
+container). Both are launch ARGS on the otherwise-stock line: the stock kit
+config is untouched and the `feat/carla-native-nishishinjuku` overlay branch
+remains un-forced.
 
 The extension `.so` publishes the six `/vehicle/status/*` reports and
 `/sensing/gnss/pose[_with_covariance]`, and subscribes `/control/command/*`
