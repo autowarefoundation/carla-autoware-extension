@@ -90,10 +90,15 @@ layer was replaced by generated ROS 2 `rosidl` packages, and remain green on thi
 
 | Gate                 | Threshold                   | Measured                                           | Result   | Mode           |
 | -------------------- | --------------------------- | -------------------------------------------------- | -------- | -------------- |
-| G1 NDT localization  | max err <= 0.5 m            | `ndt_samples=0, max_err=nan` (NDT never converged) | **FAIL** | sync-paced     |
+| G1 NDT localization  | max err <= 0.5 m            | M4: `ndt_samples=0` (dead chain) → after closure + base_link fix (2026-07-23): `max_err=0.077 m`, 400 samples ×2 | **PASS** † | sync-paced     |
 | G2 closed-loop route | reach goal <= 1.0 m         | `closest_approach 40.008 m`; ego peak 0.000 m/s    | **FAIL** | sync AND async |
 | G3 LiDAR cadence     | 20 Hz +-1 (real-time paced) | 19.95 Hz                                           | **PASS** | sync-paced     |
 | G3 control loop      | ~60 Hz (+-15)               | 19.96 Hz sync / 30.5 Hz async                      | **FAIL** | sync / async   |
+
+† G1's raw M4-campaign measurement was a dead chain (`ndt_samples=0`); the **PASS** is the
+post-closure result after the four blocker fixes AND the base_link↔vehicle-origin fix (issue
+#6), live-verified 2026-07-23 on two consecutive 400-sample runs (`max_err` 0.077 / 0.076 m).
+See [Blocker closure](#blocker-closure--verified-in-a-live-re-run-2026-07-22).
 
 The G3 control-loop threshold (60±15 Hz) is carried over from an earlier assumption and has
 not been independently validated against this stack; the 30.55 Hz async free-running
@@ -191,10 +196,13 @@ The four blockers were fixed, and a full live E2E re-run was then executed (fres
 `carla-unreal-editor` rebuild carrying the blocker-1/3 fixes, RTX 5090, Autoware
 `universe-devel` container). **Result: the sensing/localization chain that was dead in M4 now
 runs end-to-end — NDT localizes at ~20 Hz (400 samples, vs M4's `ndt_samples=0`) with the
-full ekf-fused `kinematic_state` at 19.97 Hz.** G1 is now a *measured* FAIL at 1.44 m rather
-than a dead chain, and that residual is itself root-caused (base_link frame offset, below).
-Two additional issues, invisible in M4 because the cloud chain was dead, surfaced and were
-fixed to get there.
+full ekf-fused `kinematic_state` at 19.97 Hz.** That re-run left G1 a *measured* 1.44 m
+near-miss, itself root-caused to a base_link frame offset (issue #6 below). **A follow-up
+re-run on 2026-07-23, after removing that offset, closes G1 to a live-verified PASS: two
+consecutive 400-sample gate runs gave `max_err = 0.077 m` and `0.076 m` (min 0.011 / mean
+0.040 m), both well under the 0.5 m threshold** — the residual is the ~6.6 cm velodyne_top Z
+mount and NDT noise, not a frame error. Two additional issues, invisible in M4 because the
+cloud chain was dead, surfaced and were fixed to get there.
 
 | # | Root cause | Fix (where) | Live verification |
 | - | ---------- | ----------- | ----------------- |
@@ -215,8 +223,8 @@ fixed to get there.
   integers** — floats (`80000.0`) throw `yaml-cpp: bad conversion` and crash the whole
   `pointcloud_map_loader` node. With integers the map loads and `No InputTarget` disappears.
   (Not committed — map data lives outside the repo.)
-- **6. base_link ↔ CARLA vehicle-origin frame offset — the residual 1.44 m. ROOT-CAUSED AND
-  FIXED IN CODE (2026-07-23); live re-confirmation pending.** NDT tracks steadily at
+- **6. base_link ↔ CARLA vehicle-origin frame offset — the residual 1.44 m. ROOT-CAUSED,
+  FIXED, AND LIVE-VERIFIED (2026-07-23): G1 now PASSES at max_err 0.077 m.** NDT tracked steadily at
   `max_err 1.441 m`, essentially constant (min 1.386, mean 1.407) and along the ego heading —
   i.e. ≈ wheelbase/2 (1.395 m). NDT places `base_link` ~wheelbase/2 *ahead* of CARLA's reported
   vehicle origin (correcting the GT by −wheelbase/2 makes it *worse*, 2.84 m).
@@ -241,9 +249,11 @@ fixed to get there.
   vs mid-wheelbase), which is un-measurable on CARLA 0.10 anyway (wheel geometry is empty). The
   now-moot `base_link_to_vehicle_center`, `SAMPLE_VEHICLE_WHEELBASE`, and `ego_wheelbase()` were
   removed with them. **Unit-verified** (`pytest tests/phase_b/` 55 passed; `test_runner_kit`
-  pins `carla_attach_location == sensor_in_base_link`) and geometrically proven above;
-  **the live G1 re-run to confirm `max_err ≤ 0.5 m` is still pending** — the table above keeps
-  the measured FAIL until that run lands. Alternative considered and rejected: correcting the
+  pins `carla_attach_location == sensor_in_base_link`), geometrically proven above, **and
+  live-verified 2026-07-23**: after the fix the G1 gate returned `max_err = 0.077 m` and
+  `0.076 m` on two consecutive 400-sample runs (min 0.011 / mean 0.040 m) — exactly the
+  predicted collapse from ~wheelbase/2 (1.44 m) to the residual Z/noise floor. Alternative
+  considered and rejected: correcting the
   gate's GT reference instead would paper over a real +1.4 m sensor misplacement (the physical
   LiDAR would still sit wheelbase/2 ahead of where Autoware's TF claims). Second-order note for
   G2: pinning base_link to the vehicle origin means the control bicycle-model's rear-axle
@@ -269,7 +279,7 @@ brings up the full 168-node stack.
 - NuRec and VisionPilot — explicitly EXCLUDED from Phase B everywhere (no tasks, no scripts,
   no deps).
 
-## M4 verdict: FAIL (G1, G2, G3-control) / PASS (G3-LiDAR)
+## M4 verdict: original campaign FAIL → post-closure G1 + G3-LiDAR PASS (G2, G3-control still open)
 
 What was proven: the extension's sensor and status publishers are alive and correctly typed
 end-to-end into a live Autoware `universe-devel` stack (170 nodes up, no launch/domain
@@ -284,3 +294,17 @@ four root causes are gate-tooling artifacts — the R3 script fixes (`dcd4de0`) 
 committed scripts measure correctly, and they reproduce the same FAILs. On the M4 contract
 as scoped, **M4 is a FAIL**, root-caused to the sensing-integration gaps listed in
 [Deferred integration work](#deferred-integration-work-future).
+
+### Post-closure status (2026-07-23)
+
+All four M4 blockers were fixed and live-verified (bringing the dead chain to life), and the
+subsequent base_link↔vehicle-origin offset (issue #6) was fixed and live-verified, closing
+**G1 to a PASS (`max_err` 0.077 / 0.076 m over two 400-sample runs, threshold 0.5 m)**
+alongside the already-passing **G3-LiDAR (19.95 Hz)**. Still open, and NOT re-run this
+session (out of the confirm-G1 scope): **G2 closed-loop route** (needs a drive command — the
+autonomous path issued a stop; requires a set goal + `--async` propulsion, and CARLA 0.10's
+sync non-propulsion still applies) and **G3 control-loop rate** (the 60±15 Hz target is an
+unvalidated assumption — the ~30 Hz async free-run suggests ~30 Hz is Humble's real
+`control_cmd` design rate; re-validate the band before scoring it). The revised standing is
+therefore **PASS on G1 and G3-LiDAR; G2 and G3-control remain open pending a route-drive run
+and a re-validated control-rate band.**
