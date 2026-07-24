@@ -31,29 +31,11 @@ docker compose -f "$COMPOSE" exec -T autoware bash -lc '
   [ "$rc" -eq 124 ] || [ "$rc" -eq 0 ] || { echo "G2 FAIL: ros2 topic hz errored rc=$rc"; exit "$rc"; }'
 
 # Ego-to-goal distance series (map frame; CARLA Y is flipped to map).
-python3 - "$WIN" "$GOAL_X" "$GOAL_Y" "$DIST" <<'PY'
-import sys, time, math, carla
-win=float(sys.argv[1]); gx=float(sys.argv[2]); gy=float(sys.argv[3]); out=sys.argv[4]
-w=carla.Client("localhost",2000).get_world()
-w.wait_for_tick()  # sync mode: a cold client sees an empty snapshot (frame 0) until ticked
-for _ in range(100):
-    try:
-        ego=next(a for a in w.get_actors().filter("vehicle.*") if a.attributes.get("role_name")=="ego")
-        break
-    except StopIteration:
-        time.sleep(0.1)
-else:
-    raise RuntimeError("no ego actor found after warm-up retries")
-end=time.time()+win; rows=[]
-# gx,gy are in the MGRS-local map frame, so the ego must be mapped too before comparing:
-# +81655.73 / +50137.43 is the MGRS-local map-frame origin; see extension MgrsOffset.h -- do
-# not strip it.
-while time.time()<end:
-    t=ego.get_transform().location
-    rows.append(f"{math.hypot((81655.73 + t.x) - gx, (50137.43 - t.y) - gy):.4f}")
-    time.sleep(0.1)
-open(out,"w").write("\n".join(rows)+"\n"); print(f"dist_rows={len(rows)}")
-PY
+# collect_gt.py maps CARLA metres into the MGRS-local map frame via the pinned affine
+# (verify_mgrs_handedness.CONVERTER_OFFSET, byte-identical to the extension's MgrsOffset.h)
+# before taking the XY distance to the goal.
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" \
+  python3 -m scripts.e2e.collect_gt --window "$WIN" --out "$DIST" --goal "$GOAL_X" "$GOAL_Y"
 
 # Programmatic PASS/FAIL. Run this gate against the SYNC stack: sync propels given a valid
 # trajectory, and async breaks NDT outright (docs/e2e-report.md "Async localization").

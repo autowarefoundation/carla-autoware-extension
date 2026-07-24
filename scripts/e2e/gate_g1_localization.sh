@@ -26,27 +26,10 @@ open("/tmp/g1_ndt.txt","w").write("\n".join(rows)+"\n"); print(f"ndt_rows={len(r
 PY' &
 CPID=$!
 # 2) CARLA ground-truth series on the host over the same window (ego = role_name "ego").
-python3 - "$WIN" "$GT" <<'PY' &
-import sys, time, carla
-win=float(sys.argv[1]); out=sys.argv[2]
-w=carla.Client("localhost",2000).get_world()
-w.wait_for_tick()  # sync mode: a cold client sees an empty snapshot (frame 0) until ticked
-for _ in range(100):
-    try:
-        ego=next(a for a in w.get_actors().filter("vehicle.*") if a.attributes.get("role_name")=="ego")
-        break
-    except StopIteration:
-        time.sleep(0.1)
-else:
-    raise RuntimeError("no ego actor found after warm-up retries")
-end=time.time()+win; rows=[]
-# +81655.73 / +50137.43 is the MGRS-local map-frame origin; see extension MgrsOffset.h. CARLA
-# reports metres, so this is a pure offset (Y also flips sign) -- do not strip it.
-while time.time()<end:
-    t=ego.get_transform().location; rows.append(f"{time.time():.3f} {81655.73 + t.x:.4f} {50137.43 - t.y:.4f}")
-    time.sleep(0.05)
-open(out,"w").write("\n".join(rows)+"\n"); print(f"gt_rows={len(rows)}")
-PY
+# collect_gt.py maps CARLA metres into the MGRS-local map frame via the pinned affine
+# (verify_mgrs_handedness.CONVERTER_OFFSET, byte-identical to the extension's MgrsOffset.h).
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" \
+  python3 -m scripts.e2e.collect_gt --window "$WIN" --out "$GT" &
 GPID=$!
 wait $CPID; wait $GPID
 docker compose -f "$COMPOSE" cp autoware:/tmp/g1_ndt.txt "$NDT"
