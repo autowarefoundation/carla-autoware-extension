@@ -31,6 +31,18 @@ if command -v xhost >/dev/null 2>&1 && ! xhost 2>/dev/null | grep -qE 'LOCAL:|SI
   echo "NOTE: X access control may block the container; if RViz cannot connect, run: xhost +local:" >&2
 fi
 
+# The universe-devel image ships the Autoware RViz plugins but NOT their
+# rviz_2d_overlay_plugins dependency, so every autoware_*_rviz_plugin (and the
+# planning Trajectory/Path displays) fails to dlopen without this. Installed
+# into the container (idempotent); like the carla_msgs workspace, it lives
+# outside every compose mount, so a recreated container needs it again.
+docker compose -f "$COMPOSE" exec -T autoware bash -lc '
+  [ -f /opt/ros/humble/lib/librviz_2d_overlay_plugins.so ] && exit 0
+  echo "bootstrap: installing ros-humble-rviz-2d-overlay-plugins (one-time per container)"
+  apt-get update -qq >/dev/null && apt-get install -y -qq ros-humble-rviz-2d-overlay-plugins >/dev/null
+  [ -f /opt/ros/humble/lib/librviz_2d_overlay_plugins.so ]' \
+  || { echo "PREFLIGHT FAIL: could not install rviz_2d_overlay_plugins in the container" >&2; exit 1; }
+
 docker compose -f "$COMPOSE" exec \
   -e DISPLAY="$DISPLAY" \
   -e QT_X11_NO_MITSHM=1 \
