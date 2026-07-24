@@ -649,3 +649,40 @@ perception + all-green signals, `use_emergency_handling:=false` (still required)
   occurrence across 6+ arms; environmental, not route- or fix-related; recover with a full
   stack recycle (an Autoware-only relaunch would re-fire `autoware_carla_interface`'s
   `load_world` and wipe the live ego).
+
+#### Step 5 — fork-side fix lands; the kit frame claim is restored and re-verified (2026-07-23)
+
+The pending fork fix flagged in Step 3 was implemented on
+`~/src/carla-autoware-integration @ feat/autoware-seminative-phase-b` (`ae166d80d`,
+`fix(ros2): emit IMU data in the true sensor frame with REP-103 handedness`):
+
+- `ImuMath.h` gains the pure UE→ROS conversions — polar vectors `(x, −y, z)` for linear
+  acceleration, pseudovectors `(−x, +y, −z)` for angular velocity — used by
+  `CarlaIMUPublisher::Write` (which had copied UE left-handed components verbatim). Pinned by
+  the new `LibCarla/source/test/common/test_imu_axes.cpp`, including the live-measured G2
+  failure case as a regression test; **`libcarla_test_server` 333/333** (4 new, TDD
+  red→green).
+- `ComputeGyroscope` now unrotates the world-frame rate by the sensor's **global** rotation
+  (mirroring `ComputeAccelerometer`), replacing the owner-frame + `RotateVector`(relative)
+  spelling — the latent inverse-rotation / attachment-depth bug that the 180° flip had masked.
+
+With the fork emitting genuinely flipped-sensor-frame data, `runner/spawn.py` returns
+`IMU_ROS_NAME` to `kit.IMU_FRAME` (the interim `base_link` claim would now itself be the
+inversion), and the regression pin reasserts claim == kit frame. Re-verified LIVE on a fresh
+cold-boot stack with the rebuilt editor + `carla-ros2-native`:
+
+| Check                                             | Measured                                             |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| `imu_raw` frame_id                                 | `tamagawa/imu_link`                                  |
+| `imu_raw` accel at rest (sensor frame)             | z = **−9.81**                                        |
+| `imu_data` accel at rest (base_link)               | z = **+9.81** — the Step-3 residual is GONE          |
+| Gyro contract over 97 turn samples                 | raw_wz = **−gt_rate**, cor_wz = **+gt_rate**, median error 0.0002 rad/s (exact mirror of the bug-era probe) |
+| G2 strict gate (same goal/route)                   | **`closest_approach` 0.123 m → PASS**, exit 0        |
+| Localization while moving                          | yaw err max 0.33° / median 0.10°; pos err median 0.221 m |
+
+Operational note for future bring-ups: with the kit frame claimed, a veer-right crash within
+~25 m of motion start is the live signature of running a **stale fork build** (one without
+`ae166d80d`) — rebuild `carla-unreal-editor` + `carla-ros2-native`, don't debug the stack.
+This closes fork-fix #3; the three fork commits any downstream CARLA build must carry are now
+`e845b9fa1` (empty-mesh SIGSEGV guard), `a5c04f146` (CycloneDDS `from_ser` reassembly), and
+`ae166d80d` (IMU sensor-frame emission).

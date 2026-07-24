@@ -76,47 +76,37 @@ TOP_LIDAR_ROS_NAME = "velodyne_top"
 # MRM COMFORTABLE_STOP over a genuine drive command -- the reason the G2 drive had to be armed
 # with `use_emergency_handling:=false`.
 #
-# The frame was first bound to kit.IMU_FRAME ("tamagawa/imu_link") on the reasoning that the
-# published frame should never drift from the mount calibration. That claim is REFUTED by
-# measurement (2026-07-23 G2 reroute campaign, docs/phase-b-report.md "G2 reroute + IMU yaw-rate
-# sign"): with the kit frame claimed, every drive VEERED hard right within ~25 m and crashed
-# (3/3 runs). A 5 Hz boundary probe localized the inversion exactly:
+# FRAME-CLAIM HISTORY (three states, each closed by measurement — full evidence in
+# docs/phase-b-report.md "G2 reroute + IMU yaw-rate sign inversion"):
 #
-#   raw_wz  (imu_raw, wire)      == TRUE base_link yaw rate, sign AND magnitude    -> fork OK
-#   cor_wz  (imu_data, corrector) == -raw_wz on EVERY sample                       -> flip here
-#   EKF yaw then integrates the inverted rate and MIRRORS physical rotation, the lateral
-#   controller chases the phantom (cmd steer tracks CARLA-applied steer throughout), positive
-#   feedback to full lock, crash. NDT tracked ground truth until overwhelmed -- localization,
-#   planning (route 253->255->495->...-> 226 verified correct) and control are all exonerated.
+# 1. kit.IMU_FRAME ("tamagawa/imu_link"), pre-fork-fix: every drive VEERED hard right within
+#    ~25 m and crashed (3/3). Boundary probe: raw_wz == true base_link yaw rate but
+#    imu_data wz == -raw on EVERY sample — imu_corrector rotates the sample by the kit frame's
+#    ~180deg mount flip, yet the fork emitted the gyro vehicle-frame-consistent regardless of
+#    mount (ComputeGyroscope used the OWNER-frame rate + RotateVector by the relative mount
+#    rotation, and CarlaIMUPublisher wrote UE left-handed components VERBATIM into the REP-103
+#    message — no polar/pseudovector handedness conversion at all).
+# 2. "base_link" (the rebuild-free interim): corrector rotation = identity for the field this
+#    stack fuses; carried the G2 PASS. Residual: accel z inverted in imu_data (consumed by
+#    nothing perception-off).
+# 3. kit.IMU_FRAME again (CURRENT), after the fork-side fix landed on
+#    feat/autoware-seminative-phase-b: ImuMath.h now converts polar (x,-y,z) vs pseudovector
+#    (-x,y,-z) UE->ROS in CarlaIMUPublisher::Write (pinned by LibCarla test_imu_axes.cpp), and
+#    ComputeGyroscope expresses the owner angular velocity in the SENSOR frame via the sensor
+#    GLOBAL rotation Unrotate (mirroring ComputeAccelerometer). The wire data is now genuinely
+#    flipped-sensor-frame, so claiming the kit frame is again correct — and the accel residual
+#    is gone (imu_data az = +9.8 at rest). Requires an editor + carla-ros2-native rebuild
+#    carrying that fork commit; with a STALE fork build this claim re-inverts the yaw rate and
+#    the ego will veer right and crash within ~25 m — that signature means rebuild, not debug.
 #
-# Mechanism: imu_corrector rotates the sample from its claimed frame into base_link. The kit's
-# tamagawa/imu_link carries a ~180deg mount flip, so the claim only works if the wire data is
-# really expressed in that flipped sensor frame. The fork's IMU does NOT do that for the gyro:
-# AInertialMeasurementUnit::ComputeGyroscope (InertialMeasurementUnit.cpp) takes the OWNER
-# vehicle's angular velocity in the VEHICLE frame and applies
-# SensorLocalRotation.RotateVector(...) -- Rotate, not Unrotate, and a 180deg flip is its own
-# inverse -- so after the publisher's axis conversion the wire gyro is vehicle-frame-consistent
-# REGARDLESS of mount rotation. The accelerometer path (ComputeAccelerometer) does the
-# opposite: it Unrotates by the sensor's GLOBAL rotation, so wire accel IS flipped-sensor-frame
-# (az = -9.8 at rest, measured). The fork emits MIXED-frame IMU data; no frame claim can make
-# both fields correct without a fork rebuild.
-#
-# Claiming base_link makes the corrector's rotation the identity, which fixes the field this
-# stack actually fuses (angular velocity: gyro_odometer -> EKF yaw, gyro_bias_estimator, AEB's
-# path prediction) and keeps the original fix's benefit (a TF-resolvable frame, so imu_data
-# forms and the AEB/gyro diagnostics stay OK). KNOWN RESIDUAL: imu_data linear_acceleration.z
-# reads -9.8 at rest (inverted); NO node in this perception-off stack consumes IMU linear
-# acceleration, but any future consumer must first land the proper fork fix -- make
-# ComputeGyroscope express the owner angular velocity in the sensor frame via the sensor
-# GLOBAL rotation Unrotate (mirroring the accelerometer), after which this constant should
-# return to kit.IMU_FRAME. The spawn_imu() attach rotation is left at the kit pose: it is
-# measurably inert for the gyro (above) and keeps the accel wire data unchanged.
-#
-# Rebuild-free, like the LiDAR fix: `ros_name` is declared for EVERY actor definition by
-# FillIdAndTags (ActorBlueprintFunctionLibrary.cpp:230), not just lidars. ResolveAutoStreamSuffix
-# early-returns unless ros_name is exactly the "imu__" placeholder, so the unconditional
-# resolve("imu") cannot clobber this value either.
-IMU_ROS_NAME = "base_link"
+# Binding to kit.IMU_FRAME keeps the published frame from drifting away from the calibration
+# the sensor is physically attached at (spawn_imu applies the same kit yamls' rotation).
+# Rebuild-free on the extension side, like the LiDAR fix: `ros_name` is declared for EVERY
+# actor definition by FillIdAndTags (ActorBlueprintFunctionLibrary.cpp:230), not just lidars.
+# ResolveAutoStreamSuffix early-returns unless ros_name is exactly the "imu__" placeholder, so
+# the unconditional resolve("imu") cannot clobber this value; BuildBaseTopicName emits the
+# verbatim ros_topic_name override, so the slash never reaches DDS topic construction.
+IMU_ROS_NAME = IMU_FRAME
 
 # LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
 # (the concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans.
