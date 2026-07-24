@@ -683,3 +683,25 @@ Operational note for future bring-ups: with the kit frame claimed, a veer-right 
 This closes fork-fix #3; the three fork commits any downstream CARLA build must carry are now
 `e845b9fa1` (empty-mesh SIGSEGV guard), `a5c04f146` (CycloneDDS `from_ser` reassembly), and
 `ae166d80d` (IMU sensor-frame emission).
+
+## Post-refactor regression re-run (2026-07-24) — all three gates PASS
+
+After the harness refactor (feature-oriented renames, the shared `collect_gt.py`
+ground-truth collector, and the committed arm recipe — extension PRs #23–#25), the full
+stack was cold-booted and all gates re-run with the refactored scripts end-to-end, observed
+live in RViz (`scripts/e2e/launch_rviz.sh`):
+
+| Gate                 | Measured                                                    | Result   |
+| -------------------- | ----------------------------------------------------------- | -------- |
+| G1 NDT localization  | `max_err = 0.078 m` (400 samples; threshold 0.5 m)          | **PASS** |
+| G2 closed-loop route | `closest_approach = 0.064 m` (tol 1.0 m, same reroute goal) | **PASS** |
+| G3 LiDAR / control   | 19.96 Hz / 19.94 Hz (bands 20±1 / 20±5)                     | **PASS** |
+
+Chain liveness at bring-up: `kinematic_state` 19.955 Hz, concatenated cloud 19.968 Hz,
+`imu_data` 19.918 Hz, `imu_raw` frame `tamagawa/imu_link`. The arm sequence ran entirely
+from the committed `scripts/e2e/arm_closed_loop.sh` (reseed locked 0.03 m from the live
+ground-truth target; `dummy_perception.py`'s map parser found exactly the 164 traffic-light
+groups the campaign used). One environment gap found and fixed on the way: the
+`universe-devel` image ships the Autoware RViz plugins but not their
+`rviz_2d_overlay_plugins` dependency, so `launch_rviz.sh` installs it into the container
+(one-time per container, like the carla_msgs workspace).
