@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify the CARLA-world -> MGRS-local transform against the lanelet2 .osm.
 
-The #1 Phase B coordinate risk is the handedness / Y-flip between CARLA
+The integration's #1 coordinate risk is the handedness / Y-flip between CARLA
 (left-handed, Z-up) and OpenDRIVE / MGRS-local (right-handed, Z-up). The
 extension's GNSS pose synthesis (runner + extension) reuses
 ``world_to_mgrs_local()`` verbatim, so this transform is pinned here first and

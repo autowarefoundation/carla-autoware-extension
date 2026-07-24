@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Assert the editor plugin .so the simulator loads is newer than the CARLA
 # HEAD commit. `carla-unreal` (no -editor) leaves this .so stale (a known
-# Phase-A trap: carla-unreal builds the plugin but does not refresh the
+# trap: carla-unreal builds the plugin but does not refresh the
 # editor .so); a stale .so runs pre-port UE code and silently drops newly
 # added publishers.
 set -euo pipefail

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Phase B live harness. Mirrors run_g0.sh's structure: pins ROS_DOMAIN_ID=0 and
+# Live E2E harness. Mirrors run_g0.sh's structure: pins ROS_DOMAIN_ID=0 and
 # CYCLONEDDS_URI, waits out a lingering port 2000 (apport core capture) before
 # launching, verifies the editor plugin .so is fresh, boots CARLA headless with the
 # native ROS 2 extension loaded, then runs the Python spawn+tick runner in the
 # foreground so it owns SIGINT directly. CARLA is torn down (SIGTERM -> bounded
 # wait -> SIGKILL) on every exit path via a PID file, never pgrep/pkill patterns.
 #
-# BRING-UP ORDER (M4-blocker #4, docs/phase-b-report.md): with WITH_AUTOWARE=1 this
+# BRING-UP ORDER (blocker #4, docs/e2e-report.md): with WITH_AUTOWARE=1 this
 # harness enforces the load-bearing sequence CARLA -> Autoware -> ego. autoware_carla_interface
 # (pulled in by simulator_type:=carla) calls client.load_world() at startup, WIPING any actor
 # already present; if the runner spawned the ego first, that reload would destroy it. So we
@@ -14,13 +14,6 @@
 # stack is up and carla_interface has fired-and-died -- and ONLY THEN run the spawn+tick
 # runner. Without WITH_AUTOWARE=1 the harness keeps its original CARLA+runner smoke behaviour
 # (no Autoware), for extension-only publisher checks.
-#
-# NOT exercised live yet: the editor .so is currently stale
-# relative to the CARLA branch tip, and a --ros2/extension live run without a
-# fresh carla-unreal-editor rebuild is forbidden by this repo's rules. This
-# script is verified by `bash -n` + shellcheck + review only; the live E2E run
-# waits on that rebuild. verify_editor_artifact.sh failing
-# loudly right now on the stale .so is CORRECT behaviour, not a bug to work around.
 set -euo pipefail
 
 : "${CARLA_ROOT:?set CARLA_ROOT to ~/src/carla-autoware-integration}"
@@ -28,18 +21,18 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 EXT_SO="$REPO/extension/build/libcarla-autoware-extension.so"
-LOG=/tmp/carla-phase-b.log
-CARLA_PID_FILE=/tmp/carla-phase-b.pid
+LOG=/tmp/carla-e2e.log
+CARLA_PID_FILE=/tmp/carla-e2e.pid
 MAP=NishishinjukuMap
 
-# The Autoware container runs on DDS domain 0. The user's login shell exports
-# ROS_DOMAIN_ID=123 (see CLAUDE.md); left alone that would leak into CARLA and put
-# it on a different DDS domain than the container, so no topic would ever be
-# discovered. Pin both explicitly, same as run_g0.sh.
+# The Autoware container runs on DDS domain 0. A login shell that exports a
+# nonzero ROS_DOMAIN_ID would leak into CARLA and put it on a different DDS
+# domain than the container, so no topic would ever be discovered. Pin both
+# explicitly, same as run_g0.sh.
 export ROS_DOMAIN_ID=0
 export CYCLONEDDS_URI="file://$REPO/docker/cyclonedds.xml"
 
-# Opt-in Autoware bring-up (M4-blocker #4 ordering). Default 0 keeps the CARLA+runner-only
+# Opt-in Autoware bring-up (blocker #4 ordering). Default 0 keeps the CARLA+runner-only
 # smoke path; set WITH_AUTOWARE=1 to bring Autoware up (Autoware-first) between the CARLA boot
 # and the ego spawn, so carla_interface's one-shot load_world cannot wipe the ego.
 WITH_AUTOWARE="${WITH_AUTOWARE:-0}"
@@ -47,11 +40,11 @@ WITH_AUTOWARE="${WITH_AUTOWARE:-0}"
 # Opt-in async tick loop. Default 0 keeps sync pacing (0.05 fixed delta = 20 Hz) -- which is
 # what BOTH G3's LiDAR-cadence check AND the G2 closed-loop route gate require.
 #
-# REFUTED (2026-07-23 G2 campaign, docs/phase-b-report.md): this flag used to be documented as
+# REFUTED (2026-07-23 G2 campaign, docs/e2e-report.md): this flag used to be documented as
 # the G2 path because "CARLA 0.10/Chaos vehicles do not propel in synchronous mode". That claim
-# was never tested with a VALID DRIVE COMMAND -- M4 had no trajectory, so the command under
-# test was always a stop. Given a real one, the sync ego drove a 445 m mission-planned route at
-# up to 4.39 m/s, fully closed-loop under NDT. Sync propels.
+# was never tested with a VALID DRIVE COMMAND -- the initial campaign had no trajectory, so the
+# command under test was always a stop. Given a real one, the sync ego drove a 445 m
+# mission-planned route at up to 4.39 m/s, fully closed-loop under NDT. Sync propels.
 #
 # Async is now the WRONG choice for G2: it breaks NDT outright (18-65 m error, median 51 m,
 # 0/34 samples within 1.0 m, iteration_num maxed) because /clock free-runs at ~140 Hz and the
@@ -74,7 +67,7 @@ RUNNER_EXTRA_ARGS_ARR=(${RUNNER_EXTRA_ARGS:-})
 
 # Fails loudly if the editor plugin .so is older than CARLA HEAD (see the script's
 # own header for the carla-unreal-vs-carla-unreal-editor trap it guards against).
-bash "$REPO/scripts/phase_b/verify_editor_artifact.sh"
+bash "$REPO/scripts/e2e/verify_editor_artifact.sh"
 
 [ -f "$EXT_SO" ] || {
   echo "PREFLIGHT FAIL: build extension/ first ($EXT_SO missing)" >&2
@@ -100,7 +93,7 @@ python3 -m runner --extension-check --extension-so "$EXT_SO"
 # directory first, and that directory prepended to PYTHONPATH. A PYTHONPATH
 # entry sorts ahead of ~/.local/site-packages in sys.path, so the stale install
 # is SHADOWED without uninstalling it (leaving the operator's pip state alone).
-CARLA_WHEEL_CACHE=/tmp/carla-phase-b-carla-wheel
+CARLA_WHEEL_CACHE=/tmp/carla-e2e-carla-wheel
 carla_has_set_publish_tf() {
   # 0 = fresh (method present); non-zero = stale OR carla not importable at all
   # (both cases want the wheel injected below). stderr hushed so a bare "no
@@ -202,7 +195,7 @@ cleanup() {
   # its ros2 launch tree should not outlive this harness. --stop uses a recorded container PID,
   # never pkill -f. Best-effort; a failure here must not skip the CARLA teardown below.
   if [ "$WITH_AUTOWARE" = "1" ]; then
-    bash "$REPO/scripts/phase_b/launch_autoware.sh" --stop 2>/dev/null || true
+    bash "$REPO/scripts/e2e/launch_autoware.sh" --stop 2>/dev/null || true
   fi
   if [ -f "$CARLA_PID_FILE" ]; then
     local pid
@@ -231,7 +224,7 @@ trap cleanup EXIT
 # just ignores, and the failure is silent (CARLA boots fine, ROS2->Enable() never
 # runs, and every downstream ros2/DDS check just times out with nothing to point
 # at). The verified-working form is DOUBLE-dash `--ros2 --rmw=cyclonedds
-# --ros2-extension=<path>` (run_g0.sh + Task-11 live evidence); never "fix" this
+# --ros2-extension=<path>` (run_g0.sh + live evidence); never "fix" this
 # back to a single dash.
 "$CARLA_UNREAL_ENGINE_PATH/Engine/Binaries/Linux/UnrealEditor" \
   "$CARLA_ROOT/Unreal/CarlaUnreal/CarlaUnreal.uproject" "$MAP" \
@@ -256,13 +249,13 @@ until port_bound; do
 done
 echo "OK: CARLA RPC port 2000 bound after ${elapsed}s"
 
-# M4-blocker #4 ordering: with WITH_AUTOWARE=1, bring Autoware up NOW -- after CARLA is bound
+# Blocker #4 ordering: with WITH_AUTOWARE=1, bring Autoware up NOW -- after CARLA is bound
 # but BEFORE the runner spawns the ego. launch_autoware.sh blocks until the stack is up and
 # autoware_carla_interface has fired its one-shot load_world and exited, so the reload happens
 # on the still-ego-less world and cannot wipe the ego the runner is about to spawn. cleanup()
 # tears this launch down on every exit path (registered above).
 if [ "$WITH_AUTOWARE" = "1" ]; then
-  bash "$REPO/scripts/phase_b/launch_autoware.sh"
+  bash "$REPO/scripts/e2e/launch_autoware.sh"
 fi
 
 # Run the spawn+tick runner in the FOREGROUND (never `nohup ... &`): backgrounding

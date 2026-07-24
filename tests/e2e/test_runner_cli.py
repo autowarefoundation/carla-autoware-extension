@@ -1,11 +1,11 @@
-"""Unit tests for the Phase B runner CLI/loop layer (``runner.loop`` / ``runner.__main__``).
+"""Unit tests for the runner CLI/loop layer (``runner.loop`` / ``runner.__main__``).
 
 Pure-Python only where possible: ``runner.loop`` never imports ``carla`` at module level, so
-these tests collect and run under a bare ``python3 -m pytest`` with no CARLA egg (the M0 CI
-lesson -- see ``tests/phase_b/test_runner_kit.py`` for the same rule on the spawn side). The
-tick-loop tests use a minimal fake ``world`` object (get_settings/apply_settings/tick/
-wait_for_tick) rather than a real CARLA connection, since the live E2E run is deliberately
-out of scope here (M4's job).
+these tests collect and run under a bare ``python3 -m pytest`` with no CARLA egg, which is
+how CI runs it (see ``tests/e2e/test_runner_kit.py`` for the same rule on the spawn side).
+The tick-loop tests use a minimal fake ``world`` object (get_settings/apply_settings/tick/
+wait_for_tick) rather than a real CARLA connection; the live E2E run is covered by the gate
+scripts under ``scripts/e2e/`` and recorded in ``docs/e2e-report.md``.
 """
 
 from __future__ import annotations

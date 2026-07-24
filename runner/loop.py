@@ -2,7 +2,8 @@
 
 Import discipline: this module imports ``subprocess`` and ``time`` only, never ``carla``,
 so it (and the ``extension_exports_init`` preflight) stays importable under bare pytest with
-no CARLA egg -- the M0 CI lesson (see ``runner/spawn.py`` for the same rule on the spawn side).
+no CARLA egg, which is how CI runs it (see ``runner/spawn.py`` for the same rule on the spawn
+side).
 ``run_sync_loop``/``run_async_loop`` take a ``world`` object structurally (get_settings /
 apply_settings / tick / wait_for_tick), so they are unit-testable with a fake world too.
 """
@@ -45,11 +46,11 @@ def run_sync_loop(
 ) -> None:
     """Synchronous fixed-delta tick loop with real-time pacing.
 
-    NOTE (load-bearing, verified live): CARLA 0.10 (UE5/Chaos) vehicles do NOT propel in
-    synchronous mode in this build -- control is delivered and wheels configured, but the ego
-    stays at 0 m/s. Validate propulsion EARLY on any live run; if the ego does not move, use
-    ``--async`` (``run_async_loop``) instead, where MPC-style steering-delay compensation
-    absorbs the host-loop latency (see CLAUDE.md "CARLA 0.10 ... vehicles DO NOT propel").
+    This is the correct mode for closed-loop driving on this CARLA 0.10 build (verified live
+    2026-07-23): given a valid trajectory the sync ego propels (445 m closed-loop drive), and
+    NDT needs the sync-paced 20 Hz ``/clock``. An earlier "vehicles do not propel in sync"
+    claim was refuted -- it had only ever been observed against a stop command
+    (docs/e2e-report.md, Gates footnote).
 
     Loops until ``should_continue()`` returns False (a SIGINT handler flips it in ``__main__``);
     restores the world's PRIOR synchronous_mode AND fixed_delta_seconds in the ``finally`` so a
@@ -85,9 +86,10 @@ def run_async_loop(
     on_tick: Callable[[], None] | None = None,
     should_continue: Callable[[], bool] | None = None,
 ) -> None:
-    """Async fallback loop: the server ticks itself; the runner only paces the host loop and
-    waits for each server tick, letting steering-delay compensation absorb the latency (CARLA
-    vehicles do not propel in sync mode in this build -- see ``run_sync_loop``).
+    """Async loop for deliberate experiments: the server ticks itself; the runner only paces
+    the host loop and waits for each server tick. NOT the closed-loop driving path: with the
+    server free-running, ``/clock`` runs at ~140 Hz and NDT breaks outright (18-65 m error;
+    docs/e2e-report.md "Async localization"), so use ``run_sync_loop`` to drive.
 
     Loops until ``should_continue()`` returns False. Puts the world into async mode up front;
     unlike ``run_sync_loop`` there is no prior-mode restore in a ``finally`` because leaving the

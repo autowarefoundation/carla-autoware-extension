@@ -1,6 +1,6 @@
-# G0 interop spike report
+# G0 interop gate report
 
-Gate **G0** for the CARLA native-DDS -> Autoware ROS 2 interop spike: prove that
+Gate **G0** for the CARLA native-DDS -> Autoware ROS 2 interop: prove that
 every topic the CARLA integration branch publishes over CycloneDDS is visible,
 correctly typed, QoS-correct and deserializable from inside an Autoware
 container, and that the message wire types match their canonical REP-2011
@@ -141,7 +141,7 @@ is present and green.
 
 ## Issues found and their commits
 
-One real defect was found and fixed on the integration branch during this spike:
+One real defect was found and fixed on the integration branch during this gate run:
 
 - `288bc9b1c` — `fix(ros2): define ego vehicle publisher constructors in
 Ros2Native so middleware creation succeeds`. The three ego publishers
@@ -245,9 +245,9 @@ What was **not** proven, stated honestly:
 On the G0 contract as scoped ("visible, deserializable and QoS/type-hash-correct
 from inside an Autoware container", with type-hash-correct interpreted as the
 offline check the Humble environment permits), **G0 is a PASS** and is a **go**
-for the next plan.
+for the extension/runner work that followed.
 
-## Branch history (Phase A)
+## Branch history (integration preconditions)
 
 `git log --oneline --first-parent 601966371..HEAD` on the integration branch
 (base `upstream/ue5-dev` = `601966371`; do not use the local `ue5-dev` branch,
@@ -273,4 +273,4 @@ d7905e3fa merge: stack draft PR #9807 (#9762 series) [precondition]
 
 The history reads as expected: 11 stack merges + the completion commit
 (`8d53a45f9`) -> #9786 port -> #9787 port -> the ego-publisher fix
-(`288bc9b1c` = current HEAD). Phase A is complete.
+(`288bc9b1c` = HEAD at the time of this gate). The precondition stack is complete.

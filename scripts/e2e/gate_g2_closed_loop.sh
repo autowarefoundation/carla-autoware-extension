@@ -55,6 +55,6 @@ while time.time()<end:
 open(out,"w").write("\n".join(rows)+"\n"); print(f"dist_rows={len(rows)}")
 PY
 
-# Programmatic PASS/FAIL. On FAIL (ego never approached the goal — e.g. sync-mode
-# non-propulsion), re-run the runner with --async and repeat.
+# Programmatic PASS/FAIL. Run this gate against the SYNC stack: sync propels given a valid
+# trajectory, and async breaks NDT outright (docs/e2e-report.md "Async localization").
 python3 "$HERE/measure_route.py" --distances "$DIST" --goal-tol-m 1.0

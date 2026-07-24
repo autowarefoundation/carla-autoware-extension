@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# G0 spike orchestration: boot the stacked CARLA build on CycloneDDS, spawn the
-# spike sensor stack, then run interop_check.py inside the Autoware container.
+# G0 gate orchestration: boot the stacked CARLA build on CycloneDDS, spawn the
+# reference sensor stack (scripts/spike_stack.json), then run interop_check.py
+# inside the Autoware container.
 # One-shot: cleans up the simulator and spawner on every exit path.
 #
 # Required environment:

@@ -37,12 +37,12 @@ namespace autoware {
 // intentionally ignored). This port instead maps all three
 // (speed=velocity, acceleration, jerk) because CARLA's ApplyVehicleAckermann-
 // Control is a TARGET-BASED controller that consumes a target speed together
-// with the accel/jerk limits -- per this milestone's plan contract. This
-// difference is an M4 tuning watch-point.
+// with the accel/jerk limits. The difference is a tuning watch-point for
+// closed-loop path tracking (the live G2 drive passed with it in place).
 CarlaRos2AckermannPod control_to_ackermann(const autoware_control_msgs::msg::Control& c) {
   CarlaRos2AckermannPod p{};
 
-  // Longitudinal: all three forwarded (plan contract; see note above).
+  // Longitudinal: all three forwarded (see the deviation note above).
   p.speed = c.longitudinal.velocity;
   p.acceleration = c.longitudinal.acceleration;
   p.jerk = c.longitudinal.jerk;
@@ -80,7 +80,7 @@ void ControlSubscribers::Init(const CarlaRos2Host& host) {
 
   // /control/command/control_cmd -> Control -> Ackermann -> ego actuation.
   // The type_hash is the REAL Control RIHS01 golden, so this reader's
-  // topic type registration matches the real Autoware publisher at the M4 gates.
+  // topic type registration matches the real Autoware publisher at the live E2E gates.
   //
   // The callback runs on the DDS listener thread. Applying inline is the
   // intended host design: the host stages the pod last-wins and drains it at

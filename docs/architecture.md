@@ -12,15 +12,17 @@ The support splits into three tiers so that Autoware vocabulary never enters the
 
 On the Autoware side, the official Docker image (`universe-devel`) runs unmodified except for launch/description overlays (sensor kit, vehicle profile, an `e2e_simulator.launch.xml` native-mode branch that launches nothing in the data path).
 
-## What is verified today (G0)
+## What is verified
 
-The assets in this repository prove the transport layer end-to-end with **zero new CARLA code** beyond the prerequisite branch: a CARLA dev build launched with `--ros2 --rmw=cyclonedds` publishes the spike sensor stack (`scripts/spike_stack.json`), and from inside the Autoware container every topic in `scripts/expected_topics.yaml` is present, correctly typed, publisher-QoS-correct, and deserializable (`ros2 topic echo` succeeds). The captured run records live in [environment.md](environment.md) and [g0-report.md](g0-report.md) (added with the verification assets in this PR stack).
+**Transport layer (G0).** The assets in this repository prove the transport layer end-to-end with **zero new CARLA code** beyond the prerequisite branch: a CARLA dev build launched with `--ros2 --rmw=cyclonedds` publishes the reference sensor stack (`scripts/spike_stack.json`), and from inside the Autoware container every topic in `scripts/expected_topics.yaml` is present, correctly typed, publisher-QoS-correct, and deserializable (`ros2 topic echo` succeeds). The captured run records live in [environment.md](environment.md) and [g0-report.md](g0-report.md).
+
+**Full stack (G1–G3).** The extension `.so` + runner drove official Autoware end-to-end on the Nishi-Shinjuku map: NDT localization within 0.08 m of ground truth (G1), an autonomous closed-loop drive arriving 0.11 m from the goal through a signalized junction (G2), and LiDAR/control cadence at the 20 Hz simulation rate (G3). Full measurements, root-caused blockers, and refuted hypotheses in [e2e-report.md](e2e-report.md); bring-up steps in [running-e2e.md](running-e2e.md).
 
 ## Verification design
 
 - The interop gate's verdict logic (`scripts/interop_lib.py`) is pure: the subprocess runner is injected, so the presence/type/QoS/echo/rate rules are unit-tested in CI without ROS or CARLA.
-- The gate's runtime dependencies inside the container are deliberately minimal: the `ros2` CLI and PyYAML. It stays in Python because it is **off the data path** — it observes topics; it never carries data. The performance-relevant C++ lives in CARLA core (`Ros2Native`) and the future extension `.so`.
-- **Future work (G3):** at the full configured LiDAR rate, CLI-based measurement (`ros2 topic hz`, Python subscribers) becomes the bottleneck and under-reports. G3 adds an rclcpp-based C++ rate-measurement harness; the YAML contract and the `interop_lib` verdict logic are measurement-backend-agnostic and consume its output unchanged.
+- The gate's runtime dependencies inside the container are deliberately minimal: the `ros2` CLI and PyYAML. It stays in Python because it is **off the data path** — it observes topics; it never carries data. The performance-relevant C++ lives in CARLA core (`Ros2Native`) and the extension `.so`.
+- Rate measurement: at the verified 20 Hz sim-paced rate, `ros2 topic hz` measured cleanly (G3 PASS); an rclcpp-based C++ harness remains the documented escalation path if a higher-rate contract ever makes CLI measurement the bottleneck — the YAML contract and the `interop_lib` verdict logic are measurement-backend-agnostic.
 
 ## Non-goals
 

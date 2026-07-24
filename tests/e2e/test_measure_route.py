@@ -1,4 +1,4 @@
-from scripts.phase_b.measure_route import route_completed
+from scripts.e2e.measure_route import route_completed
 
 
 def test_completed_when_final_distance_small():

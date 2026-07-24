@@ -1,13 +1,15 @@
-# CARLA-world <-> MGRS-local transform (Phase B)
+# CARLA-world <-> MGRS-local transform
 
-Evidence for the #1 Phase B coordinate risk: the handedness / Y-flip and unit
+Evidence for the integration's #1 coordinate risk: the handedness / Y-flip and unit
 convention between CARLA world space and the OpenDRIVE/MGRS-local frame the
 Nishi-Shinjuku lanelet2 map lives in. The extension `.so` will
 synthesise `/sensing/gnss/pose*` from an ego world transform plus a static
-offset; the affine relation pinned here is what it reuses.
+offset; the affine relation pinned here is what it reuses. (The GNSS
+publisher has since shipped — `extension/include/carla/autoware/geo/MgrsOffset.h`
+mirrors this transform byte-identically.)
 
-Verifier: `scripts/phase_b/verify_mgrs_handedness.py` (pure transform + unit
-tests `tests/phase_b/test_mgrs_offset.py`) and `scripts/phase_b/probe_carla_mgrs.py`
+Verifier: `scripts/e2e/verify_mgrs_handedness.py` (pure transform + unit
+tests `tests/e2e/test_mgrs_offset.py`) and `scripts/e2e/probe_carla_mgrs.py`
 (live measurement against the map).
 
 ## Concluded affine map (both directions)
@@ -79,7 +81,7 @@ not.
 
 Measured 2026-07-21 with CARLA (UE5 editor `-game -RenderOffScreen`, editor
 plugin .so of HEAD `ca6e1994c`) serving `Carla/Maps/NishishinjukuMap` on
-`:2000`, via `scripts/phase_b/probe_carla_mgrs.py`.
+`:2000`, via `scripts/e2e/probe_carla_mgrs.py`.
 
 ### Geo-reference is degenerate -- do not use `transform_to_geolocation`
 
@@ -160,14 +162,14 @@ reference line agree to a few centimetres everywhere on the map.
 
 ```bash
 # offline transform + unit tests
-cd ~/src/carla-autoware-extension && python3 -m pytest tests/phase_b/test_mgrs_offset.py -q
+cd ~/src/carla-autoware-extension && python3 -m pytest tests/e2e/test_mgrs_offset.py -q
 
 # single-point CLI check (extension-cm frame)
-python3 scripts/phase_b/verify_mgrs_handedness.py \
+python3 scripts/e2e/verify_mgrs_handedness.py \
   --carla-xyz-cm <x_cm> <y_cm> <z_cm> --osm-local-xy <local_x> <local_y> --tol-m 0.5
 
 # live measurement (CARLA must be up on :2000 with NishishinjukuMap available)
 export ROS_DOMAIN_ID=0
-python3 scripts/phase_b/probe_carla_mgrs.py \
+python3 scripts/e2e/probe_carla_mgrs.py \
   --xodr ~/src/carla-autoware-integration/Unreal/CarlaUnreal/Content/Carla/Maps/OpenDrive/NishishinjukuMap.xodr
 ```

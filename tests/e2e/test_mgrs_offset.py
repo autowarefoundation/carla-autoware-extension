@@ -1,14 +1,14 @@
 """Unit tests for the CARLA-world -> MGRS-local coordinate transform.
 
-These pin the #1 Phase B coordinate risk (handedness / Y-flip and the unit
+These pin the integration's #1 coordinate risk (handedness / Y-flip and the unit
 convention) as pure, CARLA-free assertions. The live measured verification of
 the same relation against the Nishi-Shinjuku map lives in
-``scripts/phase_b/probe_carla_mgrs.py`` and ``docs/mgrs-handedness.md``.
+``scripts/e2e/probe_carla_mgrs.py`` and ``docs/mgrs-handedness.md``.
 """
 
 import math
 
-from scripts.phase_b.verify_mgrs_handedness import (
+from scripts.e2e.verify_mgrs_handedness import (
     CONVERTER_OFFSET,
     mgrs_local_to_world_cm,
     world_m_to_mgrs_local,

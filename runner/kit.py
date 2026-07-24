@@ -28,8 +28,8 @@ Frame notes:
     on the chassis (the offset cancels in the NDT<->GT comparison). An earlier +wheelbase/2
     "base_link -> vehicle-centre" shift was uncompensated in Autoware's TF and biased NDT's
     base_link by exactly wheelbase/2, which is the 1.44 m G1 near-miss root-caused and removed
-    in docs/phase-b-report.md (issue #6). Z likewise passes through: the CARLA vehicle origin
-    sits at base_link height (ground), validated live in the "Phase B ego reconciliation"
+    in docs/e2e-report.md (issue #6). Z likewise passes through: the CARLA vehicle origin
+    sits at base_link height (ground), validated live in the "Ego geometry reconciliation"
     section of docs/nishishinjuku-map.md.
   * Handedness: CARLA's vehicle frame is left-handed (Y to the RIGHT) while base_link is
     right-handed (Y to the LEFT), related by the Y-flip M = diag(1,-1,1).
