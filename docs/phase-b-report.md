@@ -95,7 +95,7 @@ layer was replaced by generated ROS 2 `rosidl` packages, and remain green on thi
 | Gate                 | Threshold                   | Measured                                                                                                         | Result     | Mode       |
 | -------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- | ---------- |
 | G1 NDT localization  | max err <= 0.5 m            | M4: `ndt_samples=0` (dead chain) → after closure + base_link fix (2026-07-23): `max_err=0.077 m`, 400 samples ×2 | **PASS** † | sync-paced |
-| G2 closed-loop route | reach goal <= 1.0 m         | M4: dead chain. 2026-07-23 re-run: `closest_approach 22.84 m` over a **445 m autonomous drive @ 4.39 m/s**       | **FAIL** ‡ | sync       |
+| G2 closed-loop route | reach goal <= 1.0 m         | M4: dead chain. 2026-07-23 final run: **`closest_approach 0.111 m`** over a 234.5 m autonomous drive @ 4.29 m/s peak | **PASS** ‡ | sync       |
 | G3 LiDAR cadence     | 20 Hz +-1 (real-time paced) | 19.95 Hz                                                                                                         | **PASS**   | sync-paced |
 | G3 control loop      | 20 Hz +-5 (sim-paced §)     | 19.96 Hz                                                                                                         | **PASS** § | sync-paced |
 
@@ -104,16 +104,16 @@ post-closure result after the four blocker fixes AND the base_link↔vehicle-ori
 live-verified 2026-07-23 on two consecutive 400-sample runs (`max_err` 0.077 / 0.076 m).
 See [Blocker closure](#blocker-closure--verified-in-a-live-re-run-2026-07-22).
 
-‡ G2 is a **measured** FAIL on the strict 1.0 m goal-arrival gate, but no longer a dead
-chain: with localization live, the ego engages (→ AUTONOMOUS) and drives a full 445 m
-mission-planned route autonomously at up to 4.39 m/s under closed-loop NDT control (0.077 m
-accuracy). The gate FAILs on **goal geometry**, not capability — see
-[G2/G3 live campaign](#g2g3-live-campaign-2026-07-23) for the full root cause (the single
-spawn point sits ~7.5 m off the lanelet2 centerline, so the controller tracks a lane ~22.8 m
-parallel to any routable goal's lane, and short direct goals on the driven lane fail to
-plan). This run also **refutes** the "CARLA 0.10 does not propel in sync" prior — that was
+‡ G2 reached PASS through three successively root-caused-and-fixed blockers, each recorded
+below: the spawn point ~7.5 m off the lanelet centerline (fixed via on-lanelet `--initial-pose`;
+[on-lanelet respawn](#g2-on-lanelet-respawn--original-root-cause-fixed-gate-still-fails-on-a-new-one)),
+the 2.64 m-lane left-turn wedge (fixed by rerouting to a footprint-clearable chain chosen from
+map geometry alone), and an IMU yaw-rate **sign inversion** unmasked by the IMU frame fix
+(fixed in `runner/spawn.py`; see
+[G2 reroute + IMU yaw-rate sign](#g2-reroute--imu-yaw-rate-sign-inversion--strict-gate-pass-2026-07-23)).
+Earlier runs also **refuted** the "CARLA 0.10 does not propel in sync" prior — that was
 never tested with a valid drive command; the Ackermann path propels in sync once a real
-trajectory + engage + emergency-bypass reach the ego.
+trajectory + engage + emergency-bypass reach the ego (a 445 m drive @ 4.39 m/s).
 
 § The G3 control-loop band was **re-validated live** (2026-07-23) and corrected from the
 unvalidated 60±15 Hz assumption to **20±5 Hz**. Under `use_sim_time:=true` sync pacing every
@@ -320,11 +320,11 @@ subsequent base_link↔vehicle-origin offset (issue #6) was fixed and live-verif
 **G1 to a PASS (`max_err` 0.077 / 0.076 m over two 400-sample runs, threshold 0.5 m)**
 alongside the already-passing **G3-LiDAR (19.95 Hz)**. **G2 and G3-control were then run live
 on 2026-07-23** (see [G2/G3 live campaign](#g2g3-live-campaign-2026-07-23)): **G3-control is
-now a PASS** (band re-validated 60±15 → 20±5 Hz, measured 19.96 Hz), and **G2 drove a 445 m
-autonomous closed-loop route** (a strict-gate FAIL at 22.84 m on goal-arrival geometry, but
-the closed-loop capability is proven and sync propulsion is confirmed). The revised standing
-is therefore **PASS on G1, G3-LiDAR, and G3-control; G2's closed-loop driving is proven but
-the automated 1.0 m goal-arrival gate remains a FAIL, root-caused to route/goal geometry.**
+now a PASS** (band re-validated 60±15 → 20±5 Hz, measured 19.96 Hz), and — after the
+on-lanelet respawn, a reroute off the footprint-infeasible left turn, and the IMU yaw-rate
+sign fix — **G2 is now a PASS** (`closest_approach` **0.111 m**, tol 1.0 m, over a 234.5 m
+autonomous drive through a signalized junction). The revised standing is therefore
+**PASS on all four gates: G1, G2, G3-LiDAR, and G3-control.**
 
 ## G2/G3 live campaign (2026-07-23)
 
@@ -455,6 +455,10 @@ turn**, not spawn placement, localization, speed, or the false MRM. Closing it i
 workstream (a route whose turns the footprint can clear, a narrower ego, or a
 controller/path-shape change) and is NOT claimed here.
 
+**CLOSED later the same day** via the first option — a rerouted goal chosen from map geometry
+alone — which then exposed (and fixed) one further blocker; see
+[G2 reroute + IMU yaw-rate sign](#g2-reroute--imu-yaw-rate-sign-inversion--strict-gate-pass-2026-07-23).
+
 **Also verified this session:** the IMU frame fix does **not** remove the need for
 `use_emergency_handling:=false` — armed without it, the run still ended in MRM (state 3,
 behavior 2) with `is_autonomous_mode_available: false`. The perception-off diagnostics remain
@@ -511,3 +515,137 @@ separate contributor, so whether `use_emergency_handling:=false` can be dropped 
 arm recipe entirely is **not** claimed here — that needs a re-run of the full G2 arm sequence
 (synthetic perception + all-green signals + route + engage), which this verification did not
 perform.
+
+**PARTIALLY SUPERSEDED (same day):** making the gyro *fuse* for the first time unmasked a
+yaw-rate **sign inversion** in the fork's IMU data (the fork emits the gyro
+vehicle-frame-consistent regardless of mount rotation, so rotating it by the kit frame's
+~180° flip negates it). The frame claim was therefore revised `tamagawa/imu_link` →
+`base_link`; the mangling chain above, the diagnostics recovery, and the "does not remove
+`use_emergency_handling:=false`" finding all stand. Full measurement chain in
+[G2 reroute + IMU yaw-rate sign](#g2-reroute--imu-yaw-rate-sign-inversion--strict-gate-pass-2026-07-23).
+
+### G2 reroute + IMU yaw-rate sign inversion — strict gate PASS (2026-07-23)
+
+Continuation of the on-lanelet respawn section above: the wedge blocker was closed by the
+first of its listed options (a route whose turns the footprint can clear), which then exposed
+one final blocker — an IMU yaw-rate sign inversion — root-caused and fixed the same session.
+Final result: **G2 strict gate PASS, `closest_approach` 0.111 m (tol 1.0 m)**.
+
+#### Step 1 — reroute chosen from map geometry alone (honest-gate discipline)
+
+Every successor chain out of the on-lanelet spawn was enumerated and scored offline
+(lanelet2 + MGRSProjector in the Autoware container; scratchpad `score_routes.py`) on two
+per-lanelet metrics: **min lane width** (left/right bound gap sampled along the centerline)
+and **heading-change rate** (deg/m). The proven envelope from the wedge campaign separates
+cleanly:
+
+| Lanelet                    | Width  | Turn rate      | Outcome                        |
+| -------------------------- | ------ | -------------- | ------------------------------ |
+| 253 / 255 (driven clean)   | 2.62 m | 0.57 / 0.0 °/m | drivable, proven live          |
+| 570 (the wedge)            | 2.54 m | **2.03 °/m**   | wedged 3/3, proven live        |
+| 495 (chosen junction exit) | 2.61 m | 0.52 °/m       | inside the proven envelope     |
+
+Kill rule: width < 3.0 m AND rate > 1.0 °/m. Of 9 chains, exactly 2 are clean; the chosen one
+is **253 → 255 → 495 → 280 → 283 → 382 → 226** (~386 m usable; everything after 495 is
+≥ 2.97 m wide). The goal is placed 23.3 m into lanelet 226 — **(81571.616, 50019.827, z 42.07),
+yaw 10.43°**, ~250 m of driving from the spawn. Pre-flight (`verify_route.py`) confirmed on the
+map, before any live run: the lanelet2 **shortest path** to that goal is exactly the scored
+chain (no lane changes, no killer lanelets — the router cannot re-introduce the wedge), and
+both traffic lights on the route (1489 on 495, 1515 on 382) are in the all-green dummy list.
+The goal is derived from lanelet geometry only — never from a driven trajectory — so the
+strict 1.0 m gate stays honest.
+
+#### Step 2 — new blocker: hard-right veer, 3/3 crashes within ~25 m
+
+On the rerouted goal the ego VEERED hard right ~10 m after motion start and crashed into the
+right-side boundary at ~4 m/s — three consecutive runs, same signature
+(`closest_approach` 204.9 / 213.7 / 204.5 m). This stretch (253/255) was driven clean for
+36 s the previous day, and the planned route was verified correct
+(`/planning/mission_planning/route` preferred lanelets = the scored chain exactly), so
+planning was exonerated up front. A synchronized 5 Hz probe (host CARLA ground truth +
+container EKF/NDT/control log; scratchpad `log_ndt2.py`) then isolated the failure in one
+instrumented run:
+
+- Up to 3.3 m/s the belief tracks truth (yaw err ≤ 1.8°, **NDT yaw = GT yaw exactly**).
+- As the ego physically rotates right, the **EKF yaw rotates LEFT** (truth 34.8° → 27.6°
+  while belief 34.9° → 38.5°); NDT keeps tracking truth until overwhelmed, then slides into
+  a mirrored basin (belief = truth + 160.0° at rest, NVTL 2.71 — "healthy").
+- Commanded steering matches CARLA-applied steering throughout (both = turn right): the
+  controller is faithfully chasing a phantom left-veer. Positive feedback to full lock.
+
+An EKF yaw that mirrors physical rotation while the pose source is still correct means the
+fused yaw rate has an **inverted sign**. The gyro only began to be *fused* when the IMU frame
+fix (previous section) revived `gyro_odometer` — which is exactly why the previous day's
+36 s drive (gyro chain dead, EKF on NDT alone) was stable and every post-fix drive was not.
+
+#### Step 3 — boundary probe pins the inversion, fork source confirms it
+
+A second probe (`log_imu.py`) logged the raw wire gyro, the corrected gyro, and ground truth
+through one veer:
+
+| Signal                                | Observation                                        |
+| ------------------------------------- | -------------------------------------------------- |
+| `imu_raw` angular_velocity.z          | == TRUE base_link yaw rate, sign AND magnitude     |
+| `imu_data` (post `imu_corrector`)     | == **−raw on every sample**                        |
+| EKF yaw                               | integrates the inverted rate, mirrors truth        |
+
+`imu_corrector` rotates the sample from its claimed frame (`tamagawa/imu_link`, which carries
+the kit's ~180° mount flip) into base_link — correct behaviour for data truly expressed in
+that flipped sensor frame. The fork does not deliver that:
+`AInertialMeasurementUnit::ComputeGyroscope` (`InertialMeasurementUnit.cpp`) takes the OWNER
+vehicle's angular velocity in the VEHICLE frame and applies
+`SensorLocalRotation.RotateVector(...)` — Rotate, not Unrotate, and a 180° flip is its own
+inverse — so the wire gyro is **vehicle-frame-consistent regardless of mount rotation**. The
+accelerometer path does the opposite (`Unrotate` by the sensor GLOBAL rotation → truly
+flipped-sensor-frame; measured az = −9.8 at rest). The fork emits **mixed-frame IMU data**;
+no frame claim can make both fields correct without a fork rebuild.
+
+**Fix (committed, `runner/spawn.py` + regression pin in `tests/phase_b/test_runner_kit.py`):**
+`IMU_ROS_NAME = "base_link"` — the corrector's rotation becomes the identity, which fixes the
+field this stack actually fuses (angular velocity: gyro_odometer → EKF, gyro_bias_estimator,
+AEB path prediction) and keeps the frame TF-resolvable (the previous fix's benefit). KNOWN
+RESIDUAL, documented in-code: `imu_data` linear_acceleration.z reads −9.8 at rest; nothing in
+this perception-off stack consumes IMU linear acceleration. The durable fix belongs in the
+fork (make `ComputeGyroscope` express the owner rate in the sensor frame via the sensor
+global rotation, mirroring the accelerometer), after which the claim should return to
+`kit.IMU_FRAME` — this joins `e845b9fa1` / `a5c04f146` on the list of fork fixes any
+downstream CARLA build must carry (as a pending patch).
+
+Verified live before the gate: 39.3 m dead-straight drive at 4.28 m/s with **max yaw error
+0.22°** and final EKF-vs-GT error 0.02 m (was a 160° runaway within 25 m).
+
+#### Step 4 — PASS run (fresh cold-boot stack, fix in from spawn)
+
+| Quantity                        | Measured                                        |
+| ------------------------------- | ----------------------------------------------- |
+| `closest_approach` to goal      | **0.111 m** (tol 1.0 m) → **PASS**, exit 0      |
+| Route driven                    | 234.5 m in 65.9 s (avg 3.56, peak 4.29 m/s)     |
+| Junction                        | signalized, crossed via 495 under all-green     |
+| Yaw error while moving          | max 0.22°, median 0.07° (n=303)                 |
+| EKF-vs-GT position error moving | median 0.185 m, max 0.452 m                     |
+| Final rest                      | 4.06 m past the goal, brake hold (overshoot — the gate metric is min distance; recorded for honesty) |
+
+Recipe as in the previous sections: sync stack, on-lanelet `--initial-pose`, synthetic
+perception + all-green signals, `use_emergency_handling:=false` (still required),
+`gate_g2_closed_loop.sh 81571.616 50019.827`.
+
+#### Operational findings from the reroute campaign
+
+- **NDT drifts while parked.** Left idle 15+ min at the spawn, the NDT/EKF pair slid 2.2 m
+  off (and once re-captured the mirrored basin after a crash). While *driving* it is solid
+  (see above). Re-seed `/initialpose` immediately before arming; do not trust a lock that has
+  been idling.
+- **`/initialpose` re-seed must be published programmatically.** `ros2 topic pub` with inline
+  YAML silently mangles the 36-entry covariance (parser caret, no error surfaced through the
+  pipeline); an rclpy publisher + convergence watch (scratchpad `reseed_localization.py`)
+  re-locks NDT from a 160°-flipped basin in ~10 s.
+- **Engage latches across re-arms.** After a gate run, the stack is still ENGAGED; setting a
+  new route makes the ego drive off immediately. Disengage (`change_to_stop` +
+  `/autoware/engage false`) before teleport/reseed/re-arm.
+- **One behavior_planning_container SIGABRT** (rclcpp Humble wait-set race:
+  `failed to add guard condition to wait set: guard condition implementation is invalid`,
+  `guard_condition.c:172`) at arm time invalidated one run: the ego drove 39 m on the stale
+  last trajectory, stopped at its end, and the trajectory-timeout MRM latched. Single
+  occurrence across 6+ arms; environmental, not route- or fix-related; recover with a full
+  stack recycle (an Autoware-only relaunch would re-fire `autoware_carla_interface`'s
+  `load_world` and wipe the live ego).

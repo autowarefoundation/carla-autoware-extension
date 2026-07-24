@@ -76,15 +76,47 @@ TOP_LIDAR_ROS_NAME = "velodyne_top"
 # MRM COMFORTABLE_STOP over a genuine drive command -- the reason the G2 drive had to be armed
 # with `use_emergency_handling:=false`.
 #
-# Bound to kit.IMU_FRAME (not a duplicated literal) so the published frame can never drift
-# from the frame whose calibration the sensor is physically mounted at. Rebuild-free, like the
-# LiDAR fix: `ros_name` is declared for EVERY actor definition by FillIdAndTags
-# (ActorBlueprintFunctionLibrary.cpp:230), not just lidars. Two fork properties make the
-# slash-bearing name safe: ResolveAutoStreamSuffix early-returns unless ros_name is exactly
-# the "imu__" placeholder, so the unconditional resolve("imu") cannot clobber it; and
-# BuildBaseTopicName (ROS2.cpp:538-541) emits the verbatim `ros_topic_name` override, so the
-# slash never reaches DDS topic construction.
-IMU_ROS_NAME = IMU_FRAME
+# The frame was first bound to kit.IMU_FRAME ("tamagawa/imu_link") on the reasoning that the
+# published frame should never drift from the mount calibration. That claim is REFUTED by
+# measurement (2026-07-23 G2 reroute campaign, docs/phase-b-report.md "G2 reroute + IMU yaw-rate
+# sign"): with the kit frame claimed, every drive VEERED hard right within ~25 m and crashed
+# (3/3 runs). A 5 Hz boundary probe localized the inversion exactly:
+#
+#   raw_wz  (imu_raw, wire)      == TRUE base_link yaw rate, sign AND magnitude    -> fork OK
+#   cor_wz  (imu_data, corrector) == -raw_wz on EVERY sample                       -> flip here
+#   EKF yaw then integrates the inverted rate and MIRRORS physical rotation, the lateral
+#   controller chases the phantom (cmd steer tracks CARLA-applied steer throughout), positive
+#   feedback to full lock, crash. NDT tracked ground truth until overwhelmed -- localization,
+#   planning (route 253->255->495->...-> 226 verified correct) and control are all exonerated.
+#
+# Mechanism: imu_corrector rotates the sample from its claimed frame into base_link. The kit's
+# tamagawa/imu_link carries a ~180deg mount flip, so the claim only works if the wire data is
+# really expressed in that flipped sensor frame. The fork's IMU does NOT do that for the gyro:
+# AInertialMeasurementUnit::ComputeGyroscope (InertialMeasurementUnit.cpp) takes the OWNER
+# vehicle's angular velocity in the VEHICLE frame and applies
+# SensorLocalRotation.RotateVector(...) -- Rotate, not Unrotate, and a 180deg flip is its own
+# inverse -- so after the publisher's axis conversion the wire gyro is vehicle-frame-consistent
+# REGARDLESS of mount rotation. The accelerometer path (ComputeAccelerometer) does the
+# opposite: it Unrotates by the sensor's GLOBAL rotation, so wire accel IS flipped-sensor-frame
+# (az = -9.8 at rest, measured). The fork emits MIXED-frame IMU data; no frame claim can make
+# both fields correct without a fork rebuild.
+#
+# Claiming base_link makes the corrector's rotation the identity, which fixes the field this
+# stack actually fuses (angular velocity: gyro_odometer -> EKF yaw, gyro_bias_estimator, AEB's
+# path prediction) and keeps the original fix's benefit (a TF-resolvable frame, so imu_data
+# forms and the AEB/gyro diagnostics stay OK). KNOWN RESIDUAL: imu_data linear_acceleration.z
+# reads -9.8 at rest (inverted); NO node in this perception-off stack consumes IMU linear
+# acceleration, but any future consumer must first land the proper fork fix -- make
+# ComputeGyroscope express the owner angular velocity in the sensor frame via the sensor
+# GLOBAL rotation Unrotate (mirroring the accelerometer), after which this constant should
+# return to kit.IMU_FRAME. The spawn_imu() attach rotation is left at the kit pose: it is
+# measurably inert for the gyro (above) and keeps the accel wire data unchanged.
+#
+# Rebuild-free, like the LiDAR fix: `ros_name` is declared for EVERY actor definition by
+# FillIdAndTags (ActorBlueprintFunctionLibrary.cpp:230), not just lidars. ResolveAutoStreamSuffix
+# early-returns unless ros_name is exactly the "imu__" placeholder, so the unconditional
+# resolve("imu") cannot clobber this value either.
+IMU_ROS_NAME = "base_link"
 
 # LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
 # (the concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans.
