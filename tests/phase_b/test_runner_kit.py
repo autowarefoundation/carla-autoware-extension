@@ -157,25 +157,20 @@ def test_imu_ros_name_sets_the_tf_frame():
     # vehicle_cmd_gate raises a FALSE MRM that overrides the drive command, which is why the
     # G2 drive needed `use_emergency_handling:=false`.
     #
-    # The frame was FIRST fixed to "tamagawa/imu_link" (kit.py IMU_FRAME), which made
-    # /sensing/imu/imu_data form -- and then inverted the fused yaw rate: the kit frame
-    # carries a ~180deg mount flip, imu_corrector rotates the sample by it, but the fork's
-    # gyro is vehicle-frame-consistent on the wire REGARDLESS of mount rotation
-    # (AInertialMeasurementUnit::ComputeGyroscope uses the OWNER vehicle's angular velocity
-    # and RotateVector by the relative mount rotation -- Rotate, not Unrotate, and a 180deg
-    # flip is its own inverse). Measured live (2026-07-23, docs/phase-b-report.md "G2 reroute
-    # + IMU yaw-rate sign"): raw_wz == true base_link yaw rate; imu_data wz == -raw_wz on
-    # every sample; the EKF yaw then MIRRORS physical rotation and the lateral controller
-    # runs away to full lock (3/3 crashes within ~25 m). Claiming base_link makes the
-    # corrector rotation the identity, which fixes every field this stack fuses (angular
-    # velocity); the known residual (accel z inverted at rest, consumed by nothing here) and
-    # the proper fork-side fix are documented at spawn.IMU_ROS_NAME.
+    # The claim has been through three measured states (full history at spawn.IMU_ROS_NAME):
+    # kit frame (inverted the fused yaw rate -- the fork emitted vehicle-frame gyro data
+    # regardless of mount, 3/3 veer-right crashes), then "base_link" as the rebuild-free
+    # interim that carried the G2 PASS, and now kit.IMU_FRAME again after the fork-side fix
+    # (ImuMath.h polar/pseudovector UE->ROS conversions in CarlaIMUPublisher::Write, pinned
+    # by LibCarla test_imu_axes.cpp, + ComputeGyroscope expressing the rate in the SENSOR
+    # frame via the sensor GLOBAL rotation). With the fork emitting true sensor-frame data,
+    # the claimed frame must again equal the kit frame the mount pose is derived from --
+    # if these diverge, Autoware interprets the sample in a frame the runner did not mount
+    # it at. A veer-right crash within ~25 m of motion start is the live signature of a
+    # STALE fork build behind this claim (rebuild carla-unreal-editor + carla-ros2-native).
     attrs = imu_attributes()
-    assert attrs["ros_name"] == IMU_ROS_NAME == "base_link"
-    # Deliberately NOT kit.IMU_FRAME: the claimed frame must match the wire data's actual
-    # orientation (vehicle frame, measured), not the mount calibration, until the fork emits
-    # true sensor-frame data -- see the spawn.py comment block for the revert condition.
-    assert IMU_ROS_NAME != IMU_FRAME
+    assert attrs["ros_name"] == IMU_ROS_NAME == "tamagawa/imu_link"
+    assert IMU_ROS_NAME == IMU_FRAME
 
 
 # --- ROS rpy -> CARLA/UE Rotator conversion pins (Y-flip M-conjugation) ---
