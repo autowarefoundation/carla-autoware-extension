@@ -38,7 +38,7 @@ script works in metres and converts only at the boundary.
 
 Usage:
     export ROS_DOMAIN_ID=0
-    python3 scripts/phase_b/probe_carla_mgrs.py \
+    python3 scripts/e2e/probe_carla_mgrs.py \
         --xodr <...>/NishishinjukuMap.xodr [--map NishishinjukuMap]
 """
 

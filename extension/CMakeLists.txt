@@ -53,7 +53,7 @@ target_link_libraries(carla-autoware-extension PRIVATE ${ROS_MSG_LIBS})
 # "cannot open shared object file". The classic DT_RPATH this flag emits
 # instead applies to the WHOLE resolution subtree loaded beneath the object,
 # so transitive deps resolve too. Verified live against carla-server on
-# 2026-07-22 (see docs/running-phase-b.md).
+# 2026-07-22 (see docs/running-e2e.md).
 target_link_options(carla-autoware-extension PRIVATE
   -Wl,--disable-new-dtags
   -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/version.map)

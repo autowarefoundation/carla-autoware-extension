@@ -1,4 +1,4 @@
-# Nishi-Shinjuku map assets (Phase B)
+# Nishi-Shinjuku map assets
 
 E2E gates G1-G3 run on the AWSIM v2.0.0 Nishi-Shinjuku map.
 
@@ -19,16 +19,16 @@ E2E gates G1-G3 run on the AWSIM v2.0.0 Nishi-Shinjuku map.
 
 ## Non-goal (future work)
 
-Town10 + lanelet2 auto-generation (CARLA .xodr -> lanelet2) is out of Phase B scope. No
+Town10 + lanelet2 auto-generation (CARLA .xodr -> lanelet2) is out of scope. No
 CARLA(.xodr)->lanelet2 reverse converter exists: `autoware_lanelet2_to_opendrive` only
 converts Lanelet2 -> OpenDRIVE, not the other direction. The reusable scaffolding for a
 future reverse converter is that same package's tag-mapping tables, MGRS projection
 utilities, and the `analyze` QC harness.
 
-## Phase B ego reconciliation (live 2026-07-21)
+## Ego geometry reconciliation (live 2026-07-21)
 
 Live measurement on `NishishinjukuMap` (headless `UnrealEditor ... -game -nosound`, CARLA
-0.10 / UE5 Chaos, integration branch `feat/autoware-seminative-phase-b`; Python API only, no
+0.10 / UE5 Chaos, the fork's integration branch; Python API only, no
 `-ros2` — a stale editor `.so` is acceptable for a non-ROS2 measurement, so
 `verify_editor_artifact.sh` was deliberately skipped). Port 2000 came up in ~16 s; the map
 exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
@@ -39,7 +39,7 @@ exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
   LERP table was measured on. The CARLA 0.10 blueprint library drops the 0.9-era
   year suffix, so `vehicle.lincoln.mkz_2020` **does not exist** in this build
   (verified live: 17 vehicle blueprints enumerated; only `vehicle.lincoln.mkz` is the MKZ).
-  Finding the `_2020` id raises, which was the initial 4b spawn failure; `runner/spawn.py`
+  Finding the `_2020` id raises, which was the initial live spawn failure; `runner/spawn.py`
   now uses `vehicle.lincoln.mkz`. Front wheels are physics-control indices 0/1
   (`axle_type` 1, steered, `max_steer_angle` 70°), rear 2/3 (`axle_type` 2, unsteered);
   `wheel_radius` 0.355 m; `center_of_mass` (0.15, 0.0, 0.35) m.
@@ -66,7 +66,7 @@ exposes exactly 1 spawn point at `loc(-278.39, 220.54, 0.00) yaw -34.98`.
   were **removed**: `carla_attach_location` now returns the composed base_link pose verbatim,
   pinning base_link to the CARLA vehicle origin. This makes the NDT↔GT error cancel to ~0
   regardless of where the vehicle origin sits on the chassis, so the un-measurable wheelbase
-  no longer matters for G1. See `docs/phase-b-report.md` issue #6 for the full geometry.
+  no longer matters for G1. See `docs/e2e-report.md` issue #6 for the full geometry.
 
 ### Attach math + Z-origin (gross-error gate) — PASS
 

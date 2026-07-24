@@ -2,12 +2,12 @@
 
 The heavy lifting (sensor placement, transform composition) lives in ``runner.kit``. This
 module owns the CARLA-facing spawn: choosing the ego blueprint, opting the ego into the
-native ROS 2 Ackermann control path, and stamping the M1 native-publisher attributes
+native ROS 2 Ackermann control path, and stamping the fork's native-publisher attributes
 (``ros_topic_name`` / ``ros2_qos_*`` / ``ros2_extended_lidar``) onto the LiDAR and IMU.
 
 Import discipline: ``carla`` is imported lazily INSIDE the spawn functions, never at module
 top level, so this module (and the attribute-builder functions the unit tests exercise)
-imports cleanly under bare pytest on a machine with no CARLA egg -- the M0 CI lesson.
+imports cleanly under bare pytest on a machine with no CARLA egg, which is how CI runs it.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ IMU_BLUEPRINT = "sensor.other.imu"
 TOP_LIDAR_TOPIC = "/sensing/lidar/top/pointcloud_raw_ex"
 IMU_TOPIC = "/sensing/imu/tamagawa/imu_raw"
 
-# Top LiDAR header.frame_id. This is the M4-blocker-#1 fix (docs/phase-b-report.md):
+# Top LiDAR header.frame_id. This fixes the frame_id-mangling blocker #1 (docs/e2e-report.md):
 # without a `ros_name` attribute the fork's ActorDispatcher (ActorDispatcher.cpp:275-293)
 # mangles the blueprint id into "ray_cast__" and uses THAT as both ros_name and the
 # published cloud's header.frame_id. "ray_cast__" is absent from the TF tree Autoware
@@ -77,7 +77,7 @@ TOP_LIDAR_ROS_NAME = "velodyne_top"
 # with `use_emergency_handling:=false`.
 #
 # FRAME-CLAIM HISTORY (three states, each closed by measurement — full evidence in
-# docs/phase-b-report.md "G2 reroute + IMU yaw-rate sign inversion"):
+# docs/e2e-report.md "G2 reroute + IMU yaw-rate sign inversion"):
 #
 # 1. kit.IMU_FRAME ("tamagawa/imu_link"), pre-fork-fix: every drive VEERED hard right within
 #    ~25 m and crashed (3/3). Boundary probe: raw_wz == true base_link yaw rate but
@@ -89,8 +89,9 @@ TOP_LIDAR_ROS_NAME = "velodyne_top"
 # 2. "base_link" (the rebuild-free interim): corrector rotation = identity for the field this
 #    stack fuses; carried the G2 PASS. Residual: accel z inverted in imu_data (consumed by
 #    nothing perception-off).
-# 3. kit.IMU_FRAME again (CURRENT), after the fork-side fix landed on
-#    feat/autoware-seminative-phase-b: ImuMath.h now converts polar (x,-y,z) vs pseudovector
+# 3. kit.IMU_FRAME again (CURRENT), after the fork-side fix landed (fork commit ae166d80d,
+#    published as youtalk/carla autoware/11-imu-sensor-frame): ImuMath.h converts polar
+#    (x,-y,z) vs pseudovector
 #    (-x,y,-z) UE->ROS in CarlaIMUPublisher::Write (pinned by LibCarla test_imu_axes.cpp), and
 #    ComputeGyroscope expresses the owner angular velocity in the SENSOR frame via the sensor
 #    GLOBAL rotation Unrotate (mirroring ComputeAccelerometer). The wire data is now genuinely
@@ -136,7 +137,7 @@ def ego_attributes() -> dict[str, str]:
     """Ego blueprint attributes: named-ego hero + native Ackermann control opt-in.
 
     ``role_name`` "ego" is a valid hero criterion (ActorDispatcher registers the sole
-    Phase B vehicle as the ROS 2 ego); ``ros2_ackermann_control`` "true" routes the
+    vehicle this runner spawns as the ROS 2 ego); ``ros2_ackermann_control`` "true" routes the
     ego onto the Ackermann control sink (mutually exclusive with direct VehicleControl).
     """
     return {
@@ -148,7 +149,7 @@ def ego_attributes() -> dict[str, str]:
 def top_lidar_attributes() -> dict[str, str]:
     """Native ROS 2 attributes + geometry for the top LiDAR (all values are strings)."""
     return {
-        # Required M1-discriminator attrs first: `_apply_attributes` raises its named,
+        # Required native-build discriminator attrs first: `_apply_attributes` raises its named,
         # actionable error on these BEFORE mutating the blueprint, so a stock build lacking
         # the native-ROS2 patches fails loudly rather than half-configured. `ros_name`
         # (the blocker-1 frame_id fix) is a naming attr set unconditionally like role_name,
@@ -178,7 +179,7 @@ def imu_attributes() -> dict[str, str]:
     }
 
 
-# Load-bearing native ROS 2 publisher attributes (M1 patches): if the blueprint does not
+# Load-bearing native ROS 2 publisher attributes (fork patches): if the blueprint does not
 # declare these, the sensor would silently fall back to a STOCK layout/topic -- the exact
 # misconfiguration this repo's fail-loudly mandate exists to catch (a 4-field stock cloud on
 # the /..._ex topic, or the wrong topic entirely). We refuse to spawn rather than mislead a
@@ -194,7 +195,7 @@ def _apply_attributes(blueprint, attrs: dict[str, str]) -> None:
 
     Policy (run_g0.sh preflight style -- name the attribute, the blueprint, and the cause):
       * ``_REQUIRED_NATIVE_ATTRS`` (ros_topic_name / ros2_extended_lidar): RAISE if the
-        blueprint does not declare them -- a build lacking the M1 native-ROS2 publisher
+        blueprint does not declare them -- a build lacking the fork's native-ROS2 publisher
         patches must not silently produce a stock-layout cloud on the Autoware topic.
       * ``_OPTIONAL_ATTRS`` (ros2_ackermann_control): SKIP if absent (genuinely optional).
       * everything else (role_name / ros2_qos_* / channels / rotation_frequency / range):
@@ -205,8 +206,8 @@ def _apply_attributes(blueprint, attrs: dict[str, str]) -> None:
         if key in _REQUIRED_NATIVE_ATTRS and not blueprint.has_attribute(key):
             raise RuntimeError(
                 f"blueprint {blueprint.id!r} does not declare the required native ROS 2 "
-                f"attribute {key!r}: this CARLA build lacks the M1 native-ROS2 publisher "
-                f"patches (feat/autoware-seminative-integration middleware). Refusing to "
+                f"attribute {key!r}: this CARLA build lacks the native-ROS2 publisher "
+                f"patches (the fork's middleware series). Refusing to "
                 f"spawn -- a stock blueprint would emit a stock-layout cloud on the Autoware "
                 f"topic and silently mis-feed the NDT/detection gates. Rebuild CARLA with the "
                 f"native-ROS2 layer, or verify the blueprint id."

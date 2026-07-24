@@ -60,14 +60,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build and message dependencies
         run: |
-          # cyclonedds-dev satisfies the `find_library(ddsc REQUIRED)` in the
-          # Phase B stack extensions that have not yet dropped the CycloneDDS
-          # link (#8-#11); the extension references no dds_ symbols, so the
-          # package is inert for the ddsc-dropped tip (#13) and beyond.
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build libgtest-dev ca-certificates \
-            cyclonedds-dev \
             ros-jazzy-autoware-control-msgs ros-jazzy-autoware-vehicle-msgs \
             ros-jazzy-geometry-msgs
       - name: Configure and build extension

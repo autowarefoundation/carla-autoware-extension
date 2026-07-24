@@ -35,7 +35,7 @@ void EngageStateMachine::Init(const CarlaRos2Host& host) {
   // fail with no error, only silence. This also matches vehicle_cmd_gate's own
   // engage_sub_ QoS (see the header's Step-1 comment): reliable/volatile/1.
   // Trade-off: volatile forgoes latched replay of an engage published before
-  // this extension came up. Acceptable because the Phase B bring-up order is
+  // this extension came up. Acceptable because the live bring-up order is
   // "extension up, then engage" (the runner engages explicitly after the
   // extension is loaded), so there is never a missed-latch window in practice.
   CarlaRos2Qos qos{/*reliability=*/0u, /*durability=*/0u, /*history_depth=*/1u};

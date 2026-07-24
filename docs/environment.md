@@ -1,7 +1,7 @@
 # Environment record
 
 Captured while bringing up the Autoware container for the
-CARLA/Autoware ROS 2 native interop spike (G0 gate). This file pins the
+CARLA/Autoware ROS 2 native interop gate (G0). This file pins the
 exact environment the later gate scripts assume, in particular
 the golden REP-2011 RIHS01 type hashes, which are distro-specific.
 

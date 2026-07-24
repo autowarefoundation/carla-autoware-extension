@@ -1,4 +1,4 @@
-from scripts.phase_b.measure_ndt import ndt_pass
+from scripts.e2e.measure_ndt import ndt_pass
 
 
 def test_pass_when_within_threshold():

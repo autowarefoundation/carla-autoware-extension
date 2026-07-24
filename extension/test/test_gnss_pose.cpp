@@ -18,7 +18,7 @@ using namespace carla::autoware;
 
 // ===========================================================================
 // MGRS offset transform. Byte-identical to the verified
-// scripts/phase_b/verify_mgrs_handedness.py world_to_mgrs_local (cm frame).
+// scripts/e2e/verify_mgrs_handedness.py world_to_mgrs_local (cm frame).
 // ===========================================================================
 TEST(mgrs, origin_maps_to_offset) {
   auto [x, y, z] = world_to_mgrs_local(0.0, 0.0, 0.0);
@@ -309,8 +309,8 @@ TEST_F(GnssPoseTest, decimates_to_one_hz) {
 }
 
 // ---------------------------------------------------------------------------
-// (e) Backwards clock (episode reload restarts the sim clock; M2 documented
-// reload id invalidation). After publishing at t=5.0, a call at t=0.2 must
+// (e) Backwards clock (an episode reload restarts the sim clock and
+// invalidates reload ids). After publishing at t=5.0, a call at t=0.2 must
 // publish -- the decimator must NOT deadlock waiting for the stale large
 // last_pub time to be exceeded.
 // ---------------------------------------------------------------------------

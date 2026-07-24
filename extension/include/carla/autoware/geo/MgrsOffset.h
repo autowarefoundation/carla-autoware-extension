@@ -2,7 +2,7 @@
 
 // CARLA world (left-handed, centimetres) <-> MGRS-local (right-handed, metres)
 // transforms for GNSS pose synthesis. This is the C++ mirror of the verified
-// scripts/phase_b/verify_mgrs_handedness.py -- the affine map is
+// scripts/e2e/verify_mgrs_handedness.py -- the affine map is
 // BYTE-IDENTICAL to world_to_mgrs_local there, pinned against the
 // Nishi-Shinjuku lanelet2 map (docs/mgrs-handedness.md: median residual 0.009 m
 // across the map, single Y negation, X/Z not flipped). Kept as a reusable

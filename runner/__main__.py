@@ -1,11 +1,11 @@
-"""Phase B live runner CLI: connect to CARLA, load the map, spawn the ego + sensor rig, run
+"""Live runner CLI: connect to CARLA, load the map, spawn the ego + sensor rig, run
 the tick loop, and clean up on exit.
 
 Import discipline: ``carla`` is imported lazily INSIDE ``main()``, after both the
 ``--extension-check`` early return and the kit-yaml existence preflight, so this module stays
 importable -- and its argument parsing / preflight paths stay testable -- under bare pytest
-with no CARLA egg installed (the M0 CI lesson; see ``runner/spawn.py`` for the same rule on
-the spawn side).
+with no CARLA egg installed, which is how CI runs it (see ``runner/spawn.py`` for the same
+rule on the spawn side).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from runner.spawn import spawn_ego, spawn_sensors
 def _brake_to_stop(ego) -> None:
     """Best-effort full-brake before teardown.
 
-    CARLA control latches in async mode (CLAUDE.md operational gotcha): without this the ego
+    CARLA control latches in async mode: without this the ego
     would coast away on the LAST applied control after the runner process exits. This runs
     from a ``finally`` during a SIGINT/exception unwind, so it swallows every exception itself
     -- a secondary failure here (e.g. the actor already invalid) must never mask the original
@@ -38,7 +38,7 @@ def _brake_to_stop(ego) -> None:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="runner", description="Phase B CARLA spawn + tick runner")
+    p = argparse.ArgumentParser(prog="runner", description="CARLA ego/sensor spawn + tick runner")
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=2000)
     p.add_argument("--map", default="NishishinjukuMap")
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
 
     if args.extension_check:
-        # Standalone preflight mode: scripts/phase_b/run_phase_b.sh runs this BEFORE booting
+        # Standalone preflight mode: scripts/e2e/run_e2e.sh runs this BEFORE booting
         # CARLA, so a missing/stale extension .so fails here in ~0s with a named, actionable
         # message instead of ~20s into an editor boot with only a buried --ros2-extension= log
         # line to go on.
@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # carla is imported here, lazily -- everything above this line (arg parsing, the
     # --extension-check path, the kit-yaml preflight + parse) must stay importable and
-    # runnable with no CARLA egg installed (bare `pytest tests/`, the M0 CI lesson).
+    # runnable with no CARLA egg installed (bare `pytest tests/`, as CI runs it).
     import carla
 
     client = carla.Client(args.host, args.port)
@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         loop(world, should_continue=lambda: stop["go"])
         return 0
     finally:
-        # Teardown order is load-bearing (CLAUDE.md operational gotcha): brake to a stop
+        # Teardown order is load-bearing: brake to a stop
         # FIRST -- control latches in async mode, so an un-braked ego coasts away once this
         # process exits -- THEN destroy sensors, THEN the ego, all inside this finally so a
         # SIGINT or an exception anywhere above (spawn OR the tick loop) never leaks actors or

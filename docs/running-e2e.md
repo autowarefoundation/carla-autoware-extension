@@ -1,13 +1,14 @@
-# Running Phase B (Nishi-Shinjuku, native CycloneDDS)
+# Running the live E2E stack (Nishi-Shinjuku, native CycloneDDS)
 
-Phase B drives official Autoware Humble over native CycloneDDS from CARLA's
-own ROS 2 layer plus this repo's out-of-tree extension `.so` — no
-carla-ros-bridge involved. This doc is the one-command-per-step bring-up.
+The live E2E stack drives official Autoware Humble over native CycloneDDS from
+CARLA's own ROS 2 layer plus this repo's out-of-tree extension `.so` — no
+carla-ros-bridge involved. This doc is the one-command-per-step bring-up; the
+measured gate results live in [e2e-report.md](e2e-report.md).
 
 ## 1. Build
 
 - CARLA editor: `cmake --build Build/Development --target carla-unreal-editor`
-  (checked by `scripts/phase_b/verify_editor_artifact.sh`, which fails loudly
+  (checked by `scripts/e2e/verify_editor_artifact.sh`, which fails loudly
   if the editor plugin `.so` is stale relative to CARLA HEAD).
 - Extension: `source /opt/ros/jazzy/setup.bash && cmake -S extension -B extension/build -G Ninja && cmake --build extension/build -j`
   (needs `ros-jazzy-autoware-control-msgs`, `ros-jazzy-autoware-vehicle-msgs`, and
@@ -37,16 +38,16 @@ be rebuilt.
 
 ```bash
 source docker/env.sh
-bash scripts/phase_b/run_phase_b.sh
+bash scripts/e2e/run_e2e.sh
 ```
 
 `docker/env.sh` exports `CARLA_ROOT`, `CARLA_UNREAL_ENGINE_PATH`,
 `ROS_DOMAIN_ID=0`, and `CYCLONEDDS_URI` for a human shell building/running
-Phase B by hand. `run_phase_b.sh` itself pins `ROS_DOMAIN_ID`/`CYCLONEDDS_URI`
+the stack by hand. `run_e2e.sh` itself pins `ROS_DOMAIN_ID`/`CYCLONEDDS_URI`
 independently (so it stays correct even if this file was never sourced) and
 needs only `CARLA_ROOT`/`CARLA_UNREAL_ENGINE_PATH` from the environment;
 sourcing `docker/env.sh` first keeps a manual build/run consistent with what
-the harness does. `run_phase_b.sh` preflights the extension `.so` (fresh
+the harness does. `run_e2e.sh` preflights the extension `.so` (fresh
 editor artifact, `--extension-check` ABI probe), boots CARLA headless with
 `--ros2 --rmw=cyclonedds --ros2-extension=<so>`, and runs
 `python3 -m runner --host localhost --port 2000 --map NishishinjukuMap` in
@@ -100,8 +101,8 @@ not copied from a draft:
   gives the same ego geometry — `sample_vehicle` is used as the simpler,
   non-AWSIM-branded name.
 
-`perception:=false rviz:=false` were added after a 2026-07-22 spike found the
-documented full-perception line cannot come up on this `-devel` image. Two
+`perception:=false rviz:=false` were added after a 2026-07-22 investigation found
+the documented full-perception line cannot come up on this `-devel` image. Two
 independent hard blockers live entirely inside the perception subtree, so the
 top-level perception toggle is the one stock-argument lever that clears both:
 

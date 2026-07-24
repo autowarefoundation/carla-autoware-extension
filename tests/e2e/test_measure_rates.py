@@ -1,4 +1,4 @@
-from scripts.phase_b.measure_rates import rate_in_band
+from scripts.e2e.measure_rates import rate_in_band
 
 
 def test_lidar_20hz_in_band():

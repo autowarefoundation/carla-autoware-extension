@@ -1,10 +1,10 @@
-"""Unit tests for the Phase B sensor-kit spawn layer (``runner.kit`` / ``runner.spawn``).
+"""Unit tests for the sensor-kit spawn layer (``runner.kit`` / ``runner.spawn``).
 
 Pure-Python only: importing these modules must NOT pull in ``carla`` (``spawn.py``
 lazy-imports it inside the spawn functions), so this suite collects and runs under a
-bare ``python3 -m pytest`` with no special venv, per the M0 CI lesson. The live spawn /
+bare ``python3 -m pytest`` with no special venv, which is how CI runs it. The live spawn /
 attach path (ego wheelbase reconcile, top-lidar world-transform check) is exercised
-separately and recorded in ``docs/nishishinjuku-map.md`` ("Phase B ego reconciliation").
+separately and recorded in ``docs/nishishinjuku-map.md`` ("Ego geometry reconciliation").
 
 The kit-yaml assertions run against the REAL committed calibration files under
 ``runner/config/`` (extracted from ``awsim_labs_sensor_kit_description`` in the pinned
@@ -87,7 +87,7 @@ def test_composition_applies_kit_rotation_for_offcentre_sensor():
 def test_carla_attach_location_top_lidar():
     # base_link is pinned to the CARLA vehicle origin: the attach location IS the composed
     # base_link pose with NO vehicle-centre shift (an earlier +wheelbase/2 shift was the
-    # 1.44 m G1 near-miss -- docs/phase-b-report.md issue #6). So the top LiDAR attaches at
+    # 1.44 m G1 near-miss -- docs/e2e-report.md issue #6). So the top LiDAR attaches at
     # exactly sensor_in_base_link (0.9, 0, 2.0), not the old 2.295.
     kit = load_kit()
     x, y, z = carla_attach_location(kit, TOP_LIDAR_FRAME)
@@ -126,7 +126,7 @@ def test_top_lidar_attributes_native():
 
 
 def test_top_lidar_ros_name_sets_the_tf_frame():
-    # M4-blocker #1 (docs/phase-b-report.md): the raw cloud flowed at 20 Hz but its
+    # Frame_id-mangling blocker #1 (docs/e2e-report.md): the raw cloud flowed at 20 Hz but its
     # header.frame_id defaulted to the mangled blueprint id "ray_cast__", which is NOT
     # in the Autoware TF tree (only base_link / sensor_kit_base_link / velodyne_* exist),
     # so crop_box_filter_self could not transform it and dropped every frame -> the whole
@@ -144,7 +144,8 @@ def test_imu_attributes():
 
 
 def test_imu_ros_name_sets_the_tf_frame():
-    # The `ray_cast__` twin of M4-blocker #1, on the IMU (G2/G3 campaign, 2026-07-23).
+    # The `ray_cast__` twin of frame_id-mangling blocker #1, on the IMU (G2/G3 campaign,
+    # 2026-07-23).
     # Without `ros_name` the fork mangles the blueprint id through TWO stages:
     # ActorDispatcher.cpp:275-288 sees RosName == id and rewrites "sensor.other.imu" to the
     # placeholder "imu__" (last dot-token + "__"), registering it as BOTH ros_name and
@@ -285,9 +286,9 @@ class _FakeBlueprint:
 
 
 def test_apply_attributes_fails_loud_on_missing_topic_name():
-    # A stock 0.10 build lacking the M1 native-ROS2 patches declares the geometry/QoS attrs
-    # but NOT ros_topic_name -> must raise (naming attr + blueprint + M1), never silently
-    # drop a stock-layout cloud onto the Autoware topic.
+    # A stock 0.10 build lacking the fork's native-ROS2 patches declares the geometry/QoS
+    # attrs but NOT ros_topic_name -> must raise (naming the attr, the blueprint, and the
+    # missing patches), never silently drop a stock-layout cloud onto the Autoware topic.
     stock = _FakeBlueprint(
         declared={
             "channels",
@@ -303,7 +304,7 @@ def test_apply_attributes_fails_loud_on_missing_topic_name():
     msg = str(exc.value)
     assert "ros_topic_name" in msg  # names the missing attribute
     assert stock.id in msg  # names the blueprint
-    assert "M1" in msg  # points at the missing native-ROS2 patches
+    assert "native-ROS2" in msg  # points at the missing native-ROS2 patches
     assert stock.applied == {}  # ros_topic_name is first -> nothing applied before the raise
 
 
