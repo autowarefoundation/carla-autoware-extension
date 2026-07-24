@@ -146,3 +146,47 @@ attributes on the spawned sensor), not by the extension `.so`.
 Overlay branch `feat/carla-native-nishishinjuku` on `youtalk/autoware_launch`
 is created ONLY if a concrete change is forced (e.g. a `traffic_light` module
 disable, or a QoS param fix) — not preemptively.
+
+## 5. Watching the run in RViz
+
+The stock launch keeps `rviz:=false` (the launch itself is headless), but the
+image ships the Autoware RViz plugins, so the run is watchable from the host
+desktop:
+
+```bash
+xhost +local:                     # once per desktop session
+bash scripts/e2e/launch_rviz.sh   # RViz2 inside the container, on the host display
+```
+
+The script execs `rviz2` in the `autoware` container with the
+`autoware_launch` RViz profile (vehicle overlay, TF, LiDAR cloud, route and
+trajectory displays) and `use_sim_time:=true` so the sim-paced TF tree is
+accepted. `docker/compose.yaml` mounts the host X socket; rendering defaults
+to Mesa software GL (`LIBGL_ALWAYS_SOFTWARE=0` to override when the container
+has GPU access). RViz here is an **observer** — the gates below stay
+script-driven — but the 2D Goal Pose tool works normally if you want to route
+interactively instead of via `arm_closed_loop.sh`.
+
+## 6. Arming a closed-loop drive (the G2 recipe)
+
+With the stack up (steps 2–4, `WITH_AUTOWARE=1`, on-lanelet
+`RUNNER_EXTRA_ARGS="--initial-pose -284.597 224.709 0.0 0 0 -34.187"`):
+
+```bash
+bash scripts/e2e/arm_closed_loop.sh          # reseed -> dummy perception -> route -> MRM off
+bash scripts/e2e/gate_g2_closed_loop.sh 81571.616 50019.827   # engage + measure
+```
+
+`arm_closed_loop.sh` encodes the verified arm order (each step exists because
+its absence cost a live run; see `e2e-report.md`): re-seed `/initialpose` at
+the ego's current ground truth (NDT drifts while parked), start
+`dummy_perception.py` **before** routing (clear-road objects/grid/pointcloud +
+all-green signals — without it `behavior_path_planner` never emits a
+trajectory), set the route via the AD API, and suppress the perception-off
+false MRM (`vehicle_cmd_gate use_emergency_handling=false`, still required on
+this image). Engage latches across re-arms: run
+`arm_closed_loop.sh --disarm` before teleporting/re-seeding/re-arming.
+
+G1/G3 need no arming: with the stack localizing, run
+`bash scripts/e2e/gate_g1_localization.sh` and
+`bash scripts/e2e/gate_g3_performance.sh` directly.

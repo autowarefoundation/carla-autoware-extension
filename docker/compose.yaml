@@ -13,4 +13,7 @@ services:
       - ../reports:/work/reports
       - ~/autoware_map/nishishinjuku:/autoware_map/nishishinjuku:ro
       - ../extension/build:/work/extension:ro
+      # Host X11 socket so scripts/e2e/launch_rviz.sh can show RViz on the host
+      # display (grant access once per session with `xhost +local:`).
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
     command: sleep infinity
