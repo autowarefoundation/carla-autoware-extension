@@ -90,7 +90,11 @@ compose_exec 'test -f /autoware_map/nishishinjuku/lanelet2_map.osm' \
 # Preflight 3: CARLA RPC port must already be bound -- carla_interface connects to :2000 at
 # startup, so CARLA has to be up FIRST (that is the whole point of the ordering). This is why
 # run_e2e.sh boots CARLA before calling this script.
-if ! (ss -ltn 2>/dev/null | grep -q ':2000[[:space:]]'); then
+# Captured into a variable, not piped to `grep -q`: under `set -o pipefail`, grep -q closing
+# its read end early can SIGPIPE-kill `ss` (exit 141) and flip the whole pipeline to "not
+# bound" even though the port IS bound (the same hazard run_e2e.sh's port_bound documents).
+listeners="$(ss -ltn 2>/dev/null)" || true
+if ! [[ "$listeners" =~ :2000[[:space:]] ]]; then
   echo "PREFLIGHT FAIL: CARLA RPC port 2000 is not bound. Bring CARLA up BEFORE Autoware so" >&2
   echo "  autoware_carla_interface can connect and fire its one-shot load_world on the" >&2
   echo "  ego-less world (bring-up-order blocker #4). run_e2e.sh WITH_AUTOWARE=1 does this." >&2
