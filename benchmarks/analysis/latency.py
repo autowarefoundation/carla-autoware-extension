@@ -1,9 +1,10 @@
 """Latency segment and staleness metrics.
 
 Computes M1a (stamp-propagating latency) and M1b (data staleness) for
-benchmark analysis. Formulas assume continuous downstream stamp
-propagation; for hops where Autoware re-stamps with now(), use raw
-timing instead of these functions.
+benchmark analysis. Downstream Autoware stamps do NOT propagate
+(ekf/controller/gate re-stamp with now()) -- only use match_stamps and
+segment_sim_ms on hops verified to propagate, e.g. lidar -> NDT pose
+(spec: Metrics M1a).
 """
 
 from __future__ import annotations
@@ -30,6 +31,9 @@ def one_hop_wall_ms(header_stamp_ns, arrival_system_ns, fit: AffineFit) -> np.nd
 
 def match_stamps(src_stamp_ns, dst_stamp_ns):
     """Match stamps: return indices of common timestamps.
+
+    Duplicate stamps on either side collapse to a single pair, so a
+    republished topic yields fewer M1a pairs than message receipts.
 
     Args:
         src_stamp_ns: source timestamps (ns).
