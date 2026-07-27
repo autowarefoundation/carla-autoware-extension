@@ -1,0 +1,80 @@
+# Workload matrix (spec: Benchmark design). A sweep point is a cell and
+# inherits n >= 3 (>= 5 at the ceiling class); primary duel n >= 10.
+cells:
+  - id: A
+    approach: extension
+    carla: 0.10-fork
+    map: Town10HD_Opt
+    mandatory: true
+    arms: [static, closed-loop]
+  - id: B
+    approach: tier4-native
+    carla: 0.10-tier4
+    map: Town10HD_Opt
+    mandatory: true
+    arms: [static, closed-loop]
+  - id: C
+    approach: extension
+    carla: 0.10-fork
+    map: NishishinjukuMap
+    mandatory: true
+    arms: [static, closed-loop]
+  - id: D
+    approach: tier4-native
+    carla: 0.10-tier4
+    map: NishishinjukuMap
+    mandatory: false
+    arms: [static, closed-loop] # only if the map cooks in the tier4 tree
+  - id: E
+    approach: python-bridge
+    carla: 0.9.15
+    map: Town10HD_Opt
+    mandatory: true
+    arms: [static, closed-loop]
+  - id: E0
+    approach: python-bridge
+    carla: 0.9.15
+    map: Town10HD_Opt
+    mandatory: true
+    arms: [closed-loop] # as-shipped defaults
+  - id: E-opt
+    approach: python-bridge
+    carla: 0.9.15
+    map: Town10HD_Opt
+    mandatory: false
+    arms: [closed-loop] # local packer-optimized sensitivity
+  - id: CAL-rmw
+    approach: calibration
+    carla: none
+    map: none
+    mandatory: true
+    arms: [static]
+  - id: CAL-seam
+    approach: calibration
+    carla: 0.10-fork
+    map: Town10HD_Opt
+    mandatory: true
+    arms: [static]
+  - id: A-hf
+    approach: extension
+    carla: 0.10-fork
+    map: Town10HD_Opt
+    mandatory: false
+    arms: [closed-loop] # fixed_delta 0.01
+  - id: B-hf
+    approach: tier4-native
+    carla: 0.10-tier4
+    map: Town10HD_Opt
+    mandatory: false
+    arms: [closed-loop]
+  - id: B45
+    approach: tier4-native
+    carla: 0.10-tier4
+    map: Town10HD_Opt
+    mandatory: true
+    arms: [closed-loop] # Autoware 0.45.x image
+sweep_classes:
+  - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
+  - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }
+  - { id: 128ch, channels: 128, points_per_second: 4600000, applies_to: [A, B, E] }
+sweep_arms: [paced, unpaced, ablation] # ablation = publish-disabled baseline
