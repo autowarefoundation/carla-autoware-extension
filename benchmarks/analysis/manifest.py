@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APPROACHES = ("extension", "python-bridge", "tier4-native", "calibration")
-ARMS = ("static", "closed-loop", "ablation", "unpaced")
+ARMS = ("static", "closed-loop", "ablation", "unpaced", "paced")
 TRANSPORT_KEYS = ("rmw", "shm_enabled", "dds_profile_sha256")
 
 

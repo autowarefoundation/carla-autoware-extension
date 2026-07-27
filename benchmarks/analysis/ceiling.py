@@ -10,7 +10,7 @@ import numpy as np
 @dataclass(frozen=True)
 class CeilingVerdict:
     reached: bool
-    reasons: list = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
 
 
 def evaluate_ceiling(
@@ -24,6 +24,8 @@ def evaluate_ceiling(
 ) -> CeilingVerdict:
     t = np.asarray(sample_system_ns, dtype=np.int64)
     r = np.asarray(rtf, dtype=np.float64)
+    if t.size != r.size:
+        raise ValueError(f"sample_system_ns and rtf length mismatch: {t.size} != {r.size}")
     reasons = []
 
     below = r < rtf_threshold

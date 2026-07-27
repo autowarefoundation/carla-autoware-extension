@@ -1,5 +1,9 @@
 """Pre-registered statistics: bootstrap CI on run-level medians and the
-C1 equivalence decision rule (spec: Statistical treatment)."""
+C1 equivalence decision rule (spec: Statistical treatment).
+
+Equivalence (TOST): parity requires the WHOLE CI to fall inside
+(-margin, margin). A CI that straddles the margin is inconclusive,
+not parity."""
 
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ def bootstrap_ci_median_diff(a, b, iters: int = 10000, seed: int = 20260727, alp
 
 def equivalence_decision(delta_median: float, ci, margin: float) -> str:
     lo, hi = ci
-    if abs(delta_median) < margin and lo > -2 * margin and hi < 2 * margin:
+    if lo > -margin and hi < margin:
         return "parity"
     if hi < 0:
         return "a_better"

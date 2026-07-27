@@ -41,3 +41,24 @@ def test_validate_requires_transport_keys():
     object.__setattr__(m, "transport", {"rmw": "x"})
     errs = m.validate()
     assert any("transport" in e for e in errs)
+
+
+def test_validate_rejects_bad_arm():
+    m = _valid()
+    object.__setattr__(m, "arm", "banana")
+    errs = m.validate()
+    assert any("arm" in e for e in errs)
+
+
+def test_validate_requires_exclusion_reason_when_excluded():
+    m = _valid()
+    object.__setattr__(m, "excluded", True)
+    errs = m.validate()
+    assert any("exclusion_reason" in e for e in errs)
+
+
+def test_validate_excluded_with_reason_is_clean():
+    m = _valid()
+    object.__setattr__(m, "excluded", True)
+    object.__setattr__(m, "exclusion_reason", "sensor dropout mid-run")
+    assert m.validate() == []
