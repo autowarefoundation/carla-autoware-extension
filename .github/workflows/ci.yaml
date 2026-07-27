@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.12"
       - if: ${{ hashFiles('tests/**') != '' }}
-        run: pip install pytest pyyaml
+        run: pip install pytest pyyaml numpy
       - if: ${{ hashFiles('tests/**') != '' }}
         run: pytest tests/ -v
 
