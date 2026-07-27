@@ -3,3 +3,4 @@ __pycache__/
 reports/
 node_modules/
 extension/build/
+benchmarks/docker/vendor/

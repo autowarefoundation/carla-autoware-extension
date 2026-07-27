@@ -2,3 +2,11 @@ autoware_contents:
   revision: 062f94b5322e679ee0430e2daa6995dca9f7f0ea
   town10_pcd_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
   town10_osm_sha256: cdd0a28664bcf9b5bd8867584a6fa6a02fa0f75a7c3dbb901ca216128ef86a17
+carla_0915:
+  url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
+  sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7
+gezp_wheel:
+  url: https://github.com/gezp/carla_ros/releases/download/carla-0.9.15-ubuntu-22.04/carla-0.9.15-cp310-cp310-linux_x86_64.whl
+  sha256: d8766616df2511a58ac152ccc53e3307a84ccef9e7fb7108006667188d5766f8
+autoware_universe_devel:
+  digest: ghcr.io/autowarefoundation/autoware@sha256:405225eda6c05161bfde39cc7885511f3f4d9699d126891891420dd80c2e024a
