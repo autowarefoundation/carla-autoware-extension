@@ -48,8 +48,35 @@ resolves that default eagerly, at declare-time — so on a CPU-only image where
 [ERROR] [launch]: Caught exception in launch (see debug for traceback): "package 'autoware_ground_segmentation_cuda' not found, searching: ['/opt/autoware', '/opt/ros/humble']"
 ```
 
-Workaround: `perception:=false` on `e2e_simulator.launch.xml` skips the whole perception module and
-avoids the crash. (This has a downstream consequence — see "still unproven" below.)
+Workaround (CPU-only base image): `perception:=false` on `e2e_simulator.launch.xml` skips the whole
+perception module and avoids the crash — but this has a downstream consequence (a structural
+`autonomous`-mode-availability conflict, superseded below by the pin update, see "What is still
+unproven").
+
+**Update:** this bug is now avoided at the root, not worked around, by pinning `bridge-bench` to the
+CUDA-enabled Autoware base image instead of switching `perception:=false`. See "Pin update" below.
+
+## Pin update — CUDA-enabled Autoware base required
+
+`benchmarks/pins.yaml`'s `autoware_universe_devel.digest` now points at
+`ghcr.io/autowarefoundation/autoware:universe-devel-cuda`
+(`sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee`, the multi-arch manifest-list
+digest, same digest kind as the previous pin) instead of the CPU-only `universe-devel` variant. This is
+an environment/pin change only — `benchmarks/docker/bridge-bench.Dockerfile` needed no edit, since it
+already parameterizes the base image via `ARG BASE`.
+
+With the CUDA base, `autoware_ground_segmentation_cuda` actually resolves:
+
+```text
+$ docker run --rm bridge-bench:latest bash -lc \
+  "source /opt/autoware/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash; \
+   ros2 pkg prefix autoware_ground_segmentation_cuda"
+/opt/autoware
+```
+
+...which means `perception:=false` is **no longer required** to avoid Bug 2 — the corrected invocation
+below leaves perception at its default (on) and drops the flag. Note this pin makes the image
+GPU-dependent: `docker run` needs `--gpus all` (nvidia-container-toolkit) from this point on.
 
 ## The corrected invocation
 
@@ -59,11 +86,12 @@ ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \
   carla_map:=Town10HD_Opt host:=localhost port:=2000 sensor_kit_name:=carla_sensor_kit_description
 
 # stage 2 — rest of the stack; simulator_type:=awsim so it does not auto-include a second,
-# conflicting bridge instance with the wrong default map
+# conflicting bridge instance with the wrong default map. perception left at its default (ON) —
+# this requires the CUDA-pinned image and --gpus all on the container.
 ros2 launch autoware_launch e2e_simulator.launch.xml \
   map_path:=/autoware_map/town10 vehicle_model:=sample_vehicle \
   sensor_model:=carla_sensor_kit simulator_type:=awsim \
-  perception:=false sensing:=true rviz:=false
+  sensing:=true rviz:=false
 ```
 
 `sensing:=true` is load-bearing: an earlier attempt at this recipe used `sensing:=false` (reasoning
@@ -82,14 +110,25 @@ current map: Carla/Maps/Town10HD_Opt
 
 ## What is still unproven
 
-The drive gate (goal + engage + >=30 s of monotonic ego motion) has not passed. Route planning
-succeeds (`/api/routing/set_route_points` returns `success: true`, route reaches `state: SET`), but
-`/api/operation_mode/change_to_autonomous` consistently fails with "The target mode is not available."
-Root cause (see `task-13-report.md`'s follow-up section for full evidence): the standard `autonomous`
-operation-mode availability gate in this Autoware version unconditionally requires the perception
-`objects`/`pointcloud` topic-rate checks to be healthy, which `perception:=false` (needed for Bug 2
-above) can never satisfy. This is a structural conflict between the two workarounds this recipe
-depends on, not a transient startup issue — resolving it needs either a real fix to the
-`autoware_ground_segmentation_cuda` packaging gap (so `perception:=true` becomes usable) or a
-source/config change to the component_state_monitor's `autonomous`-mode diagnostics definition, both
-out of scope for a launch-argument-only recipe.
+The drive gate (goal + engage + >=30 s of monotonic ego motion) has still not passed. Two blockers have
+now been found and worked past in sequence, each one revealing the next:
+
+1. **(Superseded by the pin update above.)** With `perception:=false`, route planning succeeded
+   (`/api/routing/set_route_points` → `success: true`, route reaches `state: SET`), but
+   `/api/operation_mode/change_to_autonomous` consistently failed with "The target mode is not
+   available" — the `autonomous` operation-mode availability gate unconditionally requires perception
+   `objects`/`pointcloud` health checks that `perception:=false` can never satisfy.
+2. **(Current blocker, found after the CUDA-base pin.)** With `perception:=true` on the CUDA-pinned
+   image, the launch tree now crashes even earlier — before reaching operation-mode diagnostics at all
+   — because the `lidar_centerpoint` perception node's launch args reference
+   `~/autoware_data/lidar_centerpoint/centerpoint_tiny_ml_package.param.yaml`, and `~/autoware_data`
+   (the ML model/weights directory for the full perception stack) does not exist in the `bridge-bench`
+   image. It is not baked into any upstream Autoware Docker image; it is fetched separately via a
+   documented Ansible playbook (`ansible-playbook autoware.dev_env.download_artifacts`) that downloads
+   77 separate model files (yabloc, bevfusion, CenterPoint, traffic-light classifiers, YOLOX, ...) —
+   a multi-GB, unbounded-duration operation that was out of scope for this pass (pin change only) and
+   was not attempted. See `task-13-report.md`'s "CUDA-base pass" follow-up section for full evidence.
+
+Net effect: the CUDA-base pin genuinely fixes what it was meant to fix (Bug 2, and the
+operation-mode-availability conflict it caused), but the drive gate remains blocked one step further
+down the chain, on missing perception model data rather than a missing package.

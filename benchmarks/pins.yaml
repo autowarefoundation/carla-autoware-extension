@@ -9,4 +9,4 @@ gezp_wheel:
   url: https://github.com/gezp/carla_ros/releases/download/carla-0.9.15-ubuntu-22.04/carla-0.9.15-cp310-cp310-linux_x86_64.whl
   sha256: d8766616df2511a58ac152ccc53e3307a84ccef9e7fb7108006667188d5766f8
 autoware_universe_devel:
-  digest: ghcr.io/autowarefoundation/autoware@sha256:405225eda6c05161bfde39cc7885511f3f4d9699d126891891420dd80c2e024a
+  digest: ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee
