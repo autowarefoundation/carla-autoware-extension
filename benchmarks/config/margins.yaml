@@ -1,0 +1,15 @@
+# Pre-registered equivalence margins for the A/B primary duel (delta =
+# extension - tier4-native; lower is better). Amendment rule: margins may
+# be changed only BEFORE the first P3 measurement run, in a dedicated
+# commit referencing the reason (e.g. the CAL-rmw measured transport
+# term); never after data collection has started.
+one_hop_wall_ms:
+  margin: 2.0 # provisional; revisit from CAL-rmw before P3
+lidar_to_ndt_sim_ms:
+  margin: 5.0
+control_staleness_ms:
+  margin: 10.0
+carla_process_cpu_pct:
+  margin: 10.0 # absolute percentage points
+achieved_rate_ratio:
+  margin: 0.02 # fraction of target rate
