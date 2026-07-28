@@ -19,23 +19,21 @@
 # run `arm_closed_loop.sh --disarm` before teleporting/re-seeding/re-arming, or the ego
 # drives off the moment the new trajectory forms.
 #
-# Default goal: the geometry-scored reroute goal 23.3 m into lanelet 226 (chain
+# Nishi-Shinjuku's goal: the geometry-scored reroute goal 23.3 m into lanelet 226 (chain
 # 253->255->495->280->283->382->226; min width 2.61 m @ 0.52 deg/m -- inside the proven
 # envelope). Chosen from map geometry only, never from a driven trajectory, so the
 # strict 1.0 m gate stays honest.
 #
-# MAP: the defaults below are Nishi-Shinjuku's, so an argument-free arm is unchanged.
-# Another map supplies its own GOAL_* (map-frame metres, from that map's lanelet2
-# centreline) and sets CARLA_AUTOWARE_MAP so the ground-truth reseed uses the right
-# converter offset -- run_e2e.sh prints the exact export line for the active map.
+# MAP: everything per-map (bundle, grid centre, route goal) is derived from
+# scripts/e2e/map_defaults.sh via CARLA_AUTOWARE_MAP, which also selects the extension's
+# converter offset -- run_e2e.sh prints the exact export line for the active map. Unset
+# selects Nishi-Shinjuku, so an argument-free arm is unchanged. GOAL_* still override.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 COMPOSE="$REPO/docker/compose.yaml"
 export ROS_DOMAIN_ID=0
 
-GOAL_X="${GOAL_X:-81571.616}" GOAL_Y="${GOAL_Y:-50019.827}" GOAL_Z="${GOAL_Z:-42.07}"
-GOAL_QZ="${GOAL_QZ:-0.090888}" GOAL_QW="${GOAL_QW:-0.995861}"
 SUPPRESS_MRM="${SUPPRESS_MRM:-1}"
 
 # Which map is armed. DERIVED from CARLA_AUTOWARE_MAP -- the one variable the
@@ -57,7 +55,25 @@ if [ -z "$MAP_DIR" ]; then
   echo "  set MAP_DIR to its container path (see scripts/e2e/map_defaults.sh)." >&2
   exit 1
 fi
-echo "== map $MAP_NAME  bundle $MAP_DIR =="
+# Route goal, from the SAME table. It used to default to Nishi's constants
+# unconditionally while MAP_DIR and the grid centre had already moved into the
+# table, so a Town10 arm that forgot GOAL_* routed to a point 81 km outside the
+# map frame. That failure is loud, unlike the bundle one, but it is the last
+# per-map knob that still had to be typed by hand.
+if [ -n "$MAP_DEFAULT_GOAL" ]; then
+  # MAP_DEFAULT_GOAL is five space-separated numbers by construction.
+  read -r DEF_GX DEF_GY DEF_GZ DEF_GQZ DEF_GQW <<<"$MAP_DEFAULT_GOAL"
+fi
+GOAL_X="${GOAL_X:-${DEF_GX:-}}" GOAL_Y="${GOAL_Y:-${DEF_GY:-}}" GOAL_Z="${GOAL_Z:-${DEF_GZ:-}}"
+GOAL_QZ="${GOAL_QZ:-${DEF_GQZ:-}}" GOAL_QW="${GOAL_QW:-${DEF_GQW:-}}"
+if [ -z "$GOAL_X" ] || [ -z "$GOAL_Y" ] || [ -z "$GOAL_Z" ] ||
+  [ -z "$GOAL_QZ" ] || [ -z "$GOAL_QW" ]; then
+  echo "ARM FAIL: map $MAP_NAME has no registered route goal;" >&2
+  echo "  export GOAL_X/GOAL_Y/GOAL_Z/GOAL_QZ/GOAL_QW (map-frame metres +" >&2
+  echo "  yaw quaternion), or add MAP_DEFAULT_GOAL for it in map_defaults.sh." >&2
+  exit 1
+fi
+echo "== map $MAP_NAME  bundle $MAP_DIR  goal $GOAL_X $GOAL_Y =="
 
 cx() { docker compose -f "$COMPOSE" exec -T autoware bash -lc "$1"; }
 AW_ENV='source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0'

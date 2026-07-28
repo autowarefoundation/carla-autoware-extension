@@ -49,11 +49,25 @@ RELAY_IN=/sensing/lidar/top/pointcloud_before_sync
 RELAY_OUT=/sensing/lidar/concatenated/pointcloud
 
 # CONTAINER-side path of the Autoware map bundle (pcd + lanelet2 + projector info) this launch
-# localizes against; it becomes the launch's map_path:=. The default keeps every historical
-# invocation of this script unchanged. run_e2e.sh derives and exports it from its own MAP, so the
-# CARLA map and the Autoware map bundle can never disagree when the harness drives the bring-up.
-# Each bundle needs a matching read-only mount in docker/compose.yaml.
-MAP_DIR="${MAP_DIR:-/autoware_map/nishishinjuku}"
+# localizes against; it becomes the launch's map_path:=. Each bundle needs a matching read-only
+# mount in docker/compose.yaml.
+#
+# DERIVED from CARLA_AUTOWARE_MAP -- the one variable the operator already exports for the gates
+# -- through the shared table, exactly as arm_closed_loop.sh does. run_e2e.sh exports MAP_DIR
+# before calling this script, so on the harness path nothing changes. The derivation is for the
+# OTHER path: this script is a documented standalone entry point (--stop; docs/running-e2e.md
+# shows a hand-run bring-up), and a hard-coded Nishi default meant a manual Town10 bring-up
+# localized against Nishi's pointcloud SILENTLY -- it surfaces only as NDT never converging.
+# Unset still selects Nishi-Shinjuku, so every argument-free historical invocation is unchanged.
+MAP_NAME="${CARLA_AUTOWARE_MAP:-NishishinjukuMap}"
+# The linter runs without -x in pre-commit and so cannot follow the source even with the
+# directive below; SC1091 is informational and disabled for that reason.
+# shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
+. "$HERE/map_defaults.sh"
+carla_autoware_map_defaults "$MAP_NAME"
+MAP_DIR="${MAP_DIR:-$MAP_DEFAULT_DIR}"
+# An unknown map leaves MAP_DIR empty; that is fatal for a launch but NOT for --stop, which only
+# kills recorded PIDs, so the loud failure lives below the --stop branch as preflight 0.
 
 # Container-side paths passed in via -e so the single-quoted container scripts below expand
 # them in the container -- no host-string injection (fragile + a shellcheck SC2016 false
@@ -87,6 +101,14 @@ if [ "${1:-}" = "--stop" ]; then
   exit 0
 fi
 
+# Preflight 0: the map name resolved to a bundle. Fails loudly rather than launching against
+# another map's pointcloud (same failure mode, and same message shape, as arm_closed_loop.sh).
+if [ -z "$MAP_DIR" ]; then
+  echo "PREFLIGHT FAIL: CARLA_AUTOWARE_MAP=$MAP_NAME has no known Autoware bundle;" >&2
+  echo "  set MAP_DIR to its container path (see scripts/e2e/map_defaults.sh)." >&2
+  exit 1
+fi
+
 # Preflight 1: container up.
 docker inspect -f '{{.State.Running}}' autoware 2>/dev/null | grep -q true \
   || { echo "PREFLIGHT FAIL: container 'autoware' not running (docker compose up -d)"; exit 1; }
@@ -116,7 +138,7 @@ fi
 # resolves a CUDA-only package eagerly, and no DNN model artifacts ship) -- localization does
 # NOT depend on perception, so G1/G2 are unaffected. launch_vehicle_interface:=false because
 # the extension IS the vehicle interface (native Ackermann/status over DDS).
-echo "OK: bringing Autoware up (e2e_simulator, simulator_type:=carla, map $MAP_DIR) -- log: $AW_LOG"
+echo "OK: bringing Autoware up (e2e_simulator, simulator_type:=carla, map $MAP_NAME, bundle $MAP_DIR) -- log: $AW_LOG"
 # $AW_LOG/$AW_PIDFILE/$MAP_DIR/$! are expanded IN THE CONTAINER (compose_exec passes them via -e;
 # $! must be the container-side nohup PID), so the single quotes below are intentional.
 # shellcheck disable=SC2016

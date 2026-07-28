@@ -200,8 +200,15 @@ Everything above defaults to Nishi-Shinjuku. `MAP` is the single knob:
 by `launch_autoware.sh` as `map_path:=`) and the extension's GNSS converter
 offset (`CARLA_AUTOWARE_MAP`, see [mgrs-handedness.md](mgrs-handedness.md)), so
 the CARLA map, the pointcloud/lanelet2 it localizes against, and the offset the
-poses are synthesised with cannot drift apart. A `MAP` with no known bundle is
-rejected up front rather than localizing against the wrong pointcloud.
+poses are synthesised with cannot drift apart. A `MAP` name that
+`scripts/e2e/map_defaults.sh` does not know is rejected up front — in under a
+second, rather than localizing against the wrong pointcloud or dying two
+minutes later in the extension's `dlopen`.
+
+The same table backs the standalone entry points: run `launch_autoware.sh` or
+`arm_closed_loop.sh` by hand and they derive the bundle (and, for the arm, the
+free-space grid centre and the route goal) from `CARLA_AUTOWARE_MAP`, which is
+the export `run_e2e.sh` prints. Unset still means Nishi-Shinjuku.
 
 Each bundle needs a read-only mount in `docker/compose.yaml`
 (`~/autoware_map/town10:/autoware_map/town10:ro` is already there); fetch it
@@ -222,7 +229,9 @@ per-map offset. So, in that shell:
 
 ```bash
 export CARLA_AUTOWARE_MAP=Town10HD_Opt
-export GOAL_X=-101.021 GOAL_Y=55.014 GOAL_Z=0.0 GOAL_QZ=-0.910299 GOAL_QW=0.413952
+# The bundle, the free-space grid centre and the route goal all come from
+# scripts/e2e/map_defaults.sh; GOAL_X/GOAL_Y/GOAL_Z/GOAL_QZ/GOAL_QW still
+# override it if you want a different goal.
 bash scripts/e2e/arm_closed_loop.sh
 bash scripts/e2e/gate_g1_localization.sh
 bash scripts/e2e/gate_g2_closed_loop.sh -101.021 55.014
@@ -248,6 +257,12 @@ close early on a near miss.
 start  CARLA metres/degrees   x=55.330   y=141.161  z=0.5  yaw=0.320   lanelet 324
 goal   map frame, metres      x=-101.021 y=55.014   z=0.0              lanelet 1942
 ```
+
+Reproduce: `CARLA_ROOT=~/src/carla-autoware-integration python3
+scripts/e2e/pick_route.py` — offline, no simulator, it scores the committed
+`.xodr` and prints exactly these two poses. The goal is also the map's
+`MAP_DEFAULT_GOAL` in `scripts/e2e/map_defaults.sh`, so `arm_closed_loop.sh`
+routes here without any `GOAL_*` export.
 
 ### Measured result on this route
 
@@ -301,8 +316,10 @@ and needs a denser pointcloud. Until then this map is sound for closed-loop
 driving and control-side measurement (G2 passes comfortably) but not for a
 sub-0.5 m localization comparison.
 
-Reproduce: `reports/task-15-town10/seed_sweep.py` (run inside the `autoware`
-container against a parked ego), output in `seed_sweep.log`.
+Reproduce: `scripts/e2e/seed_sweep.py`, run inside the `autoware` container
+against a parked ego (its docstring carries the exact `compose exec` line); the
+run that produced the table above is kept as `seed_sweep.log` under the
+untracked `reports/task-15-town10/`.
 
 **If a live run aborts before loading any map** with "modules are missing or
 built with a different engine version", the engine was rebuilt after the Carla

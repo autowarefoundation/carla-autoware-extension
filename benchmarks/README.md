@@ -38,8 +38,9 @@ benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,publis
 
 `benchmarks/config/cells.yaml` is the pre-registered workload matrix. Each
 entry's `id` (e.g. `A`, `B`, `E0`, `CAL-rmw`) is the label a measurement run
-is filed under — it is what `run.sh <cell>` takes as its argument and what
-`benchmarks/results/<cell>/` is named after.
+is filed under — it is what the forthcoming P2 `run.sh <cell>` will take as its
+argument and what `benchmarks/results/<cell>/` is named after. Neither `run.sh`
+nor any results tree exists yet; P0 registers the matrix, P2 executes it.
 
 `benchmarks/config/exclusions.md` is the pre-registered set of criteria
 under which a run may be marked `excluded: true`; it may not be edited

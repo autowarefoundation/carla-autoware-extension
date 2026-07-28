@@ -45,8 +45,16 @@ inline constexpr MapOffset kNishishinjukuOffset{81655.73, 50137.43, 42.49998};
 // frame IS the CARLA world frame up to the handedness flip -- the translation is
 // exactly zero. Measured offline, not assumed: scripts/e2e/fit_map_offset.py
 // fits the translation against the lanelet2 boundary polylines over 12084
-// CARLA lane-boundary probes and reports (0,0) with a median residual of
-// 0.000 m (mean 0.002 m, max 0.019 m); the no-flip hypothesis lands at 4.30 m.
+// CARLA lane-boundary probes and reports (0.0000, 0.0000) with a residual of
+// median 0.00000 m, mean 0.00062 m, max 0.01610 m; the no-flip hypothesis
+// lands at a 4.17523 m median. (Figures quoted verbatim from the fit log
+// reproduced at docs/mgrs-handedness.md: Town10HD_Opt.)
+//
+// The fit is 2-COMPONENT -- it solves for x and y only, because the lanelet2
+// boundary polylines it scores against are planar. z is zero on separate
+// evidence, recorded in the same section: every lanelet2 node carries
+// `ele=0.0`, and the bundle's pointcloud_map.pcd has its ground plane at
+// z ~= 0 (p25 0.000 m, p50 0.051 m over 9987028 points).
 inline constexpr MapOffset kTown10HdOptOffset{0.0, 0.0, 0.0};
 
 // Historical default: an unset $CARLA_AUTOWARE_MAP keeps the Nishi-Shinjuku

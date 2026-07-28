@@ -12,13 +12,19 @@ TARBALL="$HOME/carla-0915.tar.gz"
 EXTRACT_DIR="$HOME/carla-0915"
 WHEEL_FILE="$VENDOR_DIR/$(basename "$WHEEL_URL")"
 
-mkdir -p "$EXTRACT_DIR" "$VENDOR_DIR"
+# Nothing is INSTALLED before its checksum is settled. Extracting first (and
+# writing the wheel under its final name) meant a changed upstream artifact
+# landed in $EXTRACT_DIR / $VENDOR_DIR and only then failed, leaving a
+# poisoned tree behind. The tarball keeps its stable path so --continue-at can
+# still resume a multi-GB download; it is a staging file, not the install.
+# The wheel's .part sibling is in $VENDOR_DIR, so its rename is same-filesystem
+# and resumable too.
+mkdir -p "$VENDOR_DIR"
 curl -fL --continue-at - "$CARLA_URL" -o "$TARBALL"
-tar -xzf "$TARBALL" -C "$EXTRACT_DIR"
-curl -fL --continue-at - "$WHEEL_URL" -o "$WHEEL_FILE"
+curl -fL --continue-at - "$WHEEL_URL" -o "$WHEEL_FILE.part"
 
 CARLA_SHA=$(sha256sum "$TARBALL" | cut -d' ' -f1)
-WHEEL_SHA=$(sha256sum "$WHEEL_FILE" | cut -d' ' -f1)
+WHEEL_SHA=$(sha256sum "$WHEEL_FILE.part" | cut -d' ' -f1)
 
 RECORD="${1:-}"
 if [[ "$RECORD" == "--record" ]]; then
@@ -40,3 +46,10 @@ assert p["gezp_wheel"]["sha256"] == wheel_sha, "gezp wheel sha mismatch"
 print("checksums ok")
 EOF
 fi
+
+# Only reached when the checksums recorded or matched (set -e + the asserts
+# above), so the extraction runs on a VERIFIED tarball and the wheel appears
+# under its final name only once it is the pinned one.
+mkdir -p "$EXTRACT_DIR"
+tar -xzf "$TARBALL" -C "$EXTRACT_DIR"
+mv "$WHEEL_FILE.part" "$WHEEL_FILE"

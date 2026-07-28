@@ -34,23 +34,31 @@ CARLA_PID_FILE=/tmp/carla-e2e.pid
 #                         (extension/include/carla/autoware/geo/MgrsOffset.h)
 # All three are derived from MAP here so a caller sets exactly one variable.
 # MAP defaults to Nishi-Shinjuku, so an argument-free run is byte-identical to
-# the historical harness. A MAP with no known bundle must be given MAP_DIR
-# explicitly and is rejected here rather than silently localizing against the
-# wrong pointcloud (which surfaces only as NDT failing to converge).
-# The table itself lives in map_defaults.sh so arm_closed_loop.sh derives the
-# same values instead of carrying a second copy that can drift.
+# the historical harness. An unknown MAP is rejected here rather than silently
+# localizing against the wrong pointcloud (which surfaces only as NDT failing
+# to converge).
+# The table itself lives in map_defaults.sh so arm_closed_loop.sh and
+# launch_autoware.sh derive the same values instead of carrying a second copy
+# that can drift.
 MAP="${MAP:-NishishinjukuMap}"
 # The linter runs without -x in pre-commit and so cannot follow the source even
 # with the directive below; SC1091 is informational and disabled for that reason.
 # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
 . "$REPO/scripts/e2e/map_defaults.sh"
 carla_autoware_map_defaults "$MAP"
-MAP_DIR="${MAP_DIR:-$MAP_DEFAULT_DIR}"
-if [ -z "$MAP_DIR" ]; then
-  echo "PREFLIGHT FAIL: MAP=$MAP has no known Autoware map bundle; set MAP_DIR" >&2
-  echo "  to its container path and add the mount to docker/compose.yaml." >&2
+# Checked on the NAME, not on the resolved MAP_DIR: an explicit MAP_DIR used to
+# carry an unknown name past this point, and the run then died ~2 minutes later
+# inside the extension's dlopen, because MgrsOffset.h has no entry for it
+# either. An explicit bundle cannot rescue that -- the converter offset is the
+# other half of the pair and lives in the extension, not in the bundle -- so
+# reject the name here, in under a second.
+if [ -z "$MAP_DEFAULT_DIR" ]; then
+  echo "PREFLIGHT FAIL: MAP=$MAP is not a known map. Add it to" >&2
+  echo "  scripts/e2e/map_defaults.sh (bundle + mount in docker/compose.yaml)" >&2
+  echo "  AND to extension/include/carla/autoware/geo/MgrsOffset.h." >&2
   exit 1
 fi
+MAP_DIR="${MAP_DIR:-$MAP_DEFAULT_DIR}"
 export MAP_DIR
 # An unknown name here ABORTS the extension load (MgrsOffset.h has no entry for
 # it) rather than publishing another map's GNSS poses -- deliberate, see there.
