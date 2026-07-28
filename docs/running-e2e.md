@@ -249,11 +249,33 @@ start  CARLA metres/degrees   x=55.330   y=141.161  z=0.5  yaw=0.320   lanelet 3
 goal   map frame, metres      x=-101.021 y=55.014   z=0.0              lanelet 1942
 ```
 
-**Status:** the offset, the map plumbing and the route are derived and
-unit-tested, but the live G1/G2 gates have **not** yet been run on this map. At
-the time of writing a live run is blocked on _any_ map, for a reason unrelated
-to the map: four engine modules (including `libUnrealEditor-Engine.so`) were
-relinked after the Carla editor modules were built, so UE rejects those modules
-and `-game` aborts before it ever loads one. `verify_editor_artifact.sh` does
-not catch this — it compares mtimes, not the engine BuildId. Rebuilding
-`carla-unreal-editor` clears it.
+### Measured result on this route
+
+| Gate            | Threshold             | Measured                                      | Verdict  |
+| --------------- | --------------------- | --------------------------------------------- | -------- |
+| G1 localization | max NDT error < 0.5 m | 0.932 m (mean 0.527, median 0.508, std 0.193) | **FAIL** |
+| G2 closed loop  | goal approach < 1.0 m | 0.164 m, over the planned 420 m route         | **PASS** |
+
+G2 passes: the ego drove the route closed-loop from 254.9 m out and arrived
+0.164 m from the goal. G1 fails because NDT holds a **stable but biased** lock
+here — about 0.5 m off ground truth with ~0.19 m of jitter, never diverging.
+
+The cause is the pointcloud, and it is **not** a UE4-vs-UE5 geometry mismatch
+(that would show up as loss of lock). Within 30 m of the ego the Town10 pcd is
+99.2% flat ground and only 0.36% vertical structure in the 0.8–3.0 m band
+(1400 points); the same measurement at the Nishi-Shinjuku spawn gives 2.6% and
+9.60% (12764 points), and Nishi's G1 reaches 0.08 m. NDT's horizontal
+constraint comes almost entirely from vertical structure, so a near-featureless
+ground plane leaves x/y in a shallow basin. The pcd's ground plane sits at
+exactly z = 0, and the vector map agrees with CARLA to a 0.00 m median, so
+neither the offset nor the lanelet2 is at fault.
+
+Practical consequence: this map is sound for closed-loop driving and
+control-side measurement, but not for a sub-0.5 m localization comparison
+without a denser pointcloud.
+
+**If a live run aborts before loading any map** with "modules are missing or
+built with a different engine version", the engine was rebuilt after the Carla
+editor modules; `verify_editor_artifact.sh` now detects that BuildId mismatch in
+under a second, and `cmake --build Build/Development --target carla-unreal-editor`
+(with `CARLA_CCACHE=1`) clears it in about a minute.
