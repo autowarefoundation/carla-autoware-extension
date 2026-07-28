@@ -40,7 +40,7 @@ benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,publis
 
 `patches/python-bridge/0001-lidar-is-dense.patch` — a one-line
 change on the bridge's publish path (`is_dense = True` on a cloud that
-contains no invalid points, so the flag is also *correct*). Without it
+contains no invalid points, so the flag is also _correct_). Without it
 every E-family closed-loop cell is unmeasurable (P1 Verdict 1) and C2
 degrades to structural analysis. The as-shipped behaviour is preserved
 as cell E0's measured result. Cells E and E-opt run WITH this patch and
@@ -74,9 +74,9 @@ owner to strike; striking it drops cells E and E-opt, not E0.
 
 `benchmarks/config/cells.yaml` is the pre-registered workload matrix. Each
 entry's `id` (e.g. `A`, `B`, `E0`, `CAL-rmw`) is the label a measurement run
-is filed under — it is what the forthcoming P2 `run.sh <cell>` will take as its
-argument and what `benchmarks/results/<cell>/` is named after. Neither `run.sh`
-nor any results tree exists yet; P0 registers the matrix, P2 executes it.
+is filed under — it is what `benchmarks/run.sh <cell>` takes as its argument
+and what `benchmarks/results/<cell>/` is named after. P0 registered the
+matrix; `run.sh` (P2, Task 8) executes it.
 
 `benchmarks/config/exclusions.md` is the pre-registered set of criteria
 under which a run may be marked `excluded: true`; it may not be edited
@@ -98,14 +98,14 @@ swapping either for a "harder" or "easier" one would break continuity with
 those measurements. `benchmarks/scripts/pick_route.py` pre-registers four
 gate-honesty properties (shortest-path length, accumulated heading change,
 straight-line separation, no early approach to the goal) that stop the tool
-from *selecting* a route that flatters the 1.0 m G2 goal gate; here they are
+from _selecting_ a route that flatters the 1.0 m G2 goal gate; here they are
 used diagnostically, on routes that were fixed before the properties existed,
 not as a filter:
 
-| Route                     | Cells | Total length | Straight-line separation | Accumulated turn | Closest prior approach |
-| -------------------------- | ----- | ------------- | ------------------------- | ------------------ | ------------------------ |
-| `Town10HD_Opt.yaml`        | A, B  | 438.9 m       | 250.9 m (57.2% of length) | 233.0°  — PASS ≥ 60° | 33.5 m — PASS ≥ 10 m |
-| `NishishinjukuMap.yaml`    | C, D  | 230.5 m       | 227.3 m (98.6% of length) | 35.8°  — **FAIL** ≥ 60° | 29.4 m — PASS ≥ 10 m |
+| Route                   | Cells | Total length | Straight-line separation  | Accumulated turn       | Closest prior approach |
+| ----------------------- | ----- | ------------ | ------------------------- | ---------------------- | ---------------------- |
+| `Town10HD_Opt.yaml`     | A, B  | 438.9 m      | 250.9 m (57.2% of length) | 233.0° — PASS ≥ 60°    | 33.5 m — PASS ≥ 10 m   |
+| `NishishinjukuMap.yaml` | C, D  | 230.5 m      | 227.3 m (98.6% of length) | 35.8° — **FAIL** ≥ 60° | 29.4 m — PASS ≥ 10 m   |
 
 The Nishi-Shinjuku route does not clear the accumulated-turn property: it is
 98.6% a straight line, with 35.8° of total heading change against Town10's
@@ -117,6 +117,40 @@ cell — a mostly-straight 230 m drive is an easier control problem than a
 439 m drive through several junction turns. Any P3 report comparing M5
 closed-loop numbers across map families must state this alongside the
 numbers, not just alongside the route's provenance.
+
+### Perception load: clear-road stand-in (A/B/C/D) vs. real CUDA perception (E family)
+
+The UE5-tree cells run Autoware with its perception module **off** and
+`benchmarks/injector/dummy_perception.py` supplying the empty "clear road, no
+dynamic objects" outputs plus all-green traffic signals in its place. The
+python-bridge cells (E, E0, E-opt) run the **real** perception stack, CUDA
+`lidar_centerpoint` included: the pinned `bridge-bench` base resolves
+`autoware_ground_segmentation_cuda`, so `perception:=false` is no longer
+needed there, and disabling it would measure a bridge configuration nobody
+would deploy (`benchmarks/patches/python-bridge/README.md`, "Pin update").
+`benchmarks/cells/python-bridge.sh` therefore sets `INJECTOR_ENABLED=0` while
+`benchmarks/cells/{extension,tier4-native}.sh` set it to 1.
+
+**This is a genuine confound, not a defect to fix**, and it is first-order for
+two metrics:
+
+- **M3 (resource cost).** The E family's Autoware container carries a full DNN
+  detection + ground-segmentation load that A/B/C/D's does not. A
+  cross-approach CPU/GPU/VRAM comparison that pools them is comparing
+  workloads, not integrations: the E family's M3 numbers bound the bridge
+  configuration's total cost, and are not a like-for-like difference against
+  the natives.
+- **M5 (closed-loop quality).** A/B/C/D drive against a perfectly clean,
+  always-green world; the E family drives against whatever its detector
+  actually reports. A `lateral_deviation_m` or `goal_closest_approach_m`
+  result is a weaker statement on the E family than the same number on a
+  native cell, and a worse one is not by itself evidence about the
+  integration.
+
+The alternative — running the dummy injector on top of live perception — would
+have two publishers on `/perception/object_recognition/objects` and is not a
+configuration either approach ships. Task 22's confound table must state this
+alongside the numbers, not merely note the difference.
 
 ## Pre-registration
 
@@ -195,10 +229,35 @@ Amendments made so far:
   Nishi route inherited from P1 does not clear the accumulated-turn
   property Town10's route does, and nothing recorded that cells A/B and
   C/D are not scored on comparable route difficulty before any P3 run.
+- **2026-07-28** — `## Known confounds` gained the perception-load entry
+  (clear-road injector on A/B/C/D vs. real CUDA perception on the E
+  family). Completeness: Task 8's cell launchers fixed that split
+  (`INJECTOR_ENABLED`), and it is a first-order M3 and M5 comparability
+  difference that was recorded only in a task report.
 
 ## How to run
 
+`benchmarks/run.sh` is the single measurement entry point. One invocation
+produces one `benchmarks/results/<cell>/run-<NNN>/`:
+
+```bash
+bash benchmarks/run.sh A --arm closed-loop            # one run of cell A
+bash benchmarks/run.sh A --arm closed-loop --dry-run  # print the 14 steps
+bash benchmarks/scripts/duel.sh A B --arm closed-loop --pairs 10
+```
+
+`--dry-run` resolves the cell, runs preflight read-only (`--no-clean`),
+writes and validates the manifest into a scratch directory, runs the cell
+launcher's `plan` (prerequisite checks only), and prints every command it
+would run — without touching `benchmarks/results/` or booting anything.
+
+Flags: `--class <sweep-or-camera-class>`, `--unpaced`, `--runs N`,
+`--no-observer` (records `/clock` only), `--rpc-port N`, `--rmw`, `--shm`,
+`--dds-profile`.
+
 The analysis modules live in `benchmarks/analysis/` (manifest schema,
 clock fit, CSV loading, cadence, latency, stats/margins, ceiling
-evaluation). The intended entry point for rendering a per-cell report is
-`python3 -m benchmarks.report <results_dir>`.
+evaluation, spatial window, M5 quality). The entry point for rendering a
+per-cell report is `python3 -m benchmarks.report <results_dir>`; `run.sh`
+runs it as its own last step, so a run directory that does not render is a
+loud failure rather than a silent one.

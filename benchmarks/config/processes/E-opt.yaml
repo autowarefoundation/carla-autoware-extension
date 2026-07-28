@@ -7,6 +7,10 @@
 # E.yaml for the full grounding notes and the two open caveats (bridge
 # container name not yet fixed by a committed script; no dummy
 # injector in the current recipe).
+# Container names re-grounded in Task 8 alongside E.yaml: the bridge
+# container is created as `--name bridge-bench` by
+# benchmarks/cells/python-bridge.sh, the observer as `--name
+# bench-observer` by benchmarks/run.sh step 6.
 processes:
   - { label: carla-server, pattern: CarlaUE4-Linux-Shipping }
   - { label: autoware, container: bridge-bench }

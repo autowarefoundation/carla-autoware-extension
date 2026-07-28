@@ -1,0 +1,33 @@
+# bench_observer topic list for cell E (python-bridge approach).
+#
+# The LiDAR entry is the BRIDGE'S AS-EMITTED topic, measured, not the
+# natives' name: benchmarks/patches/python-bridge/README.md records
+# /sensing/lidar/top/pointcloud_before_sync at 8.59 Hz as the bridge's
+# own output, while /sensing/lidar/top/pointcloud (downstream of
+# crop_box_filter) received 0 messages. E and E-opt run WITH
+# patches/python-bridge/0001-lidar-is-dense.patch, which changes a flag
+# on the published cloud, NOT the topic it is published on -- so all
+# three E-family cells observe the same as-emitted name. Task 10/20
+# re-grounds this live before any E-family P3 run; if the patched
+# bridge emits elsewhere, it is corrected there.
+#
+# PublishedTime topics are NOT listed here yet. They are appended in
+# Tasks 13/20, after live discovery on the running stack
+# (`ros2 topic list | grep published_time`) -- a pre-P3 registration step,
+# because a guessed name records silence as "no publisher-side stamps"
+# rather than as a wrong topic. On the pinned universe-devel-cuda image the
+# message is autoware_internal_msgs/msg/PublishedTime (verified against the
+# image; NOT autoware_internal_debug_msgs), so an appended line reads:
+#   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
+#
+# Format: "<topic>|<type>|<kind>", kind in generic|odometry|published_time
+# (benchmarks/observer/src/bench_observer.cpp). `generic` records
+# serialized size; `odometry` also writes odometry.csv (size 0 sentinel).
+# out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+/**:
+  ros__parameters:
+    topics:
+      - /sensing/lidar/top/pointcloud_before_sync|sensor_msgs/msg/PointCloud2|generic
+      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|generic
+      - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
+      - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic

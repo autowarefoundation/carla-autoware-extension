@@ -50,6 +50,19 @@ def summarize_run(run_dir: Path) -> dict:
 
 
 def render_cell(cell_dir: Path) -> str:
+    """Markdown table for one cell, over every run directory it holds.
+
+    A run that cannot be summarized renders as a visible RENDER FAILED row
+    rather than aborting the whole cell. This is not leniency about bad data:
+    `summarize_run` stays strict, and a caller that needs ONE run validated
+    (the harness's own post-run smoke, and the tests below) calls it directly.
+    It is that a cell accumulates runs over hours, and an aborted or excluded
+    run with no observer CSVs is an EXPECTED resident of that tree
+    (exclusions.md: "Excluded runs remain in benchmarks/results/ with their
+    data; nothing is deleted"). Raising here made every LATER run of the cell
+    unrenderable, so one bring-up failure reported every subsequent healthy
+    run as not contract-valid -- and in an interleaved duel, aborted the duel.
+    """
     cell_dir = Path(cell_dir)
     lines = [
         f"## Cell {cell_dir.name}",
@@ -58,7 +71,19 @@ def render_cell(cell_dir: Path) -> str:
         "|---|---|---|---|---|---|---|",
     ]
     for run_dir in sorted(cell_dir.glob("run-*")):
-        s = summarize_run(run_dir)
+        try:
+            s = summarize_run(run_dir)
+        except Exception as exc:  # noqa: BLE001 - deliberate; see the docstring
+            # Broad on purpose: this function renders a directory tree it does
+            # not control, and the reachable failures span OSError (missing
+            # CSV), ValueError (invalid manifest, degenerate clock fit),
+            # TypeError (older manifest schema) and more. The failure is
+            # REPORTED IN THE TABLE, naming the exception -- never swallowed.
+            lines.append(
+                f"| {run_dir.name} | RENDER FAILED: {type(exc).__name__}: {exc} "
+                "| - | - | - | - | - |"
+            )
+            continue
         run_label = run_dir.name
         if s["manifest"]["excluded"]:
             run_label = f"{run_label} (EXCLUDED)"

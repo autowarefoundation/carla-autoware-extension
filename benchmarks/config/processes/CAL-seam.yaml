@@ -19,4 +19,8 @@ processes:
   # its actual process(es); do not guess a pattern here in the
   # meantime, since a wrong guess would silently read as "the
   # publisher pair used no CPU" instead of flagging the gap.
+  # RE-GROUNDED in Task 8 (run.sh step 6's `--name bench-observer`).
+  # NOTE: benchmarks/cells/calibration.sh currently REFUSES to launch
+  # CAL-seam at all, naming Task 14 -- so this file cannot be reached
+  # by a measurement run while the publisher-pair entry is missing.
   - { label: observer, container: bench-observer }

@@ -1,20 +1,28 @@
 # M3 process map for cell CAL-rmw (calibration approach, carla: none,
 # static arm only; cells.yaml, mandatory).
 #
-# NOT YET KNOWABLE. task-8-brief.md step 7 states the intended design
-# ("calibration -> no sim: CAL-rmw = bench_pub container + observer
-# container with the requested RMW/SHM variant"), but no script in
-# this repo actually launches it yet -- Task 8 (run orchestration) and
-# Task 16 ("CAL-rmw runs + margin freeze") are both still pending, and
-# neither the bench_pub container's name nor how the RMW/SHM variant
-# is selected (env var? separate compose service? one container per
-# variant?) is established anywhere committed. Writing a guessed
-# `container:`/`pattern:` value here would risk matching zero
-# processes and silently reading as "used no CPU" for a real
-# calibration run -- exactly the failure mode this task's brief warns
-# against. Leaving `processes` empty rather than fabricating one is the
-# safer choice for now; DO NOT use an empty list from this file to
-# infer CAL-rmw uses no resources -- it means the resource sampler
-# should not be pointed at this file until Task 8/16 exist and the
-# processes list below is filled in with a verified container name.
-processes: []
+# RE-GROUNDED in Task 8, which wrote the launchers this file previously had
+# no way to name. Both container names below are now created by committed
+# code, not inferred:
+#
+#   bench-pub       benchmarks/cells/calibration.sh:
+#                     docker run -d --name "$PUB_CONTAINER" ...
+#                   with PUB_CONTAINER=bench-pub. It runs bench_pub out of
+#                   the SAME image as the observer
+#                   (benchmarks/docker/bench-observer.Dockerfile builds both
+#                   binaries), so there is no second image to track.
+#   bench-observer  benchmarks/run.sh step 6:
+#                     docker run -d --name "$OBSERVER_CONTAINER" ...
+#                   with OBSERVER_CONTAINER=bench-observer.
+#
+# The RMW/SHM variant is selected per run by run.sh's --rmw/--shm flags,
+# which set RMW_IMPLEMENTATION (and mount the DDS profile whose sha256 the
+# manifest records) on BOTH containers. That is a per-run environment
+# difference, not a different process, so this file does not change between
+# variants.
+#
+# No host-side entry: everything in this cell runs in a container, and no
+# simulator runs at all.
+processes:
+  - { label: bench-pub, container: bench-pub }
+  - { label: observer, container: bench-observer }

@@ -1,0 +1,33 @@
+# bench_observer topic list for cell B (tier4-native approach).
+#
+# Identical to the extension cells' list: both approaches publish the
+# Autoware-side topic names, so M2/M5 compare like with like. The
+# control topic is the GATED /control/command/control_cmd, not the raw
+# /control/trajectory_follower/control_cmd.
+#
+# NOT yet confirmed on the wire for this approach: P1 Verdict 8.4 found
+# the tier4 fork's native ROS 2 topics invisible to every ros2 CLI on
+# this host. Task 9 (wire-visibility diagnostic) settles whether these
+# names are observable as written; if it finds different as-emitted
+# names, this file is corrected there, before any B-family P3 run.
+#
+# PublishedTime topics are NOT listed here yet. They are appended in
+# Tasks 13/20, after live discovery on the running stack
+# (`ros2 topic list | grep published_time`) -- a pre-P3 registration step,
+# because a guessed name records silence as "no publisher-side stamps"
+# rather than as a wrong topic. On the pinned universe-devel-cuda image the
+# message is autoware_internal_msgs/msg/PublishedTime (verified against the
+# image; NOT autoware_internal_debug_msgs), so an appended line reads:
+#   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
+#
+# Format: "<topic>|<type>|<kind>", kind in generic|odometry|published_time
+# (benchmarks/observer/src/bench_observer.cpp). `generic` records
+# serialized size; `odometry` also writes odometry.csv (size 0 sentinel).
+# out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+/**:
+  ros__parameters:
+    topics:
+      - /sensing/lidar/top/pointcloud_raw_ex|sensor_msgs/msg/PointCloud2|generic
+      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|generic
+      - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
+      - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic

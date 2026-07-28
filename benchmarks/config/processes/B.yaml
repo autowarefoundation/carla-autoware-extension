@@ -22,17 +22,18 @@ processes:
   # not by a host process. (Contrast cell A, where the extension's
   # ego-spawn tool is a separate host-side python3 -m runner process.)
   #
-  # Whether this approach also runs the shared clear-road injector
-  # (dummy_perception) the way cell A does is NOT independently
-  # confirmed for tier4-native: no committed script here launches it,
-  # only Task 8's forward-looking "identical invocation every cell"
-  # design intent (task-8-brief.md step 8). Included per that stated
-  # design; revisit once Task 8/13 land the actual B closed-loop
-  # recipe -- if B never runs it, this entry just yields an
-  # (expected) all-zero row, not a false read on a real process.
+  # PARTIALLY re-grounded in Task 8. benchmarks/cells/tier4-native.sh
+  # writes INJECTOR_ENABLED=1 and AW_CONTAINER=autoware into launch.env,
+  # and run.sh's step 8 docker-execs dummy_perception into that
+  # container -- so both entries below are what the orchestrator will
+  # address. What is still NOT grounded is the container itself: the
+  # tier4 Autoware stack is launched by Task 13's script (the
+  # BENCH_TIER4_DEMO hook), which is handed BENCH_AW_CONTAINER=autoware
+  # but has not been written. If Task 13 lands with a different name,
+  # correct BOTH this file and the launcher's AW_CONTAINER together.
   - { label: injector, pattern: dummy_perception }
   - { label: autoware, container: autoware }
-  # See A.yaml's "observer" entry note: bench-observer's container name
-  # is Task 8's stated design, not yet independently pinned by a
-  # committed launch script.
+  # See A.yaml's "observer" entry: RE-GROUNDED in Task 8 --
+  # benchmarks/run.sh step 6 creates `--name bench-observer` for every
+  # cell, this one included.
   - { label: observer, container: bench-observer }

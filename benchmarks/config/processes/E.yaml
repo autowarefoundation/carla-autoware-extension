@@ -11,34 +11,24 @@ processes:
   #   "youtalk 334349 274% CPU ... CarlaUE4/Binaries/Linux/
   #    CarlaUE4-Linux-Shipping CarlaUE4 -RenderOffScreen ..."
   - { label: carla-server, pattern: CarlaUE4-Linux-Shipping }
-  # NOT YET KNOWABLE: benchmarks/patches/python-bridge/README.md's
-  # verified recipe runs the bridge (autoware_carla_interface) and the
-  # full Autoware e2e_simulator stack as TWO `ros2 launch` invocations
-  # inside ONE interactive `docker run -it ... bridge-bench:latest
-  # bash` session -- with no `--name` given, so the container gets a
-  # docker-assigned random name. There is no committed compose
-  # service (unlike docker/compose.yaml's "autoware" for A/B/C/D) to
-  # ground a fixed name on; Task 10 ("Bridge viability patch +
-  # E-family recipes + E gate", not yet done) is expected to formalize
-  # this into a named/composed launch. "bridge-bench" below is a
-  # placeholder matching the known image tag, not a verified running
-  # container name -- if Task 10 lands with a different name (or a
-  # compose service), this entry will match nothing and silently read
-  # as "the bridge+Autoware stack used no CPU". Re-ground this entry
-  # once Task 10 exists.
+  # RE-GROUNDED in Task 8: benchmarks/cells/python-bridge.sh runs the
+  # bridge + stack container as
+  #   docker run -d --name "$AW_CONTAINER" ...
+  # with AW_CONTAINER=bridge-bench, replacing the README's unnamed
+  # interactive `docker run -it`. The name below is therefore created by
+  # committed code. What still varies per cell is the IMAGE, not the
+  # name: E0 uses the pinned bridge-bench:latest, while E/E-opt need
+  # Task 10's patched image (the launcher refuses those cells until
+  # BENCH_BRIDGE_IMAGE names it).
   - { label: autoware, container: bridge-bench }
-  # No separate injector entry: unlike A/B (dummy-perception clear-road
-  # stand-in), the currently-documented recipe runs Autoware's REAL
-  # CUDA perception stack (perception left at its default ON, per the
-  # "Pin update" section of patches/python-bridge/README.md) -- there
-  # is no dummy_perception process in this cell as currently recorded.
-  # Task 8's forward design note ("injector ... identical invocation
-  # every cell") may still bring this cell in line with A/B later; if
-  # so, add the same `{ label: injector, pattern: dummy_perception }`
-  # entry used there.
+  # No injector entry, and that is now SETTLED rather than provisional:
+  # unlike A/B (dummy-perception clear-road stand-in), this recipe runs
+  # Autoware's REAL CUDA perception stack (perception left at its
+  # default ON, per the "Pin update" section of
+  # patches/python-bridge/README.md), and Task 8's
+  # benchmarks/cells/python-bridge.sh writes INJECTOR_ENABLED=0 so
+  # run.sh does not inject on top of it.
   #
-  # Same caveat as A.yaml's "observer" entry: pins.yaml records that
-  # the universe-devel bench-observer image "serves cells A/B/C/D/E/CAL",
-  # so an observer container IS expected here, but its exact runtime
-  # name is Task 8's design, not yet independently pinned.
+  # The observer's container name is RE-GROUNDED (run.sh step 6's
+  # `--name bench-observer`), like every other cell's.
   - { label: observer, container: bench-observer }

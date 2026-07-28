@@ -5,11 +5,13 @@
 # ~/src/carla-autoware-native UnrealEditor -game invocation); only the
 # Autoware container IMAGE differs (pins.yaml autoware_045, vs.
 # autoware_universe_devel for B), which does not change the running
-# container's NAME. docker/compose.yaml's single "autoware" service
-# name is expected to be reused with the image swapped in by Task 8's
-# per-cell launcher (task-8-brief.md step 7: "B45: autoware_045 pin"),
-# same as it is for B. See B.yaml for the full grounding/evidence
-# notes on every entry below.
+# container's NAME. Task 8 landed that selection: benchmarks/run.sh
+# resolves pins.yaml autoware_045.digest for B45 and
+# autoware_universe_devel.digest for every other tier4 cell, and passes
+# it to the launcher as BENCH_AUTOWARE_IMAGE while the container name
+# stays "autoware". See B.yaml for the full grounding/evidence notes on
+# every entry below, including what about the tier4 Autoware container
+# is still Task 13's to settle.
 processes:
   - label: carla-server
     pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject

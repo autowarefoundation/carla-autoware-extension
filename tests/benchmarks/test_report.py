@@ -96,6 +96,60 @@ def test_render_cell_marks_excluded_run(tmp_path):
     assert "run-002 (EXCLUDED)" in md
 
 
+def test_render_cell_survives_a_run_with_no_observer_output(tmp_path):
+    """Regression: one aborted run must not make its whole cell unrenderable.
+
+    An excluded run whose observer never started has no clock.csv, so
+    summarize_run raises FileNotFoundError on it. render_cell used to
+    propagate that, which meant the first bring-up failure in a cell made
+    EVERY later healthy run of that cell report as not contract-valid -- and
+    in an interleaved duel, two such runs aborted the duel. Excluded runs
+    stay in the tree by pre-registration (exclusions.md), so this is the
+    normal steady state, not a corner case.
+    """
+    cell = _make_run(tmp_path, name="run-002")  # healthy
+    broken = cell / "run-001"
+    broken.mkdir(parents=True)
+    RunManifest(
+        **{
+            **json.loads((cell / "run-002" / "manifest.json").read_text()),
+            "run_index": 1,
+            "excluded": True,
+            "exclusion_reason": "gate:aborted-before-window",
+        }
+    ).save(broken / "manifest.json")
+
+    md = render_cell(cell)
+
+    # The healthy run still renders...
+    assert "| run-002 " in md and "/lidar" in md
+    # ...and the broken one is REPORTED, by name and by cause, not skipped.
+    assert "run-001" in md
+    assert "RENDER FAILED: FileNotFoundError" in md
+
+
+def test_render_cell_reports_a_run_with_no_manifest_at_all(tmp_path):
+    """The other route into the same state: a directory created before its
+    manifest was written. render_cell must name it rather than raise."""
+    cell = _make_run(tmp_path, name="run-002")
+    (cell / "run-001").mkdir(parents=True)
+
+    md = render_cell(cell)
+
+    assert "| run-002 " in md
+    assert "run-001" in md and "RENDER FAILED" in md
+
+
+def test_summarize_run_still_raises_on_a_broken_run(tmp_path):
+    """render_cell's tolerance must not have loosened summarize_run: the
+    harness's post-run smoke calls it on THIS run and needs it to raise."""
+    cell = _make_run(tmp_path, name="run-002")
+    broken = cell / "run-001"
+    broken.mkdir(parents=True)
+    with pytest.raises(FileNotFoundError):
+        summarize_run(broken)
+
+
 def test_summarize_run_rejects_an_invalid_manifest(tmp_path):
     """A manifest that RunManifest.save would have refused can still reach the
     reader hand-edited. Rendering it would put an unregistered cell (or a run

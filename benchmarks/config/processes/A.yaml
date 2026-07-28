@@ -33,17 +33,14 @@ processes:
   # either location since pgrep -f matches the filename substring.
   - { label: injector, pattern: dummy_perception }
   # Autoware stack container. docker/compose.yaml pins container_name:
-  # autoware for the one Autoware service reused across every UE5-tree
-  # cell (image/tag varies per cell via pins.yaml, container name does
-  # not).
+  # autoware, and Task 8's benchmarks/cells/extension.sh brings up that
+  # exact service (`docker compose -f docker/compose.yaml up -d
+  # autoware`), so this name is created by committed code for this cell.
   - { label: autoware, container: autoware }
-  # bench_observer/bench_pub recorder (Task 5). NOT independently
-  # grounded yet: Task 8 (run orchestration, not yet written) is what
-  # will actually `docker run` this container, and its brief snippet
-  # shows `docker run -d ... bench-observer:<label> ...` with no
-  # --name shown. "bench-observer" here is the name Task 8's own
-  # design already commits to (this file's schema, task-6 brief) but
-  # if Task 8 lands with a different container name, this entry will
-  # match no container and silently report zero CPU/RSS for the
-  # observer -- worth checking once Task 8 exists.
+  # bench_observer/bench_pub recorder (Task 5). RE-GROUNDED in Task 8:
+  # benchmarks/run.sh step 6 runs
+  #   docker run -d --name "$OBSERVER_CONTAINER" ...
+  # with OBSERVER_CONTAINER=bench-observer, and
+  # benchmarks/scripts/teardown.sh stops that same name. The container
+  # name is now fixed by committed code rather than by design intent.
   - { label: observer, container: bench-observer }

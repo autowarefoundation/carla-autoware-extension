@@ -66,24 +66,31 @@ def goal_distance(
     return math.hypot(mgrs_x - goal_x, mgrs_y - goal_y)
 
 
-def find_ego(world, attempts: int = 100, delay_s: float = 0.1, sleep=time.sleep):
+def find_ego(
+    world, attempts: int = 100, delay_s: float = 0.1, sleep=time.sleep, role_name: str = "ego"
+):
     """Return the ego actor (``role_name == "ego"``), retrying while it spawns.
 
     A cold client in sync mode can read an empty snapshot before the first
     tick (the ``StopIteration`` race fixed in the gate scripts), so the caller
     must ``world.wait_for_tick()`` once before calling this; the retry loop
     here then covers the runner still being mid-spawn.
+
+    ``role_name`` is parameterised (default unchanged) so the benchmark
+    harness's ``--role-name`` flag reuses THIS discovery loop instead of
+    carrying a second copy of it; every existing caller passes nothing and is
+    unaffected.
     """
     for _ in range(attempts):
         try:
             return next(
                 a
                 for a in world.get_actors().filter("vehicle.*")
-                if a.attributes.get("role_name") == "ego"
+                if a.attributes.get("role_name") == role_name
             )
         except StopIteration:
             sleep(delay_s)
-    raise RuntimeError("no ego actor found after warm-up retries")
+    raise RuntimeError(f"no {role_name} actor found after warm-up retries")
 
 
 def main(argv: list[str] | None = None) -> int:

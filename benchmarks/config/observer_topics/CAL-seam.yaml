@@ -1,0 +1,24 @@
+# bench_observer topic list for cell CAL-seam (calibration approach).
+#
+# DELIBERATELY EMPTY -- the topics do not exist yet.
+#
+# CAL-seam measures the extension's in-core seam against an equivalent
+# out-of-core publisher, and that publisher PAIR is Task 14 ("CAL-seam
+# publisher pair"), which has not been written. Nothing committed anywhere in
+# this repo names the topics it will publish on, so any entry here would be a
+# guess -- and a guessed topic name records as silence (zero rows), which
+# reads downstream as "this transport delivered nothing" instead of as a
+# configuration error. An empty list is the honest state: the observer still
+# records /clock, and Task 14 fills this file in before Task 17 runs the
+# cell.
+#
+# benchmarks/cells/calibration.sh REFUSES to launch CAL-seam for the same
+# reason, naming Task 14 -- so this file cannot be reached with an empty list
+# by an actual measurement run.
+#
+# Format: "<topic>|<type>|<kind>", kind in generic|odometry|published_time
+# (benchmarks/observer/src/bench_observer.cpp). out_dir is supplied by run.sh
+# as -p out_dir:=/out, not from this file.
+/**:
+  ros__parameters:
+    topics: []
