@@ -113,22 +113,42 @@ echo "   seed target (map frame): $SEED"
 cx "$AW_ENV && python3 /work/scripts/e2e/reseed_localization.py $SEED 60"
 
 echo "== 2. start dummy_perception (clear road + all-green signals) =="
-# Free-space grid centre. A map with a baked constant in the shared table keeps
-# it EXACTLY (Nishi-Shinjuku, whose live gate could not be re-run when the table
-# was introduced -- not changing it is the only honest way to protect an
-# invariant you cannot retest); any other map centres the grid on the ego pose
-# just seeded above, which is the more correct behaviour. MAP_DIR selects which
-# lanelet2 supplies the traffic-light groups.
-if [ -n "$MAP_DEFAULT_GRID_CENTRE" ]; then
+# Free-space grid centre + size. A committed route file (config/routes/<map>.yaml,
+# Task 7's schema; ROUTE_FILE points at one) gives the tightest correct answer: the
+# grid is sized from the route's OWN bounding box (midpoint + diagonal), so it
+# always covers the driven corridor without a fixed span that could clip a long
+# route or waste cells on a short one. Without ROUTE_FILE, today's behaviour is
+# unchanged: a map with a baked constant in the shared table keeps it EXACTLY
+# (Nishi-Shinjuku, whose live gate could not be re-run when the table was
+# introduced -- not changing it is the only honest way to protect an invariant you
+# cannot retest); any other map centres the grid on the ego pose just seeded
+# above, which is the more correct behaviour. MAP_DIR selects which lanelet2
+# supplies the traffic-light groups regardless of which centre/size path is used.
+GRID_SIZE_ARG=""
+if [ -n "${ROUTE_FILE:-}" ]; then
+  # Host side: bbox midpoint + diagonal of the route's map-frame polyline,
+  # +100 m margin so the free-space grid still reaches past the route ends.
+  # The bbox->(centre,size) arithmetic lives in the tested pure function
+  # scripts/e2e/route_grid.grid_from_polyline (tests/e2e/test_route_grid.py)
+  # rather than an unverified inline heredoc -- this exact heredoc used to
+  # carry a `read` word-splitting bug (GRID_XY got only the first number),
+  # caught only by hand, which is the class of defect this task closes.
+  read -r GRID_X GRID_Y GRID_SIZE <<<"$(PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -m scripts.e2e.route_grid "$ROUTE_FILE")"
+  GRID_XY="$GRID_X $GRID_Y"
+  GRID_SIZE_ARG="--grid-size $GRID_SIZE"
+  echo "   grid centre $GRID_XY, size ${GRID_SIZE} m (from $ROUTE_FILE)"
+elif [ -n "$MAP_DEFAULT_GRID_CENTRE" ]; then
   GRID_XY="$MAP_DEFAULT_GRID_CENTRE"
+  echo "   free-space grid centre: $GRID_XY"
 else
   GRID_XY="$(echo "$SEED" | cut -d' ' -f1-2)"  # SEED's first two fields are map x/y
+  echo "   free-space grid centre: $GRID_XY"
 fi
-echo "   free-space grid centre: $GRID_XY"
 cx "$AW_ENV
   export MAP_DIR='$MAP_DIR'
   if [ -f /tmp/dummy_perception.pid ]; then kill \"\$(cat /tmp/dummy_perception.pid)\" 2>/dev/null || true; sleep 1; fi
-  nohup python3 /work/scripts/e2e/dummy_perception.py --ego-xy $GRID_XY >/tmp/dummy_perception.log 2>&1 &
+  nohup python3 /work/scripts/e2e/dummy_perception.py --grid-center $GRID_XY $GRID_SIZE_ARG >/tmp/dummy_perception.log 2>&1 &
   echo \$! >/tmp/dummy_perception.pid
   sleep 2
   grep -q 'publishing clear-road perception' /tmp/dummy_perception.log \

@@ -258,9 +258,15 @@ start  CARLA metres/degrees   x=55.330   y=141.161  z=0.5  yaw=0.320   lanelet 3
 goal   map frame, metres      x=-101.021 y=55.014   z=0.0              lanelet 1942
 ```
 
-Reproduce: `CARLA_ROOT=~/src/carla-autoware-integration python3
-scripts/e2e/pick_route.py` — offline, no simulator, it scores the committed
-`.xodr` and prints exactly these two poses. The goal is also the map's
+Reproduce (same geometry-only scoring, now behind a committed CLI instead of a
+one-off script): `python3 benchmarks/scripts/pick_route.py --xodr
+$CARLA_ROOT/Unreal/CarlaUnreal/Content/Carla/Maps/OpenDrive/Town10HD_Opt.xodr
+--spawn-index 50 --min-length 400` — offline, no simulator. `--spawn-index`
+indexes this tool's own deterministic candidate-start list (built from the
+`.xodr` alone, since bare `.xodr` data carries no recommended-spawn-point
+list), not the live world's `SPAWN_INDEX`, so it does not reproduce the exact
+start pose above byte-for-byte; it does land on the same lane (yaw 0.320) and
+score the same goal (`-101.021, 55.014`), which is also the map's
 `MAP_DEFAULT_GOAL` in `scripts/e2e/map_defaults.sh`, so `arm_closed_loop.sh`
 routes here without any `GOAL_*` export.
 

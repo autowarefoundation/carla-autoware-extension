@@ -52,8 +52,9 @@ DEFAULT_MAP = os.path.join(
     os.environ.get("MAP_DIR", "/autoware_map/nishishinjuku"), "lanelet2_map.osm"
 )
 # Fallback map-frame centre for the all-free occupancy grid (the Nishi-Shinjuku
-# spawn area). arm_closed_loop.sh passes --ego-xy so the free area actually
-# surrounds the ego on any map; this constant only serves a bare invocation.
+# spawn area). arm_closed_loop.sh passes --grid-center so the free area
+# actually surrounds the ego (or the route) on any map; this constant only
+# serves a bare invocation.
 EGO_X, EGO_Y = 81377.34, 49916.93
 
 
@@ -83,14 +84,43 @@ def tl_group_ids(osm_path: str) -> list[int]:
     return sorted(ids)
 
 
+def occupancy_grid_geometry(
+    grid_center: tuple[float, float], grid_size_m: float, resolution_m: float = 0.5
+) -> dict:
+    """All-free OccupancyGrid geometry for the given centre/span.
+
+    Pure (no ROS/rclpy message type needed to call it), so the --grid-size ->
+    message-dimensions link is unit-testable without stubbing a live rclpy
+    Node (tests/e2e/test_dummy_perception.py). ``tick()`` below copies these
+    fields onto a real OccupancyGrid.msg unchanged -- this IS the plumbing,
+    not a stand-in for it.
+    """
+    n = max(1, round(grid_size_m / resolution_m))
+    cx, cy = grid_center
+    return {
+        "resolution": resolution_m,
+        "width": n,
+        "height": n,
+        "origin_x": cx - n * resolution_m / 2.0,
+        "origin_y": cy - n * resolution_m / 2.0,
+        "data": [0] * (n * n),
+    }
+
+
 class DummyPerception(Node):
-    def __init__(self, tl_ids: list[int], ego_xy: tuple[float, float] = (EGO_X, EGO_Y)):
+    def __init__(
+        self,
+        tl_ids: list[int],
+        grid_center: tuple[float, float] = (EGO_X, EGO_Y),
+        grid_size_m: float = 200.0,
+    ):
         super().__init__(
             "dummy_perception",
             parameter_overrides=[Parameter("use_sim_time", value=True)],
         )
         self.tl_ids = tl_ids
-        self.ego_x, self.ego_y = ego_xy
+        self.grid_cx, self.grid_cy = grid_center
+        self.grid_size_m = grid_size_m
         self.objs = self.create_publisher(
             PredictedObjects, "/perception/object_recognition/objects", 10
         )
@@ -120,15 +150,14 @@ class DummyPerception(Node):
 
         og = OccupancyGrid()
         og.header = self.stamp("map")
-        res = 0.5
-        n = 400  # 200 m span, all free
-        og.info.resolution = res
-        og.info.width = n
-        og.info.height = n
-        og.info.origin.position.x = self.ego_x - n * res / 2.0
-        og.info.origin.position.y = self.ego_y - n * res / 2.0
+        geo = occupancy_grid_geometry((self.grid_cx, self.grid_cy), self.grid_size_m)
+        og.info.resolution = geo["resolution"]
+        og.info.width = geo["width"]
+        og.info.height = geo["height"]
+        og.info.origin.position.x = geo["origin_x"]
+        og.info.origin.position.y = geo["origin_y"]
         og.info.origin.orientation.w = 1.0
-        og.data = [0] * (n * n)
+        og.data = geo["data"]
         self.grid.publish(og)
 
         pc = PointCloud2()
@@ -162,11 +191,13 @@ class DummyPerception(Node):
         self.tl.publish(tl)
 
 
-def main():
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Split out from main() so the CLI surface (flags, defaults, types) is
+    unit-testable without rclpy/ROS message stubs (tests/e2e/test_dummy_perception.py)."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--map", default=DEFAULT_MAP, help="lanelet2 .osm to read TL groups from")
     p.add_argument(
-        "--ego-xy",
+        "--grid-center",
         nargs=2,
         type=float,
         default=(EGO_X, EGO_Y),
@@ -174,13 +205,28 @@ def main():
         help="map-frame centre of the all-free occupancy grid (default: the "
         "Nishi-Shinjuku spawn area)",
     )
-    args = p.parse_args()
+    p.add_argument(
+        "--grid-size",
+        type=float,
+        default=200.0,
+        metavar="METERS",
+        help="occupancy-grid span in metres, centred on --grid-center "
+        "(default: 200, today's fixed behaviour)",
+    )
+    return p
+
+
+def main():
+    args = build_arg_parser().parse_args()
     ids = tl_group_ids(args.map)
     rclpy.init()
-    node = DummyPerception(ids, (args.ego_xy[0], args.ego_xy[1]))
+    node = DummyPerception(
+        ids, (args.grid_center[0], args.grid_center[1]), args.grid_size
+    )
     node.get_logger().info(
         f"publishing clear-road perception; {len(ids)} TL groups GREEN "
-        f"(map {args.map}, grid centred on {args.ego_xy[0]:.1f},{args.ego_xy[1]:.1f})"
+        f"(map {args.map}, grid centred on {args.grid_center[0]:.1f},"
+        f"{args.grid_center[1]:.1f}, span {args.grid_size:.1f} m)"
     )
     if not ids:
         # Visible, but not fatal: see tl_group_ids. Named so a signalised map
