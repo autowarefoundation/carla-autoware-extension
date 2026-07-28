@@ -51,7 +51,9 @@ the harness does. `run_e2e.sh` preflights the extension `.so` (fresh
 editor artifact, `--extension-check` ABI probe), boots CARLA headless with
 `--ros2 --rmw=cyclonedds --ros2-extension=<so>`, and runs
 `python3 -m runner --host localhost --port 2000 --map NishishinjukuMap` in
-the foreground so it owns `SIGINT` directly. The runner accepts
+the foreground so it owns `SIGINT` directly. `MAP` overrides that map (and with
+it the Autoware bundle and the GNSS converter offset) — see
+[section 7](#7-driving-a-different-map-town10hd_opt). The runner accepts
 `--sensor-kit-calibration`/`--sensors-calibration` (default to the committed
 copies under `runner/config/`), `--initial-pose X_M Y_M Z_M ROLL_DEG
 PITCH_DEG YAW_DEG` (metres/degrees, default = map spawn point 0), and
@@ -190,3 +192,68 @@ this image). Engage latches across re-arms: run
 G1/G3 need no arming: with the stack localizing, run
 `bash scripts/e2e/gate_g1_localization.sh` and
 `bash scripts/e2e/gate_g3_performance.sh` directly.
+
+## 7. Driving a different map (Town10HD_Opt)
+
+Everything above defaults to Nishi-Shinjuku. `MAP` is the single knob:
+`run_e2e.sh` derives from it both the Autoware map bundle (`MAP_DIR`, consumed
+by `launch_autoware.sh` as `map_path:=`) and the extension's GNSS converter
+offset (`CARLA_AUTOWARE_MAP`, see [mgrs-handedness.md](mgrs-handedness.md)), so
+the CARLA map, the pointcloud/lanelet2 it localizes against, and the offset the
+poses are synthesised with cannot drift apart. A `MAP` with no known bundle is
+rejected up front rather than localizing against the wrong pointcloud.
+
+Each bundle needs a read-only mount in `docker/compose.yaml`
+(`~/autoware_map/town10:/autoware_map/town10:ro` is already there); fetch it
+with `benchmarks/scripts/fetch_maps.sh`.
+
+```bash
+source docker/env.sh
+export MAP=Town10HD_Opt WITH_AUTOWARE=1
+# On-lanelet start chosen from map geometry (below); metres/degrees, CARLA frame.
+export RUNNER_EXTRA_ARGS="--initial-pose 55.330 141.161 0.5 0 0 0.320"
+bash scripts/e2e/run_e2e.sh
+```
+
+`run_e2e.sh` prints the `export CARLA_AUTOWARE_MAP=...` line the gate scripts
+need: they run in the OPERATOR's shell, which the harness's own export cannot
+reach, and they map CARLA ground truth into the map frame with that same
+per-map offset. So, in that shell:
+
+```bash
+export CARLA_AUTOWARE_MAP=Town10HD_Opt
+export GOAL_X=-101.021 GOAL_Y=55.014 GOAL_Z=0.0 GOAL_QZ=-0.910299 GOAL_QW=0.413952
+bash scripts/e2e/arm_closed_loop.sh
+bash scripts/e2e/gate_g1_localization.sh
+bash scripts/e2e/gate_g2_closed_loop.sh -101.021 55.014
+```
+
+`SPAWN_INDEX=<n>` selects a recommended spawn point instead of a hand-typed
+`--initial-pose`; the town maps expose dozens where Nishi-Shinjuku exposes one.
+
+### The chosen Town10 start and route
+
+Picked from map geometry only, never from a driven trajectory, so the strict
+1.0 m G2 gate stays honest. The SHORTEST road path start->goal is **420 m** with
+233 degrees of accumulated heading change (several junction turns) — shortest,
+because Autoware plans its own route and a merely-long walked path would not
+bound what it actually drives. Town10's lanelet2 has **no** traffic-light or
+regulatory elements at all (168 lanelets, every one `subtype=road`), so the
+route carries no signal dependence. Start and goal both sit on a lanelet
+centreline (0.194 m and 0.023 m off, headings agreeing to 0.06 degrees), and the
+route never comes within 33.5 m of the goal before arriving, so the gate cannot
+close early on a near miss.
+
+```text
+start  CARLA metres/degrees   x=55.330   y=141.161  z=0.5  yaw=0.320   lanelet 324
+goal   map frame, metres      x=-101.021 y=55.014   z=0.0              lanelet 1942
+```
+
+**Status:** the offset, the map plumbing and the route are derived and
+unit-tested, but the live G1/G2 gates have **not** yet been run on this map. At
+the time of writing a live run is blocked on _any_ map, for a reason unrelated
+to the map: four engine modules (including `libUnrealEditor-Engine.so`) were
+relinked after the Carla editor modules were built, so UE rejects those modules
+and `-game` aborts before it ever loads one. `verify_editor_artifact.sh` does
+not catch this — it compares mtimes, not the engine BuildId. Rebuilding
+`carla-unreal-editor` clears it.

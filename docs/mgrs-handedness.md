@@ -158,18 +158,82 @@ reference line agree to a few centimetres everywhere on the map.
 - **Units:** CARLA PythonAPI = metres; extension .so = UE centimetres.
 - The affine map at the top of this document is the verified relation the extension `.so` reuses.
 
+## Other maps: the translation is per-map, the flip is not
+
+Everything above except the three offset numbers is a property of the
+CARLA<->OpenDRIVE boundary, not of Nishi-Shinjuku: the single Y negation, the
+quaternion conjugation and the cm-vs-m convention hold for any CARLA map. Only
+the **translation** changes. A second map therefore needs exactly one new
+measured triple, and `MAP_OFFSETS`
+(`scripts/e2e/verify_mgrs_handedness.py`) / `MgrsOffset.h` hold one entry per
+map, selected at run time by `$CARLA_AUTOWARE_MAP`. An unknown name is refused
+rather than defaulted -- a wrong offset does not announce itself, it surfaces
+much later as NDT failing to converge.
+
+`scripts/e2e/fit_map_offset.py` derives the triple offline from the map's
+committed `.xodr` and the Autoware bundle's `lanelet2_map.osm`, with no
+simulator running: it turns CARLA lane centres into lane BOUNDARY points and
+fits the translation that puts them on the lanelet2 boundary linestrings,
+scoring each probe by its distance to the nearest lanelet2 **segment** -- no
+resampling, hence no discretisation floor under the reported residual.
+
+### Town10HD_Opt -- offset (0, 0, 0), measured 2026-07-27
+
+The autoware-contents Town10 bundle declares `projector_type: Local` and was
+exported from the same CARLA town, so the map frame _is_ the CARLA world frame
+up to the Y flip. Measured rather than assumed, over 12084 CARLA lane-boundary
+probes against 10014 lanelet2 segments:
+
+```text
+Y-FLIP  (map_y = -carla_y): median 0.00000  mean 0.00064  max 0.01610 m
+NO-FLIP (map_y = +carla_y): median 4.17523  mean 17.11745 max 73.26757 m  -> flip confirmed
+fitted offset = (0.0000, 0.0000) m
+residual at the fit: median 0.00000  mean 0.00062  p95 0.00453  p99 0.00899  max 0.01610 m
+                     99.39 % within 0.01 m, 100 % within 0.05 m
+sensitivity: an offset wrong by 0.10 m would show a 0.0506 m median
+```
+
+Z is likewise zero: every lanelet2 node carries `ele=0.0`, CARLA's Town10 road
+surface is at `z=0`, and the bundle's `pointcloud_map.pcd` has its ground plane
+at `z~=0` (p25 0.000 m, p50 0.051 m over 9987028 points).
+
+The same tool re-derives the Nishi-Shinjuku entry as a cross-check: seeded at
+the converter's documented offset it converges to **(81655.7301, 50137.4296)**
+with a 0.01261 m median residual over 80640 probes -- agreeing with the
+`conf/map/nishishinjuku.yaml` value to a tenth of a millimetre, and with the
+0.009 m recorded above. That is the tool reproducing a known answer on a map
+whose frame origin is 81 km away.
+
+The fit is an ICP and so needs its starting point inside the right basin. Road
+boundaries are near-parallel lines about a lane width apart, so a seed half a
+lane width off converges onto the neighbouring boundary instead (measured on
+Town10: seeded at -1.86 m it stays at -1.86 m, residual 0.544 m). The default
+(0,0) start is right for a `Local` bundle exported from the same town; a distant
+frame needs `--initial-offset`. A bad basin shows up in the reported residual --
+it is not silent.
+
 ## Reproduce
 
 ```bash
+CARLA_MAPS=~/src/carla-autoware-integration/Unreal/CarlaUnreal/Content/Carla/Maps/OpenDrive
+
 # offline transform + unit tests
 cd ~/src/carla-autoware-extension && python3 -m pytest tests/e2e/test_mgrs_offset.py -q
 
-# single-point CLI check (extension-cm frame)
+# single-point CLI check (extension-cm frame; --map picks the offset)
 python3 scripts/e2e/verify_mgrs_handedness.py \
-  --carla-xyz-cm <x_cm> <y_cm> <z_cm> --osm-local-xy <local_x> <local_y> --tol-m 0.5
+  --carla-xyz-cm <x_cm> <y_cm> <z_cm> --osm-local-xy <local_x> <local_y> --tol-m 0.5 \
+  [--map Town10HD_Opt]
+
+# re-derive a map's offset offline (needs numpy; no simulator)
+python3 scripts/e2e/fit_map_offset.py --map-name Town10HD_Opt \
+  --xodr "$CARLA_MAPS/Town10HD_Opt.xodr" --osm ~/autoware_map/town10/lanelet2_map.osm
+python3 scripts/e2e/fit_map_offset.py --map-name NishishinjukuMap --tol-m 0.5 \
+  --xodr "$CARLA_MAPS/NishishinjukuMap.xodr" \
+  --osm ~/autoware_map/nishishinjuku/lanelet2_map.osm \
+  --initial-offset 81655.73 50137.43
 
 # live measurement (CARLA must be up on :2000 with NishishinjukuMap available)
 export ROS_DOMAIN_ID=0
-python3 scripts/e2e/probe_carla_mgrs.py \
-  --xodr ~/src/carla-autoware-integration/Unreal/CarlaUnreal/Content/Carla/Maps/OpenDrive/NishishinjukuMap.xodr
+python3 scripts/e2e/probe_carla_mgrs.py --xodr "$CARLA_MAPS/NishishinjukuMap.xodr"
 ```

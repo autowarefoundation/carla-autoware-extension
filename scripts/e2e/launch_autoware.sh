@@ -48,6 +48,13 @@ READY_TIMEOUT_S=300                         # bounded; a slow cold container can
 RELAY_IN=/sensing/lidar/top/pointcloud_before_sync
 RELAY_OUT=/sensing/lidar/concatenated/pointcloud
 
+# CONTAINER-side path of the Autoware map bundle (pcd + lanelet2 + projector info) this launch
+# localizes against; it becomes the launch's map_path:=. The default keeps every historical
+# invocation of this script unchanged. run_e2e.sh derives and exports it from its own MAP, so the
+# CARLA map and the Autoware map bundle can never disagree when the harness drives the bring-up.
+# Each bundle needs a matching read-only mount in docker/compose.yaml.
+MAP_DIR="${MAP_DIR:-/autoware_map/nishishinjuku}"
+
 # Container-side paths passed in via -e so the single-quoted container scripts below expand
 # them in the container -- no host-string injection (fragile + a shellcheck SC2016 false
 # positive).
@@ -55,6 +62,7 @@ compose_exec() {
   docker compose -f "$COMPOSE" exec -T \
     -e ROS_DOMAIN_ID=0 -e AW_LOG="$AW_LOG" -e AW_PIDFILE="$AW_PIDFILE" \
     -e RELAY_PIDFILE="$RELAY_PIDFILE" -e RELAY_IN="$RELAY_IN" -e RELAY_OUT="$RELAY_OUT" \
+    -e MAP_DIR="$MAP_DIR" \
     autoware bash -lc "$1"
 }
 
@@ -83,9 +91,11 @@ fi
 docker inspect -f '{{.State.Running}}' autoware 2>/dev/null | grep -q true \
   || { echo "PREFLIGHT FAIL: container 'autoware' not running (docker compose up -d)"; exit 1; }
 
-# Preflight 2: the map is mounted (map_path the launch needs).
-compose_exec 'test -f /autoware_map/nishishinjuku/lanelet2_map.osm' \
-  || { echo "PREFLIGHT FAIL: /autoware_map/nishishinjuku not mounted (see docker/compose.yaml)"; exit 1; }
+# Preflight 2: the map bundle is mounted (map_path the launch needs). $MAP_DIR expands IN THE
+# CONTAINER (compose_exec passes it via -e), so the single quotes are intentional.
+# shellcheck disable=SC2016
+compose_exec 'test -f "$MAP_DIR/lanelet2_map.osm"' \
+  || { echo "PREFLIGHT FAIL: $MAP_DIR not mounted (see docker/compose.yaml)"; exit 1; }
 
 # Preflight 3: CARLA RPC port must already be bound -- carla_interface connects to :2000 at
 # startup, so CARLA has to be up FIRST (that is the whole point of the ordering). This is why
@@ -106,16 +116,16 @@ fi
 # resolves a CUDA-only package eagerly, and no DNN model artifacts ship) -- localization does
 # NOT depend on perception, so G1/G2 are unaffected. launch_vehicle_interface:=false because
 # the extension IS the vehicle interface (native Ackermann/status over DDS).
-echo "OK: bringing Autoware up (e2e_simulator, simulator_type:=carla) -- log: $AW_LOG"
-# $AW_LOG/$AW_PIDFILE/$! are expanded IN THE CONTAINER (compose_exec passes them via -e; $!
-# must be the container-side nohup PID), so the single quotes below are intentional.
+echo "OK: bringing Autoware up (e2e_simulator, simulator_type:=carla, map $MAP_DIR) -- log: $AW_LOG"
+# $AW_LOG/$AW_PIDFILE/$MAP_DIR/$! are expanded IN THE CONTAINER (compose_exec passes them via -e;
+# $! must be the container-side nohup PID), so the single quotes below are intentional.
 # shellcheck disable=SC2016
 compose_exec '
   source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash &&
   source ~/carla_msgs_ws/install/setup.bash 2>/dev/null || true
   export ROS_DOMAIN_ID=0
   nohup ros2 launch autoware_launch e2e_simulator.launch.xml \
-    map_path:=/autoware_map/nishishinjuku \
+    map_path:="$MAP_DIR" \
     sensor_model:=awsim_labs_sensor_kit vehicle_model:=sample_vehicle \
     simulator_type:=carla launch_vehicle_interface:=false use_sim_time:=true \
     perception:=false rviz:=false >"$AW_LOG" 2>&1 &

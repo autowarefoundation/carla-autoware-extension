@@ -5,13 +5,14 @@
 //   /sensing/gnss/pose                 (geometry_msgs/PoseStamped)
 //   /sensing/gnss/pose_with_covariance (geometry_msgs/PoseWithCovarianceStamped)
 // in the `map` frame at 1 Hz (decimated). The pose is synthesised from the ego
-// world transform + the static MGRS converter offset (MgrsOffset.h), NEVER from
+// world transform + the ACTIVE MAP's converter offset (MgrsOffset.h), NEVER from
 // CARLA's own geolocation (the loaded Nishi-Shinjuku map has a degenerate
 // geo-reference; see docs/mgrs-handedness.md). This header is an implementation
 // detail of the extension .so, not part of the frozen C ABI seam.
 
 #include <cstdint>
 
+#include "carla/autoware/geo/MgrsOffset.h"
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
 namespace carla {
@@ -22,7 +23,11 @@ class GnssPosePublisher {
   // Creates both GNSS pose publishers on `host`. Must be called once, from the
   // extension init / game thread, before the first OnVehicleStatus (host-vtable
   // rule: create_publisher is not thread-safe against dispatch).
-  void Init(const CarlaRos2Host& host);
+  //
+  // `offset` is the active map's converter offset; ExtensionInit resolves it
+  // from $CARLA_AUTOWARE_MAP once at load. It defaults to Nishi-Shinjuku so an
+  // Init(host) call site keeps its historical behaviour verbatim.
+  void Init(const CarlaRos2Host& host, const MapOffset& offset = kDefaultMapOffset);
 
   // Synthesises and publishes both poses for one ego frame, decimated to 1 Hz.
   // The FIRST call always publishes; thereafter it publishes only once the sim
@@ -35,6 +40,7 @@ class GnssPosePublisher {
   CarlaRos2PubHandle pose_{0};       // /sensing/gnss/pose
   CarlaRos2PubHandle pose_cov_{0};   // /sensing/gnss/pose_with_covariance
   double last_pub_s_{-1.0};          // sentinel < 0 so the first frame publishes
+  MapOffset offset_{kDefaultMapOffset};  // active map's converter offset
 };
 
 }  // namespace autoware

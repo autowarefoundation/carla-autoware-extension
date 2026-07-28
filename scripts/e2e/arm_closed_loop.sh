@@ -23,6 +23,11 @@
 # 253->255->495->280->283->382->226; min width 2.61 m @ 0.52 deg/m -- inside the proven
 # envelope). Chosen from map geometry only, never from a driven trajectory, so the
 # strict 1.0 m gate stays honest.
+#
+# MAP: the defaults below are Nishi-Shinjuku's, so an argument-free arm is unchanged.
+# Another map supplies its own GOAL_* (map-frame metres, from that map's lanelet2
+# centreline) and sets CARLA_AUTOWARE_MAP so the ground-truth reseed uses the right
+# converter offset -- run_e2e.sh prints the exact export line for the active map.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -48,17 +53,20 @@ fi
 echo "== 1. reseed /initialpose at the ego's current ground-truth pose =="
 # Host side: read the ego's CARLA pose and map it with the pinned affine (the same
 # scripts.e2e transform the gates use). yaw_map = -yaw_carla (single Y flip).
+# offset_for_map() resolves the ACTIVE map from $CARLA_AUTOWARE_MAP; the yaw rule is
+# offset-independent (it comes from the shared Y flip), so only z/x/y move per map.
 SEED=$(PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" python3 - <<'PY'
 import math
 import carla
 from scripts.e2e.collect_gt import ego_map_xy, find_ego
-from scripts.e2e.verify_mgrs_handedness import CONVERTER_OFFSET
+from scripts.e2e.verify_mgrs_handedness import offset_for_map
+offset = offset_for_map()
 world = carla.Client("localhost", 2000).get_world()
 world.wait_for_tick()
 ego = find_ego(world)
 tf = ego.get_transform()
-x, y = ego_map_xy(tf.location.x, tf.location.y)
-z = CONVERTER_OFFSET[2] + tf.location.z
+x, y = ego_map_xy(tf.location.x, tf.location.y, offset)
+z = offset[2] + tf.location.z
 yaw = math.radians(-tf.rotation.yaw)
 print(f"{x:.3f} {y:.3f} {z:.3f} {math.sin(yaw / 2):.6f} {math.cos(yaw / 2):.6f}")
 PY

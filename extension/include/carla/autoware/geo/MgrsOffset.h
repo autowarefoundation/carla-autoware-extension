@@ -9,30 +9,88 @@
 // public transform (under include/, like messages/) because the extension
 // publisher AND any future consumer share exactly one definition.
 //
-// CONVERTER_OFFSET = (81655.73, 50137.43, 42.49998) m -- MGRS 54SUE local frame,
-// from autoware_lanelet2_to_opendrive conf/map/nishishinjuku.yaml `offset:`.
-//
 // UNITS: the extension .so observes a UE FTransform, which is native
 // CENTIMETRES, so the /100 below is correct at this layer. (The CARLA PythonAPI
 // instead reports metres -- a different layer; do NOT reuse this for PythonAPI
 // values without an x100. See the verifier's docstring.)
+//
+// PER-MAP OFFSET. Only the TRANSLATION is map-specific; the Y flip and the
+// quaternion sign rule below are properties of the CARLA<->OpenDRIVE handedness
+// boundary and are therefore the SAME for every map. The offset is selected at
+// extension-load time from $CARLA_AUTOWARE_MAP (ExtensionInit.cpp); the frozen
+// C ABI carries no map name, so an environment variable is the only channel.
+// Unset selects Nishi-Shinjuku, so every pre-existing invocation is unchanged.
 
+#include <cstring>
 #include <tuple>
 
 namespace carla {
 namespace autoware {
 
-// CARLA world transform (cm, left-handed) -> MGRS-local pose (m, right-handed).
+// Converter offset, metres, in the Autoware `map` frame. Named "MGRS" for the
+// Nishi-Shinjuku lineage, but the frame is whatever the map's
+// map_projector_info.yaml declares -- MGRS-local for Nishi-Shinjuku, a plain
+// Local frame for the CARLA town maps.
+struct MapOffset {
+  double x, y, z;
+};
+
+// Nishi-Shinjuku: MGRS 54SUE local frame, from autoware_lanelet2_to_opendrive
+// conf/map/nishishinjuku.yaml `offset:`. Verified live (docs/mgrs-handedness.md:
+// median residual 0.009 m across the map).
+inline constexpr MapOffset kNishishinjukuOffset{81655.73, 50137.43, 42.49998};
+
+// Town10HD_Opt: the autoware-contents Town10 lanelet2/pcd pair declares
+// `projector_type: Local` and was exported from the SAME CARLA town, so the map
+// frame IS the CARLA world frame up to the handedness flip -- the translation is
+// exactly zero. Measured offline, not assumed: scripts/e2e/fit_map_offset.py
+// fits the translation against the lanelet2 boundary polylines over 12084
+// CARLA lane-boundary probes and reports (0,0) with a median residual of
+// 0.000 m (mean 0.002 m, max 0.019 m); the no-flip hypothesis lands at 4.30 m.
+inline constexpr MapOffset kTown10HdOptOffset{0.0, 0.0, 0.0};
+
+// Historical default: an unset $CARLA_AUTOWARE_MAP keeps the Nishi-Shinjuku
+// behaviour byte-identical.
+inline constexpr MapOffset kDefaultMapOffset = kNishishinjukuOffset;
+
+// Environment variable naming the active map. Its accepted values are the same
+// map names scripts/e2e/run_e2e.sh passes to CARLA and to `runner --map`.
+inline constexpr char kMapEnvVar[] = "CARLA_AUTOWARE_MAP";
+
+// Resolve a map name to its converter offset.
+//
+// A null or empty name selects kDefaultMapOffset (Nishi-Shinjuku). An UNKNOWN
+// name returns false and leaves *out untouched -- the caller must fail the load
+// rather than fall back, because silently publishing one map's offset on
+// another map is exactly the failure this table exists to prevent (it would
+// surface far downstream as NDT never converging, not as a config error).
+inline bool map_offset_for(const char* map_name, MapOffset* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  if (map_name == nullptr || map_name[0] == '\0') {
+    *out = kDefaultMapOffset;
+    return true;
+  }
+  if (std::strcmp(map_name, "NishishinjukuMap") == 0) {
+    *out = kNishishinjukuOffset;
+    return true;
+  }
+  if (std::strcmp(map_name, "Town10HD_Opt") == 0) {
+    *out = kTown10HdOptOffset;
+    return true;
+  }
+  return false;
+}
+
+// CARLA world transform (cm, left-handed) -> map-local pose (m, right-handed).
 // The ONLY flipped axis is Y (left-handed -> right-handed); X and Z are pure
 // translations by the converter offset.
-inline std::tuple<double, double, double> world_to_mgrs_local(double x_cm, double y_cm,
-                                                              double z_cm) {
-  constexpr double kOffsetX = 81655.73;
-  constexpr double kOffsetY = 50137.43;
-  constexpr double kOffsetZ = 42.49998;
-  return {kOffsetX + x_cm / 100.0,
-          kOffsetY - y_cm / 100.0,  // Y flip: left-handed -> right-handed
-          kOffsetZ + z_cm / 100.0};
+inline std::tuple<double, double, double> world_to_mgrs_local(
+    double x_cm, double y_cm, double z_cm, const MapOffset& offset = kDefaultMapOffset) {
+  return {offset.x + x_cm / 100.0,
+          offset.y - y_cm / 100.0,  // Y flip: left-handed -> right-handed
+          offset.z + z_cm / 100.0};
 }
 
 // Ego orientation quaternion: CARLA (left-handed) -> MGRS-local (right-handed).

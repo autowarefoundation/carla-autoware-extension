@@ -31,9 +31,10 @@ docker compose -f "$COMPOSE" exec -T autoware bash -lc '
   [ "$rc" -eq 124 ] || [ "$rc" -eq 0 ] || { echo "G2 FAIL: ros2 topic hz errored rc=$rc"; exit "$rc"; }'
 
 # Ego-to-goal distance series (map frame; CARLA Y is flipped to map).
-# collect_gt.py maps CARLA metres into the MGRS-local map frame via the pinned affine
-# (verify_mgrs_handedness.CONVERTER_OFFSET, byte-identical to the extension's MgrsOffset.h)
-# before taking the XY distance to the goal.
+# collect_gt.py maps CARLA metres into the map frame via the pinned affine
+# (verify_mgrs_handedness.MAP_OFFSETS, byte-identical to the extension's MgrsOffset.h) before
+# taking the XY distance to the goal. The active map comes from $CARLA_AUTOWARE_MAP -- export it
+# in THIS shell for a non-default map (run_e2e.sh prints the exact line).
 PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" \
   python3 -m scripts.e2e.collect_gt --window "$WIN" --out "$DIST" --goal "$GOAL_X" "$GOAL_Y"
 
