@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 
@@ -29,3 +31,9 @@ def test_reconcile_drops():
 def test_reconcile_never_negative():
     d = reconcile_drops(100, 100, 103)  # duplicate delivery edge case
     assert d.observer_loss_rate == 0.0
+
+
+def test_zero_published_reports_nan_observer_loss():
+    d = reconcile_drops(expected_count=100, published_count=0, observed_count=0)
+    assert d.publisher_drop_rate == 1.0
+    assert math.isnan(d.observer_loss_rate)

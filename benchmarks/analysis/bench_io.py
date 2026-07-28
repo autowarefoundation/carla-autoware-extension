@@ -23,6 +23,10 @@ PUBLISHED_COLS = ("source_header_ns", "published_ns")
 # verbatim, so a caller masks it deliberately instead of averaging it in.
 RESOURCE_INT_COLS = ("sample_system_ns", "rss_bytes", "vram_bytes")
 RESOURCE_FLOAT_COLS = ("cpu_pct", "gpu_util_pct", "rtf")
+ODOM_INT_COLS = ("header_stamp_ns",)
+ODOM_FLOAT_COLS = ("x_m", "y_m")
+GT_INT_COLS = ("arrival_system_ns", "sim_ns")
+GT_FLOAT_COLS = ("x_m", "y_m", "z_m", "yaw_rad")
 
 
 def _read_grouped(path: Path, cols: tuple[str, ...]) -> dict:
@@ -67,6 +71,38 @@ def read_resources_csv(path) -> dict:
             **{c: np.asarray(g[c], dtype=np.float64) for c in RESOURCE_FLOAT_COLS},
         }
         for process, g in grouped.items()
+    }
+
+
+def read_odometry_csv(path) -> dict:
+    """odometry.csv grouped by topic; stamps int64, positions float64."""
+    grouped = defaultdict(lambda: {c: [] for c in ODOM_INT_COLS + ODOM_FLOAT_COLS})
+    with open(Path(path), newline="") as f:
+        for row in csv.DictReader(f):
+            g = grouped[row["topic"]]
+            for c in ODOM_INT_COLS:
+                g[c].append(int(row[c]))
+            for c in ODOM_FLOAT_COLS:
+                g[c].append(float(row[c]))
+    return {
+        t: {
+            **{c: np.asarray(g[c], dtype=np.int64) for c in ODOM_INT_COLS},
+            **{c: np.asarray(g[c], dtype=np.float64) for c in ODOM_FLOAT_COLS},
+        }
+        for t, g in grouped.items()
+    }
+
+
+def read_gt_csv(path) -> dict:
+    """gt.csv (ungrouped): {column: np.ndarray}."""
+    cols = {c: [] for c in GT_INT_COLS + GT_FLOAT_COLS}
+    with open(Path(path), newline="") as f:
+        for row in csv.DictReader(f):
+            for c in cols:
+                cols[c].append(row[c])
+    return {
+        **{c: np.asarray(cols[c], dtype=np.int64) for c in GT_INT_COLS},
+        **{c: np.asarray(cols[c], dtype=np.float64) for c in GT_FLOAT_COLS},
     }
 
 

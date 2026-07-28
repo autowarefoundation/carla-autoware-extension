@@ -1,7 +1,9 @@
 import numpy as np
 from benchmarks.analysis.bench_io import (
     read_clock_csv,
+    read_gt_csv,
     read_observer_csv,
+    read_odometry_csv,
     read_published_time_csv,
     read_resources_csv,
 )
@@ -86,3 +88,78 @@ def test_read_resources_rtf_series_feeds_the_ceiling_evaluator(tmp_path):
     d = read_resources_csv(p)
     np.testing.assert_allclose(d["carla"]["rtf"], d["observer"]["rtf"])
     np.testing.assert_allclose(d["carla"]["rtf"], [0.98, 0.94])
+
+
+UNSORTED_OBS = """topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes
+/a,300,3000,30,300,64
+/a,100,1000,10,100,64
+/a,200,2000,20,200,64
+"""
+
+
+def test_read_observer_preserves_row_order(tmp_path):
+    """Stamps must come back in file order, not sorted -- callers that
+    rely on arrival order (e.g. cadence's own np.sort) would silently
+    get the wrong answer if a reader reordered rows behind their back."""
+    p = tmp_path / "observer.csv"
+    p.write_text(UNSORTED_OBS)
+    d = read_observer_csv(p)
+    np.testing.assert_array_equal(d["/a"]["header_stamp_ns"], [300, 100, 200])
+
+
+def test_read_observer_header_only_returns_empty_dict(tmp_path):
+    p = tmp_path / "observer.csv"
+    p.write_text(
+        "topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,"
+        "clock_ns,size_bytes\n")
+    assert read_observer_csv(p) == {}
+
+
+ODOM = """topic,header_stamp_ns,x_m,y_m
+/localization/kinematic_state,300,3.0,30.0
+/localization/kinematic_state,100,1.0,10.0
+/localization/kinematic_state,200,2.0,20.0
+"""
+
+
+def test_read_odometry_groups_by_topic_and_preserves_order(tmp_path):
+    p = tmp_path / "odometry.csv"
+    p.write_text(ODOM)
+    d = read_odometry_csv(p)
+    assert set(d) == {"/localization/kinematic_state"}
+    g = d["/localization/kinematic_state"]
+    np.testing.assert_array_equal(g["header_stamp_ns"], [300, 100, 200])
+    np.testing.assert_allclose(g["x_m"], [3.0, 1.0, 2.0])
+    np.testing.assert_allclose(g["y_m"], [30.0, 10.0, 20.0])
+    assert g["header_stamp_ns"].dtype == np.int64
+    assert g["x_m"].dtype == np.float64
+
+
+def test_read_odometry_header_only_returns_empty_dict(tmp_path):
+    p = tmp_path / "odometry.csv"
+    p.write_text("topic,header_stamp_ns,x_m,y_m\n")
+    assert read_odometry_csv(p) == {}
+
+
+GT = """arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad
+3000,300,3.0,30.0,0.3,0.03
+1000,100,1.0,10.0,0.1,0.01
+2000,200,2.0,20.0,0.2,0.02
+"""
+
+
+def test_read_gt_ungrouped_preserves_order(tmp_path):
+    p = tmp_path / "gt.csv"
+    p.write_text(GT)
+    d = read_gt_csv(p)
+    np.testing.assert_array_equal(d["sim_ns"], [300, 100, 200])
+    np.testing.assert_allclose(d["yaw_rad"], [0.03, 0.01, 0.02])
+    assert d["arrival_system_ns"].dtype == np.int64
+    assert d["z_m"].dtype == np.float64
+
+
+def test_read_gt_header_only_returns_empty_arrays(tmp_path):
+    p = tmp_path / "gt.csv"
+    p.write_text("arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad\n")
+    d = read_gt_csv(p)
+    assert all(arr.size == 0 for arr in d.values())
