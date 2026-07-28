@@ -260,19 +260,49 @@ G2 passes: the ego drove the route closed-loop from 254.9 m out and arrived
 0.164 m from the goal. G1 fails because NDT holds a **stable but biased** lock
 here — about 0.5 m off ground truth with ~0.19 m of jitter, never diverging.
 
-The cause is the pointcloud, and it is **not** a UE4-vs-UE5 geometry mismatch
-(that would show up as loss of lock). Within 30 m of the ego the Town10 pcd is
-99.2% flat ground and only 0.36% vertical structure in the 0.8–3.0 m band
-(1400 points); the same measurement at the Nishi-Shinjuku spawn gives 2.6% and
-9.60% (12764 points), and Nishi's G1 reaches 0.08 m. NDT's horizontal
-constraint comes almost entirely from vertical structure, so a near-featureless
-ground plane leaves x/y in a shallow basin. The pcd's ground plane sits at
-exactly z = 0, and the vector map agrees with CARLA to a 0.00 m median, so
-neither the offset nor the lanelet2 is at fault.
+The cause was measured, not inferred, by re-seeding NDT from eight initial poses
+spread ±2 m around the parked ego's known pose. That test discriminates the two
+candidate causes, because a shallow cost basin gives seed-dependent convergence
+while a frame offset in the map gives the same error from every seed. **The two
+horizontal axes answer differently, and both effects are real:**
 
-Practical consequence: this map is sound for closed-loop driving and
-control-side measurement, but not for a sub-0.5 m localization comparison
-without a denser pointcloud.
+| Axis                              | Across 8 seeds                                                  | Reading                     |
+| --------------------------------- | --------------------------------------------------------------- | --------------------------- |
+| **y** (cross-track, ⟂ the street) | +0.475 m ± 0.010 on the 5 cleanly converged seeds; > 0 on all 8 | systematic **frame offset** |
+| **x** (along-track, ∥ the street) | −5.57 … +3.12 m, std 2.59                                       | shallow **cost basin**      |
+
+The cross-track number reproduces the G1 window's +0.477 m exactly and no seed
+escapes it, so **the Town10 pointcloud is offset ≈ +0.48 m in y relative to the
+lanelet2/CARLA road network**. Note this is an inconsistency _inside_ the map
+bundle: `fit_map_offset.py` only ever compares the `.xodr` against
+`lanelet2_map.osm`, so its 0.00 m median says nothing about the pcd, and NDT
+localizes against the pcd. `benchmarks/scripts/fetch_maps.sh` pulls a pcd named
+for `Town10HD` while CARLA loads `Town10HD_Opt`, which is a plausible origin.
+
+The along-track spread is the sparsity effect, and it is what the pointcloud
+density predicts. Measured within a 30 m disc of the ego, against a ground datum
+taken as the 10th percentile of z in that disc (each map's own datum, since the
+map frames differ by their z offset), normalised by the disc's 2827 m²:
+
+| Points per m² in the 30 m disc            | Town10HD_Opt | Nishi-Shinjuku |
+| ----------------------------------------- | ------------ | -------------- |
+| vertical structure, 0.8–3.0 m above datum | **0.50**     | **4.25**       |
+| within ±0.25 m of datum (ground)          | 137.41       | 12.08          |
+| all points                                | 138.49       | 47.02          |
+
+Nishi carries 8.5× more vertical structure per m², and vertical structure is
+what constrains a horizontal scan match — hence x sliding freely along a street
+whose surface is otherwise a featureless plane.
+
+Practical consequence, and the two are separable: the ≈0.48 m cross-track offset
+is a correctable registration error, so re-registering or regenerating the pcd
+would remove the larger part of G1's error. The along-track slack would remain
+and needs a denser pointcloud. Until then this map is sound for closed-loop
+driving and control-side measurement (G2 passes comfortably) but not for a
+sub-0.5 m localization comparison.
+
+Reproduce: `reports/task-15-town10/seed_sweep.py` (run inside the `autoware`
+container against a parked ego), output in `seed_sweep.log`.
 
 **If a live run aborts before loading any map** with "modules are missing or
 built with a different engine version", the engine was rebuilt after the Carla

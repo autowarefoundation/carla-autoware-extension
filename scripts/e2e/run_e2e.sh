@@ -37,13 +37,15 @@ CARLA_PID_FILE=/tmp/carla-e2e.pid
 # the historical harness. A MAP with no known bundle must be given MAP_DIR
 # explicitly and is rejected here rather than silently localizing against the
 # wrong pointcloud (which surfaces only as NDT failing to converge).
+# The table itself lives in map_defaults.sh so arm_closed_loop.sh derives the
+# same values instead of carrying a second copy that can drift.
 MAP="${MAP:-NishishinjukuMap}"
-case "$MAP" in
-  NishishinjukuMap) DEFAULT_MAP_DIR=/autoware_map/nishishinjuku ;;
-  Town10HD_Opt) DEFAULT_MAP_DIR=/autoware_map/town10 ;;
-  *) DEFAULT_MAP_DIR="" ;;
-esac
-MAP_DIR="${MAP_DIR:-$DEFAULT_MAP_DIR}"
+# The linter runs without -x in pre-commit and so cannot follow the source even
+# with the directive below; SC1091 is informational and disabled for that reason.
+# shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
+. "$REPO/scripts/e2e/map_defaults.sh"
+carla_autoware_map_defaults "$MAP"
+MAP_DIR="${MAP_DIR:-$MAP_DEFAULT_DIR}"
 if [ -z "$MAP_DIR" ]; then
   echo "PREFLIGHT FAIL: MAP=$MAP has no known Autoware map bundle; set MAP_DIR" >&2
   echo "  to its container path and add the mount to docker/compose.yaml." >&2
@@ -54,10 +56,13 @@ export MAP_DIR
 # it) rather than publishing another map's GNSS poses -- deliberate, see there.
 export CARLA_AUTOWARE_MAP="$MAP"
 echo "OK: map $MAP  autoware bundle $MAP_DIR"
-# PRINTED because the G1/G2 gate scripts run in the OPERATOR's shell -- a
-# separate process this export cannot reach -- and map CARLA ground truth into
-# the map frame with the SAME per-map offset, so they need it applied by hand.
+# PRINTED because the G1/G2 gate scripts and arm_closed_loop.sh run in the
+# OPERATOR's shell -- a separate process these exports cannot reach -- and both
+# map CARLA ground truth with the SAME per-map offset. arm_closed_loop.sh
+# derives MAP_DIR from CARLA_AUTOWARE_MAP on its own, so the first line is
+# sufficient; MAP_DIR is printed too for the case where it was overridden here.
 echo "OK: export CARLA_AUTOWARE_MAP=$MAP  # gate scripts in this shell need this too"
+[ "$MAP_DIR" = "$MAP_DEFAULT_DIR" ] || echo "OK: export MAP_DIR=$MAP_DIR  # non-default bundle, export it too"
 
 # The Autoware container runs on DDS domain 0. A login shell that exports a
 # nonzero ROS_DOMAIN_ID would leak into CARLA and put it on a different DDS
