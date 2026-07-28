@@ -57,6 +57,19 @@ inline constexpr MapOffset kDefaultMapOffset = kNishishinjukuOffset;
 // map names scripts/e2e/run_e2e.sh passes to CARLA and to `runner --map`.
 inline constexpr char kMapEnvVar[] = "CARLA_AUTOWARE_MAP";
 
+struct NamedMapOffset {
+  const char* name;
+  MapOffset offset;
+};
+
+// THE table. Both the lookup below and the load-failure diagnostic in
+// ExtensionInit.cpp iterate this one array, so adding a map is a single edit and
+// the "known maps" the error lists can never drift from what actually resolves.
+inline constexpr NamedMapOffset kMapOffsets[] = {
+    {"NishishinjukuMap", kNishishinjukuOffset},
+    {"Town10HD_Opt", kTown10HdOptOffset},
+};
+
 // Resolve a map name to its converter offset.
 //
 // A null or empty name selects kDefaultMapOffset (Nishi-Shinjuku). An UNKNOWN
@@ -72,13 +85,11 @@ inline bool map_offset_for(const char* map_name, MapOffset* out) {
     *out = kDefaultMapOffset;
     return true;
   }
-  if (std::strcmp(map_name, "NishishinjukuMap") == 0) {
-    *out = kNishishinjukuOffset;
-    return true;
-  }
-  if (std::strcmp(map_name, "Town10HD_Opt") == 0) {
-    *out = kTown10HdOptOffset;
-    return true;
+  for (const NamedMapOffset& entry : kMapOffsets) {
+    if (std::strcmp(map_name, entry.name) == 0) {
+      *out = entry.offset;
+      return true;
+    }
   }
   return false;
 }

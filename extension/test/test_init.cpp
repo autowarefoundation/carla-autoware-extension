@@ -255,7 +255,11 @@ TEST_F(InitTest, rejects_an_unknown_map_env_with_a_distinct_code) {
   CarlaRos2Host h = MakeFakeHost();
   CarlaRos2Extension e{};
   SetMapEnv("NoSuchMap");
+  // Captured so the deliberate diagnostic (asserted by the next test) does not
+  // pollute this suite's output.
+  testing::internal::CaptureStderr();
   const int unknown_map = carla_ros2_extension_init(&h, &e);
+  testing::internal::GetCapturedStderr();
 
   EXPECT_NE(unknown_map, 0);
   // Rejected BEFORE allocating or touching the host: out stays zeroed and no
@@ -274,6 +278,30 @@ TEST_F(InitTest, rejects_an_unknown_map_env_with_a_distinct_code) {
   EXPECT_NE(unknown_map, carla_ros2_extension_init(nullptr, &e));
   EXPECT_NE(unknown_map, carla_ros2_extension_init(&h, nullptr));
   EXPECT_NE(unknown_map, carla_ros2_extension_init(&bad_version, &e));
+}
+
+// ---------------------------------------------------------------------------
+// The rejection must be DIAGNOSABLE, not merely a return code: what the operator
+// actually sees is "every extension topic is missing", which looks nothing like
+// a misspelled environment variable. So the message names the offending value
+// AND enumerates the accepted ones straight from the table.
+// ---------------------------------------------------------------------------
+TEST_F(InitTest, unknown_map_env_reports_the_name_and_the_known_maps) {
+  CarlaRos2Host h = MakeFakeHost();
+  CarlaRos2Extension e{};
+  SetMapEnv("Town10HD");  // a near-miss of a real name
+
+  testing::internal::CaptureStderr();
+  ASSERT_NE(carla_ros2_extension_init(&h, &e), 0);
+  const std::string err = testing::internal::GetCapturedStderr();
+
+  EXPECT_NE(err.find(kMapEnvVar), std::string::npos) << err;
+  EXPECT_NE(err.find("\"Town10HD\""), std::string::npos) << err;
+  // Every table entry is listed. Asserted by iterating the table itself, so a
+  // map added later is covered without anyone remembering to edit this test.
+  for (const NamedMapOffset& entry : kMapOffsets) {
+    EXPECT_NE(err.find(entry.name), std::string::npos) << entry.name << " missing from: " << err;
+  }
 }
 
 // ---------------------------------------------------------------------------

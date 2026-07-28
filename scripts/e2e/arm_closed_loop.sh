@@ -37,6 +37,9 @@ export ROS_DOMAIN_ID=0
 GOAL_X="${GOAL_X:-81571.616}" GOAL_Y="${GOAL_Y:-50019.827}" GOAL_Z="${GOAL_Z:-42.07}"
 GOAL_QZ="${GOAL_QZ:-0.090888}" GOAL_QW="${GOAL_QW:-0.995861}"
 SUPPRESS_MRM="${SUPPRESS_MRM:-1}"
+# CONTAINER-side Autoware map bundle, matching what launch_autoware.sh brought up;
+# dummy_perception reads its traffic-light groups from that map.
+MAP_DIR="${MAP_DIR:-/autoware_map/nishishinjuku}"
 
 cx() { docker compose -f "$COMPOSE" exec -T autoware bash -lc "$1"; }
 AW_ENV='source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0'
@@ -76,9 +79,15 @@ echo "   seed target (map frame): $SEED"
 cx "$AW_ENV && python3 /work/scripts/e2e/reseed_localization.py $SEED 60"
 
 echo "== 2. start dummy_perception (clear road + all-green signals) =="
+# The free-space grid is centred on the ego pose just seeded above (SEED's first
+# two fields are map-frame x/y), so it surrounds the ego on any map instead of a
+# baked-in Nishi-Shinjuku coordinate. MAP_DIR selects which lanelet2 the traffic
+# -light groups are read from; container-side default is nishishinjuku.
+SEED_XY="$(echo "$SEED" | cut -d' ' -f1-2)"
 cx "$AW_ENV
+  export MAP_DIR='$MAP_DIR'
   if [ -f /tmp/dummy_perception.pid ]; then kill \"\$(cat /tmp/dummy_perception.pid)\" 2>/dev/null || true; sleep 1; fi
-  nohup python3 /work/scripts/e2e/dummy_perception.py >/tmp/dummy_perception.log 2>&1 &
+  nohup python3 /work/scripts/e2e/dummy_perception.py --ego-xy $SEED_XY >/tmp/dummy_perception.log 2>&1 &
   echo \$! >/tmp/dummy_perception.pid
   sleep 2
   grep -q 'publishing clear-road perception' /tmp/dummy_perception.log \

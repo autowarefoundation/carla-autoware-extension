@@ -263,8 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     print("\n=== Residual at the fitted offset (ALL probes) ===")
     final_d, _ = nearest_on_segments(apply_affine(carla_xy, ox, oy), starts, ends)
     median = _report("  residual", final_d)
-    print(f"  within 0.01 m: {np.mean(final_d < 0.01):.4f}   within {a.tol_m} m: "
-          f"{np.mean(final_d < a.tol_m):.4f}")
+    print(
+        f"  within 0.01 m: {np.mean(final_d < 0.01):.4f}   within {a.tol_m} m: "
+        f"{np.mean(final_d < a.tol_m):.4f}"
+    )
 
     # Sensitivity: what a wrong offset would have looked like, so the reported
     # residual is readable as "the fit is resolved", not just "the maps agree".

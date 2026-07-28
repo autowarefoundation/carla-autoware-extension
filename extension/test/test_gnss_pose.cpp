@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -100,6 +101,19 @@ TEST(map_offset, lookup_rejects_an_unknown_name_without_touching_out) {
 
 TEST(map_offset, lookup_rejects_a_null_out) {
   EXPECT_FALSE(map_offset_for("NishishinjukuMap", nullptr));
+}
+
+TEST(map_offset, every_table_entry_resolves_to_its_own_offset) {
+  // The table is also what the load-failure message enumerates, so a name
+  // advertised as "known" that did not resolve would be actively misleading.
+  ASSERT_GT(std::size(kMapOffsets), 0u);
+  for (const NamedMapOffset& entry : kMapOffsets) {
+    MapOffset got{};
+    ASSERT_TRUE(map_offset_for(entry.name, &got)) << entry.name;
+    EXPECT_DOUBLE_EQ(got.x, entry.offset.x) << entry.name;
+    EXPECT_DOUBLE_EQ(got.y, entry.offset.y) << entry.name;
+    EXPECT_DOUBLE_EQ(got.z, entry.offset.z) << entry.name;
+  }
 }
 
 TEST(map_offset, transform_under_town10_keeps_the_flip_and_the_cm_scale) {

@@ -29,6 +29,7 @@ CARLA's /clock, so wall-clock stamps would be rejected as stale by the topic-rat
 """
 
 import argparse
+import os
 import xml.etree.ElementTree as ET
 
 import rclpy
@@ -45,33 +46,51 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
 
-DEFAULT_MAP = "/autoware_map/nishishinjuku/lanelet2_map.osm"
-# Map-frame centre for the all-free occupancy grid (the Nishi-Shinjuku spawn area).
+# Container-side map bundle. $MAP_DIR is what run_e2e.sh / launch_autoware.sh
+# already select, so this follows the map being driven without a second knob.
+DEFAULT_MAP = os.path.join(
+    os.environ.get("MAP_DIR", "/autoware_map/nishishinjuku"), "lanelet2_map.osm"
+)
+# Fallback map-frame centre for the all-free occupancy grid (the Nishi-Shinjuku
+# spawn area). arm_closed_loop.sh passes --ego-xy so the free area actually
+# surrounds the ego on any map; this constant only serves a bare invocation.
 EGO_X, EGO_Y = 81377.34, 49916.93
 
 
 def tl_group_ids(osm_path: str) -> list[int]:
     """Traffic-light regulatory-element ids from the lanelet2 .osm (= Autoware's
-    traffic_light_group_id). Fails loudly if none are found -- an empty green feed
-    would silently leave every signal UNKNOWN and reintroduce the phantom red light."""
+    traffic_light_group_id).
+
+    An empty result is LEGAL only when the map genuinely carries no signals --
+    some maps have none at all (CARLA's Town10 export: 168 lanelets, zero
+    regulatory elements), and there is then nothing to force green. It is NOT
+    legal when the file yielded no lanelets either: that means the wrong path or
+    a broken parse, and it must stay loud, because on a signalised map an empty
+    green feed silently leaves every signal UNKNOWN and reintroduces the exact
+    phantom red light this feed exists to prevent.
+    """
     root = ET.parse(osm_path).getroot()
     ids = []
+    lanelets = 0
     for rel in root.iter("relation"):
         tags = {t.get("k"): t.get("v") for t in rel.findall("tag")}
+        if tags.get("type") == "lanelet":
+            lanelets += 1
         if tags.get("type") == "regulatory_element" and tags.get("subtype") == "traffic_light":
             ids.append(int(rel.get("id")))
-    if not ids:
-        raise RuntimeError(f"no traffic_light regulatory elements found in {osm_path}")
+    if not lanelets:
+        raise RuntimeError(f"no lanelet relations found in {osm_path} -- wrong map file?")
     return sorted(ids)
 
 
 class DummyPerception(Node):
-    def __init__(self, tl_ids: list[int]):
+    def __init__(self, tl_ids: list[int], ego_xy: tuple[float, float] = (EGO_X, EGO_Y)):
         super().__init__(
             "dummy_perception",
             parameter_overrides=[Parameter("use_sim_time", value=True)],
         )
         self.tl_ids = tl_ids
+        self.ego_x, self.ego_y = ego_xy
         self.objs = self.create_publisher(
             PredictedObjects, "/perception/object_recognition/objects", 10
         )
@@ -106,8 +125,8 @@ class DummyPerception(Node):
         og.info.resolution = res
         og.info.width = n
         og.info.height = n
-        og.info.origin.position.x = EGO_X - n * res / 2.0
-        og.info.origin.position.y = EGO_Y - n * res / 2.0
+        og.info.origin.position.x = self.ego_x - n * res / 2.0
+        og.info.origin.position.y = self.ego_y - n * res / 2.0
         og.info.origin.orientation.w = 1.0
         og.data = [0] * (n * n)
         self.grid.publish(og)
@@ -146,11 +165,27 @@ class DummyPerception(Node):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--map", default=DEFAULT_MAP, help="lanelet2 .osm to read TL groups from")
+    p.add_argument(
+        "--ego-xy",
+        nargs=2,
+        type=float,
+        default=(EGO_X, EGO_Y),
+        metavar=("MAP_X", "MAP_Y"),
+        help="map-frame centre of the all-free occupancy grid (default: the "
+        "Nishi-Shinjuku spawn area)",
+    )
     args = p.parse_args()
     ids = tl_group_ids(args.map)
     rclpy.init()
-    node = DummyPerception(ids)
-    node.get_logger().info(f"publishing clear-road perception; {len(ids)} TL groups GREEN")
+    node = DummyPerception(ids, (args.ego_xy[0], args.ego_xy[1]))
+    node.get_logger().info(
+        f"publishing clear-road perception; {len(ids)} TL groups GREEN "
+        f"(map {args.map}, grid centred on {args.ego_xy[0]:.1f},{args.ego_xy[1]:.1f})"
+    )
+    if not ids:
+        # Visible, but not fatal: see tl_group_ids. Named so a signalised map
+        # that somehow parsed to zero groups is still noticed in the log.
+        node.get_logger().warning(f"{args.map} declares NO traffic lights; none to force green")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

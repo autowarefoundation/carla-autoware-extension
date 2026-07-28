@@ -162,8 +162,9 @@ def test_fit_recovers_a_known_translation(true_offset):
     starts, ends = polylines_to_segments(_WAYS)
     ox, oy = true_offset
     t = np.linspace(0.0, 100.0, 200)
-    on_map = np.concatenate([np.column_stack([t, np.zeros_like(t)]),
-                             np.column_stack([np.zeros_like(t), t])])
+    on_map = np.concatenate(
+        [np.column_stack([t, np.zeros_like(t)]), np.column_stack([np.zeros_like(t), t])]
+    )
     # Invert apply_affine: carla_x = map_x - ox, carla_y = -(map_y - oy).
     carla_xy = np.column_stack([on_map[:, 0] - ox, -(on_map[:, 1] - oy)])
 
@@ -182,8 +183,9 @@ def test_fit_pulls_a_displaced_start_back_onto_the_map():
     # is high enough to finish from a realistic seed.
     starts, ends = polylines_to_segments(_WAYS)
     t = np.linspace(0.0, 100.0, 200)
-    on_map = np.concatenate([np.column_stack([t, np.zeros_like(t)]),
-                             np.column_stack([np.zeros_like(t), t])])
+    on_map = np.concatenate(
+        [np.column_stack([t, np.zeros_like(t)]), np.column_stack([np.zeros_like(t), t])]
+    )
     carla_xy = np.column_stack([on_map[:, 0], -on_map[:, 1]])  # true offset (0,0)
 
     got = fit_translation(carla_xy, starts, ends, initial=(0.3, -0.3))

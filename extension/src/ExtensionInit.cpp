@@ -25,6 +25,7 @@
 
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <new>
 
@@ -118,8 +119,19 @@ extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Ext
   // An unknown name ABORTS the load rather than falling back: a wrong offset
   // would otherwise surface far downstream as NDT never converging. Resolved
   // BEFORE the allocation below so this rejection cannot leak state.
+  const char* map_name = std::getenv(carla::autoware::kMapEnvVar);
   carla::autoware::MapOffset map_offset{};
-  if (!carla::autoware::map_offset_for(std::getenv(carla::autoware::kMapEnvVar), &map_offset)) {
+  if (!carla::autoware::map_offset_for(map_name, &map_offset)) {
+    // Name the offending value AND the accepted ones. The only other symptom of
+    // this rejection is a nonzero return code buried in a core log, and its
+    // visible consequence -- every extension topic silently absent -- looks
+    // nothing like a misspelled environment variable.
+    std::fprintf(stderr, "[carla-autoware-extension] FATAL: %s=\"%s\" is not a known map. Known:",
+                 carla::autoware::kMapEnvVar, map_name);
+    for (const carla::autoware::NamedMapOffset& entry : carla::autoware::kMapOffsets) {
+      std::fprintf(stderr, " %s", entry.name);
+    }
+    std::fprintf(stderr, " (unset selects the default). Aborting extension load.\n");
     return kUnknownMap;
   }
 
