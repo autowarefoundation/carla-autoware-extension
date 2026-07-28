@@ -27,6 +27,23 @@ autoware_universe_devel:
 bridge_bench:
   tag: bridge-bench:latest
   local_digest: sha256:b734b9af2ac6527284b07d8986261d4c360cf4d0f4d18900be7a13ebb4cb4123
+# Images built from benchmarks/docker/bench-observer.Dockerfile, one label
+# per pinned base. Never pushed, so the only identifier each has is the
+# LOCAL image digest below (`docker images --digests`): it pins what a run
+# used on this workstation, but it is not a pullable reference, and a
+# rebuild elsewhere must be re-recorded. Unlike bridge_bench/
+# autoware_universe_devel, the container never touches CUDA (rclcpp-only
+# recording/publishing nodes), so building and running it needs no
+# --gpus all / nvidia-container-toolkit -- verified live (see task-5
+# report): both `docker build` and the contract test's `docker run`
+# succeeded with no GPU flags against the CUDA base image.
+bench_observer_images:
+  universe-devel:
+    base: autoware_universe_devel.digest # built now (serves cells A/B/C/D/E/CAL)
+    tag: bench-observer:universe-devel
+    local_digest: sha256:180a0897d109e784c66360cc4a29ea18a1074c0dd475b45fbe4c26ce5cec7f0e
+    # bench-observer:045, base = autoware_045.digest, built in Task 21 once
+    # B45's disk is freed.
 # Cell B45: the tier4 native path is documented against Autoware 0.45.1 and
 # sensor_model:=awsim_sensor_kit. There is NO universe-devel-cuda-0.45.1 tag;
 # the newest CUDA-enabled 0.45.x is universe-devel-cuda-0.45.0, recorded below
@@ -49,7 +66,7 @@ autoware_045:
 # steady) -- see the Task 4 report's fix-report section. No further
 # engine relink is permitted from here on (D8).
 engine:
-  build_id: "4210e602-78ec-46e1-8f2f-03fadbe036a3"  # settled value, all 3 trees agree
+  build_id: "4210e602-78ec-46e1-8f2f-03fadbe036a3" # settled value, all 3 trees agree
 extension_carla_fork:
   path: ~/src/carla-autoware-integration
   branch: feat/autoware-seminative-phase-b
