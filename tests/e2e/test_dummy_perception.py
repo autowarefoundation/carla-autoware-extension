@@ -1,13 +1,14 @@
 """Unit tests for dummy_perception's traffic-light parsing and grid sizing.
 
-``tl_group_ids`` is the one safety guard in this harness whose failure
-condition was changed rather than added: it used to raise when the map yielded
-no traffic-light ids, and now raises only when it yields no lanelet relations.
-That is the correct scope -- a genuinely signal-free map (CARLA's Town10
-export: 168 lanelets, zero regulatory elements) must not abort the arm -- but
-it makes "signalised map, zero groups parsed" non-fatal, which is exactly the
-phantom-red-light case the green feed exists to prevent. The three cases below
-pin both halves of that boundary.
+``tl_group_ids`` (now defined in ``benchmarks.injector.gen_tl_groups`` and
+re-exported here, Task 7) is the one safety guard in this harness whose
+failure condition was changed rather than added: it used to raise when the
+map yielded no traffic-light ids, and now raises only when it yields no
+lanelet relations. That is the correct scope -- a genuinely signal-free map
+(CARLA's Town10 export: 168 lanelets, zero regulatory elements) must not
+abort the arm -- but it makes "signalised map, zero groups parsed"
+non-fatal, which is exactly the phantom-red-light case the green feed exists
+to prevent. The three cases below pin both halves of that boundary.
 
 ``build_arg_parser``/``occupancy_grid_geometry`` cover the --grid-size ->
 message-dimensions plumbing added for route-scoped free-space grids: the CLI
@@ -16,11 +17,15 @@ exact width/height/origin math ``tick()`` copies onto the real OccupancyGrid
 message -- the same function, not a re-implementation of it, so this is
 testing the plumbing rather than a mock standing in for it.
 
-``scripts.e2e.dummy_perception`` imports rclpy and the Autoware/ROS message
-packages at module scope, and CI has none of them. They are stubbed here with
-``setdefault``, so a real ROS environment still uses the real modules; the
-functions under test are pure (``xml.etree``, ``argparse``, arithmetic) and
-never touch them.
+``tl_group_ids_from_yaml`` covers the --tl-groups path (Task 7): reading a
+committed ``gen_tl_groups.py``-schema YAML instead of live-parsing a lanelet2
+.osm, which is what lets the injector run identically in every campaign cell.
+
+``benchmarks.injector.dummy_perception`` imports rclpy and the Autoware/ROS
+message packages at module scope, and CI has none of them. They are stubbed
+here with ``setdefault``, so a real ROS environment still uses the real
+modules; the functions under test are pure (``xml.etree``, ``argparse``,
+``yaml``, arithmetic) and never touch them.
 """
 
 from __future__ import annotations
@@ -55,10 +60,11 @@ for _name in (
 ):
     sys.modules.setdefault(_name, _StubModule(_name))
 
-from scripts.e2e.dummy_perception import (  # noqa: E402
+from benchmarks.injector.dummy_perception import (  # noqa: E402
     build_arg_parser,
     occupancy_grid_geometry,
     tl_group_ids,
+    tl_group_ids_from_yaml,
 )
 
 
@@ -149,3 +155,40 @@ def test_occupancy_grid_geometry_is_centred_on_grid_center():
     span = geo["width"] * geo["resolution"]
     assert geo["origin_x"] == pytest.approx(1000.0 - span / 2.0)
     assert geo["origin_y"] == pytest.approx(-500.0 - span / 2.0)
+
+
+# ---------------------------------------------------------------------------
+# --tl-groups: reading gen_tl_groups.py's committed YAML instead of live
+# lanelet2 parsing (Task 7 -- what makes the injector identical in every cell).
+# ---------------------------------------------------------------------------
+
+
+def _tl_groups_yaml(tmp_path, map_name, groups):
+    path = tmp_path / f"{map_name}.yaml"
+    lines = [f"map: {map_name}", "groups:" + (" []" if not groups else "")]
+    lines += [f"  - {g}" for g in groups]
+    path.write_text("\n".join(lines) + "\n")
+    return str(path)
+
+
+def test_tl_group_ids_from_yaml_reads_the_committed_groups_list(tmp_path):
+    path = _tl_groups_yaml(tmp_path, "NishishinjukuMap", [21, 700, 3020])
+    assert tl_group_ids_from_yaml(path) == [21, 700, 3020]
+
+
+def test_tl_group_ids_from_yaml_handles_an_empty_groups_list(tmp_path):
+    """Town10HD_Opt's committed file: signal-free map, groups: []."""
+    path = _tl_groups_yaml(tmp_path, "Town10HD_Opt", [])
+    assert tl_group_ids_from_yaml(path) == []
+
+
+def test_tl_groups_flag_defaults_to_none_so_the_live_parse_still_runs():
+    """No --tl-groups means today's behaviour is unchanged: main() falls back
+    to tl_group_ids(args.map)."""
+    args = build_arg_parser().parse_args([])
+    assert args.tl_groups is None
+
+
+def test_tl_groups_flag_is_parsed():
+    args = build_arg_parser().parse_args(["--tl-groups", "/some/path.yaml"])
+    assert args.tl_groups == "/some/path.yaml"

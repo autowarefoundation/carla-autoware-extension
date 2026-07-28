@@ -15,14 +15,21 @@ off there is no traffic-light recognition, so the behavior_velocity traffic_ligh
 treats every signal as UNKNOWN -> STOP (a phantom red light inserts a stop wall ahead of the
 ego). The green feed is the perception output a real recognition stack would emit on a green
 light, supplied as a synthetic input instead of an autoware_launch overlay that deletes the
-safety module. Group ids are parsed from the map itself (regulatory_element/traffic_light
-relations), so this script has no side-channel input files.
+safety module. Group ids come from EITHER a live lanelet2 parse (--map, the original
+behaviour) OR a committed --tl-groups YAML (benchmarks/injector/gen_tl_groups.py's schema);
+see the module docstring on tl_group_ids_from_yaml for why the latter is what every campaign
+cell should actually use.
 
-Run inside the `autoware` container (mounted at /work/scripts/e2e/):
+Promoted to a first-class harness component (Task 7): benchmarks/, not scripts/e2e/, so this
+runs identically for every approach under test (extension, bridge, tier4-native) instead of
+being an e2e-only helper script -- a spec requirement, since a per-cell injector would
+confound the very thing the campaign measures.
+
+Run inside the `autoware` container (mounted at /work/benchmarks/injector/):
 
     source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash
     export ROS_DOMAIN_ID=0
-    python3 /work/scripts/e2e/dummy_perception.py
+    python3 /work/benchmarks/injector/dummy_perception.py
 
 Stamps use SIM time (use_sim_time is forced on in main()): the whole stack is paced by
 CARLA's /clock, so wall-clock stamps would be rejected as stale by the topic-rate monitors.
@@ -30,9 +37,9 @@ CARLA's /clock, so wall-clock stamps would be rejected as stale by the topic-rat
 
 import argparse
 import os
-import xml.etree.ElementTree as ET
 
 import rclpy
+import yaml
 from autoware_perception_msgs.msg import (
     PredictedObjects,
     TrafficLightElement,
@@ -46,6 +53,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
 
+from benchmarks.injector.gen_tl_groups import tl_group_ids
+
 # Container-side map bundle. $MAP_DIR is what run_e2e.sh / launch_autoware.sh
 # already select, so this follows the map being driven without a second knob.
 DEFAULT_MAP = os.path.join(
@@ -58,30 +67,21 @@ DEFAULT_MAP = os.path.join(
 EGO_X, EGO_Y = 81377.34, 49916.93
 
 
-def tl_group_ids(osm_path: str) -> list[int]:
-    """Traffic-light regulatory-element ids from the lanelet2 .osm (= Autoware's
-    traffic_light_group_id).
+def tl_group_ids_from_yaml(path: str) -> list[int]:
+    """Traffic-light group ids from a committed YAML (gen_tl_groups.py's
+    ``{map: ..., groups: [...]}`` schema), bypassing the live lanelet2 parse
+    in ``tl_group_ids``.
 
-    An empty result is LEGAL only when the map genuinely carries no signals --
-    some maps have none at all (CARLA's Town10 export: 168 lanelets, zero
-    regulatory elements), and there is then nothing to force green. It is NOT
-    legal when the file yielded no lanelets either: that means the wrong path or
-    a broken parse, and it must stay loud, because on a signalised map an empty
-    green feed silently leaves every signal UNKNOWN and reintroduces the exact
-    phantom red light this feed exists to prevent.
+    This is what makes the injector run IDENTICALLY in every cell: a live
+    parse is deterministic given a fixed map bundle, but it still touches
+    the filesystem the container mounts read-only per invocation, which is
+    one more thing that could differ between cells if that mount ever
+    drifts mid campaign. A committed file removes even that as a source of
+    cross-cell variance -- every cell reads the exact same ids.
     """
-    root = ET.parse(osm_path).getroot()
-    ids = []
-    lanelets = 0
-    for rel in root.iter("relation"):
-        tags = {t.get("k"): t.get("v") for t in rel.findall("tag")}
-        if tags.get("type") == "lanelet":
-            lanelets += 1
-        if tags.get("type") == "regulatory_element" and tags.get("subtype") == "traffic_light":
-            ids.append(int(rel.get("id")))
-    if not lanelets:
-        raise RuntimeError(f"no lanelet relations found in {osm_path} -- wrong map file?")
-    return sorted(ids)
+    with open(path) as f:
+        doc = yaml.safe_load(f)
+    return [int(g) for g in doc["groups"]]
 
 
 def occupancy_grid_geometry(
@@ -197,6 +197,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--map", default=DEFAULT_MAP, help="lanelet2 .osm to read TL groups from")
     p.add_argument(
+        "--tl-groups",
+        default=None,
+        metavar="YAML",
+        help="committed traffic-light-group YAML (gen_tl_groups.py's schema); when given, "
+        "TAKES PRIORITY over --map and no live lanelet2 parse happens at all -- this is "
+        "what every campaign cell should pass, so the injected signal feed is identical "
+        "in every cell regardless of what --map's live parse would find",
+    )
+    p.add_argument(
         "--grid-center",
         nargs=2,
         type=float,
@@ -218,20 +227,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main():
     args = build_arg_parser().parse_args()
-    ids = tl_group_ids(args.map)
+    if args.tl_groups:
+        # No live lanelet2 parse: see --tl-groups' help and
+        # tl_group_ids_from_yaml's docstring for why this is the path every
+        # campaign cell should use.
+        ids = tl_group_ids_from_yaml(args.tl_groups)
+        source = args.tl_groups
+    else:
+        ids = tl_group_ids(args.map)
+        source = args.map
     rclpy.init()
     node = DummyPerception(
         ids, (args.grid_center[0], args.grid_center[1]), args.grid_size
     )
     node.get_logger().info(
         f"publishing clear-road perception; {len(ids)} TL groups GREEN "
-        f"(map {args.map}, grid centred on {args.grid_center[0]:.1f},"
+        f"(source {source}, grid centred on {args.grid_center[0]:.1f},"
         f"{args.grid_center[1]:.1f}, span {args.grid_size:.1f} m)"
     )
     if not ids:
         # Visible, but not fatal: see tl_group_ids. Named so a signalised map
         # that somehow parsed to zero groups is still noticed in the log.
-        node.get_logger().warning(f"{args.map} declares NO traffic lights; none to force green")
+        node.get_logger().warning(f"{source} declares NO traffic lights; none to force green")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

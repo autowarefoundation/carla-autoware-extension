@@ -10,6 +10,12 @@ services:
     volumes:
       - ./:/work/docker:ro
       - ../scripts:/work/scripts:ro
+      # The injector (Task 7) is a first-class harness component under
+      # benchmarks/, not scripts/e2e/, so every cell's Autoware container
+      # runs the exact same benchmarks/injector/dummy_perception.py --
+      # read-only, same as the other code mounts, since only reports/ is
+      # written to from inside the container.
+      - ../benchmarks:/work/benchmarks:ro
       - ../reports:/work/reports
       # One read-only mount per Autoware map bundle. Which one the launch uses is
       # selected by MAP_DIR (scripts/e2e/launch_autoware.sh), derived from MAP in

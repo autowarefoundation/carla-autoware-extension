@@ -82,6 +82,42 @@ nor any results tree exists yet; P0 registers the matrix, P2 executes it.
 under which a run may be marked `excluded: true`; it may not be edited
 after the first P3 measurement run.
 
+## Known confounds
+
+Differences between cells that are not part of the design (C1–C3) but bear
+on how their results should be read together. Recorded here, pre-registered
+like everything else in this file, so Task 22's confound table for the P3
+report has a single source instead of being reconstructed from task reports
+after the fact.
+
+### Route difficulty: Town10 (cells A/B) vs. Nishi-Shinjuku (cells C/D)
+
+`benchmarks/config/routes/<map>.yaml`'s route is not a free choice per map —
+each is the exact spawn/goal a prior gate was already measured on, so
+swapping either for a "harder" or "easier" one would break continuity with
+those measurements. `benchmarks/scripts/pick_route.py` pre-registers four
+gate-honesty properties (shortest-path length, accumulated heading change,
+straight-line separation, no early approach to the goal) that stop the tool
+from *selecting* a route that flatters the 1.0 m G2 goal gate; here they are
+used diagnostically, on routes that were fixed before the properties existed,
+not as a filter:
+
+| Route                     | Cells | Total length | Straight-line separation | Accumulated turn | Closest prior approach |
+| -------------------------- | ----- | ------------- | ------------------------- | ------------------ | ------------------------ |
+| `Town10HD_Opt.yaml`        | A, B  | 438.9 m       | 250.9 m (57.2% of length) | 233.0°  — PASS ≥ 60° | 33.5 m — PASS ≥ 10 m |
+| `NishishinjukuMap.yaml`    | C, D  | 230.5 m       | 227.3 m (98.6% of length) | 35.8°  — **FAIL** ≥ 60° | 29.4 m — PASS ≥ 10 m |
+
+The Nishi-Shinjuku route does not clear the accumulated-turn property: it is
+98.6% a straight line, with 35.8° of total heading change against Town10's
+233.0°. **This is a genuine confound, not a defect to fix**: cells A/B and
+C/D are not scored on comparable route difficulty, so a closed-loop quality
+metric (e.g. `lateral_deviation_m`, `goal_closest_approach_m`) that passes on
+a Nishi cell is a weaker statement than the same metric passing on a Town10
+cell — a mostly-straight 230 m drive is an easier control problem than a
+439 m drive through several junction turns. Any P3 report comparing M5
+closed-loop numbers across map families must state this alongside the
+numbers, not just alongside the route's provenance.
+
 ## Pre-registration
 
 The git history of this directory is the pre-registration record: metric
@@ -150,6 +186,15 @@ Amendments made so far:
   `extension_carla_fork`, and `tier4_carla_fork` provenance slots.
   Completeness: later tasks need to record the engine BuildId and fork
   SHAs a run used, and `pins.yaml` had no place for them.
+- **2026-07-28** — this file gained the `## Known confounds` section above
+  (Town10 vs. Nishi-Shinjuku route difficulty: 233.0° vs. 35.8° accumulated
+  turn, computed with `benchmarks/scripts/pick_route.py`'s own four
+  gate-honesty properties directly on `benchmarks/config/routes/*.yaml`'s
+  committed polylines; also recorded as a comment block in
+  `NishishinjukuMap.yaml` itself). Completeness: Task 7 review found the
+  Nishi route inherited from P1 does not clear the accumulated-turn
+  property Town10's route does, and nothing recorded that cells A/B and
+  C/D are not scored on comparable route difficulty before any P3 run.
 
 ## How to run
 

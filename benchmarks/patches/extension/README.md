@@ -43,9 +43,14 @@ Branch `bench/p1-town10-bringup`. All of these are map _selection_, not map-spec
 | Offline derivation of a map's offset from its `.xodr` + lanelet2        | `scripts/e2e/fit_map_offset.py` (new)                                                                                                        | n/a — a measurement tool, not in any run path                             |
 | `MAP` / `MAP_DIR` / `SPAWN_INDEX` threading                             | `scripts/e2e/run_e2e.sh`, `scripts/e2e/launch_autoware.sh`, `runner/__main__.py`                                                             | `NishishinjukuMap`, `/autoware_map/nishishinjuku`, spawn point 0          |
 | Second Autoware map bundle mounted                                      | `docker/compose.yaml`                                                                                                                        | additive; the nishishinjuku mount is untouched                            |
-| Traffic-light feed tolerates a map with no signals; map from `$MAP_DIR` | `scripts/e2e/dummy_perception.py`                                                                                                            | Nishi still finds its groups and forces them green                        |
-| All-free occupancy-grid origin, now map-conditional                     | `scripts/e2e/dummy_perception.py`, `scripts/e2e/arm_closed_loop.sh`, `scripts/e2e/map_defaults.sh`                                           | Nishi keeps the constant `81377.34 49916.93`; other maps use the ego pose |
+| Traffic-light feed tolerates a map with no signals; map from `$MAP_DIR` | `scripts/e2e/dummy_perception.py`[^moved]                                                                                                    | Nishi still finds its groups and forces them green                        |
+| All-free occupancy-grid origin, now map-conditional                     | `scripts/e2e/dummy_perception.py`[^moved], `scripts/e2e/arm_closed_loop.sh`, `scripts/e2e/map_defaults.sh`                                   | Nishi keeps the constant `81377.34 49916.93`; other maps use the ego pose |
 | `MAP_DIR` derived from `$CARLA_AUTOWARE_MAP` via one shared table       | `scripts/e2e/map_defaults.sh` (new), sourced by `run_e2e.sh` + `arm_closed_loop.sh`                                                          | `NishishinjukuMap` ⇒ `/autoware_map/nishishinjuku`                        |
+
+[^moved]: Path as of this P1 bring-up. Task 7 later moved this file to
+    `benchmarks/injector/dummy_perception.py`, promoting it to a first-class
+    harness component run identically from every cell; the table above is
+    left as the historical record of what changed at P1 time.
 
 The one behaviour change that is _not_ a pure default-preserving addition: an unknown
 `$CARLA_AUTOWARE_MAP` now aborts the extension load (`kUnknownMap`) instead of loading. That is

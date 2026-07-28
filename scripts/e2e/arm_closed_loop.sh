@@ -4,7 +4,7 @@
 # Sequence (each step fails loudly; docs/e2e-report.md records why each exists):
 #   1. Re-seed /initialpose at the ego's CURRENT CARLA ground-truth pose and wait for
 #      NDT to re-lock (NDT drifts while parked; never trust an idling lock).
-#   2. Start scripts/e2e/dummy_perception.py in the container (clear-road objects/grid/
+#   2. Start benchmarks/injector/dummy_perception.py in the container (clear-road objects/grid/
 #      pointcloud + all-green signals). Must be running BEFORE the route is set, or
 #      behavior_path_planner never produces a trajectory and the gate's control_cmd
 #      pre-check fails.
@@ -147,8 +147,15 @@ else
 fi
 cx "$AW_ENV
   export MAP_DIR='$MAP_DIR'
+  # /work is assembled from several bind mounts (docker/compose.yaml), but
+  # they all land under this one prefix, so it doubles as the package root
+  # benchmarks/ needs: dummy_perception.py imports from
+  # benchmarks.injector.gen_tl_groups (Task 7), and a direct-path
+  # invocation like this one does NOT put /work on sys.path on its own
+  # (Python only adds the SCRIPT's own directory) -- only python3 -m would.
+  export PYTHONPATH=/work
   if [ -f /tmp/dummy_perception.pid ]; then kill \"\$(cat /tmp/dummy_perception.pid)\" 2>/dev/null || true; sleep 1; fi
-  nohup python3 /work/scripts/e2e/dummy_perception.py --grid-center $GRID_XY $GRID_SIZE_ARG >/tmp/dummy_perception.log 2>&1 &
+  nohup python3 /work/benchmarks/injector/dummy_perception.py --grid-center $GRID_XY $GRID_SIZE_ARG >/tmp/dummy_perception.log 2>&1 &
   echo \$! >/tmp/dummy_perception.pid
   sleep 2
   grep -q 'publishing clear-road perception' /tmp/dummy_perception.log \

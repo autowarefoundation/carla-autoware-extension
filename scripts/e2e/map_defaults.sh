@@ -17,14 +17,15 @@
 # run_e2e.sh, launch_autoware.sh and arm_closed_loop.sh all source this file,
 # and an unknown map name is refused loudly in each rather than defaulted.
 #
-# WHAT IT DOES NOT COVER: scripts/e2e/dummy_perception.py runs container-side
-# under rclpy, where a bash function cannot be sourced, so it keeps two module
-# constants as BARE-INVOCATION fallbacks -- DEFAULT_MAP (from $MAP_DIR, itself
-# exported by the callers above) and EGO_X/EGO_Y, which duplicate
-# Nishi-Shinjuku's MAP_DEFAULT_GRID_CENTRE below. arm_closed_loop.sh always
-# overrides both (MAP_DIR via the container environment, the centre/size via
-# --grid-center/--grid-size), so they apply only to a hand-run node -- but
-# they are duplicates, and keeping them in step with this table is manual.
+# WHAT IT DOES NOT COVER: benchmarks/injector/dummy_perception.py runs
+# container-side under rclpy, where a bash function cannot be sourced, so it
+# keeps two module constants as BARE-INVOCATION fallbacks -- DEFAULT_MAP
+# (from $MAP_DIR, itself exported by the callers above) and EGO_X/EGO_Y,
+# which duplicate Nishi-Shinjuku's MAP_DEFAULT_GRID_CENTRE below.
+# arm_closed_loop.sh always overrides both (MAP_DIR via the container
+# environment, the centre/size via --grid-center/--grid-size), so they
+# apply only to a hand-run node -- but they are duplicates, and keeping
+# them in step with this table is manual.
 #
 # carla_autoware_map_defaults <map-name> sets, for the caller to consume:
 #   MAP_DEFAULT_DIR          container-side Autoware bundle ("" = unknown map)
