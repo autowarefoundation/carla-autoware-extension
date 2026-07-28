@@ -10,3 +10,13 @@ gezp_wheel:
   sha256: d8766616df2511a58ac152ccc53e3307a84ccef9e7fb7108006667188d5766f8
 autoware_universe_devel:
   digest: ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee
+# Cell B45: the tier4 native path is documented against Autoware 0.45.1 and
+# sensor_model:=awsim_sensor_kit. There is NO universe-devel-cuda-0.45.1 tag;
+# the newest CUDA-enabled 0.45.x is universe-devel-cuda-0.45.0, recorded below
+# as the fallback should B45 turn out to need CUDA perception.
+autoware_045:
+  image: ghcr.io/autowarefoundation/autoware:universe-devel-0.45.1
+  digest: ghcr.io/autowarefoundation/autoware@sha256:6afe9ee4a25a1082685c266f96dabd6041e77424bf10ea729bd488e02ae92175
+  amd64_digest: sha256:61ee4e281df852f63b8085b61d136ea4e9844f5894ba41df949bc7919cda5cba
+  cuda_fallback_image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-0.45.0
+  cuda_fallback_digest: ghcr.io/autowarefoundation/autoware@sha256:3a8d92856174dcb6f4d9a73e946132864b3bd1a74bc603d8aed7536f5b6bcb82
