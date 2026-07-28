@@ -1,4 +1,5 @@
-from benchmarks.analysis.manifest import RunManifest, load_manifest
+import pytest
+from benchmarks.analysis.manifest import RunManifest, known_cell_ids, load_manifest
 
 
 def _valid() -> RunManifest:
@@ -62,3 +63,29 @@ def test_validate_excluded_with_reason_is_clean():
     object.__setattr__(m, "excluded", True)
     object.__setattr__(m, "exclusion_reason", "sensor dropout mid-run")
     assert m.validate() == []
+
+
+def test_known_cell_ids_comes_from_the_pre_registered_registry():
+    ids = known_cell_ids()
+    assert {"A", "B", "E0", "CAL-rmw"} <= ids
+    assert "A-typo" not in ids
+
+
+def test_validate_rejects_unregistered_cell():
+    """A typo'd cell id files the run under its own results/<typo>/, which
+    report.main() then renders as a separate cell -- splitting a duel's runs
+    across two tables so neither meets the pre-registered n >= 10. It has to
+    be caught at the manifest, which is the only place the id is written."""
+    m = _valid()
+    object.__setattr__(m, "cell", "AA")
+    errs = m.validate()
+    assert any("cell" in e for e in errs)
+
+
+def test_save_refuses_to_write_an_invalid_manifest(tmp_path):
+    m = _valid()
+    object.__setattr__(m, "arm", "banana")
+    path = tmp_path / "manifest.json"
+    with pytest.raises(ValueError, match="arm"):
+        m.save(path)
+    assert not path.exists()

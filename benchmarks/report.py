@@ -18,6 +18,13 @@ from .analysis.manifest import load_manifest
 def summarize_run(run_dir: Path) -> dict:
     run_dir = Path(run_dir)
     manifest = load_manifest(run_dir / "manifest.json")
+    # Validated on the way IN as well as on the way out (RunManifest.save): a
+    # manifest can reach here hand-edited or written by an older harness, and
+    # an unregistered cell or a missing transport key must not render as a
+    # table row that reads exactly like a scored one.
+    errs = manifest.validate()
+    if errs:
+        raise ValueError(f"invalid manifest {run_dir / 'manifest.json'}: {'; '.join(errs)}")
     clock_ns, clock_wall = read_clock_csv(run_dir / "clock.csv")
     fit = fit_sim_wall_affine(clock_ns, clock_wall)
     topics = {}

@@ -1,4 +1,7 @@
+import json
+
 import numpy as np
+import pytest
 from benchmarks.analysis.manifest import RunManifest
 from benchmarks.report import render_cell, summarize_run
 
@@ -41,7 +44,9 @@ def _make_run(
         for s, w in rows:
             f.write(f"/lidar,{s},{w + 7_000_000},{w},{s},1048576\n")
     (d / "published_time.csv").write_text("topic,source_header_ns,published_ns\n")
-    (d / "resources.csv").write_text("sample_system_ns,process,cpu_pct,rss_bytes\n")
+    (d / "resources.csv").write_text(
+        "sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf\n"
+    )
     return tmp_path / "A"
 
 
@@ -83,3 +88,17 @@ def test_render_cell_marks_excluded_run(tmp_path):
     cell = _make_run(tmp_path, name="run-002", excluded=True, exclusion_reason="sensor dropout")
     md = render_cell(cell)
     assert "run-002 (EXCLUDED)" in md
+
+
+def test_summarize_run_rejects_an_invalid_manifest(tmp_path):
+    """A manifest that RunManifest.save would have refused can still reach the
+    reader hand-edited. Rendering it would put an unregistered cell (or a run
+    excluded without a reason) into a table that reads exactly like a scored
+    one, so summarize_run surfaces the validation errors instead."""
+    cell = _make_run(tmp_path)
+    path = cell / "run-001" / "manifest.json"
+    doc = json.loads(path.read_text())
+    doc["cell"] = "A-typo"
+    path.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match="cell"):
+        summarize_run(cell / "run-001")
