@@ -37,13 +37,32 @@ autoware_045:
   amd64_digest: sha256:61ee4e281df852f63b8085b61d136ea4e9844f5894ba41df949bc7919cda5cba
   cuda_fallback_image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-0.45.0
   cuda_fallback_digest: ghcr.io/autowarefoundation/autoware@sha256:3a8d92856174dcb6f4d9a73e946132864b3bd1a74bc603d8aed7536f5b6bcb82
+# A carla-unreal-editor rebuild in ANY tree relinks the shared engine's
+# own modules too (UnrealEditor.modules bumps a fresh unified BuildId
+# across the engine AND every downstream Carla tree it touches) -- this
+# is a known, budgeted side effect (P1 Verdict 3 / decision D8), not a
+# deliberate engine build. This pin is the BuildId every preflight must
+# match against; a mismatch means that tree's editor modules are stale
+# and need their own carla-unreal-editor rebuild before it will boot.
+# This value settled after two follow-up rounds past Task 4's own
+# rebuild (extension rebuild bumped it again, tier4 rebuild held it
+# steady) -- see the Task 4 report's fix-report section. No further
+# engine relink is permitted from here on (D8).
 engine:
-  build_id: ""  # filled by Task 4 after the tier4 editor rebuild
+  build_id: "4210e602-78ec-46e1-8f2f-03fadbe036a3"  # settled value, all 3 trees agree
 extension_carla_fork:
   path: ~/src/carla-autoware-integration
   branch: feat/autoware-seminative-phase-b
-  sha: ""       # filled by Task 4 (git rev-parse in that tree)
+  sha: ae166d80d022f838b78f4a2daab1ca2880a7c8aa
 tier4_carla_fork:
   path: ~/src/carla-autoware-native
   branch: tier4/autoware-support
   sha: 6315b856f
+  # Two build fixes tier4/autoware-support needs on this host; see
+  # benchmarks/patches/tier4-native/README.md for the full recipe.
+  patches:
+    - 0001-toolchain-libm.patch
+    - 0002-glibc-compat.patch
+  patches_sha256:
+    0001-toolchain-libm.patch: d6988200b7091d32405d2164a3adbb3be8aa0766a8388e1cda4ad1f0194b543c
+    0002-glibc-compat.patch: bb28dbc408aec8c6f0579aa173d3b14f8aa806dd317b14187c4fa0cfcebff6fa
