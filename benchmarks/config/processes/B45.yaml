@@ -1,0 +1,18 @@
+# M3 process map for cell B45 (tier4-native approach, Town10HD_Opt,
+# closed-loop only, Autoware 0.45.x image -- cells.yaml).
+#
+# The CARLA-side tree/recipe is identical to cell B (same
+# ~/src/carla-autoware-native UnrealEditor -game invocation); only the
+# Autoware container IMAGE differs (pins.yaml autoware_045, vs.
+# autoware_universe_devel for B), which does not change the running
+# container's NAME. docker/compose.yaml's single "autoware" service
+# name is expected to be reused with the image swapped in by Task 8's
+# per-cell launcher (task-8-brief.md step 7: "B45: autoware_045 pin"),
+# same as it is for B. See B.yaml for the full grounding/evidence
+# notes on every entry below.
+processes:
+  - label: carla-server
+    pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  - { label: observer, container: bench-observer }

@@ -1,0 +1,14 @@
+# M3 process map for cell E0 (python-bridge approach, CARLA 0.9.15,
+# Town10HD_Opt, static arm only -- the AS-SHIPPED bridge, without the
+# 0001-lidar-is-dense patch; cells.yaml's amended arms: [static]).
+#
+# Same process shape as cell E; see E.yaml for full grounding notes and
+# caveats (the "autoware"/bridge container name is NOT YET KNOWABLE --
+# Task 10 pending -- and there is no dummy_perception injector for this
+# approach as currently documented). The difference between E0 and E is
+# a build-time patch applied to the SAME image family, not a different
+# process/binary, so the entries are identical.
+processes:
+  - { label: carla-server, pattern: CarlaUE4-Linux-Shipping }
+  - { label: autoware, container: bridge-bench }
+  - { label: observer, container: bench-observer }

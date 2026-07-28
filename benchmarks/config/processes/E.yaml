@@ -1,0 +1,44 @@
+# M3 process map for cell E (python-bridge approach, CARLA 0.9.15,
+# Town10HD_Opt, closed-loop; runs WITH
+# patches/python-bridge/0001-lidar-is-dense.patch, per
+# benchmarks/README.md's named exception).
+processes:
+  # CARLA 0.9.15's packaged UE4 Shipping binary (pins.yaml carla_0915,
+  # a released .tar.gz -- unlike the UE5 forks used by A/B/C/D, this
+  # approach genuinely ships a Shipping build, not an editor -game
+  # process). Confirmed live in a prior campaign pass:
+  # .superpowers/sdd/2026-07-27-.../task-12-report.md:
+  #   "youtalk 334349 274% CPU ... CarlaUE4/Binaries/Linux/
+  #    CarlaUE4-Linux-Shipping CarlaUE4 -RenderOffScreen ..."
+  - { label: carla-server, pattern: CarlaUE4-Linux-Shipping }
+  # NOT YET KNOWABLE: benchmarks/patches/python-bridge/README.md's
+  # verified recipe runs the bridge (autoware_carla_interface) and the
+  # full Autoware e2e_simulator stack as TWO `ros2 launch` invocations
+  # inside ONE interactive `docker run -it ... bridge-bench:latest
+  # bash` session -- with no `--name` given, so the container gets a
+  # docker-assigned random name. There is no committed compose
+  # service (unlike docker/compose.yaml's "autoware" for A/B/C/D) to
+  # ground a fixed name on; Task 10 ("Bridge viability patch +
+  # E-family recipes + E gate", not yet done) is expected to formalize
+  # this into a named/composed launch. "bridge-bench" below is a
+  # placeholder matching the known image tag, not a verified running
+  # container name -- if Task 10 lands with a different name (or a
+  # compose service), this entry will match nothing and silently read
+  # as "the bridge+Autoware stack used no CPU". Re-ground this entry
+  # once Task 10 exists.
+  - { label: autoware, container: bridge-bench }
+  # No separate injector entry: unlike A/B (dummy-perception clear-road
+  # stand-in), the currently-documented recipe runs Autoware's REAL
+  # CUDA perception stack (perception left at its default ON, per the
+  # "Pin update" section of patches/python-bridge/README.md) -- there
+  # is no dummy_perception process in this cell as currently recorded.
+  # Task 8's forward design note ("injector ... identical invocation
+  # every cell") may still bring this cell in line with A/B later; if
+  # so, add the same `{ label: injector, pattern: dummy_perception }`
+  # entry used there.
+  #
+  # Same caveat as A.yaml's "observer" entry: pins.yaml records that
+  # the universe-devel bench-observer image "serves cells A/B/C/D/E/CAL",
+  # so an observer container IS expected here, but its exact runtime
+  # name is Task 8's design, not yet independently pinned.
+  - { label: observer, container: bench-observer }

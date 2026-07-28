@@ -1,0 +1,22 @@
+# M3 process map for cell CAL-seam (calibration approach, CARLA
+# 0.10-fork, Town10HD_Opt, static arm only; cells.yaml, mandatory).
+#
+# task-8-brief.md step 7: "CAL-seam = extension fork + seam/in-core
+# publishers (Task 14)". The CARLA-side half is grounded the same way
+# as cell A (same extension fork tree, same UnrealEditor -game
+# invocation) -- that part is safe to fill in now. The "seam/in-core
+# publishers" component is Task 14 ("CAL-seam publisher pair"), not yet
+# written: no script or binary name for it exists anywhere in this
+# repo yet, so a pattern for it cannot be grounded without guessing.
+processes:
+  - label: carla-server
+    pattern: carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  # NOT YET KNOWABLE: the seam/in-core publisher pair does not exist
+  # yet (Task 14 pending). No "autoware" container either -- CAL-seam
+  # is a transport/serialization calibration, not a closed-loop drive,
+  # so there is no evidence an Autoware stack runs here at all.
+  # Add the publisher-pair entry/entries once Task 14 lands and names
+  # its actual process(es); do not guess a pattern here in the
+  # meantime, since a wrong guess would silently read as "the
+  # publisher pair used no CPU" instead of flagging the gap.
+  - { label: observer, container: bench-observer }

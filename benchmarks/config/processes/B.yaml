@@ -1,0 +1,38 @@
+# M3 process map for cell B (tier4-native approach, Town10HD_Opt).
+#
+# Grounded in benchmarks/patches/tier4-native/README.md's verified boot
+# smoke ("Boot smoke" section) and docker/compose.yaml. Like cell A,
+# this runs the shared engine's UnrealEditor in -game mode -- there is
+# no packaged Shipping binary in this campaign for either UE5 tree.
+processes:
+  # UnrealEditor -game, tier4-native fork tree (pins.yaml
+  # tier4_carla_fork.path = ~/src/carla-autoware-native). The README's
+  # verified invocation:
+  #   .../UnrealEditor ~/src/carla-autoware-native/Unreal/CarlaUnreal/
+  #     CarlaUnreal.uproject Town10HD_Opt -game --ros2 -carla-rpc-port=... \
+  #     -RenderOffScreen -nosound
+  # The tree-path segment disambiguates from the extension fork, which
+  # uses the identical uproject filename in a sibling tree (see A.yaml).
+  - label: carla-server
+    pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  # No separate host-side "runner": the tier4 fork's own
+  # autoware_carla_interface (pulled in by simulator_type:=carla) spawns
+  # the ego and drives the bridge loop as a ROS node INSIDE the
+  # "autoware" container -- its cost is captured by that entry below,
+  # not by a host process. (Contrast cell A, where the extension's
+  # ego-spawn tool is a separate host-side python3 -m runner process.)
+  #
+  # Whether this approach also runs the shared clear-road injector
+  # (dummy_perception) the way cell A does is NOT independently
+  # confirmed for tier4-native: no committed script here launches it,
+  # only Task 8's forward-looking "identical invocation every cell"
+  # design intent (task-8-brief.md step 8). Included per that stated
+  # design; revisit once Task 8/13 land the actual B closed-loop
+  # recipe -- if B never runs it, this entry just yields an
+  # (expected) all-zero row, not a false read on a real process.
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  # See A.yaml's "observer" entry note: bench-observer's container name
+  # is Task 8's stated design, not yet independently pinned by a
+  # committed launch script.
+  - { label: observer, container: bench-observer }

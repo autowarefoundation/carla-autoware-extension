@@ -1,0 +1,20 @@
+# M3 process map for cell CAL-rmw (calibration approach, carla: none,
+# static arm only; cells.yaml, mandatory).
+#
+# NOT YET KNOWABLE. task-8-brief.md step 7 states the intended design
+# ("calibration -> no sim: CAL-rmw = bench_pub container + observer
+# container with the requested RMW/SHM variant"), but no script in
+# this repo actually launches it yet -- Task 8 (run orchestration) and
+# Task 16 ("CAL-rmw runs + margin freeze") are both still pending, and
+# neither the bench_pub container's name nor how the RMW/SHM variant
+# is selected (env var? separate compose service? one container per
+# variant?) is established anywhere committed. Writing a guessed
+# `container:`/`pattern:` value here would risk matching zero
+# processes and silently reading as "used no CPU" for a real
+# calibration run -- exactly the failure mode this task's brief warns
+# against. Leaving `processes` empty rather than fabricating one is the
+# safer choice for now; DO NOT use an empty list from this file to
+# infer CAL-rmw uses no resources -- it means the resource sampler
+# should not be pointed at this file until Task 8/16 exist and the
+# processes list below is filled in with a verified container name.
+processes: []

@@ -1,0 +1,11 @@
+# M3 process map for cell D (tier4-native approach, NishishinjukuMap;
+# non-mandatory -- "only if the map cooks in the tier4 tree",
+# cells.yaml). Same tree/recipe as cell B, only the map differs (not
+# part of any pattern here) -- process identities are unchanged. See
+# B.yaml for the full grounding/evidence notes.
+processes:
+  - label: carla-server
+    pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  - { label: observer, container: bench-observer }

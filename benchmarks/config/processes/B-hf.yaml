@@ -1,0 +1,11 @@
+# M3 process map for cell B-hf (tier4-native approach, Town10HD_Opt,
+# closed-loop only -- the high-frequency sensitivity counterpart to
+# A-hf). Same tree/recipe as cell B; the fixed-delta parameter is a
+# launch-time argument (Task 13, not yet written), not a different
+# binary. See B.yaml for the full grounding/evidence notes.
+processes:
+  - label: carla-server
+    pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  - { label: observer, container: bench-observer }

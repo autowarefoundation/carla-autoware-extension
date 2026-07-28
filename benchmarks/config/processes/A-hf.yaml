@@ -1,0 +1,14 @@
+# M3 process map for cell A-hf (extension approach, Town10HD_Opt,
+# closed-loop only, fixed_delta 0.01 -- a high-frequency sensitivity
+# variant of cell A).
+#
+# fixed_delta is a runner/CARLA launch parameter (Task 12, not yet
+# written), not a different tree or binary -- process identities are
+# unchanged from cell A. See A.yaml for the full grounding notes.
+processes:
+  - label: carla-server
+    pattern: carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  - { label: runner, pattern: python3 -m runner }
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  - { label: observer, container: bench-observer }
