@@ -36,7 +36,13 @@ cells:
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: true
-    arms: [closed-loop] # as-shipped defaults
+    # Amended 2026-07-28 (P1 Verdict 1): the as-shipped bridge cannot close
+    # the loop (is_dense rejection + sync-tick stall, both source-level).
+    # E0 measures the as-shipped configuration to its failure point: raw-topic
+    # transport + process cost, static arm only. The closed loop is cell E's
+    # (patched, see patches/python-bridge/0001) and the failure itself is E0's
+    # reported result.
+    arms: [static]
   - id: E-opt
     approach: python-bridge
     carla: 0.9.15
@@ -78,3 +84,10 @@ sweep_classes:
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }
   - { id: 128ch, channels: 128, points_per_second: 4600000, applies_to: [A, B, E] }
 sweep_arms: [paced, unpaced, ablation] # ablation = publish-disabled baseline
+# M4 camera-load arm (spec: M4): each approach's native camera path, observer
+# as the only consumer, topic names as-emitted. 20 fps == the 20 Hz tick
+# ceiling (P1 Verdict 4: a higher request would be silently clamped).
+camera_classes:
+  - { id: cam1, cameras: 1, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }
+  - { id: cam3, cameras: 3, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }
+  - { id: cam6, cameras: 6, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }

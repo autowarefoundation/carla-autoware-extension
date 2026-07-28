@@ -37,3 +37,13 @@ autoware_045:
   amd64_digest: sha256:61ee4e281df852f63b8085b61d136ea4e9844f5894ba41df949bc7919cda5cba
   cuda_fallback_image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-0.45.0
   cuda_fallback_digest: ghcr.io/autowarefoundation/autoware@sha256:3a8d92856174dcb6f4d9a73e946132864b3bd1a74bc603d8aed7536f5b6bcb82
+engine:
+  build_id: ""  # filled by Task 4 after the tier4 editor rebuild
+extension_carla_fork:
+  path: ~/src/carla-autoware-integration
+  branch: feat/autoware-seminative-phase-b
+  sha: ""       # filled by Task 4 (git rev-parse in that tree)
+tier4_carla_fork:
+  path: ~/src/carla-autoware-native
+  branch: tier4/autoware-support
+  sha: 6315b856f

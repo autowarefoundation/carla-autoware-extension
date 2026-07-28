@@ -13,6 +13,8 @@ import yaml
 APPROACHES = ("extension", "python-bridge", "tier4-native", "calibration")
 ARMS = ("static", "closed-loop", "ablation", "unpaced", "paced")
 TRANSPORT_KEYS = ("rmw", "shm_enabled", "dds_profile_sha256")
+PLACEMENT_KEYS = ("run_mode", "container_image", "observer_env")
+UE_APPROACHES = ("extension", "tier4-native")
 
 # The pre-registered cell registry. `cell` is validated against it because a
 # typo'd id is otherwise SILENT: it files the run under its own
@@ -44,6 +46,7 @@ class RunManifest:
     started_at_ns: int
     excluded: bool = False
     exclusion_reason: str = ""
+    placement: dict = dataclasses.field(default_factory=dict)
 
     def validate(self) -> list[str]:
         errs = []
@@ -58,6 +61,11 @@ class RunManifest:
             errs.append(f"transport missing keys: {missing}")
         if self.excluded and not self.exclusion_reason:
             errs.append("excluded runs require exclusion_reason")
+        missing_p = [k for k in PLACEMENT_KEYS if k not in self.placement]
+        if missing_p:
+            errs.append(f"placement missing keys: {missing_p}")
+        if self.approach in UE_APPROACHES and "engine_build_id" not in self.placement:
+            errs.append("placement.engine_build_id required for UE-based approaches")
         return errs
 
     def save(self, path: Path) -> None:

@@ -29,6 +29,12 @@ def _make_run(
         started_at_ns=0,
         excluded=excluded,
         exclusion_reason=exclusion_reason,
+        placement={
+            "run_mode": "editor-game",
+            "container_image": "img@sha256:x",
+            "observer_env": "bench-observer:universe-devel",
+            "engine_build_id": "b4c93e55-fc8f-42fc-b377-358910364e1c",
+        },
     ).save(d / "manifest.json")
     sim = np.arange(0, 5_000_000_000, 100_000_000, dtype=np.int64)
     wall = 1_000_000_000_000 + sim
