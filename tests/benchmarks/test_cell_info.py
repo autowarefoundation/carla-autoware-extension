@@ -153,21 +153,34 @@ def test_cpu_process_label_is_a_label_the_sampler_writes(doc, cell):
 @pytest.mark.parametrize("cell", ALL_CELL_IDS)
 def test_registered_rates_are_positive_or_explicitly_unregistered(doc, cell):
     """Rates are either a positive number or `null` (not pre-registered yet).
-    A zero or negative rate would divide achieved_rate_ratio by zero or flip
-    its sign rather than failing."""
+    A zero or negative rate would divide achieved_rate_ratio (or the M5 gate's
+    NDT rate ratio) by zero or flip its sign rather than failing."""
     metrics = cell_info.metrics_for(doc, cell)
-    for key in ("tick_hz", "lidar_expected_hz"):
+    for key in ("tick_hz", "lidar_expected_hz", "ndt_expected_hz"):
         assert metrics[key] is None or metrics[key] > 0
 
 
 def test_high_frequency_cell_separates_tick_rate_from_sensor_rate(doc):
-    """The regression the tick_hz/lidar_expected_hz split exists for: --fixed
-    -delta moves the WORLD tick and not the rig's sensor_tick, so on A-hf the
-    two differ five-fold. A tool that derives an expected message count from
-    the tick target understates the achieved ratio by exactly that factor."""
+    """The regression the tick_hz/lidar_expected_hz/ndt_expected_hz split
+    exists for: --fixed-delta moves the WORLD tick and not the rig's
+    sensor_tick, so on A-hf the tick target is five times the sensor target. A
+    tool deriving an expected message count -- or the M5 gate's expected NDT
+    rate -- from the tick target is wrong by exactly that factor."""
     metrics = cell_info.metrics_for(doc, "A-hf")
     assert metrics["tick_hz"] == 100.0
     assert metrics["lidar_expected_hz"] == 20.0
+    assert metrics["ndt_expected_hz"] == 20.0
+
+
+@pytest.mark.parametrize("cell", ALL_CELL_IDS)
+def test_ndt_rate_is_registered_only_where_the_ndt_topic_is(doc, cell):
+    """ndt_expected_hz is the divisor of the M5 gate's "NDT rate >= 90% of
+    expected" criterion, so it is meaningful exactly on the cells that have an
+    NDT topic at all. A rate registered for a cell with no localization stack
+    (the calibration cells) would invite gating a run that cannot be gated."""
+    metrics = cell_info.metrics_for(doc, cell)
+    if metrics["ndt_topic"] is None:
+        assert metrics["ndt_expected_hz"] is None
 
 
 def test_metrics_for_rejects_a_cell_with_no_metrics_block():

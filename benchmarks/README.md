@@ -80,34 +80,56 @@ source file and columns, join rule and tolerance, aggregation, scoring window.
 Margins are NOT touched here; this section defines what the metrics mean, not
 what counts as equivalent.
 
+**Arm scoping.** A cell's runs are not one population: `cells.yaml` gives cell
+A `arms: [static, closed-loop]`, and the two arms measure different things
+under different windows. The duel is therefore computed **per arm and reported
+as separate rows, never pooled** — the runs under `results/<cell>/` must be
+filtered by each run's `manifest.arm` before any aggregation, and the arm named
+in the row. Task 18 runs `duel.sh --arm static --pairs 10` and `duel.sh --arm
+closed-loop --pairs 10` as two separate sessions, each meeting the
+pre-registered n ≥ 10 on its own, so pooling would both mix two quantities and
+double-count toward that n. `control_staleness_ms` exists only on the
+closed-loop arm; its static row is absent, never zero.
+
 **Per-cell bindings.** No tool may hardcode a topic, a process label or a
 rate. Each cell's entry in `benchmarks/config/cells.yaml` carries a `metrics:`
 block (`lidar_topic`, `ndt_topic`, `control_topic`,
 `control_published_time_topic`, `cpu_process_label`, `tick_hz`,
-`lidar_expected_hz`), read with
+`lidar_expected_hz`, `ndt_expected_hz`), read with
 `benchmarks.scripts.cell_info.metrics_for(load_cells_doc(), <cell>)`. A `null`
 binding is not a default to fill in at analysis time: the value is not
 pre-registered yet, so the metric is UNAVAILABLE for that cell and the tool
-must report it as such. `cells.yaml` names the task that owes each `null`.
+must report it as such. `cells.yaml` names the task that owes each `null`, and
+states the bar for a non-null value: committed evidence in this repo (a
+constant in committed code, or a live measurement recorded in a committed
+document). An out-of-repo script's literal does not clear it, in either
+direction.
 
-`tick_hz` (paced world tick, `1 / fixed_delta_seconds`) and
-`lidar_expected_hz` (sensor publish target) are different numbers. They
-coincide at 20.0 on most cells and diverge on the high-frequency cells
-(`A-hf`/`B-hf`: `tick_hz: 100.0`, `lidar_expected_hz: 20.0`, because
-`--fixed-delta` moves the world tick and not the rig's `sensor_tick`). An
-expected message COUNT must be derived from `lidar_expected_hz`; only the M4
-ceiling's unpaced `tick_rate_ratio` disjunct divides by `tick_hz`.
+`tick_hz` (paced world tick, `1 / fixed_delta_seconds`), `lidar_expected_hz`
+(sensor publish target) and `ndt_expected_hz` (NDT pose-output target) are
+three different numbers. They coincide at 20.0 on the extension cells and
+`tick_hz` diverges on the high-frequency ones (`A-hf`: `tick_hz: 100.0`,
+`lidar_expected_hz: 20.0`, because `--fixed-delta` moves the world tick and
+not the rig's `sensor_tick`). An expected message COUNT must be derived from
+`lidar_expected_hz`; only the M4 ceiling's unpaced `tick_rate_ratio` disjunct
+divides by `tick_hz`; and the M5 gate's "NDT rate ≥ 90% of expected" criterion
+(`analysis/quality.py`'s `expected_ndt_hz`) divides by `ndt_expected_hz`,
+which follows the SENSOR rate — `ndt_scan_matcher` emits one pose per input
+cloud — and never the tick rate.
 
 **Scoring window.** All five are computed over the run's registered scoring
 window (see "Scoring windows" above), resolved once per run:
 
+The warm-up discard is `20_000_000_000` ns throughout (an int, matching
+`window.py`'s `warmup_ns` parameter).
+
 - closed-loop arm: `analysis/window.py` `spatial_window` over `odometry.csv`'s
   `/localization/kinematic_state` rows against the polyline and
-  `stations.start_m`/`end_m` of `config/routes/<map>.yaml`, warm-up
-  `20e9` ns — bounds are SIM ns.
-- every other arm (`static`, `paced`, `unpaced`, `ablation`):
-  `static_window(t0, end, 20e9)` over `clock.csv`'s `arrival_system_ns` —
-  bounds are WALL ns.
+  `stations.start_m`/`end_m` of `config/routes/<map>.yaml` — bounds are SIM
+  ns.
+- every other arm (`static`, `paced`, `unpaced`, `ablation`) on a cell with a
+  sim clock: `static_window(t0, end, 20_000_000_000)` where `t0` and `end` are
+  the FIRST and LAST `arrival_system_ns` in `clock.csv` — bounds are WALL ns.
 - The other domain's bounds come from the run's own affine clock fit
   (`analysis/clockfit.py` `fit_sim_wall_affine` over `clock.csv`): sim → wall
   by `sim_to_wall`, wall → sim by its exact inverse
@@ -116,24 +138,56 @@ window (see "Scoring windows" above), resolved once per run:
   `header_stamp_ns` (sim), `published_time.csv` on `source_header_ns` (sim),
   `resources.csv` on `sample_system_ns` (wall).
 
+**Calibration cells have no clock, so they get their own window.** A cell whose
+`cells.yaml` `carla:` is `none` (today: `CAL-rmw`, and `cell_info.merge`'s
+`has_sim_clock` is the same discriminator) publishes no `/clock` at all:
+`clock.csv` stays header-only by design, and no affine fit is possible
+(`scripts/cal_report.py` says so and computes accordingly). For those cells:
+
+- the window is `static_window(t0, end, 20_000_000_000)` over **`observer.csv`**'s
+  `arrival_system_ns` — first and last row of the cell's `lidar_topic`;
+- there is no sim domain, so no domain conversion applies. `header_stamp_ns`
+  IS wall time there (both bench publishers stamp with wall `now()`), which is
+  why the metric definitions below read the same way with no special case;
+- consequently `one_hop_wall_ms` on a calibration cell is the direct
+  `arrival_system_ns - header_stamp_ns` (`cal_report._one_hop_ms`), not the
+  fit-converted form.
+
+**Recorded consequence for Task 16.** The `one_hop_wall_ms` margin is frozen
+from CAL-rmw, i.e. from an observer-windowed, unfitted wall term, and applied
+to a duel term that is `/clock`-windowed and fit-converted. The measurand is
+the same; the window basis and the fit are not. Task 16 must state that
+alongside the frozen number rather than presenting the transfer as exact.
+
 Windowing is not optional for these five. The 20 s warm-up covers map load,
 NDT convergence and stack settling, which A and B do differently; against a
 2.0 ms margin on `one_hop_wall_ms` a whole-run median is dominated by it.
 
-**Aggregation (all five).** Per run: the MEDIAN of the in-window per-message
-(or per-sample) series — one run-level scalar per run. Across runs:
+**Aggregation.** Per run: the MEDIAN of the in-window per-message (or
+per-sample) series — one run-level scalar per run. Across runs:
 `analysis/stats.py` `bootstrap_ci_median_diff` + `equivalence_decision` on the
 two cells' run-level scalars, `delta = median(A) - median(B)`, lower better.
 Messages are never pooled across runs. Excluded runs never contribute.
+
+`achieved_rate_ratio` is the one EXEMPTION from the median-of-a-series rule:
+it is already a single run-level scalar, `(n − 1) / span` over the in-window
+rows, and there is no per-message series to take a median of. Building a
+`1 / Δt` series and taking its median would be a different number, and the two
+diverge exactly when frames drop — which is the phenomenon the metric exists
+to measure. See its own entry below.
 
 #### `one_hop_wall_ms` — transport (margin 2.0)
 
 `analysis/latency.py` `one_hop_wall_ms(header_stamp_ns, arrival_system_ns,
 fit)` over `observer.csv` rows for the cell's `lidar_topic`: observer arrival
 wall time minus the wall time the run's clock fit maps that message's own sim
-header stamp to. Single topic, so no join. This is the same quantity
-`report.py` `summarize_run` already reports per topic as `one_hop_p50_ms`,
-reduced to the one topic the margin is registered against.
+header stamp to. Single topic, so no join.
+
+`report.py` `summarize_run` computes the same per-message quantity with the
+same helper and reports it as `one_hop_p50_ms`, but over a DIFFERENT scope:
+every topic, over the whole run, unwindowed. The duel metric is one topic, in
+window, reduced to a median. The two names describe the same arithmetic and
+must not be assumed to be the same number.
 
 Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code
 path, deliberately. CAL cells publish wall-`now()` header stamps and have no
@@ -143,12 +197,17 @@ cell's stamps are sim-domain, so the fit is required. The duel term therefore
 carries the fit's error on top of the transport it measures, and a duel row
 must be read next to that run's `fit_residual_ns` (`report.summarize_run`).
 Task 16 freezes this margin from CAL-rmw, i.e. from the `cal_report` path:
-that transfer is legitimate because the measurand is identical, not because
-the arithmetic is.
+the transfer is legitimate because the measurand is identical, not because the
+arithmetic or the window basis is — see "Recorded consequence for Task 16"
+above.
 
 #### `lidar_to_ndt_sim_ms` — pipeline (margin 5.0)
 
-LiDAR emission to NDT pose output, in SIMULATED milliseconds.
+The sim-time elapsed between a scan's arrival at the observer and the arrival
+of the NDT pose computed from that same scan, in SIMULATED milliseconds. It is
+an observer-side proxy for the LiDAR-to-NDT pipeline, not a publisher-side
+measurement of it: the name shortens "LiDAR to NDT", and the formula below is
+what that means here.
 
 - Join: `analysis/latency.py` `match_stamps` on `observer.csv`'s
   `header_stamp_ns` between the cell's `lidar_topic` and `ndt_topic`, EXACT
@@ -187,28 +246,42 @@ every cell today: Tasks 13/20 append it to `observer_topics/<cell>.yaml`
 after live discovery, and must register it here in the same commit.
 
 Quantity: `analysis/latency.py` `staleness_ms(source_header_ns, published_ns)`
-in ms — but only when both stamps are in the same clock domain. Which they are
-is an empirical property of the pinned Autoware image (`published_stamp` may
-be taken from the node's sim clock or from a default system clock) and must be
-RECORDED by Tasks 13/20 alongside the topic name, not assumed. Both branches
-are pre-registered here so the choice cannot be made after seeing the number:
+in ms — but only when both stamps are in the same clock domain. Which domain
+each stamp carries is an empirical property of the Autoware image a cell pins
+(`published_stamp` may come from the node's sim clock or from a default system
+clock; `source_header_ns` is the publishing node's own header stamp), and must
+be RECORDED by Tasks 13/20 alongside the topic name, not assumed. It must be
+recorded **per image**, not once: `B45` pins a different Autoware image
+(`pins.yaml` `autoware_045`) from every other stack cell, and nothing
+guarantees the two agree. The three reachable combinations are pre-registered
+here so the choice cannot be made after seeing the number:
 
-- (a) `published_stamp` in the SIM domain →
+- (a) BOTH stamps in the SIM domain →
   `staleness_ms(source_header_ns, published_ns)`.
-- (b) `published_stamp` in the WALL domain →
+- (b) `source_header_ns` SIM, `published_stamp` WALL →
   `one_hop_wall_ms(source_header_ns, published_ns, fit)`, the publisher-side
   analogue of the transport term.
+- (c) BOTH stamps in the WALL domain (the node is not on sim time) →
+  `staleness_ms(...)` again: the domains match, so the plain difference is
+  correct, and the result is a wall-domain staleness with sub-tick resolution.
 
 The discriminator is mechanical and unambiguous: a wall stamp is a Unix epoch
 (> 1e18 ns); a sim stamp is a run-length offset (< 1e13 ns for any window this
-harness records).
+harness records). It is applied per column, so (c) is distinguishable from (a).
 
-Known limitation, recorded rather than worked around: under branch (a) both
-stamps come from the sim clock, whose resolution is the `/clock` period
-(50 ms at `tick_hz: 20.0`), so the metric can only resolve whole-tick
-staleness against a 10.0 ms margin. Whether to keep the margin, re-scope the
-metric, or drop it from the duel is an owner decision that this amendment
-deliberately does not make; the margin is left at its pre-registered value.
+**Contingent response under branch (a), pre-registered now.** This needs no
+data: if both stamps land on the `/clock` grid, every per-message value is a
+multiple of the tick period (50 ms at `tick_hz: 20.0`), so every per-run median
+is too, so Δmedian is a multiple of 50 ms — and a TOST against ±10 ms can only
+ever return `parity` at exactly Δ = 0 or a directional verdict, never anything
+in between. Therefore: **under branch (a) `control_staleness_ms` is reported
+descriptively (per-cell median and spread, both arms' rows labelled) and is
+EXCLUDED from the equivalence verdict.** It contributes no `parity` /
+`a_better` / `b_better` decision and no row to the headline table's verdict
+column. The margin is NOT widened to accommodate the quantum: moving the
+equivalence bar to fit an instrument's resolution is a worse remedy than
+declining to decide. Branches (b) and (c) have sub-tick resolution and the
+metric participates in the verdict normally under either.
 
 #### `carla_process_cpu_pct` — M3 simulator CPU (margin 10.0 absolute points)
 
@@ -236,7 +309,14 @@ same quantity.
 
 Source: `observer.csv` rows for the cell's `lidar_topic`. Quantity:
 `analysis/cadence.py` `inter_arrival_stats(header_stamp_ns).hz /
-lidar_expected_hz`.
+lidar_expected_hz`, over the in-window rows.
+
+This is already the run-level scalar — the exemption from the blanket
+median-of-a-series aggregation rule noted above. `inter_arrival_stats.hz` is
+`(n − 1) / span`; there is no per-message series here to take a median of, and
+constructing one (`1 / Δt` per gap, then median) would be a different and
+worse statistic: the median of instantaneous rates is insensitive to exactly
+the dropped frames the metric is meant to catch.
 
 `inter_arrival_stats` is domain-agnostic ((n−1)/span over any int64-ns
 series); it is given the SIM header stamps and not the wall arrivals on
@@ -283,6 +363,13 @@ Schema: `dataclasses.asdict(analysis.quality.QualityStats)` verbatim —
 provenance keys the gate definition above requires to be interpretable:
 `arm`, `window_sim_ns` (`[lo, hi]`), `ladder_branch` (`"absolute"` |
 `"relative"`, the G1 branch that applied) and `expected_ndt_hz`.
+
+`expected_ndt_hz` is written from the cell's `metrics.ndt_expected_hz` binding
+and nothing else — it is `evaluate_quality`'s divisor for the "NDT rate ≥ 90%
+of expected" criterion, and taking it from `tick_hz` would fail every A-hf run
+by a factor of five while looking like a localization result. A cell whose
+`ndt_expected_hz` is `null` cannot be gated: the M5 gate must refuse to write
+a verdict for it rather than assume a rate.
 
 `gate_pass` is the single field a consumer may treat as the verdict.
 
@@ -512,10 +599,10 @@ Amendments made so far:
   `lidar_expected_hz`), with `null` where the value is genuinely not
   chosen yet and the owing task named beside it. Completeness: the
   definitions above need a per-cell topic, process label and expected
-  rate, and none of the three was machine-readable anywhere — so tools
-  hardcoded them (a `"carla"` process label that matches no row, a
-  `/lidar` topic that exists on no cell, a tick target used as a message
-  -count target on the high-frequency cells).
+  rate, and none of the three was machine-readable anywhere, so each
+  tool that needed one supplied its own constant — leaving the campaign
+  with no single registered answer to "which topic / label / rate is
+  this cell's", and no way to tell a considered value from a default.
 - **2026-07-28** — the data contract above gained `quality.json`, and
   this file gained the "M5 gate result" section registering its schema
   (`QualityStats` plus `arm`, `window_sim_ns`, `ladder_branch`,
@@ -529,6 +616,50 @@ Amendments made so far:
   reaches into with a bare dictionary lookup fails as a `KeyError` deep
   in an analysis run, which is how an unregistered cell would first be
   noticed mid-campaign.
+- **2026-07-28** — "Primary-duel metric definitions" gained an **arm
+  scoping** rule: the duel is computed per arm and reported as separate
+  rows, never pooled. Completeness: the section registered a window per
+  arm while `cells.yaml` gives cell A two arms and `margins.yaml` is
+  silent, so two implementers pointing a tool at `results/A/` would pool
+  whatever arms they found; Task 18 also runs the two arms as separate
+  n ≥ 10 sessions, which pooling would double-count.
+- **2026-07-28** — `control_staleness_ms` gained its **contingent
+  response under branch (a)**: reported descriptively and excluded from
+  the equivalence verdict, with the margin left untouched. It also
+  gained a third clock-domain branch (both stamps wall) and a
+  per-Autoware-image (not once-per-campaign) recording requirement.
+  Completeness: the branch-(a) consequence follows from the tick period
+  alone and needs no data — a 50 ms quantum makes a ±10 ms TOST able to
+  return only Δ = 0 parity or a directional verdict — so leaving it to
+  be decided after Tasks 13/20 land an artifact would have been a
+  definition settled after seeing data, which the rule above forbids.
+- **2026-07-28** — the aggregation rule gained an explicit **exemption
+  for `achieved_rate_ratio`**, which is a run-level `(n − 1) / span`
+  scalar rather than a per-message series. Completeness: the blanket
+  "median of the in-window series" wording contradicted that metric's
+  own definition, and the two constructions diverge precisely when
+  frames drop, i.e. on the phenomenon it measures.
+- **2026-07-28** — `config/cells.yaml` gained `ndt_expected_hz` and
+  `cell_info.METRIC_KEYS` with it. Completeness: the `quality.json`
+  schema registered above makes `expected_ndt_hz` a required key and
+  `analysis/quality.py` divides by it, but the `metrics:` block created
+  for exactly that purpose did not carry it — and on the high-frequency
+  cells sourcing it from `tick_hz` would fail every run five-fold while
+  reading as a localization result.
+- **2026-07-28** — "Scoring window" gained a **calibration-cell window**
+  (`static_window` over `observer.csv`'s `arrival_system_ns`, no domain
+  conversion) and the recorded consequence for Task 16's margin
+  transfer. Completeness: every non-closed-loop arm was bound to a
+  window over `clock.csv` and a conversion through the clock fit, and a
+  `carla: none` cell has neither — including `CAL-rmw`, the cell
+  `one_hop_wall_ms`'s margin is frozen from.
+- **2026-07-28** — `config/cells.yaml`: `tick_hz` set to `null` on the
+  tier4 cells (`B`, `D`, `B-hf`, `B45`) and on `CAL-seam`, naming
+  Tasks 13 and 14. Completeness: those values were transcribed from an
+  out-of-repo demo script's literal while `lidar_expected_hz` on the
+  same cells was left `null` for being un-sourced — the same evidence
+  held to two standards. The bar is now stated once in `cells.yaml` and
+  applied uniformly: committed evidence in this repo, or `null`.
 
 ## How to run
 

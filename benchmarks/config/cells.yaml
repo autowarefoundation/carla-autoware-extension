@@ -21,19 +21,31 @@
 #                                   carla_process_cpu_pct reads; always a
 #                                   `label` registered in
 #                                   config/processes/<cell>.yaml.
-#   tick_hz                         paced WORLD-TICK target, 1/fixed_delta_seconds.
+#   tick_hz                         paced WORLD-TICK target,
+#                                   1/fixed_delta_seconds.
 #   lidar_expected_hz               SENSOR publish target, the denominator of
 #                                   achieved_rate_ratio and the only correct
 #                                   basis for an expected message COUNT.
+#   ndt_expected_hz                 NDT pose-output target, the denominator of
+#                                   the M5 gate's "NDT rate >= 90% of expected"
+#                                   criterion (analysis/quality.py) and the
+#                                   `expected_ndt_hz` key of quality.json.
 #
-# tick_hz and lidar_expected_hz are DIFFERENT numbers that happen to coincide
-# at 20.0 on most cells; they diverge on the high-frequency cells. Never
-# substitute one for the other.
+# tick_hz, lidar_expected_hz and ndt_expected_hz are DIFFERENT numbers that
+# happen to coincide at 20.0 on the extension cells; tick_hz diverges on the
+# high-frequency cells. Never substitute one for the other. ndt_scan_matcher
+# emits one pose per input cloud and the sensing chain that feeds it
+# (crop_box -> concatenate -> downsample) is rate-preserving, so
+# ndt_expected_hz tracks lidar_expected_hz unless a cell's chain decimates --
+# it is registered separately so that a cell where it does cannot be missed.
 #
 # A `null` binding is NOT a default to fill in at analysis time: it means the
 # value is not pre-registered yet, so the metric is UNAVAILABLE for that cell
 # and a tool must say so rather than invent one. The task that owes each null
-# is named beside it.
+# is named beside it. The bar for a NON-null value is that committed evidence
+# in THIS repo fixes it (a constant in committed code, or a live measurement
+# recorded in a committed document); an out-of-repo script's literal is not
+# enough, whichever direction it would move the number.
 cells:
   - id: A
     approach: extension
@@ -45,7 +57,7 @@ cells:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
-      control_published_time_topic: # Tasks 13/20 (appended after live discovery)
+      control_published_time_topic: # Tasks 13/20, after live discovery
       cpu_process_label: carla-server
       tick_hz: 20.0 # runner/loop.py DEFAULT_FIXED_DELTA = 0.05
       # runner/spawn.py _SENSOR_TICK = "0.05" on the top LiDAR, and the
@@ -53,6 +65,7 @@ cells:
       # P1 Verdict 4 measured live. A sweep class changes channels/points,
       # never sensor_tick, so this is a per-cell and not a per-class value.
       lidar_expected_hz: 20.0
+      ndt_expected_hz: 20.0 # one pose per input cloud; chain rate-preserving
   - id: B
     approach: tier4-native
     carla: 0.10-tier4
@@ -65,14 +78,21 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      tick_hz: 20.0 # tier4 demo --hz_rate 20 -> fixed_delta_seconds 0.05
-      # NOT REGISTERED: Task 13 (tier4 demo harmonization patch) fixes the
-      # tier4 rig's sensor_tick. P1 measured the unpatched demo at
-      # sensor_tick=0.1 (10 Hz) against the extension's 0.05 (20 Hz), so this
-      # is a real open choice, not a transcription -- and physics.yaml's
-      # precedent is that harmonization values are SOURCED from the tier4
-      # demo, not assumed to match the extension. Do not guess it here.
+      # NOT REGISTERED (all three): Task 13 (tier4 demo harmonization patch)
+      # fixes the tier4 rig's world tick AND its sensor_tick, and BOTH come
+      # from the same out-of-repo demo script -- nothing committed here sets
+      # either (cells/tier4-native.sh passes no rate at all). An earlier
+      # revision registered tick_hz: 20.0 from the demo's `--hz_rate 20` while
+      # nulling lidar_expected_hz for being un-sourced: the same evidence,
+      # two different standards. physics.yaml's precedent settles it -- values
+      # are SOURCED from the demo by Task 13, not transcribed from a report --
+      # so all three are Task 13's to register, in one commit, before any
+      # B-family P3 run. P1 measured the unpatched demo at sensor_tick=0.1
+      # (10 Hz) against the extension's 0.05 (20 Hz), so harmonization is a
+      # real open choice, not a transcription.
+      tick_hz:
       lidar_expected_hz:
+      ndt_expected_hz:
   - id: C
     approach: extension
     carla: 0.10-fork
@@ -87,6 +107,7 @@ cells:
       cpu_process_label: carla-server
       tick_hz: 20.0
       lidar_expected_hz: 20.0 # same rig as cell A; only the map differs
+      ndt_expected_hz: 20.0
   - id: D
     approach: tier4-native
     carla: 0.10-tier4
@@ -99,8 +120,9 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      tick_hz: 20.0
+      tick_hz: # Task 13, as cell B
       lidar_expected_hz: # Task 13, as cell B
+      ndt_expected_hz: # Task 13, as cell B
   - id: E
     approach: python-bridge
     carla: 0.9.15
@@ -120,6 +142,7 @@ cells:
       # Task 10/20 before any E-family P3 run. P1 measured 8.59 Hz as-emitted
       # on an unpatched run, which is a MEASUREMENT, not a target.
       lidar_expected_hz:
+      ndt_expected_hz: # Task 10/20, with lidar_expected_hz
   - id: E0
     approach: python-bridge
     carla: 0.9.15
@@ -140,6 +163,7 @@ cells:
       cpu_process_label: carla-server
       tick_hz: 20.0
       lidar_expected_hz: # Task 10/20, as cell E
+      ndt_expected_hz: # Task 10/20, as cell E
   - id: E-opt
     approach: python-bridge
     carla: 0.9.15
@@ -154,6 +178,7 @@ cells:
       cpu_process_label: carla-server
       tick_hz: 20.0
       lidar_expected_hz: # Task 10/20, as cell E
+      ndt_expected_hz: # Task 10/20, as cell E
   - id: CAL-rmw
     approach: calibration
     carla: none
@@ -173,7 +198,13 @@ cells:
       # the observer only, so there is no CARLA CPU series to compare.
       cpu_process_label:
       tick_hz: # no simulator, no world tick, no /clock
-      lidar_expected_hz: 10.0 # cells/calibration.sh PUB_RATE_HZ default
+      # cells/calibration.sh's PUB_RATE_HZ DEFAULT. That script also honours a
+      # BENCH_PUB_RATE_HZ override, so a run that sets it invalidates this
+      # binding: the override must be registered here (before P3) rather than
+      # left to diverge, or achieved_rate_ratio silently divides by 10.0 on a
+      # cell that published at something else.
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: # no localization stack in this cell
   - id: CAL-seam
     approach: calibration
     carla: 0.10-fork
@@ -189,8 +220,13 @@ cells:
       control_topic:
       control_published_time_topic:
       cpu_process_label: carla-server
-      tick_hz: 20.0
+      # NOT REGISTERED either: Task 14 owns what ticks this cell's world, if
+      # anything does -- it is a transport/serialization calibration, not a
+      # drive, and cells/calibration.sh refuses to launch it today. Registering
+      # the extension cells' 20.0 here would assert a tick nothing commits to.
+      tick_hz:
       lidar_expected_hz: # Task 14
+      ndt_expected_hz: # no localization stack in this cell
   - id: A-hf
     approach: extension
     carla: 0.10-fork
@@ -208,6 +244,7 @@ cells:
       # sensor_tick, and min(1/0.05, 100.0) is still 20. This is the pair the
       # tick_hz/lidar_expected_hz split exists for.
       lidar_expected_hz: 20.0
+      ndt_expected_hz: 20.0 # follows the sensor rate, not the tick rate
   - id: B-hf
     approach: tier4-native
     carla: 0.10-tier4
@@ -220,10 +257,13 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      # The A-hf counterpart cells.yaml registers this cell as; Task 13 owns
-      # the launch argument that applies it (processes/B-hf.yaml).
-      tick_hz: 100.0
+      # NOT REGISTERED: this cell's INTENT is the A-hf counterpart, but the
+      # launch argument that would apply it is Task 13's and does not exist
+      # (processes/B-hf.yaml says so). 100.0 here would be an intent, not a
+      # setting -- same standard as cell B above.
+      tick_hz:
       lidar_expected_hz: # Task 13, as cell B
+      ndt_expected_hz: # Task 13, as cell B
   - id: B45
     approach: tier4-native
     carla: 0.10-tier4
@@ -236,8 +276,9 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      tick_hz: 20.0 # CARLA-side recipe identical to cell B
+      tick_hz: # Task 13, as cell B (identical CARLA-side recipe)
       lidar_expected_hz: # Task 13, as cell B
+      ndt_expected_hz: # Task 13, as cell B
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }

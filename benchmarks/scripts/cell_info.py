@@ -12,20 +12,22 @@ so `run.sh Q --arm static` dies in milliseconds naming `Q`, rather than after
 a preflight that cleared /dev/shm for a cell that does not exist.
 
 The printed object is the cells.yaml entry (`id`, `approach`, `carla`, `map`,
-`mandatory`, `arms`) plus `sweep_arms`, and -- when `--class` is given -- the
-class entry's own fields merged in at top level (`class_id`, `channels`,
-`points_per_second`, or `cameras`/`width`/`height`/`fps`). Merging at top
-level rather than nesting keeps the consumer side a single `jq -r .<key>`
-in `run.sh`, and makes "did the class actually apply?" answerable by looking
-for the key.
+`mandatory`, `arms`, `metrics`) plus `sweep_arms`, and -- when `--class` is
+given -- the class entry's own fields merged in at top level (`class_id`,
+`channels`, `points_per_second`, or `cameras`/`width`/`height`/`fps`). Merging
+at top level rather than nesting keeps the consumer side a single
+`jq -r .<key>` in `run.sh`, and makes "did the class actually apply?"
+answerable by looking for the key. `metrics` is the one block that stays
+NESTED (`jq -r .metrics.<key>`), because its keys are a fixed registry with
+its own accessor below, not workload parameters a class may override.
 
-`metrics_for` is the same file's other accessor, for the per-cell metric
-bindings (topics, process label, tick/sensor rates) the analysis tools must
-read instead of hardcoding -- see benchmarks/README.md, "Primary-duel metric
-definitions". It is deliberately separate from `merge`: `merge` answers "what
-workload is this cell", `metrics_for` answers "where does this cell's data
-live", and only the latter is allowed to be missing a value (a `null`
-binding, meaning not-yet-registered).
+`metrics_for` is that accessor, for the per-cell metric bindings (topics,
+process label, tick/sensor/NDT rates) the analysis tools must read instead of
+hardcoding -- see benchmarks/README.md, "Primary-duel metric definitions". It
+is deliberately separate from `merge`: `merge` answers "what workload is this
+cell", `metrics_for` answers "where does this cell's data live", and only the
+latter is allowed to be missing a value (a `null` binding, meaning
+not-yet-registered).
 
 Both class lists in cells.yaml are searched (`sweep_classes` for M2's
 LiDAR-load sweep, `camera_classes` for M4's camera-load arm): they are two
@@ -94,6 +96,7 @@ METRIC_KEYS = (
     "cpu_process_label",
     "tick_hz",
     "lidar_expected_hz",
+    "ndt_expected_hz",
 )
 
 
