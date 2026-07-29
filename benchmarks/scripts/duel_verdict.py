@@ -849,6 +849,10 @@ class ReconciliationRow:
     additionally excludes runs where it was NaN (`n_zero_published`, a
     real file-backed zero-throughput run) -- reported as counts rather
     than folded silently into either statistic.
+
+    The two axes therefore have DIFFERENT sample sizes, so both are
+    printed: `n_measurable` is the publisher statistics' n, `n_observer`
+    is the observer statistics' (see its own docstring).
     """
 
     cell: str
@@ -861,6 +865,21 @@ class ReconciliationRow:
     observer_loss_rate_median: float | None  # over measurable, non-NaN runs
     observer_loss_rate_max: float | None  # over measurable, non-NaN runs
     notes: str = ""
+
+    @property
+    def n_observer(self) -> int:
+        """The n behind `observer_loss_rate_median`/`_max`.
+
+        `n_measurable` is the n behind the PUBLISHER pair only. The
+        observer reduction additionally drops the runs whose
+        `observer_loss_rate` is NaN (`n_zero_published`), so pairing the
+        printed `n_measurable` with an observer statistic overstates its
+        sample size -- by all of it when every measurable run published
+        nothing. Derived rather than stored: it is a function of two
+        recorded counts, and a stored third copy could disagree with
+        them.
+        """
+        return self.n_measurable - self.n_zero_published
 
 
 def _cell_reconciliation_row(
@@ -991,12 +1010,17 @@ def render_reconciliation_table(rows: list[ReconciliationRow]) -> str:
     `render_table`'s duel rows, never merged into them. Both rate axes
     carry median AND max columns (owner ruling, 2026-07-28): median for
     continuity with the campaign's per-run -> per-cell convention, max
-    so a lone high-loss run is never buried by it."""
+    so a lone high-loss run is never buried by it.
+
+    BOTH sample sizes are columns: `n measurable` is the publisher
+    pair's, `n observer` the observer pair's. The two differ by the
+    zero-published runs the observer reduction drops, and a reader
+    pairing one printed n with both axes would misstate the second."""
     lines = [
         "| cell | arm | n measurable | n not measurable | n zero-published "
-        "| publisher_drop_rate (median) | publisher_drop_rate (max) "
+        "| n observer | publisher_drop_rate (median) | publisher_drop_rate (max) "
         "| observer_loss_rate (median) | observer_loss_rate (max) | notes |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         pub_med_s = _fmt_reconciliation_rate(r.publisher_drop_rate_median)
@@ -1005,7 +1029,7 @@ def render_reconciliation_table(rows: list[ReconciliationRow]) -> str:
         obs_max_s = _fmt_reconciliation_rate(r.observer_loss_rate_max)
         lines.append(
             f"| {r.cell} | {r.arm} | {r.n_measurable} | {r.n_not_measurable} "
-            f"| {r.n_zero_published} | {pub_med_s} | {pub_max_s} "
+            f"| {r.n_zero_published} | {r.n_observer} | {pub_med_s} | {pub_max_s} "
             f"| {obs_med_s} | {obs_max_s} | {r.notes} |"
         )
     return "\n".join(lines)

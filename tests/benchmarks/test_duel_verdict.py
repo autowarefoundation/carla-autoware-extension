@@ -1662,12 +1662,34 @@ def test_render_reconciliation_table_has_required_columns():
         "cell",
         "arm",
         "measurable",
+        "n observer",
         "publisher_drop_rate (median)",
         "publisher_drop_rate (max)",
         "observer_loss_rate (median)",
         "observer_loss_rate (max)",
     ):
         assert col in header
+
+
+def test_reconciliation_row_observer_n_excludes_the_zero_published_runs():
+    """The observer reduction drops the NaN (zero-published) runs, so its
+    n is not `n_measurable`. Pairing the printed `n measurable` with an
+    observer statistic overstates that statistic's sample size."""
+    row = ReconciliationRow("A", "static", 3, 1, 2, 0.4, 0.9, 0.0, 0.0, "")
+    assert row.n_measurable == 3
+    assert row.n_observer == 1
+
+
+def test_render_reconciliation_table_prints_both_sample_sizes():
+    """Both n's are IN the artifact a reader sees: the observer pair's n
+    must not be something the reader has to derive by subtracting one
+    printed column from another."""
+    rows = [ReconciliationRow("A", "static", 3, 0, 2, 0.4, 0.9, 0.0, 0.0, "")]
+    line = next(
+        ln for ln in render_reconciliation_table(rows).splitlines() if ln.startswith("| A |")
+    )
+    # n measurable | n not measurable | n zero-published | n observer
+    assert "| 3 | 0 | 2 | 1 |" in line
 
 
 def test_render_reconciliation_table_renders_nan_and_dash_distinctly():
