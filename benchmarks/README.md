@@ -12,17 +12,17 @@ pre-registered, regenerable evidence rather than one-off numbers.
 
 A future `bench_observer` must emit the following files for every run:
 
-| File                 | Columns / schema                                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `observer.csv`       | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                     | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                       |
-| `clock.csv`          | `clock_ns,arrival_system_ns`                                                                                        | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `published_time.csv` | `topic,source_header_ns,published_ns`                                                                               |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `resources.csv`      | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                            | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                             |
-| `odometry.csv`       | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size. |
-| `gt.csv`             | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                      | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                |
-| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                     | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below.                                                                                                     |
-| `manifest.json`      | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `quality.json`       | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. NO WRITER EXISTS YET — the task that lands the M5 gate step writes it.                                                                                                                                                                                                   |
+| File                    | Columns / schema                                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `observer.csv`          | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                     | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                                                                               |
+| `clock.csv`             | `clock_ns,arrival_system_ns`                                                                                        | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `published_time.csv`    | `topic,source_header_ns,published_ns`                                                                               |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `resources.csv`         | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                            | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                                                                                     |
+| `odometry.csv`          | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size.                                                         |
+| `gt.csv`                | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                      | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                       | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below. |
+| `manifest.json`         | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. NO WRITER EXISTS YET — the task that lands the M5 gate step writes it.                                                                                                                                                                                                                                                           |
 
 Results are laid out on disk as:
 
@@ -668,6 +668,61 @@ an unexpected sign) cannot be attributed to the seam without accounting for it, 
 attributes the whole delta to the seam would be biased in the seam's favour. Task 22's confound
 table must state this alongside the CAL-seam numbers, not merely note the difference.
 
+### DDS middleware and transport (Task 9): the B family runs a different one
+
+Every other cell family gets the harness's default middleware. The
+tier4-native family (B, B-hf, B45, D) cannot, so its cells are the only
+ones that change the middleware **inside the DUT** as well as inside the
+instrument. Three distinct configurations now exist across the campaign:
+
+| Cells           | Autoware's own middleware / transport                             | Observer                              |
+| --------------- | ----------------------------------------------------------------- | ------------------------------------- |
+| A, C            | `rmw_cyclonedds_cpp`, `docker/cyclonedds.xml` (`lo` only)         | `rmw_cyclonedds_cpp`, same profile    |
+| E, E0, E-opt    | `rmw_fastrtps_cpp`, image default (**SHM on**)                    | `rmw_cyclonedds_cpp`, default profile |
+| B, B-hf, B45, D | `rmw_fastrtps_cpp` + `observer/config/udp_only.xml` (**SHM off**) | `rmw_fastrtps_cpp`, same profile      |
+
+This is forced, not chosen. The tier4 fork's publishers announce
+**SHM-only user-data locators** and cannot be reconfigured from their own
+side: `create_participant` selects an XML-derived QoS by pointer identity
+with `PARTICIPANT_QOS_DEFAULT`, and every fork endpoint copies that object
+before mutating it, so `FASTRTPS_DEFAULT_PROFILES_FILE` and
+`FASTDDS_BUILTIN_TRANSPORTS` are both inert for it. Fast-DDS 2.11.2's SHM
+segments are unreadable by ROS 2 Humble's 2.6.11, so with shared memory
+left on the B family delivers **neither** sensing out of the fork nor
+control into it, while every endpoint still matches and every log still
+looks healthy. Evidence for both directions:
+`benchmarks/patches/tier4-native/README.md`, "ROS 2 wire visibility".
+
+**This is a genuine confound, not a defect to fix**, and it is broader
+than the `observer_env` row it shows up in:
+
+- **What `CAL-rmw` bounds.** `CAL-rmw` is `bench_pub` -> `bench_observer`,
+  both inside the one observer image, with **no simulator and no
+  Autoware** (`cells/calibration.sh:7-12`). It measures how much of an
+  observed one-hop M1/M2 number is attributable to the recording
+  transport, and it bounds exactly that: the **instrument** difference
+  between a Cyclone-on-`lo` observer and a Fast-DDS-UDP observer.
+- **What `CAL-rmw` does not bound.** It contains no Autoware, so it says
+  nothing about the DUT-side difference. In the B family Autoware's own
+  intra-stack topics travel over Fast-DDS/UDP-loopback instead of
+  CycloneDDS-on-`lo` (A/C) or Fast-DDS/SHM (E family). That difference
+  sits **inside** the measured system for **M3** (a UDP-loopback path
+  forgoes shared-memory zero-copy for the large PointCloud2 traffic that
+  never leaves the stack), for the intra-stack portion of **M2**, and
+  potentially for **M5** through control-loop timing. No calibration cell
+  isolates it; its sign and magnitude are unmeasured.
+- **Why it bites the headline duel specifically.** The duel is cell A
+  (extension) against cell B (tier4-native) on Town10 -- precisely the two
+  rows above with different DUT middleware. A cross-arm M3 or M2
+  difference is therefore a difference in integration **and** in
+  Autoware's own transport, and cannot be attributed to the integration
+  alone.
+
+Task 22's confound table must state this alongside the B-family numbers
+and must not present `CAL-rmw` as bounding it. Quantifying the DUT-side
+part would need a calibration cell that runs the same Autoware stack twice
+under two middlewares, which the campaign does not have.
+
 ## Pre-registration
 
 The git history of this directory is the pre-registration record: metric
@@ -1033,7 +1088,7 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   implementation passed spans from different domains — sim in
   `duel_verdict.py`, wall in `sweep_verdict.py`. `lidar_expected_hz` is
   sim-domain by its own registered relation (`min(1 / sensor_tick,
-  tick_hz)`, both simulation-time periods), so a wall span inflates the
+tick_hz)`, both simulation-time periods), so a wall span inflates the
   expectation by `1 / RTF`, depresses `publisher_rate_ratio` by the same
   factor and can fire the ceiling's publisher disjunct on a publisher
   that dropped nothing — on exactly the sub-real-time arms where the
@@ -1074,6 +1129,23 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   never read as a clean measured pass; and it matches the repo's
   fail-loudly convention, where precise failure localization is the
   deliverable. No behaviour changes with this entry.
+- **2026-07-29** — `## Known confounds` gained the DDS middleware and
+  transport entry (the B family must run `rmw_fastrtps_cpp` with shared
+  memory off — `observer/config/udp_only.xml` — in **both** the observer
+  and the Autoware container, while A/C run CycloneDDS-on-`lo` and the E
+  family runs Fast-DDS with SHM on). No margin, threshold or cell
+  definition changes with this entry. Completeness: Task 9 measured that
+  the tier4 fork announces SHM-only user-data locators that ROS 2
+  Humble's Fast-DDS 2.6.11 cannot read, in **both** directions — sensing
+  out of the fork and control into it — and that the fork cannot be
+  reconfigured from its own side, so the fix has to be applied to the
+  DUT's own middleware for the B family only. That makes Autoware's
+  transport differ between the two arms of the headline duel (A vs. B),
+  which is inside the measured system for M3 and for the intra-stack
+  part of M2, and `CAL-rmw` cannot bound it because `CAL-rmw` runs no
+  Autoware at all (`cells/calibration.sh:7-12`). Recorded only in a task
+  report before this entry, and the earlier task report framed it as an
+  `observer_env` difference alone, which understates it.
 
 ## How to run
 
