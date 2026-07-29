@@ -46,6 +46,27 @@ autoware_universe_devel:
 bridge_bench:
   tag: bridge-bench:latest
   local_digest: sha256:b734b9af2ac6527284b07d8986261d4c360cf4d0f4d18900be7a13ebb4cb4123
+# The image built from benchmarks/docker/bridge-bench-patched.Dockerfile:
+# bridge_bench above plus the two committed python-bridge patches (0001, the
+# pre-registered named exception in benchmarks/README.md, and 0002, the
+# harmonized sensor config). Cells E and E-opt run THIS image; cell E0 keeps
+# the unpatched bridge_bench, which is the whole point of having two tags.
+# Like bridge_bench it is never pushed, so the only identifier it has is the
+# LOCAL image digest below (`docker image inspect --format '{{.Id}}'`, the same
+# identifier kind as bridge_bench.local_digest): it pins what a run used on
+# this workstation, but it is not a pullable reference, and a rebuild elsewhere
+# must be re-recorded.
+# GPU: inherits bridge_bench's CUDA base, so every `docker run` of it needs
+# `--gpus all` and nvidia-container-toolkit.
+bridge_bench_patched:
+  tag: bridge-bench-patched:latest
+  local_digest: sha256:6d65be77784dfa0cf85da1ba7bf8e877f0ec4c0d6a50e339eb81204d27e14220
+  patches:
+    - 0001-lidar-is-dense.patch
+    - 0002-sensor-config-harmonized.patch
+  patches_sha256:
+    0001-lidar-is-dense.patch: b7fa7e84e958f9a15f16754aab686ac9e2a87f72a189eb778d550f6bfff2b637
+    0002-sensor-config-harmonized.patch: 93aaaff414ba032a6965a95735244e51f44aed725db269c1ce5c57053dc60298
 # Images built from benchmarks/docker/bench-observer.Dockerfile, one label
 # per pinned base. Never pushed, so the only identifier each has is the
 # LOCAL image digest below (`docker images --digests`): it pins what a run

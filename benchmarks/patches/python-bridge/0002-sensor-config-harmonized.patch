@@ -1,0 +1,87 @@
+--- /opt/autoware/share/autoware_carla_interface/config/sensor_mapping.yaml
++++ /opt/autoware/share/autoware_carla_interface/config/sensor_mapping.yaml
+@@ -12,16 +12,16 @@
+     ros_config:
+       frame_id: velodyne_top
+       topic_base: /sensing/lidar/top
+-      topic_suffix: /pointcloud_before_sync
+-      frequency_hz: 11
++      topic_suffix: /pointcloud_raw_ex
++      frequency_hz: 20
+       qos_profile: best_effort
+     parameters:
+       range: 100
+-      channels: 64
+-      points_per_second: 300000
+-      upper_fov: 10.0
+-      lower_fov: -30.0
+-      rotation_frequency: 20
++      channels: 16
++      points_per_second: 288000
++      upper_fov: 15.0
++      lower_fov: -15.0
++      rotation_frequency: 10
+       noise_stddev: 0.0
+ 
+   # CARLA multi-camera setup (6 cameras for 360-degree coverage)
+@@ -144,9 +144,9 @@
+       noise_lon_bias: 0.0
+     covariance:
+       # Position covariance (variance in meters²)
+-      position_variance: 0.01 # 0.1m standard deviation
++      position_variance: 0.1 # harmonized: extension GnssPosePublisher diag[0..2]
+       # Orientation covariance (variance in radians²)
+-      orientation_variance: 1.0 # Large uncertainty - orientation not measured by GNSS
++      orientation_variance: 0.05 # harmonized: extension GnssPosePublisher diag[3..5]
+ 
+ # Sensor name normalization rules
+ normalization:
+@@ -160,13 +160,15 @@
+   # LiDAR
+   - velodyne_top_base_link
+ 
+-  # Cameras (6 for 360-degree coverage)
+-  - CAM_FRONT/camera_link
+-  - CAM_FRONT_LEFT/camera_link
+-  - CAM_FRONT_RIGHT/camera_link
+-  - CAM_BACK/camera_link
+-  - CAM_BACK_LEFT/camera_link
+-  - CAM_BACK_RIGHT/camera_link
++  # Cameras: OUT of the harmonized baseline kit (M4 camera-load arm
++  # only). Their sensor_mappings entries above are intentionally left
++  # in place so that arm re-enables them by listing them here again.
++  # - CAM_FRONT/camera_link
++  # - CAM_FRONT_LEFT/camera_link
++  # - CAM_FRONT_RIGHT/camera_link
++  # - CAM_BACK/camera_link
++  # - CAM_BACK_LEFT/camera_link
++  # - CAM_BACK_RIGHT/camera_link
+ 
+   # IMU and GNSS
+   - tamagawa/imu_link
+--- /opt/autoware/share/autoware_carla_interface/autoware_carla_interface.launch.xml
++++ /opt/autoware/share/autoware_carla_interface/autoware_carla_interface.launch.xml
+@@ -100,7 +100,10 @@
+       args="raw compressed --ros-args -r in:=/sensing/camera/traffic_light/image_raw -r out/compressed:=/sensing/camera/traffic_light/image_raw/compressed"
+     />
+ 
+-    <!-- Multi-camera combiner for RViz visualization -->
+-    <node pkg="autoware_carla_interface" exec="multi_camera_combiner" output="screen"/>
++    <!-- Multi-camera combiner for RViz visualization: DISABLED for the
++         harmonized benchmark kit. It is a documented-optional
++         visualization node, and the baseline kit spawns no cameras, so
++         it would only add process cost to the M3 numbers. -->
++    <!-- <node pkg="autoware_carla_interface" exec="multi_camera_combiner" output="screen"/> -->
+   </group>
+ </launch>
+--- /opt/autoware/share/carla_sensor_kit_launch/launch/pointcloud_preprocessor.launch.py
++++ /opt/autoware/share/carla_sensor_kit_launch/launch/pointcloud_preprocessor.launch.py
+@@ -85,7 +85,7 @@
+             plugin="autoware::pointcloud_preprocessor::CropBoxFilterComponent",
+             name="crop_box_filter_self",
+             remappings=[
+-                ("input", "/sensing/lidar/top/pointcloud_before_sync"),
++                ("input", "/sensing/lidar/top/pointcloud_raw_ex"),
+                 ("output", "self_cropped/pointcloud"),
+             ],
+             parameters=[cropbox_parameters],
