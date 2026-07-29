@@ -147,13 +147,23 @@ def lidar_stamp_recorder(series: list[int]):
     """`sensor.listen` callback appending each message's SIM stamp to
     `series`, in `publisher_counts.json`'s registered domain.
 
-    `carla.SensorData.timestamp` is the episode's `elapsed_seconds` at
-    the measurement, so this is the same clock and the same rounding rule
-    (`sim_ns_from_elapsed`) as gt.csv's `sim_ns` column -- and therefore
-    the domain the duel's scoring-window bounds are in. A wall-clock
-    stamp taken here would be a different clock from the one the window
-    and the observed count are filtered on, and would need the run's
-    clock fit to be comparable at all.
+    `carla.SensorData.timestamp` is CARLA's documented "simulation time
+    when the data was generated", i.e. the same episode clock
+    `snapshot.timestamp.elapsed_seconds` reports, so this passes it
+    through the same rounding rule (`sim_ns_from_elapsed`) as gt.csv's
+    `sim_ns` column -- and therefore lands in the domain the duel's
+    scoring-window bounds are in. A wall-clock stamp taken here would be
+    a different clock from the one the window and the observed count are
+    filtered on, and would need the run's clock fit to be comparable at
+    all.
+
+    What no offline test can check: that a message's stamp here and the
+    ROS header stamp `observer.csv` records for the SAME message agree.
+    On the first real counting run they must match to within one message
+    period for the same topic -- the campaign already assumes this pair
+    of clocks agrees (`analysis/quality.py` joins gt.csv's `sim_ns` to
+    the NDT pose's header stamp within 25 ms), and a mismatch would show
+    up as a large, flat `observer_loss_rate` on every A/B cell at once.
 
     Returned as a closure rather than written inline at the `listen`
     call so the recorded quantity is unit-testable without a live CARLA.

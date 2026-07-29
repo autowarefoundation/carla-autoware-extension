@@ -24,9 +24,10 @@ IDENTICALLY to the other two (owner ruling, 2026-07-28; see
 
 THE STAMP DOMAIN IS SIM, NOT WALL
 ---------------------------------
-`sim_stamps_ns` are simulation-time nanoseconds -- CARLA's episode
-`elapsed_seconds` scaled by `collect_gt.sim_ns_from_elapsed`, the same
-domain and the same rounding rule as `gt.csv`'s `sim_ns` column. That is
+`sim_stamps_ns` are simulation-time nanoseconds -- CARLA's documented
+"simulation time when the data was generated" through
+`collect_gt.sim_ns_from_elapsed`, i.e. the same episode clock and the
+same rounding rule as `gt.csv`'s `sim_ns` column. That is
 the domain the duel's window bounds (`_RunWindow.sim_lo`/`sim_hi`) and
 the observed term (`observer.csv`'s `header_stamp_ns`) live in, so the
 publisher-side filter is the same comparison on the same clock rather
@@ -138,8 +139,8 @@ def read_publisher_counts(path) -> PublisherCounts:
         raise PublisherCountsFormatError(
             f"{path}: no 'schema' key -- this is the pre-{PUBLISHER_COUNTS_SCHEMA} "
             f"shape ({{topic: count}}), a WHOLE-RUN count with no per-message "
-            f"stamps. It cannot be windowed to a scoring window after the fact, "
-            f"so it is refused rather than read as if it were windowed. Re-run "
+            f"stamps. It cannot be windowed to a scoring window after the "
+            f"fact, so it is refused rather than read as if windowed. Re-run "
             f"the collection with a collect_gt.py that writes "
             f"{PUBLISHER_COUNTS_SCHEMA}."
         )
