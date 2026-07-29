@@ -10,9 +10,11 @@ autoware_contents:
 # `source_sha256`.
 # Note: `sha256` is the OUTPUT file's hash -- it is not comparable to
 # `source_sha256` on size or bytes. The source is compressed `DATA
-# binary_compressed` (110 MB); shift_pcd.py never re-compresses, so the
-# shifted output is uncompressed `DATA binary` and larger (~114 MB) even
-# though it holds the same point count.
+# binary_compressed` (110 MiB); shift_pcd.py never re-compresses, so the
+# shifted output is uncompressed `DATA binary` and larger (~114 MiB) even
+# though it holds the same point count. Sizes are MiB here and in
+# shift_pcd.py -- the unit `ls -h` prints, so the two agree with each
+# other and with the files on disk.
 town10_pcd_shifted:
   source_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
   dy_m: -0.475

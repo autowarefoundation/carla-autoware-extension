@@ -29,8 +29,10 @@ no-new-dependencies rule). Output is always written as uncompressed
 header is the input header with *only* the ``DATA`` line rewritten to
 ``binary``, every other header line byte-identical, and the point data
 re-encoded uncompressed. That is why a shifted output file is larger
-than a ``binary_compressed`` input (e.g. Town10's ~110 MB compressed
-bundle becomes ~120 MB uncompressed): the tool never re-compresses.
+than a ``binary_compressed`` input (e.g. Town10's ~110 MiB compressed
+bundle becomes ~114 MiB uncompressed): the tool never re-compresses.
+Sizes are MiB here and in ``benchmarks/pins.yaml`` -- the unit ``ls -h``
+prints, so the two agree with each other and with the files on disk.
 """
 
 from __future__ import annotations
