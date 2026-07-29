@@ -5,8 +5,28 @@ from __future__ import annotations
 import json
 
 import pytest
+import yaml
 
 from benchmarks.scripts import cell_info
+
+CONFIG_DIR = cell_info.CELLS_YAML.parent
+ALL_CELL_IDS = [str(c["id"]) for c in yaml.safe_load(cell_info.CELLS_YAML.read_text())["cells"]]
+
+
+def _observer_topics(cell: str) -> list[str]:
+    """The topic names registered in config/observer_topics/<cell>.yaml.
+
+    Each entry is "<topic>|<type>|<kind>" (benchmarks/observer/src/
+    bench_observer.cpp); only the topic half is compared here.
+    """
+    doc = yaml.safe_load((CONFIG_DIR / "observer_topics" / f"{cell}.yaml").read_text())
+    specs = doc["/**"]["ros__parameters"]["topics"] or []
+    return [str(spec).split("|", 1)[0] for spec in specs]
+
+
+def _process_labels(cell: str) -> list[str]:
+    doc = yaml.safe_load((CONFIG_DIR / "processes" / f"{cell}.yaml").read_text())
+    return [str(entry["label"]) for entry in doc["processes"]]
 
 
 @pytest.fixture
@@ -89,3 +109,79 @@ def test_every_simulator_cell_has_a_sim_clock(doc, cell):
     that DOES run a simulator (`carla: 0.10-fork`), so the flag follows the
     simulator, not the approach."""
     assert cell_info.merge(doc, cell)["has_sim_clock"] is True
+
+
+# ---------------------------------------------------------------------------
+# metrics_for: the per-cell metric bindings (benchmarks/README.md, "Primary-
+# duel metric definitions"). A cell missing a binding is a registration gap
+# that would otherwise surface as a KeyError mid-campaign, or -- worse -- as a
+# tool's own hardcoded default matching zero rows and reading as real data.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cell", ALL_CELL_IDS)
+def test_every_registered_cell_has_every_metric_binding(doc, cell):
+    metrics = cell_info.metrics_for(doc, cell)
+    assert set(metrics) == set(cell_info.METRIC_KEYS)
+
+
+@pytest.mark.parametrize("cell", ALL_CELL_IDS)
+def test_metric_topics_are_topics_the_observer_actually_records(doc, cell):
+    """A bound topic that bench_observer never subscribes to yields zero rows,
+    which reads downstream as "this transport delivered nothing" rather than as
+    a configuration error -- the exact failure mode observer_topics/
+    CAL-seam.yaml's deliberately-empty list exists to avoid. `null` bindings
+    are skipped: they are the registered "not chosen yet" state."""
+    metrics = cell_info.metrics_for(doc, cell)
+    registered = _observer_topics(cell)
+    for key in ("lidar_topic", "ndt_topic", "control_topic"):
+        if metrics[key] is not None:
+            assert metrics[key] in registered, f"{cell}: {key} not in observer_topics"
+
+
+@pytest.mark.parametrize("cell", ALL_CELL_IDS)
+def test_cpu_process_label_is_a_label_the_sampler_writes(doc, cell):
+    """resources.csv's `process` column is the process-map entry's `label`
+    verbatim (sampler/sample_resources.py), so carla_process_cpu_pct's binding
+    must be one of them. A label that matches nothing does not raise -- it
+    silently reads as "the simulator used no CPU"."""
+    label = cell_info.metrics_for(doc, cell)["cpu_process_label"]
+    if label is not None:
+        assert label in _process_labels(cell)
+
+
+@pytest.mark.parametrize("cell", ALL_CELL_IDS)
+def test_registered_rates_are_positive_or_explicitly_unregistered(doc, cell):
+    """Rates are either a positive number or `null` (not pre-registered yet).
+    A zero or negative rate would divide achieved_rate_ratio by zero or flip
+    its sign rather than failing."""
+    metrics = cell_info.metrics_for(doc, cell)
+    for key in ("tick_hz", "lidar_expected_hz"):
+        assert metrics[key] is None or metrics[key] > 0
+
+
+def test_high_frequency_cell_separates_tick_rate_from_sensor_rate(doc):
+    """The regression the tick_hz/lidar_expected_hz split exists for: --fixed
+    -delta moves the WORLD tick and not the rig's sensor_tick, so on A-hf the
+    two differ five-fold. A tool that derives an expected message count from
+    the tick target understates the achieved ratio by exactly that factor."""
+    metrics = cell_info.metrics_for(doc, "A-hf")
+    assert metrics["tick_hz"] == 100.0
+    assert metrics["lidar_expected_hz"] == 20.0
+
+
+def test_metrics_for_rejects_a_cell_with_no_metrics_block():
+    doc = {"cells": [{"id": "X"}]}
+    with pytest.raises(cell_info.UnknownIdError, match="no `metrics:` block"):
+        cell_info.metrics_for(doc, "X")
+
+
+def test_metrics_for_rejects_a_partial_metrics_block():
+    doc = {"cells": [{"id": "X", "metrics": {"lidar_topic": "/t"}}]}
+    with pytest.raises(cell_info.UnknownIdError, match="missing ndt_topic"):
+        cell_info.metrics_for(doc, "X")
+
+
+def test_metrics_for_rejects_an_unknown_cell(doc):
+    with pytest.raises(cell_info.UnknownIdError, match="unknown cell 'Q'"):
+        cell_info.metrics_for(doc, "Q")

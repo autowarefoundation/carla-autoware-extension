@@ -19,6 +19,14 @@ level rather than nesting keeps the consumer side a single `jq -r .<key>`
 in `run.sh`, and makes "did the class actually apply?" answerable by looking
 for the key.
 
+`metrics_for` is the same file's other accessor, for the per-cell metric
+bindings (topics, process label, tick/sensor rates) the analysis tools must
+read instead of hardcoding -- see benchmarks/README.md, "Primary-duel metric
+definitions". It is deliberately separate from `merge`: `merge` answers "what
+workload is this cell", `metrics_for` answers "where does this cell's data
+live", and only the latter is allowed to be missing a value (a `null`
+binding, meaning not-yet-registered).
+
 Both class lists in cells.yaml are searched (`sweep_classes` for M2's
 LiDAR-load sweep, `camera_classes` for M4's camera-load arm): they are two
 registrations of the same shape (`id` + `applies_to` + workload fields) and
@@ -72,6 +80,43 @@ def class_entry(doc: dict, class_id: str) -> dict:
                 return dict(entry)
     known = ", ".join(sorted(str(e["id"]) for n in CLASS_LISTS for e in (doc.get(n) or [])))
     raise UnknownIdError(f"unknown class {class_id!r}; registered classes: {known}")
+
+
+# Every key a cell's `metrics:` block must carry (benchmarks/README.md,
+# "Primary-duel metric definitions"). A cell missing the block, or missing a
+# key from it, is a registration gap and raises here -- it must never reach a
+# tool as a KeyError mid-campaign, and never as a silent default.
+METRIC_KEYS = (
+    "lidar_topic",
+    "ndt_topic",
+    "control_topic",
+    "control_published_time_topic",
+    "cpu_process_label",
+    "tick_hz",
+    "lidar_expected_hz",
+)
+
+
+def metrics_for(doc: dict, cell_id: str) -> dict:
+    """The `metrics:` bindings for `cell_id` (see METRIC_KEYS).
+
+    A `None` value is a legitimate registered state ("not pre-registered
+    yet"), and is returned as-is: the CALLER decides that the metric is
+    unavailable for this cell and says so. What is not legitimate is a
+    missing block or a missing key, which would otherwise reach the caller
+    as a KeyError from somewhere deep in an analysis run.
+    """
+    entry = cell_entry(doc, cell_id)
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, dict):
+        raise UnknownIdError(
+            f"cell {cell_id!r} has no `metrics:` block in cells.yaml; every "
+            f"registered cell needs one (keys: {', '.join(METRIC_KEYS)})"
+        )
+    missing = [k for k in METRIC_KEYS if k not in metrics]
+    if missing:
+        raise UnknownIdError(f"cell {cell_id!r}'s `metrics:` block is missing {', '.join(missing)}")
+    return dict(metrics)
 
 
 def merge(doc: dict, cell_id: str, class_id: str | None = None) -> dict:

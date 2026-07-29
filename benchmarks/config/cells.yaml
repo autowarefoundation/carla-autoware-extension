@@ -1,5 +1,39 @@
 # Workload matrix (spec: Benchmark design). A sweep point is a cell and
 # inherits n >= 3 (>= 5 at the ceiling class); primary duel n >= 10.
+#
+# Each cell's `metrics:` block is the machine-readable binding every analysis
+# tool must read instead of hardcoding a topic, a process label or a rate
+# (definitions: benchmarks/README.md, "Primary-duel metric definitions").
+# Reached with benchmarks.scripts.cell_info.metrics_for(doc, <cell-id>).
+#
+#   lidar_topic                     the cell's as-emitted pointcloud topic --
+#                                   the M2/M4 primary topic and the topic
+#                                   one_hop_wall_ms / achieved_rate_ratio /
+#                                   lidar_to_ndt_sim_ms are computed on.
+#   ndt_topic                       NDT pose output (lidar_to_ndt_sim_ms).
+#   control_topic                   the GATED control command (M5/M1b).
+#   control_published_time_topic    the PublishedTime companion of
+#                                   control_topic; the KEY of the
+#                                   published_time.csv rows control_staleness_ms
+#                                   reads, which is the PublishedTime topic
+#                                   name, NOT control_topic itself.
+#   cpu_process_label               the resources.csv `process` value
+#                                   carla_process_cpu_pct reads; always a
+#                                   `label` registered in
+#                                   config/processes/<cell>.yaml.
+#   tick_hz                         paced WORLD-TICK target, 1/fixed_delta_seconds.
+#   lidar_expected_hz               SENSOR publish target, the denominator of
+#                                   achieved_rate_ratio and the only correct
+#                                   basis for an expected message COUNT.
+#
+# tick_hz and lidar_expected_hz are DIFFERENT numbers that happen to coincide
+# at 20.0 on most cells; they diverge on the high-frequency cells. Never
+# substitute one for the other.
+#
+# A `null` binding is NOT a default to fill in at analysis time: it means the
+# value is not pre-registered yet, so the metric is UNAVAILABLE for that cell
+# and a tool must say so rather than invent one. The task that owes each null
+# is named beside it.
 cells:
   - id: A
     approach: extension
@@ -7,30 +41,85 @@ cells:
     map: Town10HD_Opt
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20 (appended after live discovery)
+      cpu_process_label: carla-server
+      tick_hz: 20.0 # runner/loop.py DEFAULT_FIXED_DELTA = 0.05
+      # runner/spawn.py _SENSOR_TICK = "0.05" on the top LiDAR, and the
+      # effective sensor rate is min(1/sensor_tick, tick_hz) -- the relation
+      # P1 Verdict 4 measured live. A sweep class changes channels/points,
+      # never sensor_tick, so this is a per-cell and not a per-class value.
+      lidar_expected_hz: 20.0
   - id: B
     approach: tier4-native
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0 # tier4 demo --hz_rate 20 -> fixed_delta_seconds 0.05
+      # NOT REGISTERED: Task 13 (tier4 demo harmonization patch) fixes the
+      # tier4 rig's sensor_tick. P1 measured the unpatched demo at
+      # sensor_tick=0.1 (10 Hz) against the extension's 0.05 (20 Hz), so this
+      # is a real open choice, not a transcription -- and physics.yaml's
+      # precedent is that harmonization values are SOURCED from the tier4
+      # demo, not assumed to match the extension. Do not guess it here.
+      lidar_expected_hz:
   - id: C
     approach: extension
     carla: 0.10-fork
     map: NishishinjukuMap
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: 20.0 # same rig as cell A; only the map differs
   - id: D
     approach: tier4-native
     carla: 0.10-tier4
     map: NishishinjukuMap
     mandatory: false
     arms: [static, closed-loop] # only if the map cooks in the tier4 tree
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: # Task 13, as cell B
   - id: E
     approach: python-bridge
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_before_sync
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # patches/python-bridge/README.md: the bridge drives CARLA in
+      # synchronous mode with fixed_delta_seconds = 0.05, verified live.
+      tick_hz: 20.0
+      # NOT REGISTERED: the bridge's own sensor rig, re-grounded live by
+      # Task 10/20 before any E-family P3 run. P1 measured 8.59 Hz as-emitted
+      # on an unpatched run, which is a MEASUREMENT, not a target.
+      lidar_expected_hz:
   - id: E0
     approach: python-bridge
     carla: 0.9.15
@@ -43,42 +132,112 @@ cells:
     # (patched, see patches/python-bridge/0001) and the failure itself is E0's
     # reported result.
     arms: [static]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_before_sync
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: # Task 10/20, as cell E
   - id: E-opt
     approach: python-bridge
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: false
     arms: [closed-loop] # local packer-optimized sensitivity
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_before_sync
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: # Task 10/20, as cell E
   - id: CAL-rmw
     approach: calibration
     carla: none
     map: none
     mandatory: true
     arms: [static]
+    metrics:
+      # bench_pub's synthetic PointCloud2; cells/calibration.sh passes the
+      # same default bench_pub.cpp declares.
+      lidar_topic: /bench/cloud
+      # No Autoware in this cell, so none of the stack-side topics exist and
+      # none is coming (observer_topics/CAL-rmw.yaml says the same).
+      ndt_topic:
+      control_topic:
+      control_published_time_topic:
+      # No simulator process: processes/CAL-rmw.yaml registers bench-pub and
+      # the observer only, so there is no CARLA CPU series to compare.
+      cpu_process_label:
+      tick_hz: # no simulator, no world tick, no /clock
+      lidar_expected_hz: 10.0 # cells/calibration.sh PUB_RATE_HZ default
   - id: CAL-seam
     approach: calibration
     carla: 0.10-fork
     map: Town10HD_Opt
     mandatory: true
     arms: [static]
+    metrics:
+      # NOT REGISTERED: the seam/in-core publisher pair is Task 14 and names
+      # no topic yet; observer_topics/CAL-seam.yaml is deliberately empty for
+      # the same reason, and cells/calibration.sh refuses to launch the cell.
+      lidar_topic:
+      ndt_topic:
+      control_topic:
+      control_published_time_topic:
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: # Task 14
   - id: A-hf
     approach: extension
     carla: 0.10-fork
     map: Town10HD_Opt
     mandatory: false
     arms: [closed-loop] # fixed_delta 0.01
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 100.0 # fixed_delta 0.01 -- the point of this cell
+      # UNCHANGED at 20.0: --fixed-delta moves the world tick, not the rig's
+      # sensor_tick, and min(1/0.05, 100.0) is still 20. This is the pair the
+      # tick_hz/lidar_expected_hz split exists for.
+      lidar_expected_hz: 20.0
   - id: B-hf
     approach: tier4-native
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: false
     arms: [closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # The A-hf counterpart cells.yaml registers this cell as; Task 13 owns
+      # the launch argument that applies it (processes/B-hf.yaml).
+      tick_hz: 100.0
+      lidar_expected_hz: # Task 13, as cell B
   - id: B45
     approach: tier4-native
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: true
     arms: [closed-loop] # Autoware 0.45.x image
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0 # CARLA-side recipe identical to cell B
+      lidar_expected_hz: # Task 13, as cell B
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }

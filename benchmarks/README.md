@@ -12,20 +12,21 @@ pre-registered, regenerable evidence rather than one-off numbers.
 
 A future `bench_observer` must emit the following files for every run:
 
-| File                 | Columns / schema                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `observer.csv`       | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes` | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                       |
-| `clock.csv`          | `clock_ns,arrival_system_ns`                                                    | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `published_time.csv` | `topic,source_header_ns,published_ns`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `resources.csv`      | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`        | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                             |
-| `odometry.csv`       | `topic,header_stamp_ns,x_m,y_m`                                                 | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size. |
-| `gt.csv`             | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                  | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                |
-| `manifest.json`      | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`       |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| File                 | Columns / schema                                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `observer.csv`       | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                     | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                       |
+| `clock.csv`          | `clock_ns,arrival_system_ns`                                                                                        | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `published_time.csv` | `topic,source_header_ns,published_ns`                                                                               |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `resources.csv`      | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                            | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                             |
+| `odometry.csv`       | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size. |
+| `gt.csv`             | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                      | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                |
+| `manifest.json`      | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `quality.json`       | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. NO WRITER EXISTS YET — the task that lands the M5 gate step writes it.                                                                                                                                                                                                   |
 
 Results are laid out on disk as:
 
 ```text
-benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,gt.csv}
+benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,gt.csv,quality.json}
 ```
 
 ## Patch policy
@@ -70,13 +71,235 @@ owner to strike; striking it drops cells E and E-opt, not E0.
   bounds in `config/routes/<map>.yaml` after a 20 s warm-up discard;
   static = wall window [t0 + 20 s, end].
 
+### Primary-duel metric definitions (pre-registered 2026-07-28)
+
+The five metrics `benchmarks/config/margins.yaml` carries margins for. They
+are the campaign's headline result — the A/B equivalence verdict — so each is
+defined here to the level a second implementer needs to reproduce the number:
+source file and columns, join rule and tolerance, aggregation, scoring window.
+Margins are NOT touched here; this section defines what the metrics mean, not
+what counts as equivalent.
+
+**Per-cell bindings.** No tool may hardcode a topic, a process label or a
+rate. Each cell's entry in `benchmarks/config/cells.yaml` carries a `metrics:`
+block (`lidar_topic`, `ndt_topic`, `control_topic`,
+`control_published_time_topic`, `cpu_process_label`, `tick_hz`,
+`lidar_expected_hz`), read with
+`benchmarks.scripts.cell_info.metrics_for(load_cells_doc(), <cell>)`. A `null`
+binding is not a default to fill in at analysis time: the value is not
+pre-registered yet, so the metric is UNAVAILABLE for that cell and the tool
+must report it as such. `cells.yaml` names the task that owes each `null`.
+
+`tick_hz` (paced world tick, `1 / fixed_delta_seconds`) and
+`lidar_expected_hz` (sensor publish target) are different numbers. They
+coincide at 20.0 on most cells and diverge on the high-frequency cells
+(`A-hf`/`B-hf`: `tick_hz: 100.0`, `lidar_expected_hz: 20.0`, because
+`--fixed-delta` moves the world tick and not the rig's `sensor_tick`). An
+expected message COUNT must be derived from `lidar_expected_hz`; only the M4
+ceiling's unpaced `tick_rate_ratio` disjunct divides by `tick_hz`.
+
+**Scoring window.** All five are computed over the run's registered scoring
+window (see "Scoring windows" above), resolved once per run:
+
+- closed-loop arm: `analysis/window.py` `spatial_window` over `odometry.csv`'s
+  `/localization/kinematic_state` rows against the polyline and
+  `stations.start_m`/`end_m` of `config/routes/<map>.yaml`, warm-up
+  `20e9` ns — bounds are SIM ns.
+- every other arm (`static`, `paced`, `unpaced`, `ablation`):
+  `static_window(t0, end, 20e9)` over `clock.csv`'s `arrival_system_ns` —
+  bounds are WALL ns.
+- The other domain's bounds come from the run's own affine clock fit
+  (`analysis/clockfit.py` `fit_sim_wall_affine` over `clock.csv`): sim → wall
+  by `sim_to_wall`, wall → sim by its exact inverse
+  `(wall_ns - fit.intercept_ns) / fit.slope`.
+- Rows are filtered on the column native to their file: `observer.csv` on
+  `header_stamp_ns` (sim), `published_time.csv` on `source_header_ns` (sim),
+  `resources.csv` on `sample_system_ns` (wall).
+
+Windowing is not optional for these five. The 20 s warm-up covers map load,
+NDT convergence and stack settling, which A and B do differently; against a
+2.0 ms margin on `one_hop_wall_ms` a whole-run median is dominated by it.
+
+**Aggregation (all five).** Per run: the MEDIAN of the in-window per-message
+(or per-sample) series — one run-level scalar per run. Across runs:
+`analysis/stats.py` `bootstrap_ci_median_diff` + `equivalence_decision` on the
+two cells' run-level scalars, `delta = median(A) - median(B)`, lower better.
+Messages are never pooled across runs. Excluded runs never contribute.
+
+#### `one_hop_wall_ms` — transport (margin 2.0)
+
+`analysis/latency.py` `one_hop_wall_ms(header_stamp_ns, arrival_system_ns,
+fit)` over `observer.csv` rows for the cell's `lidar_topic`: observer arrival
+wall time minus the wall time the run's clock fit maps that message's own sim
+header stamp to. Single topic, so no join. This is the same quantity
+`report.py` `summarize_run` already reports per topic as `one_hop_p50_ms`,
+reduced to the one topic the margin is registered against.
+
+Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code
+path, deliberately. CAL cells publish wall-`now()` header stamps and have no
+`/clock` at all, so `cal_report._one_hop_ms` takes the direct
+`arrival_system_ns - header_stamp_ns` and no fit is possible; a simulated
+cell's stamps are sim-domain, so the fit is required. The duel term therefore
+carries the fit's error on top of the transport it measures, and a duel row
+must be read next to that run's `fit_residual_ns` (`report.summarize_run`).
+Task 16 freezes this margin from CAL-rmw, i.e. from the `cal_report` path:
+that transfer is legitimate because the measurand is identical, not because
+the arithmetic is.
+
+#### `lidar_to_ndt_sim_ms` — pipeline (margin 5.0)
+
+LiDAR emission to NDT pose output, in SIMULATED milliseconds.
+
+- Join: `analysis/latency.py` `match_stamps` on `observer.csv`'s
+  `header_stamp_ns` between the cell's `lidar_topic` and `ndt_topic`, EXACT
+  equality, tolerance 0 ns. The hop propagates the stamp verbatim (the scan
+  matcher re-stamps its output pose with the stamp of the scan it matched),
+  which is why `latency.py` names lidar → NDT as one of the few hops
+  `match_stamps` may be used on at all. Duplicate stamps on either side
+  collapse to one pair (`match_stamps`' own documented behaviour).
+- If the exact join yields no pairs, stamp propagation is broken for that run
+  and the metric is UNAVAILABLE: report it. A nearest-stamp join is
+  explicitly NOT permitted as a fallback — it would silently pair a pose with
+  the wrong scan exactly when the assumption the metric rests on has failed.
+- Quantity: because the two stamps are equal by construction,
+  `segment_sim_ms` on them is identically zero and must not be used. The
+  measured quantity is the matched pair's observer-arrival gap expressed in
+  sim time, i.e. the wall gap divided by the run's clock-fit slope:
+  `(arrival_system_ns[ndt] - arrival_system_ns[lidar]) / fit.slope / 1e6`.
+- NOT `clock_ns`. `observer.csv`'s `clock_ns` is the latest `/clock` value
+  cached at arrival, so it advances once per world tick — 50 ms at the
+  registered `tick_hz: 20.0`. Diffing it gives the metric a 50 ms quantum
+  against a 5.0 ms margin: every Δmedian would be a multiple of the tick, not
+  a measurement.
+- The arrival gap includes each message's own one-hop transport, so it is
+  (pipeline) + (NDT transport − LiDAR transport). Both hops land on the same
+  observer image, RMW, QoS and host in both cells, so that difference is a
+  shared-mode term that largely cancels in A − B; `one_hop_wall_ms` measures
+  it directly and is reported alongside.
+
+#### `control_staleness_ms` — M1b staleness (margin 10.0)
+
+Source: `published_time.csv` rows whose `topic` equals the cell's
+`control_published_time_topic`. That is the PublishedTime topic's own name,
+NOT `control_topic` — `bench_observer` writes the topic it subscribed to, and
+the PublishedTime companion is a different topic. It is registered `null` on
+every cell today: Tasks 13/20 append it to `observer_topics/<cell>.yaml`
+after live discovery, and must register it here in the same commit.
+
+Quantity: `analysis/latency.py` `staleness_ms(source_header_ns, published_ns)`
+in ms — but only when both stamps are in the same clock domain. Which they are
+is an empirical property of the pinned Autoware image (`published_stamp` may
+be taken from the node's sim clock or from a default system clock) and must be
+RECORDED by Tasks 13/20 alongside the topic name, not assumed. Both branches
+are pre-registered here so the choice cannot be made after seeing the number:
+
+- (a) `published_stamp` in the SIM domain →
+  `staleness_ms(source_header_ns, published_ns)`.
+- (b) `published_stamp` in the WALL domain →
+  `one_hop_wall_ms(source_header_ns, published_ns, fit)`, the publisher-side
+  analogue of the transport term.
+
+The discriminator is mechanical and unambiguous: a wall stamp is a Unix epoch
+(> 1e18 ns); a sim stamp is a run-length offset (< 1e13 ns for any window this
+harness records).
+
+Known limitation, recorded rather than worked around: under branch (a) both
+stamps come from the sim clock, whose resolution is the `/clock` period
+(50 ms at `tick_hz: 20.0`), so the metric can only resolve whole-tick
+staleness against a 10.0 ms margin. Whether to keep the margin, re-scope the
+metric, or drop it from the duel is an owner decision that this amendment
+deliberately does not make; the margin is left at its pre-registered value.
+
+#### `carla_process_cpu_pct` — M3 simulator CPU (margin 10.0 absolute points)
+
+Source: `resources.csv` rows whose `process` equals the cell's
+`cpu_process_label`, read with `analysis/bench_io.py` `read_resources_csv`.
+That column is the `label` field of the matching entry in
+`config/processes/<cell>.yaml` — `sampler/sample_resources.py` writes
+`entry["label"]` verbatim — so the binding is a label, never a pattern and
+never a process name.
+
+Every cell that runs a simulator registers the label `carla-server`. What
+differs per approach is the PATTERN behind that label (the extension fork's
+uproject path, the tier4 fork's sibling path, or CARLA 0.9.15's
+`CarlaUE4-Linux-Shipping`), which is precisely the comparison the metric
+exists to make; a tool that hardcodes any string other than the registered
+label matches zero rows and reads as "the simulator used no CPU". `CAL-rmw`
+runs no simulator and registers `null`.
+
+Quantity: `cpu_pct`, the sampler's sum over every PID matching the entry as a
+percentage of ONE core — a multi-threaded server routinely exceeds 100. Median
+over in-window samples. The 10.0 margin is absolute percentage points of that
+same quantity.
+
+#### `achieved_rate_ratio` — M2 rate (margin 0.02)
+
+Source: `observer.csv` rows for the cell's `lidar_topic`. Quantity:
+`analysis/cadence.py` `inter_arrival_stats(header_stamp_ns).hz /
+lidar_expected_hz`.
+
+`inter_arrival_stats` is domain-agnostic ((n−1)/span over any int64-ns
+series); it is given the SIM header stamps and not the wall arrivals on
+purpose. A wall-domain rate falls with the simulator's real-time factor, which
+would put an RTF difference straight into a 0.02 margin; RTF is separately
+measured as `resources.csv`'s `rtf` and is the M4 ceiling's own input. Taken in
+the sim domain, the ratio measures dropped or skipped frames instead, which is
+what M2 is for.
+
+This is the OBSERVED rate, so it also carries observer-side loss. Both cells
+are observed by the same `bench-observer` image, QoS and host, so that is a
+shared-mode term in A − B; the M2 three-way reconciliation
+(`cadence.reconcile_drops` over `publisher_counts.json`) separates publisher
+drop from observer loss and is reported per cell alongside the duel row.
+
+`lidar_expected_hz` is the cell's registered sensor target, filled by the
+relation P1 Verdict 4 measured live: effective rate = `min(1 / sensor_tick,
+tick_hz)`. It is registered only where committed code fixes it today (the
+extension cells, from `runner/spawn.py`'s `_SENSOR_TICK`; `CAL-rmw`, from
+`cells/calibration.sh`'s `PUB_RATE_HZ`). It is `null` on the tier4 and
+python-bridge families, so this row of the A/B duel table cannot be computed
+until Task 13 registers cell B's value — which is the pre-registration point,
+not a defect: the target rate must be fixed before the data exists, and the
+tier4 harmonization genuinely has not chosen it.
+
+### M5 gate result (`quality.json`, pre-registered 2026-07-28)
+
+The M5 gate's verdict is a recorded fact of the run, written once into the run
+directory as `quality.json` — not recomputed by each consumer, and not folded
+into `manifest.json`:
+
+- Recomputation would decide the gate with whatever analysis code is installed
+  at READ time, while every other number in this campaign is tied by
+  `manifest.json`'s `harness_git_sha` to the code that produced it at RUN
+  time; and two consumers recomputing independently can disagree.
+- `manifest.json` is the run's provenance record, written before the run
+  starts; its only legitimate post-hoc mutation is the exclusion marker. A
+  derived analysis result does not belong there.
+
+Schema: `dataclasses.asdict(analysis.quality.QualityStats)` verbatim —
+`pose_err_p50_m`, `pose_err_p95_m`, `pose_err_max_m`, `pose_bias_m`,
+`lateral_dev_p95_m`, `goal_closest_approach_m`, `goal_terminal_distance_m`,
+`ndt_rate_ratio`, `gate_pass` (bool), `reasons` (list of str) — plus four
+provenance keys the gate definition above requires to be interpretable:
+`arm`, `window_sim_ns` (`[lo, hi]`), `ladder_branch` (`"absolute"` |
+`"relative"`, the G1 branch that applied) and `expected_ndt_hz`.
+
+`gate_pass` is the single field a consumer may treat as the verdict.
+
+No writer exists yet: `run.sh`'s `gate:arm-failed` is the bring-up arm check
+(`injector/arm_and_goal.py`), not this gate. The task that lands the M5 gate
+step writes exactly this file. Until then a consumer must fail loudly on its
+absence for any arm that closes the loop, rather than defaulting it to a pass.
+
 ## Cell matrix
 
 `benchmarks/config/cells.yaml` is the pre-registered workload matrix. Each
 entry's `id` (e.g. `A`, `B`, `E0`, `CAL-rmw`) is the label a measurement run
 is filed under — it is what `benchmarks/run.sh <cell>` takes as its argument
 and what `benchmarks/results/<cell>/` is named after. P0 registered the
-matrix; `run.sh` (P2, Task 8) executes it.
+matrix; `run.sh` (P2, Task 8) executes it. Each entry's `metrics:` block is
+the per-cell binding the analysis tools read (see "Primary-duel metric
+definitions" above).
 
 `benchmarks/config/exclusions.md` is the pre-registered set of criteria
 under which a run may be marked `excluded: true`; it may not be edited
@@ -272,6 +495,40 @@ Amendments made so far:
   `exclusion_reason` was non-empty, which is exactly why the five
   amendments above were invisible until a manual re-review instead of
   failing at manifest-write time.
+- **2026-07-28** — this file's `## Metrics` section gained "Primary-duel
+  metric definitions", registering `one_hop_wall_ms`,
+  `lidar_to_ndt_sim_ms`, `control_staleness_ms`, `carla_process_cpu_pct`
+  and `achieved_rate_ratio` (source columns, join rule and tolerance,
+  aggregation, and the scoring window each is computed over).
+  Completeness: `config/margins.yaml` pre-registered a margin for all
+  five and the M5 definitions above define a different set, so the
+  campaign's headline A/B verdict was "Δmedian versus margin" on metrics
+  whose computation was undefined — and two implementers had already had
+  to invent semantics for them, which is precisely what pre-registration
+  exists to prevent. Margins are unchanged.
+- **2026-07-28** — `config/cells.yaml`: every cell entry gained a
+  `metrics:` block (`lidar_topic`, `ndt_topic`, `control_topic`,
+  `control_published_time_topic`, `cpu_process_label`, `tick_hz`,
+  `lidar_expected_hz`), with `null` where the value is genuinely not
+  chosen yet and the owing task named beside it. Completeness: the
+  definitions above need a per-cell topic, process label and expected
+  rate, and none of the three was machine-readable anywhere — so tools
+  hardcoded them (a `"carla"` process label that matches no row, a
+  `/lidar` topic that exists on no cell, a tick target used as a message
+  -count target on the high-frequency cells).
+- **2026-07-28** — the data contract above gained `quality.json`, and
+  this file gained the "M5 gate result" section registering its schema
+  (`QualityStats` plus `arm`, `window_sim_ns`, `ladder_branch`,
+  `expected_ndt_hz`) and why the gate verdict is a recorded fact of the
+  run rather than a manifest field or a per-consumer recomputation.
+  Completeness: the M5 gate has no committed writer, so the first
+  consumer of its verdict invented a file and a schema for it.
+- **2026-07-28** — `scripts/cell_info.py` gained `metrics_for()`, the
+  single accessor for the block above; it raises on a cell with no
+  `metrics:` block or a missing key. Completeness: a registry a tool
+  reaches into with a bare dictionary lookup fails as a `KeyError` deep
+  in an analysis run, which is how an unregistered cell would first be
+  noticed mid-campaign.
 
 ## How to run
 
