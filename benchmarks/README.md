@@ -63,11 +63,29 @@ owner to strike; striking it drops cells E and E-opt, not E0.
   at nearest sim-time stamp within 25 ms.
 - Per-cell validation gate (must pass before a cell's numbers count):
   NDT output rate ≥ 90% of expected AND goal_closest_approach < 1.0 m
-  AND the localization criterion of the pre-registered G1 ladder:
-  (a) if the Town10 pcd registration fix (Task 11) landed: max
-  pose_error < 0.5 m; (b) otherwise: no drift (|mean of last 20% −
-  mean of first 20%| < 0.2 m) and p95 − p50 < 0.3 m, with the constant
-  bias reported. Which branch applied is recorded per cell.
+  AND the localization criterion of the pre-registered G1 ladder, whose
+  branch is a property of **the map bundle THAT CELL localized against**,
+  not of whether a fix has landed somewhere in the campaign:
+  (a) the cell localized against a bundle whose pcd is registered to the
+  world it runs in (for Town10, the shifted bundle Task 11 produced):
+  max pose_error < 0.5 m; (b) the cell localized against a bundle
+  carrying a known or unmeasured bundle-internal offset: no drift
+  (|mean of last 20% − mean of first 20%| < 0.2 m) and p95 − p50 < 0.3 m,
+  with the constant bias reported. Which branch applied is recorded per
+  cell (`quality.json`'s `ladder_branch`).
+  Why it is keyed on the bundle: the Town10 pcd shift is registered to
+  the UE5 world, so it applies to cells A/B; whether E's 0.9.15 world
+  carries the same bundle-internal offset is MEASURED (E's static NDT
+  bias, Task 10) before deciding which pcd variant E localizes against.
+  A campaign-level "the fix landed" would gate cell E at 0.5 m against a
+  bundle it may sit ~0.475 m off — failing E for a reason that reads as
+  the bridge's. The bundle is whichever one that cell's launcher mounts:
+  `scripts/e2e/map_defaults.sh`'s `/autoware_map/town10-shifted` for the
+  extension cells (via `run_e2e.sh` → `launch_autoware.sh`), the
+  unshifted `~/autoware_map/town10` that `cells/python-bridge.sh` pins
+  for the E family, and — for the tier4 cells, whose launcher defers the
+  map to Task 13's `$TIER4_DEMO` — whatever that task wires, which it
+  must do explicitly since it does not inherit `map_defaults.sh`.
 - Scoring windows: closed-loop = spatial gate between the route-station
   bounds in `config/routes/<map>.yaml` after a 20 s warm-up discard;
   static = wall window [t0 + 20 s, end].
@@ -1022,6 +1040,18 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   ceiling verdict is the point, and duplicating a signal
   `evaluate_ceiling` already scores with its `rtf` and `tick_rate_ratio`
   disjuncts. Margins are unchanged; the ceiling thresholds are unchanged.
+- **2026-07-28** — the M5 gate's **G1 ladder branch condition** is keyed
+  on the map bundle the cell localized against, not on whether Task 11's
+  pcd registration fix landed; the two thresholds are unchanged, and no
+  cell script changes with this entry. Completeness: the condition was
+  phrased as a campaign-level event, while the plan's D3 companion
+  ruling scopes the shift to cells A/B (the UE5 world) and makes E's
+  bundle choice a MEASURED question (E's static NDT bias, Task 10). With
+  the fix landed, branch (a) read as satisfied campaign-wide and would
+  have gated cell E at max pose_error < 0.5 m against the deliberately
+  unshifted bundle `cells/python-bridge.sh` pins — failing E by ~0.475 m
+  of map registration, under a reason that would be attributed to the
+  bridge.
 
 ## How to run
 
