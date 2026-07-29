@@ -14,24 +14,35 @@ repos:
         # verified against their upstream tree; a trailing-newline fixup
         # would drift them from what was verified. See the trailing-
         # whitespace exclude below for the same reasoning in more detail.
-        exclude: ^benchmarks/patches/
+        # benchmarks/results/** is RECORDED EVIDENCE, written by the harness
+        # and by the stack under test: manifests whose contents ARE the
+        # exclusion record, observer CSVs, and container launch logs. A
+        # formatter that rewrites them alters the measurement after the fact.
+        # Measured 2026-07-29 (Task 10): `pre-commit run --all-files` modified
+        # 17 committed result files, manifest.json among them.
+        exclude: ^benchmarks/(patches|results)/
       - id: mixed-line-ending
         # See the trailing-whitespace exclude below: any generic text
-        # mutator is unsafe on these byte-exact patch files.
-        exclude: ^benchmarks/patches/
+        # mutator is unsafe on these byte-exact patch files, and on the
+        # recorded results for the reason given above.
+        exclude: ^benchmarks/(patches|results)/
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         # In a unified diff, a blank context line is one significant
         # space, not empty. This hook strips it, turning "- " (a
         # blank/whitespace-only context line) into "-", which can break
         # `git apply` on these byte-exact, verified patch artifacts.
-        exclude: ^benchmarks/patches/
+        exclude: ^benchmarks/(patches|results)/
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.49.1
     hooks:
       - id: markdownlint
         args: [-c, .markdownlint.yaml, --fix]
+        # --fix rewrites files, and run.sh writes a report.md INTO each run
+        # directory. That file is part of the recorded run, not house-style
+        # prose.
+        exclude: ^benchmarks/results/
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
@@ -45,7 +56,7 @@ repos:
         # significant space, and a mutating formatter can strip it,
         # breaking `git apply` even though the diff still "looks" the
         # same.
-        exclude: ^(scripts/(expected_topics\.yaml|spike_stack\.json)|benchmarks/patches/)
+        exclude: ^(scripts/(expected_topics\.yaml|spike_stack\.json)|benchmarks/(patches|results)/)
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
