@@ -67,7 +67,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import json
 import math
 import sys
 from dataclasses import dataclass
@@ -94,6 +93,7 @@ from benchmarks.analysis.clockfit import AffineFit, fit_sim_wall_affine, sim_to_
 from benchmarks.analysis.latency import match_stamps, staleness_ms
 from benchmarks.analysis.latency import one_hop_wall_ms as _one_hop_wall_ms_series
 from benchmarks.analysis.manifest import ARMS, RunManifest, load_manifest
+from benchmarks.analysis.publisher_counts import read_publisher_counts
 from benchmarks.analysis.stats import bootstrap_ci_median_diff, equivalence_decision, load_margins
 from benchmarks.analysis.window import spatial_window, static_window
 from benchmarks.scripts.cell_info import UnknownIdError, cell_entry, load_cells_doc, metrics_for
@@ -766,8 +766,21 @@ def _reconcile_run(
     `sweep_verdict._expected_lidar_count` uses, applied to a different
     window (see the module-level comment above for why the two differ).
 
-    Published count: `publisher_counts.json`'s count for `lidar_topic`,
-    valid as the publisher-side proxy for A/B cells only -- absent for
+    Published count: `publisher_counts.json`'s messages for `lidar_topic`
+    whose recorded SIM stamp falls in THIS SAME window -- the identical
+    inclusive bounds the observed count is filtered on, per
+    `publisher_counts.count_in_window`. Windowing this term is not a
+    refinement of a whole-run count but a correction of a different
+    quantity: against windowed expected/observed terms, a whole-run
+    published count clamps `publisher_drop_rate` to 0.000 and fabricates
+    `observer_loss_rate` out of the interval mismatch (owner ruling,
+    2026-07-28; `benchmarks/README.md`, `achieved_rate_ratio`). A file in
+    the pre-`publisher_counts/2` shape carries no stamps and so cannot be
+    windowed at all: it is REFUSED by name
+    (`PublisherCountsFormatError`, surfaced as this run's FAILED note),
+    never silently reinterpreted as if its count were windowed.
+
+    Valid as the publisher-side proxy for A/B cells only -- absent for
     E-cells, where the bridge is the sensor stream's only listener.
     Returns None exactly when the file is absent: "not measurable", a
     state `cadence.reconcile_drops` cannot even be asked about, and
@@ -798,7 +811,9 @@ def _reconcile_run(
     counts_path = run_dir / "publisher_counts.json"
     if not counts_path.is_file():
         return None
-    published_count = int(json.loads(counts_path.read_text())[lidar_topic])
+    published_count = read_publisher_counts(counts_path).count_in_window(
+        lidar_topic, window.sim_lo, window.sim_hi
+    )
     topics = read_observer_csv(run_dir / "observer.csv")
     if lidar_topic not in topics:
         raise MetricUnavailableError(f"{lidar_topic} not in {run_dir / 'observer.csv'}")

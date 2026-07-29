@@ -14,10 +14,12 @@ its transitive imports) collect under bare pytest with no CARLA egg.
 
 from __future__ import annotations
 
+import json
 import math
 
 import pytest
 
+from benchmarks.analysis.publisher_counts import publisher_counts_doc, read_publisher_counts
 from benchmarks.scripts import collect_gt
 from scripts.e2e.collect_gt import ego_map_xy
 from scripts.e2e.verify_mgrs_handedness import MAP_OFFSETS, offset_for_map
@@ -81,6 +83,49 @@ def test_sim_ns_rounds_rather_than_truncates():
     # stamp low, and quality.evaluate_quality joins gt to NDT on these.
     assert collect_gt.sim_ns_from_elapsed(0.05) == 50_000_000
     assert collect_gt.sim_ns_from_elapsed(1.15) == 1_150_000_000
+
+
+class _SensorData:
+    """The one attribute the counting callback reads off a CARLA
+    measurement: `timestamp`, the episode's elapsed SIM seconds."""
+
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+
+
+def test_lidar_stamp_recorder_records_sim_stamps_not_arrival_times():
+    """publisher_counts.json's registered domain is SIM time, so the
+    duel's windowed publisher count is filtered on the same clock as its
+    observed count (observer.csv's header_stamp_ns) and its window
+    bounds -- no clock fit in between. Recording a wall stamp here would
+    silently make the publisher term a different domain from the other
+    two."""
+    series: list[int] = []
+    record = collect_gt.lidar_stamp_recorder(series)
+    record(_SensorData(0.05))
+    record(_SensorData(1.15))
+    assert series == [50_000_000, 1_150_000_000]
+
+
+def test_lidar_stamp_recorder_uses_gt_csvs_own_rounding_rule():
+    """Same function gt.csv's sim_ns column goes through, so a message
+    and the tick that produced it cannot land a nanosecond apart for two
+    different rounding rules."""
+    series: list[int] = []
+    collect_gt.lidar_stamp_recorder(series)(_SensorData(3.3))
+    assert series == [collect_gt.sim_ns_from_elapsed(3.3)]
+
+
+def test_written_publisher_counts_are_readable_by_the_analysis_reader(tmp_path):
+    """The writer and the two verdict tools' reader must agree on the
+    on-disk shape; this pins that they do, through the real functions
+    rather than a restatement of the schema in a fixture."""
+    path = tmp_path / "publisher_counts.json"
+    stamps = [0, 50_000_000, 100_000_000]
+    path.write_text(json.dumps(publisher_counts_doc({collect_gt.DEFAULT_LIDAR_TOPIC: stamps})))
+    counts = read_publisher_counts(path)
+    assert counts.whole_run_count(collect_gt.DEFAULT_LIDAR_TOPIC) == 3
+    assert counts.count_in_window(collect_gt.DEFAULT_LIDAR_TOPIC, 50_000_000, 100_000_000) == 2
 
 
 def test_count_lidar_is_refused_for_the_bridge_approach(capsys):

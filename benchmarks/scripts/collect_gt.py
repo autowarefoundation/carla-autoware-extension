@@ -39,11 +39,19 @@ the same rule `scripts/e2e/arm_closed_loop.sh` seeds `/initialpose` with.
 PUBLISHER-SIDE COUNTS (`--count-lidar`)
 ---------------------------------------
 M2 reconciles three counts: expected, publisher-side, observer-side.
-`--count-lidar` attaches a client-side `sensor.listen` counter to the ego
-LiDAR and writes `publisher_counts.json` (`{topic: count}`) next to gt.csv;
-it is a valid publisher-side proxy for approaches A and B by the P1 gate-(c)
-precedent (`sensor.listen()` rides the same dispatch path that feeds the ROS
-2 publisher).
+`--count-lidar` attaches a client-side `sensor.listen` callback to the ego
+LiDAR and writes `publisher_counts.json` next to gt.csv; it is a valid
+publisher-side proxy for approaches A and B by the P1 gate-(c) precedent
+(`sensor.listen()` rides the same dispatch path that feeds the ROS 2
+publisher).
+
+The callback records each message's SIM-TIME stamp, not just a running
+total: `duel_verdict.py` reconciles this term against an expected and an
+observed count that are both windowed to the run's registered scoring
+window, and a whole-run total cannot be windowed after the fact. The
+schema, the stamp domain and the reasons are owned by
+`benchmarks.analysis.publisher_counts`, which both this writer and the
+two readers go through.
 
 DO NOT use it on the python-bridge cells. There, the bridge's own
 `sensor.listen()` callback IS the publish path, and CARLA keeps ONE callback
@@ -70,6 +78,7 @@ import sys
 import time
 from pathlib import Path
 
+from benchmarks.analysis.publisher_counts import publisher_counts_doc
 from benchmarks.scripts.pick_route import carla_to_map_yaw
 from scripts.e2e.collect_gt import find_ego
 from scripts.e2e.verify_mgrs_handedness import offset_for_map, world_m_to_mgrs_local
@@ -132,6 +141,28 @@ def version_mismatch(client_version: str, server_version: str) -> str | None:
         f"launcher picks it; BENCH_GT_PYTHON overrides it). Fix the "
         f"interpreter, not this check -- gt.csv is the M5 ground truth."
     )
+
+
+def lidar_stamp_recorder(series: list[int]):
+    """`sensor.listen` callback appending each message's SIM stamp to
+    `series`, in `publisher_counts.json`'s registered domain.
+
+    `carla.SensorData.timestamp` is the episode's `elapsed_seconds` at
+    the measurement, so this is the same clock and the same rounding rule
+    (`sim_ns_from_elapsed`) as gt.csv's `sim_ns` column -- and therefore
+    the domain the duel's scoring-window bounds are in. A wall-clock
+    stamp taken here would be a different clock from the one the window
+    and the observed count are filtered on, and would need the run's
+    clock fit to be comparable at all.
+
+    Returned as a closure rather than written inline at the `listen`
+    call so the recorded quantity is unit-testable without a live CARLA.
+    """
+
+    def _record(data) -> None:
+        series.append(sim_ns_from_elapsed(data.timestamp))
+
+    return _record
 
 
 def ego_lidar_sensors(world, ego_id: int) -> list:
@@ -225,10 +256,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - needs live
     world.wait_for_tick()  # sync mode: a cold client sees an empty snapshot
     ego = find_ego(world, role_name=args.role_name)
 
-    counts: dict[str, int] = {}
+    stamps: dict[str, list[int]] = {}
     sensors = []
     if args.count_lidar:
-        counts[args.lidar_topic] = 0
+        stamps[args.lidar_topic] = []
         sensors = ego_lidar_sensors(world, ego.id)
         if not sensors:
             print(
@@ -237,8 +268,9 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - needs live
                 file=sys.stderr,
             )
             return EXIT_BAD_ARGS
+        record = lidar_stamp_recorder(stamps[args.lidar_topic])
         for sensor in sensors:
-            sensor.listen(lambda _data, t=args.lidar_topic: counts.__setitem__(t, counts[t] + 1))
+            sensor.listen(record)
         print(f"counting {len(sensors)} LiDAR sensor(s) -> {args.lidar_topic}")
 
     stopping = {"stop": False}
@@ -292,7 +324,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - needs live
             except RuntimeError:
                 pass
         if args.count_lidar:
-            (out_path.parent / "publisher_counts.json").write_text(json.dumps(counts, indent=2))
+            (out_path.parent / "publisher_counts.json").write_text(
+                json.dumps(publisher_counts_doc(stamps), indent=2)
+            )
+    counts = {topic: len(series) for topic, series in stamps.items()}
     print(f"gt_rows={rows}" + (f" publisher_counts={counts}" if args.count_lidar else ""))
     return 0
 

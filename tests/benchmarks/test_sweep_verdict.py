@@ -18,6 +18,7 @@ import pytest
 
 from benchmarks.analysis.ceiling import CeilingVerdict
 from benchmarks.analysis.manifest import RunManifest
+from benchmarks.analysis.publisher_counts import publisher_counts_doc
 from benchmarks.scripts import sweep_verdict
 from benchmarks.scripts.cell_info import load_cells_doc, metrics_for
 from benchmarks.scripts.sweep_verdict import RunVerdict, render_verdicts, verdict_for_run
@@ -95,7 +96,19 @@ def _write_observer_csv(run_dir, topic=TOPIC, arrivals=()):
 
 
 def _write_publisher_counts(run_dir, topic, count):
-    (run_dir / "publisher_counts.json").write_text(json.dumps({topic: count}))
+    """`count` published messages, written through collect_gt.py's own
+    writer so these fixtures track the real on-disk contract.
+
+    The stamps themselves are evenly spread over the fixture's run and
+    otherwise arbitrary: unlike `duel_verdict.py`, this tool's
+    reconciliation is whole-run on every term (see
+    `_publisher_rate_ratio`), so it reads the total and never filters on
+    a stamp.
+    """
+    stamps = (BASE + np.arange(count) * 50_000_000).tolist()
+    (run_dir / "publisher_counts.json").write_text(
+        json.dumps(publisher_counts_doc({topic: stamps}))
+    )
 
 
 def _write_quality(run_dir, gate_pass=True, reasons=None, **extra):

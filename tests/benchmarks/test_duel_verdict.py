@@ -31,9 +31,10 @@ import numpy as np
 import pytest
 import yaml
 from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv
-from benchmarks.analysis.cadence import expected_count
+from benchmarks.analysis.cadence import expected_count, reconcile_drops
 from benchmarks.analysis.clockfit import fit_sim_wall_affine, sim_to_wall
 from benchmarks.analysis.manifest import RunManifest, load_manifest
+from benchmarks.analysis.publisher_counts import PublisherCountsFormatError, publisher_counts_doc
 from benchmarks.analysis.window import static_window
 from benchmarks.scripts.cell_info import UnknownIdError
 from benchmarks.scripts.duel_verdict import (
@@ -1236,7 +1237,59 @@ def test_main_reports_no_common_arm_cleanly(tmp_path, capsys):
 # output. Layer 2 (`_reconcile_run`, over synthetic run-* directories),
 # then Layer 3 (`_cell_reconciliation_row`/`render_reconciliation_table`,
 # and the full `build_verdict_table` integration).
+#
+# EVERY fixture below writes a WHOLE-RUN publisher_counts.json -- one that
+# records messages from before the scoring window opens as well as inside
+# it -- and asserts the WINDOWED answer. That is deliberate and load-
+# bearing: the file's earlier shape was a whole-run counter with no
+# stamps, reconciled against a windowed expected count and a windowed
+# observed count, and every fixture here used to write it equal to one of
+# those two windowed counts. Those fixtures could not tell the defect
+# from the fix, which is why a fully green suite meant nothing about it.
+# A fixture whose whole-run count equals its in-window count is therefore
+# not admissible here.
 # ---------------------------------------------------------------------------
+
+
+def _write_publisher_counts(run_dir, topic, sim_stamps_ns) -> None:
+    """Write `publisher_counts.json` through the WRITER collect_gt.py
+    itself uses, so these fixtures exercise the real on-disk contract
+    (schema tag, per-topic count/stamps) rather than a hand-rolled shape
+    that could drift from it."""
+    (run_dir / "publisher_counts.json").write_text(
+        json.dumps(publisher_counts_doc({topic: [int(s) for s in sim_stamps_ns]}), indent=2)
+    )
+
+
+def _observed_stamps(run_dir, topic=LIDAR_TOPIC) -> list[int]:
+    """The run's WHOLE-RUN observer stamps for `topic`.
+
+    The natural publisher-side series for a fixture in which the observer
+    lost nothing: every message that was published, in the same sim
+    domain `publisher_counts.json` records. Whole-run by construction --
+    it spans the warm-up the scoring window discards -- so a
+    reconciliation that fails to window this term prices the warm-up in.
+    """
+    return read_observer_csv(run_dir / "observer.csv")[topic]["header_stamp_ns"].tolist()
+
+
+def _whole_run_stamps(window, in_window_count: int, *, pre_window_count: int = 100) -> list[int]:
+    """A whole-run publisher stamp series with an EXACT in-window count:
+    `pre_window_count` stamps before the window opens, then
+    `in_window_count` spread across `[window.sim_lo, window.sim_hi]`.
+
+    Used where a test needs a specific publisher_drop_rate. The
+    pre-window stamps are what make the file's whole-run count differ
+    from its windowed one, so the assertion below discriminates the two.
+    """
+    stamps = []
+    if pre_window_count:
+        stamps += np.linspace(0, window.sim_lo - 1, pre_window_count, dtype=np.int64).tolist()
+    if in_window_count:
+        stamps += np.linspace(
+            window.sim_lo, window.sim_hi, in_window_count, dtype=np.int64
+        ).tolist()
+    return stamps
 
 
 def test_reconcile_run_returns_none_when_publisher_counts_absent(tmp_path):
@@ -1252,41 +1305,101 @@ def test_reconcile_run_returns_none_when_publisher_counts_absent(tmp_path):
 
 def test_reconcile_run_zero_published_count_reports_nan_observer_loss(tmp_path):
     """The opposite, file-backed case: publisher_counts.json exists and
-    genuinely records 0. Distinct from the absent-file case above --
-    must return a real DropStats, with observer_loss_rate NaN (see
-    cadence.reconcile_drops) rather than a misleading 0.0."""
+    genuinely records 0 (no message published at all, so no stamps).
+    Distinct from the absent-file case above -- must return a real
+    DropStats, with observer_loss_rate NaN (see cadence.reconcile_drops)
+    rather than a misleading 0.0."""
     cell = _make_run(tmp_path, lidar_hz=10.0, run_duration_s=40.0)
     run_dir = cell / "run-001"
-    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: 0}))
+    _write_publisher_counts(run_dir, LIDAR_TOPIC, [])
     drop = _reconcile_run(run_dir, _window_of(run_dir), LIDAR_TOPIC, 10.0)
     assert drop is not None
     assert drop.publisher_drop_rate == 1.0
     assert math.isnan(drop.observer_loss_rate)
 
 
+def test_reconcile_run_windows_the_published_count_too(tmp_path):
+    """The three counts must share ONE interval. The publisher-side term
+    is windowed to the same `[window.sim_lo, window.sim_hi]` bounds the
+    expected and observed terms already used -- it is not exempt for
+    being read from a file rather than computed.
+
+    The fixture's file records the WHOLE RUN (its 40 s, ~2x the 19 s
+    window), so an unwindowed published term is not merely noisier here,
+    it is a different quantity: this test computes what
+    `reconcile_drops` returns for that whole-run count and asserts the
+    tool does NOT report it. Mixing a whole-run published count into a
+    windowed pair clamps publisher_drop_rate at 0.000 (structurally
+    blind to any real publisher drop) while fabricating an
+    observer_loss_rate out of the interval mismatch alone -- the two
+    numbers this diagnostic exists to produce.
+    """
+    lidar_expected_hz = 10.0
+    cell = _make_run(tmp_path, lidar_hz=lidar_expected_hz, run_duration_s=40.0)
+    run_dir = cell / "run-001"
+    window = _window_of(run_dir)
+    whole_run = _observed_stamps(run_dir)
+    in_window = [s for s in whole_run if window.sim_lo <= s <= window.sim_hi]
+    # Fixture premise: whole-run and in-window counts are far apart, so
+    # the two implementations cannot agree by accident.
+    assert len(whole_run) > 1.5 * len(in_window)
+    _write_publisher_counts(run_dir, LIDAR_TOPIC, whole_run)
+
+    drop = _reconcile_run(run_dir, window, LIDAR_TOPIC, lidar_expected_hz)
+    assert drop.publisher_drop_rate == pytest.approx(0.0, abs=0.02)
+    assert drop.observer_loss_rate == pytest.approx(0.0, abs=0.02)
+
+    # What the same run reports when only the published term is left
+    # unwindowed -- the pre-fix arithmetic, spelled out.
+    window_s = (window.sim_hi - window.sim_lo) / 1e9
+    unwindowed = reconcile_drops(
+        expected_count(window_s, lidar_expected_hz), len(whole_run), len(in_window)
+    )
+    assert unwindowed.publisher_drop_rate == 0.0  # clamped, not measured
+    assert unwindowed.observer_loss_rate > 0.4  # fabricated by the mismatch
+
+
+def test_reconcile_run_refuses_a_pre_schema_publisher_counts_file(tmp_path):
+    """A `{topic: count}` file from before the schema carried stamps is a
+    WHOLE-RUN count that cannot be windowed after the fact. It is refused
+    by name (surfaced as this run's FAILED note), never read as though
+    its count had been windowed -- silently reinterpreting one is exactly
+    the defect the schema bump fixes."""
+    cell = _make_run(tmp_path, lidar_hz=10.0, run_duration_s=40.0)
+    run_dir = cell / "run-001"
+    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: 400}))
+    with pytest.raises(PublisherCountsFormatError, match="schema"):
+        _reconcile_run(run_dir, _window_of(run_dir), LIDAR_TOPIC, 10.0)
+
+
 def test_reconcile_run_raises_when_topic_missing_from_observer_csv(tmp_path):
     cell = _make_run(tmp_path)
     run_dir = cell / "run-001"
-    (run_dir / "publisher_counts.json").write_text(json.dumps({"/no/such/topic": 10}))
+    _write_publisher_counts(run_dir, "/no/such/topic", [10, 20, 30])
     with pytest.raises(MetricUnavailableError):
         _reconcile_run(run_dir, _window_of(run_dir), "/no/such/topic", 10.0)
 
 
 def test_reconcile_run_excludes_pre_window_rows(tmp_path):
     """Static-arm window-gating pin: the resolved window's 20 s warm-up
-    discard must gate the EXPECTED count (via window_s) and the
-    OBSERVED count (via the in-window row filter) alike, not just avoid
-    crashing. `pre_window_decimate` thins the pre-window portion to
-    1/5th density; published_count is set to the TRUE post-warmup
-    expectation, so the correctly-windowed computation reports a
-    healthy (~0) drop on both terms.
+    discard must gate ALL THREE counts -- the EXPECTED one (via
+    window_s), the OBSERVED one (via the in-window row filter) and the
+    PUBLISHED one (via the same filter over publisher_counts.json's
+    stamps) -- not just avoid crashing.
+
+    `pre_window_decimate` thins the pre-window portion to 1/5th density
+    on both the observer and the publisher side (the publisher series
+    here IS the observer's, i.e. a run where the observer lost nothing),
+    so the run's whole-run published count exceeds its in-window one and
+    the correctly-windowed computation reports a healthy (~0) drop on
+    both terms while an unwindowed published term does not.
 
     The rejected mutation -- a static_window built with NO warm-up
     discard, i.e. duel_verdict.py's own originally-reported defect of
     applying no scoring window at all -- is built explicitly below and
-    shown to report a visibly different, wrong drop rate against the
-    SAME published_count: this is the exact "static/whole-run window"
-    mutation the S4 brief requires be ruled out.
+    shown to report a visibly different, wrong drop rate on the SAME
+    file: this is the exact "static/whole-run window" mutation the S4
+    brief requires be ruled out.
     """
     lidar_expected_hz = 10.0
     cell = _make_run(
@@ -1298,13 +1411,11 @@ def test_reconcile_run_excludes_pre_window_rows(tmp_path):
     )
     run_dir = cell / "run-001"
     window = _window_of(run_dir)
-    window_s = (window.sim_hi - window.sim_lo) / 1e9
-    n_expected = expected_count(window_s, lidar_expected_hz)
-    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: n_expected}))
+    _write_publisher_counts(run_dir, LIDAR_TOPIC, _observed_stamps(run_dir))
 
     drop_correct = _reconcile_run(run_dir, window, LIDAR_TOPIC, lidar_expected_hz)
     assert drop_correct.publisher_drop_rate == pytest.approx(0.0, abs=0.05)
-    assert drop_correct.observer_loss_rate == pytest.approx(0.0, abs=0.1)
+    assert drop_correct.observer_loss_rate == pytest.approx(0.0, abs=0.05)
 
     # The rejected mutation: static_window with warmup_ns=0 (no discard
     # at all) instead of the registered WARMUP_NS.
@@ -1331,16 +1442,16 @@ def test_reconcile_run_closed_loop_uses_the_resolved_spatial_window(tmp_path):
     closed_loop_uses_route_spatial_window: the TRUE spatial window
     (~13.3 s, starting only once station >= 20 m is reached at ~55.8 s)
     is a small fraction of the buggy static window's 50 s span
-    [20 s, 70 s]. publisher_counts.json is set to EXACTLY the observed
-    count inside the TRUE spatial window, so the correctly-resolved
-    window must report a healthy (~0) publisher_drop_rate; substituting
-    a static/whole-run window -- the mutation performed explicitly below
-    -- prices in far more expected messages against the SAME
-    published_count and reports a large, wrong drop rate instead. A
-    prior reviewer found a test named for using the spatial window that
-    in fact passed identically under a static one; this test's second
-    half exists specifically so that failure mode cannot recur silently
-    here.
+    [20 s, 70 s]. publisher_counts.json records the WHOLE RUN, with the
+    stationary phase thinned to 1/5th density on both the publisher and
+    the observer side, so the correctly-resolved window must report a
+    healthy (~0) rate on both terms; substituting a static/whole-run
+    window -- the mutation performed explicitly below -- prices in far
+    more expected messages against a sparse stationary phase and reports
+    a large, wrong drop rate instead. A prior reviewer found a test
+    named for using the spatial window that in fact passed identically
+    under a static one; this test's second half exists specifically so
+    that failure mode cannot recur silently here.
     """
     cell = _make_run(
         tmp_path,
@@ -1349,20 +1460,24 @@ def test_reconcile_run_closed_loop_uses_the_resolved_spatial_window(tmp_path):
         outlier_until_ns=55_000_000_000,
         stationary_until_s=55.0,
         run_duration_s=70.0,
+        pre_window_decimate=5,
     )
     run_dir = cell / "run-001"
     window = _window_of(run_dir)
     # Fixture's premise (mirrors the existing D7 closed-loop test).
     assert window.sim_lo > 55_000_000_000
 
-    topics = read_observer_csv(run_dir / "observer.csv")
-    stamps = topics[LIDAR_TOPIC]["header_stamp_ns"]
-    true_in_window = int(np.count_nonzero((stamps >= window.sim_lo) & (stamps <= window.sim_hi)))
     lidar_expected_hz = 10.0
-    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: true_in_window}))
+    whole_run = _observed_stamps(run_dir)
+    in_window = [s for s in whole_run if window.sim_lo <= s <= window.sim_hi]
+    # Fixture premise: the file is whole-run, and the spatial window is a
+    # small slice of it -- so an unwindowed published term cannot pass.
+    assert len(whole_run) > 1.5 * len(in_window)
+    _write_publisher_counts(run_dir, LIDAR_TOPIC, whole_run)
 
     drop_correct = _reconcile_run(run_dir, window, LIDAR_TOPIC, lidar_expected_hz)
     assert drop_correct.publisher_drop_rate == pytest.approx(0.0, abs=0.05)
+    assert drop_correct.observer_loss_rate == pytest.approx(0.0, abs=0.05)
 
     # The rejected mutation, performed explicitly: substitute a
     # static/whole-run window for the spatial one.
@@ -1429,12 +1544,9 @@ def test_cell_reconciliation_row_distinguishes_not_measurable_from_zero_publishe
     for name in ("run-001", "run-002", "run-003"):
         _make_run(tmp_path, name=name, lidar_hz=lidar_expected_hz, run_duration_s=40.0)
     cell_dir = tmp_path / "A"
-    (cell_dir / "run-002" / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: 0}))
-    window = _window_of(cell_dir / "run-003")
-    window_s = (window.sim_hi - window.sim_lo) / 1e9
-    n_expected = expected_count(window_s, lidar_expected_hz)
-    (cell_dir / "run-003" / "publisher_counts.json").write_text(
-        json.dumps({LIDAR_TOPIC: n_expected})
+    _write_publisher_counts(cell_dir / "run-002", LIDAR_TOPIC, [])
+    _write_publisher_counts(
+        cell_dir / "run-003", LIDAR_TOPIC, _observed_stamps(cell_dir / "run-003")
     )
 
     records, _, _ = _walk_cell_runs(cell_dir, arm="static")
@@ -1470,12 +1582,14 @@ def test_cell_reconciliation_row_publisher_drop_reports_median_and_max_not_mean(
 
     Three runs share an identical resolved window and expected count
     (`_make_run`'s fixed clock.csv construction makes the window
-    independent of `lidar_hz`), but published_counts are set to
-    DELIBERATELY ASYMMETRIC fractions of that expected count: 0.0, 0.0
-    and 0.9 drop. This pins THREE separately-wrong reductions at once:
-    a median->mean regression would report ~0.3, not 0.0; a max<->median
-    swap would report 0.0 for max (or 0.9 for median) instead of the
-    correct pairing.
+    independent of `lidar_hz`), but their IN-WINDOW published counts are
+    set to DELIBERATELY ASYMMETRIC fractions of that expected count:
+    0.0, 0.0 and 0.9 drop. This pins THREE separately-wrong reductions at
+    once: a median->mean regression would report ~0.3, not 0.0; a
+    max<->median swap would report 0.0 for max (or 0.9 for median)
+    instead of the correct pairing. Each file also carries pre-window
+    stamps, so none of the three drop rates is recoverable from a
+    whole-run count.
     """
     lidar_expected_hz = 10.0
     names = ("run-001", "run-002", "run-003")
@@ -1487,8 +1601,8 @@ def test_cell_reconciliation_row_publisher_drop_reports_median_and_max_not_mean(
     window_s = (window.sim_hi - window.sim_lo) / 1e9
     n_expected = expected_count(window_s, lidar_expected_hz)
     for name, frac in zip(names, drop_fracs):
-        published = round(n_expected * (1.0 - frac))
-        (cell_dir / name / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: published}))
+        in_window = round(n_expected * (1.0 - frac))
+        _write_publisher_counts(cell_dir / name, LIDAR_TOPIC, _whole_run_stamps(window, in_window))
 
     records, _, _ = _walk_cell_runs(cell_dir, arm="static")
     row = _cell_reconciliation_row(
@@ -1506,13 +1620,15 @@ def test_cell_reconciliation_row_publisher_drop_reports_median_and_max_not_mean(
 def test_cell_reconciliation_row_observer_loss_reports_median_and_max_not_mean(tmp_path):
     """Observer-axis counterpart of the publisher-axis pin above (same
     owner ruling, same reasoning): observer_loss_rate must ALSO be
-    median AND max, not mean. Three runs share the IDENTICAL published_
-    count (the resolved window's own expected count, so publisher_
-    drop_rate stays ~0 everywhere and does not confound this test), but
-    differ in their own recorded rate via `lidar_hz`: two healthy runs
-    at the full 10 Hz (observer_loss_rate ~0.0) and one run recorded at
-    1 Hz (10x fewer in-window lidar rows, observer_loss_rate ~0.9) --
-    {0.0, 0.0, 0.9} again: median 0.0 != mean 0.3, max 0.9 != median 0.0.
+    median AND max, not mean. Three runs share the IDENTICAL IN-WINDOW
+    published count (the resolved window's own expected count, so
+    publisher_drop_rate stays ~0 everywhere and does not confound this
+    test), but differ in their own recorded rate via `lidar_hz`: two
+    healthy runs at the full 10 Hz (observer_loss_rate ~0.0) and one run
+    recorded at 1 Hz (10x fewer in-window lidar rows, observer_loss_rate
+    ~0.9) -- {0.0, 0.0, 0.9} again: median 0.0 != mean 0.3, max 0.9 !=
+    median 0.0. The identical pre-window stamps in all three files are
+    what keep this an assertion about the WINDOWED published count.
     """
     lidar_expected_hz = 10.0
     hz_per_run = {"run-001": 10.0, "run-002": 10.0, "run-003": 1.0}
@@ -1523,9 +1639,7 @@ def test_cell_reconciliation_row_observer_loss_reports_median_and_max_not_mean(t
     window_s = (window.sim_hi - window.sim_lo) / 1e9
     n_expected = expected_count(window_s, lidar_expected_hz)
     for name in hz_per_run:
-        (cell_dir / name / "publisher_counts.json").write_text(
-            json.dumps({LIDAR_TOPIC: n_expected})
-        )
+        _write_publisher_counts(cell_dir / name, LIDAR_TOPIC, _whole_run_stamps(window, n_expected))
 
     records, _, _ = _walk_cell_runs(cell_dir, arm="static")
     row = _cell_reconciliation_row(
@@ -1612,10 +1726,7 @@ def test_build_verdict_table_reconciliation_reported_per_cell_per_arm(tmp_path):
             )
     for cell in ("A", "B"):
         for run_dir in sorted((tmp_path / cell).glob("run-*")):
-            window = _window_of(run_dir)
-            window_s = (window.sim_hi - window.sim_lo) / 1e9
-            n_expected = expected_count(window_s, lidar_expected_hz)
-            (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: n_expected}))
+            _write_publisher_counts(run_dir, LIDAR_TOPIC, _observed_stamps(run_dir))
     doc = _cells_doc(arms=("static", "closed-loop"))
     margins = {"achieved_rate_ratio": {"margin": 0.02}}
     table = build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=3)
@@ -1659,10 +1770,7 @@ def test_build_verdict_table_reconciliation_unavailable_for_one_cell_does_not_bl
             run_duration_s=40.0,
         )
         run_dir = tmp_path / "A" / f"run-{i:03d}"
-        window = _window_of(run_dir)
-        window_s = (window.sim_hi - window.sim_lo) / 1e9
-        n_expected = expected_count(window_s, lidar_expected_hz)
-        (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: n_expected}))
+        _write_publisher_counts(run_dir, LIDAR_TOPIC, _observed_stamps(run_dir))
     doc = _cells_doc(arms=("static",), b_overrides={"lidar_expected_hz": None})
     margins = {
         "one_hop_wall_ms": {"margin": 2.0},

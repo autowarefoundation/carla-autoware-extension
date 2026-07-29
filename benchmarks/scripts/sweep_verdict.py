@@ -88,6 +88,7 @@ from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv, read
 from benchmarks.analysis.cadence import expected_count, reconcile_drops
 from benchmarks.analysis.ceiling import CeilingVerdict, evaluate_ceiling
 from benchmarks.analysis.manifest import load_manifest
+from benchmarks.analysis.publisher_counts import read_publisher_counts
 from benchmarks.scripts.cell_info import UnknownIdError, load_cells_doc, merge, metrics_for
 
 NOT_MEASURABLE = "publisher rate not measurable (no publisher_counts.json)"
@@ -278,6 +279,16 @@ def _publisher_rate_ratio(
     observer_loss_rate (a diagnostic only -- `evaluate_ceiling` does not
     consume it) for one run.
 
+    The published term is this run's WHOLE-RUN count
+    (`publisher_counts.whole_run_count`), deliberately: unlike
+    `duel_verdict.py`'s reconciliation, every term here is whole-run --
+    the expected count spans clock.csv's full extent and `observed_count`
+    below is every observer.csv row for the topic, with no warm-up
+    discard on either. Windowing only this term would reintroduce, in
+    mirror image, the interval mismatch the duel tool's windowing exists
+    to remove. `publisher_counts.json` still records per-message stamps
+    (the duel needs them); this tool simply does not filter on them.
+
     `publisher_counts.json` is written by `collect_gt.py --count-lidar`
     and is valid as the publisher-side proxy for A/B cells only: for
     E-cells (python-bridge) the bridge is the sensor stream's only
@@ -303,7 +314,7 @@ def _publisher_rate_ratio(
     if not counts_path.exists():
         return 1.0, float("nan"), NOT_MEASURABLE
 
-    published_count = int(json.loads(counts_path.read_text())[topic])
+    published_count = read_publisher_counts(counts_path).whole_run_count(topic)
     drop = reconcile_drops(expected_count, published_count, observed_count)
     # reconcile_drops.observer_loss_rate is NaN exactly when published_count
     # == 0: a real, file-backed zero-throughput run, distinct from the
