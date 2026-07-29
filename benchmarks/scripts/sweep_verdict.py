@@ -30,10 +30,15 @@ each run directory under `benchmarks/results/<cell>/`:
 same typo guard `cell_info.py` uses) but does NOT filter which run
 directories get scored: the manifest schema has no per-run class field yet
 (sweep-class wiring into run.sh / write_manifest.py is a separate,
-not-yet-landed step). Every run under `results/<cell>/` is scored as
-belonging to `--class`'s point; campaign discipline (one class in flight
+not-yet-landed step). Every SWEEP-ARM run under `results/<cell>/` is scored
+as belonging to `--class`'s point; campaign discipline (one class in flight
 per cell at a time) is what makes that correct until that wiring lands a
-real per-run class field.
+real per-run class field. What IS filtered here is `arm`: `run.sh` files
+every run for a cell -- duel arms (static/closed-loop) and sweep arms
+(paced/unpaced/ablation) alike -- under one flat, gap-free `run-NNN/`
+sequence, so a cell shared by both the P3 duel and the M4 sweep needs the
+non-sweep-arm rows excluded explicitly (`main`'s `sweep_arms` filter); a
+skipped count is reported rather than silently dropped.
 """
 
 from __future__ import annotations
@@ -46,20 +51,33 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv, read_resources_csv
 from benchmarks.analysis.cadence import reconcile_drops
 from benchmarks.analysis.ceiling import CeilingVerdict, evaluate_ceiling
 from benchmarks.analysis.manifest import load_manifest
 from benchmarks.scripts.cell_info import UnknownIdError, load_cells_doc, merge
+from benchmarks.scripts.collect_gt import DEFAULT_LIDAR_TOPIC
 
-# The M4 sweep's paced tick target (spec: M4; cells.yaml's camera_classes
-# comment: "20 fps == the 20 Hz tick ceiling"). cells.yaml carries this only
-# as a human comment, not as a machine-readable field -- no physics.yaml
-# exists yet in this tree to hold one -- so this is a literal, flagged here
-# rather than silently hardcoded elsewhere. `--paced-hz` overrides it if a
-# config value takes over later.
+# The M4 sweep's paced tick target (spec: M4). cells.yaml carries this only
+# indirectly -- camera_classes[*].fps is 20 in every entry, with a comment
+# equating it to "the 20 Hz tick ceiling" -- and no dedicated tick-rate
+# field exists yet (no physics.yaml in this tree), so this is a literal,
+# flagged here rather than silently hardcoded elsewhere.
+# `_check_paced_hz_consistency` asserts this literal cannot drift from the
+# camera_classes fps values without being caught; `--paced-hz` overrides it
+# if a dedicated config value takes over later.
 PACED_TICK_HZ = 20.0
+
+# observer_topics/<cell>.yaml is the committed source of truth for a cell's
+# LiDAR topic name (already consumed by run.sh and cells/calibration.sh);
+# `_lidar_topic_for_cell` reads it. `DEFAULT_LIDAR_TOPIC` (collect_gt.py's
+# own constant, the key it writes publisher_counts.json under) is the
+# fallback for a cell whose file is absent or has no PointCloud2 entry
+# (e.g. CAL-seam, deliberately empty pending Task 14).
+OBSERVER_TOPICS_DIR = Path(__file__).resolve().parent.parent / "config" / "observer_topics"
+POINTCLOUD_TYPE = "sensor_msgs/msg/PointCloud2"
 
 NOT_MEASURABLE = "publisher rate not measurable (no publisher_counts.json)"
 NOT_APPLICABLE_ABLATION = "quality not applicable (ablation arm, no closed loop)"
@@ -197,9 +215,62 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     if arm == "ablation":
         return True, NOT_APPLICABLE_ABLATION
     raise FileNotFoundError(
-        f"{path} missing: the M5 quality gate result is required to score "
-        f"a {arm!r} sweep point"
+        f"{path} missing: the M5 quality gate result is required to score a {arm!r} sweep point"
     )
+
+
+def _lidar_topic_for_cell(cell: str, observer_topics_dir: Path | None = None) -> str:
+    """The LiDAR pointcloud topic name for `cell`.
+
+    Reads `observer_topics/<cell>.yaml` (a ROS 2 params file: `/**:
+    ros__parameters: topics: ["<topic>|<type>|<kind>", ...]`, the same file
+    `run.sh` and `cells/calibration.sh` already consume) and returns the
+    first entry whose type is `sensor_msgs/msg/PointCloud2`. Falls back to
+    `collect_gt.DEFAULT_LIDAR_TOPIC` when the file is missing or carries no
+    such entry (e.g. CAL-seam's deliberately-empty topic list) -- never to
+    a made-up literal.
+    """
+    path = (observer_topics_dir or OBSERVER_TOPICS_DIR) / f"{cell}.yaml"
+    if path.exists():
+        doc = yaml.safe_load(path.read_text()) or {}
+        params = ((doc.get("/**") or {}).get("ros__parameters")) or {}
+        for entry in params.get("topics") or []:
+            name, _, rest = str(entry).partition("|")
+            msg_type = rest.split("|", 1)[0]
+            if msg_type == POINTCLOUD_TYPE:
+                return name
+    return DEFAULT_LIDAR_TOPIC
+
+
+def _check_paced_hz_consistency(doc: dict, paced_hz: float) -> None:
+    """Refuse to silently drift `PACED_TICK_HZ` away from cells.yaml's
+    camera_classes fps entries, the one place cells.yaml machine-encodes
+    the 20 Hz tick ceiling (see PACED_TICK_HZ's own docstring). Only
+    checked when `paced_hz` is still the module default: an explicit
+    `--paced-hz` override is a deliberate what-if the operator asked for,
+    not a claim about camera_classes.
+    """
+    if paced_hz != PACED_TICK_HZ:
+        return
+    for entry in doc.get("camera_classes") or []:
+        fps = entry.get("fps")
+        if fps is not None and fps != paced_hz:
+            raise ValueError(
+                f"PACED_TICK_HZ={paced_hz} no longer matches cells.yaml "
+                f"camera_classes {entry.get('id')!r} fps={fps}; update one "
+                "to match the other (see PACED_TICK_HZ's docstring)"
+            )
+
+
+def _peek_arm(run_dir: Path) -> str | None:
+    """The run's `manifest.json` `arm`, or None if the manifest cannot be
+    read at all. Used only by main's sweep-arm filter, so a run aborted
+    before its manifest was ever written is treated as out-of-scope
+    (skipped, counted) rather than crashing the whole cell's table."""
+    try:
+        return load_manifest(run_dir / "manifest.json").arm
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def verdict_for_run(run_dir: Path, *, topic: str, paced_hz: float = PACED_TICK_HZ) -> RunVerdict:
@@ -277,12 +348,21 @@ def _fmt_ratio(value: float | None) -> str:
     return f"{value:.3f}"
 
 
-def render_verdicts(cell: str, class_id: str, verdicts: list[RunVerdict]) -> str:
+def render_verdicts(
+    cell: str, class_id: str, verdicts: list[RunVerdict], *, skipped_out_of_arm: int = 0
+) -> str:
     """Markdown per-point verdict table.
 
     Pure formatting over already-assembled `RunVerdict`s: no filesystem
     access, so it is testable directly against hand-built verdicts without
-    a run directory (Task 23 Step 3 design note).
+    a run directory (Task 23 Step 3 design note). `skipped_out_of_arm`
+    (default 0, so callers that never skip anything see unchanged output)
+    reports how many `results/<cell>/run-*/` directories main() saw but did
+    NOT score because their arm was not in cells.yaml's `sweep_arms` --
+    e.g. a P3 duel run (static/closed-loop) filed in the same flat run-NNN/
+    sequence as this cell's M4 sweep runs. Naming the count keeps that
+    exclusion visible instead of it reading as "this cell has fewer runs
+    than it does".
     """
     lines = [
         f"## Sweep verdict: cell {cell}, class {class_id}",
@@ -302,6 +382,9 @@ def render_verdicts(cell: str, class_id: str, verdicts: list[RunVerdict]) -> str
             f"| {_fmt_ratio(v.observer_loss_rate)} "
             f"| {v.quality_ok} | {notes} |"
         )
+    if skipped_out_of_arm:
+        lines.append("")
+        lines.append(f"{skipped_out_of_arm} run(s) skipped: arm not in this cell's sweep_arms.")
     return "\n".join(lines)
 
 
@@ -325,30 +408,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--topic",
-        default="/lidar",
-        help="pointcloud topic for the publisher-side three-way reconciliation",
+        default=None,
+        help="pointcloud topic for the publisher-side three-way reconciliation; "
+        "defaults to the cell's observer_topics/<cell>.yaml entry",
     )
     p.add_argument("--paced-hz", type=float, default=PACED_TICK_HZ)
     p.add_argument("--cells-yaml", default=None, help="override cells.yaml (tests)")
+    p.add_argument(
+        "--observer-topics-dir", default=None, type=Path, help="override observer_topics/ (tests)"
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    doc = load_cells_doc(args.cells_yaml)
     # Typo guard + cell/class registration check, reusing cell_info's own
     # validated lookup rather than re-parsing cells.yaml a second way.
     try:
-        merge(load_cells_doc(args.cells_yaml), args.cell, args.class_id)
+        merged = merge(doc, args.cell, args.class_id)
     except UnknownIdError as exc:
         print(f"SWEEP_VERDICT FAIL: {exc}", file=sys.stderr)
         return EXIT_UNKNOWN_ID
+    _check_paced_hz_consistency(doc, args.paced_hz)
+
+    sweep_arms = set(merged.get("sweep_arms") or [])
+    topic = args.topic or _lidar_topic_for_cell(args.cell, args.observer_topics_dir)
 
     cell_dir = args.results_root / args.cell
-    verdicts = [
-        verdict_for_run(run_dir, topic=args.topic, paced_hz=args.paced_hz)
-        for run_dir in sorted(cell_dir.glob("run-*"))
-    ]
-    print(render_verdicts(args.cell, args.class_id, verdicts))
+    verdicts = []
+    skipped = 0
+    for run_dir in sorted(cell_dir.glob("run-*")):
+        if _peek_arm(run_dir) not in sweep_arms:
+            skipped += 1
+            continue
+        verdicts.append(verdict_for_run(run_dir, topic=topic, paced_hz=args.paced_hz))
+    print(render_verdicts(args.cell, args.class_id, verdicts, skipped_out_of_arm=skipped))
     return 0
 
 

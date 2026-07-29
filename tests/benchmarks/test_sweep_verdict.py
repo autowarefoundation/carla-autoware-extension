@@ -303,6 +303,91 @@ def test_render_verdicts_is_pure_and_needs_no_filesystem():
     assert "rtf<0.9" in table
 
 
+def test_render_verdicts_reports_skipped_out_of_arm_count():
+    """Pure, filesystem-free: skipped_out_of_arm must be visible in the
+    table text, not just a caller-side print -- a skipped run is exactly
+    the class of silent gap this campaign guards against."""
+    table = render_verdicts("A", "vlp16", [], skipped_out_of_arm=3)
+    assert "3 run(s) skipped" in table
+    # A caller that never skips anything sees byte-identical output to
+    # before this parameter existed.
+    assert render_verdicts("A", "vlp16", []) == render_verdicts(
+        "A", "vlp16", [], skipped_out_of_arm=0
+    )
+
+
+# --- LiDAR topic resolution (observer_topics/<cell>.yaml) -----------------
+
+
+def test_lidar_topic_for_cell_reads_observer_topics_yaml_for_a():
+    """Regression: cell A's own committed observer_topics/A.yaml, not a
+    guessed literal. This is the real repo file, not a synthetic fixture."""
+    assert sweep_verdict._lidar_topic_for_cell("A") == "/sensing/lidar/top/pointcloud_raw_ex"
+
+
+def test_lidar_topic_for_cell_reads_the_bridges_own_topic_for_e():
+    """E-cells' bridge emits on a different, patched-around topic name --
+    the whole reason observer_topics/E.yaml exists as ITS OWN file rather
+    than sharing A's."""
+    assert sweep_verdict._lidar_topic_for_cell("E") == "/sensing/lidar/top/pointcloud_before_sync"
+
+
+def test_lidar_topic_for_cell_falls_back_when_no_pointcloud_entry(tmp_path):
+    """CAL-seam's real file has an empty topics list (Task 14 not yet
+    landed); any cell whose file is absent or PointCloud2-less must fall
+    back to collect_gt.DEFAULT_LIDAR_TOPIC, never silently return None or
+    raise."""
+    (tmp_path / "Q.yaml").write_text("/**:\n  ros__parameters:\n    topics: []\n")
+    assert sweep_verdict._lidar_topic_for_cell("Q", tmp_path) == sweep_verdict.DEFAULT_LIDAR_TOPIC
+    # A cell with no file at all (not even empty) takes the same fallback.
+    assert (
+        sweep_verdict._lidar_topic_for_cell("Nonexistent", tmp_path)
+        == sweep_verdict.DEFAULT_LIDAR_TOPIC
+    )
+
+
+# --- PACED_TICK_HZ / camera_classes[*].fps consistency ---------------------
+
+
+def test_check_paced_hz_consistency_passes_against_the_real_cells_yaml():
+    from benchmarks.scripts.cell_info import load_cells_doc
+
+    sweep_verdict._check_paced_hz_consistency(load_cells_doc(), sweep_verdict.PACED_TICK_HZ)
+
+
+def test_check_paced_hz_consistency_raises_on_drift():
+    doc = {"camera_classes": [{"id": "cam1", "fps": 30}]}
+    with pytest.raises(ValueError, match="cam1"):
+        sweep_verdict._check_paced_hz_consistency(doc, sweep_verdict.PACED_TICK_HZ)
+
+
+def test_check_paced_hz_consistency_skips_when_paced_hz_is_overridden():
+    """An explicit --paced-hz is a deliberate what-if; it must not be
+    penalized for disagreeing with camera_classes."""
+    doc = {"camera_classes": [{"id": "cam1", "fps": 20}]}
+    sweep_verdict._check_paced_hz_consistency(doc, 25.0)  # would not raise
+
+
+# --- _rtf_series_from_resources: dedup, not concatenation ------------------
+
+
+def test_rtf_series_from_resources_dedups_across_processes_not_concatenates():
+    """Pins the dedup: two processes x 5 samples each must yield a 5-sample
+    series (one process's column), not 10 (both columns concatenated)."""
+    sample_ns = BASE + np.arange(5) * 1_000_000_000
+    rtf = np.array([0.91, 0.92, 0.93, 0.94, 0.95])
+    resources = {
+        "carla": {"sample_system_ns": sample_ns, "rtf": rtf},
+        "observer": {"sample_system_ns": sample_ns, "rtf": rtf},
+    }
+
+    out_ns, out_rtf = sweep_verdict._rtf_series_from_resources(resources)
+
+    assert out_ns.size == 5
+    np.testing.assert_array_equal(out_ns, sample_ns)
+    np.testing.assert_allclose(out_rtf, rtf)
+
+
 # --- CLI ---------------------------------------------------------------
 
 
@@ -317,9 +402,59 @@ def test_main_walks_results_root_and_prints_table(tmp_path, capsys):
     cell_dir.mkdir(parents=True)
     _healthy_paced_point(cell_dir, approach="extension")
 
-    rc = sweep_verdict.main(["A", "--class", "vlp16", "--results-root", str(tmp_path)])
+    rc = sweep_verdict.main(
+        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--topic", TOPIC]
+    )
 
     assert rc == 0
     out = capsys.readouterr().out
     assert "run-001" in out
     assert "cell A, class vlp16" in out
+
+
+def test_main_resolves_lidar_topic_from_the_real_observer_topics_yaml(tmp_path, capsys):
+    """No --topic given: main() must resolve cell A's real, committed
+    observer_topics/A.yaml topic on its own and score the point normally
+    (not "not measurable") -- this is the exact gap Finding 1 reported:
+    without this resolution, the tool KeyErrors on every mandatory sweep
+    cell (A/B/E) it exists to score."""
+    cell_dir = tmp_path / "A" / "run-001"
+    cell_dir.mkdir(parents=True)
+    _write_manifest(cell_dir, arm="paced", approach="extension")
+    sample_ns = BASE + np.arange(60) * 1_000_000_000
+    _write_resources_csv(cell_dir, sample_ns, np.full(60, 0.99))
+    wall = BASE + np.arange(1201) * 50_000_000
+    _write_clock_csv(cell_dir, wall)
+    _write_observer_csv(cell_dir, topic="/sensing/lidar/top/pointcloud_raw_ex")
+    _write_publisher_counts(cell_dir, "/sensing/lidar/top/pointcloud_raw_ex", 1190)
+    _write_quality(cell_dir, gate_pass=True)
+
+    rc = sweep_verdict.main(["A", "--class", "vlp16", "--results-root", str(tmp_path)])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "not measurable" not in out
+
+
+def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):
+    """A cell shared by the P3 duel (static/closed-loop) and the M4 sweep
+    (paced/unpaced/ablation) files every run under one flat run-NNN/
+    sequence (run.sh). A duel run must not be scored as a sweep point, and
+    its exclusion must be visible, not silent."""
+    duel_run = tmp_path / "A" / "run-001"
+    duel_run.mkdir(parents=True)
+    _write_manifest(duel_run, arm="static", approach="extension")  # no CSVs needed: skipped first
+
+    sweep_run = tmp_path / "A" / "run-002"
+    sweep_run.mkdir(parents=True)
+    _healthy_paced_point(sweep_run, approach="extension")
+
+    rc = sweep_verdict.main(
+        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--topic", TOPIC]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "run-002" in out
+    assert "run-001" not in out
+    assert "1 run(s) skipped" in out
