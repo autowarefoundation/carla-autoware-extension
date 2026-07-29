@@ -54,9 +54,65 @@ def test_creates_a_valid_manifest(tmp_path):
     }
     assert m.placement == PLACEMENT
     assert m.excluded is False
-    # Provenance is computed, so it is present and looks like a sha.
-    assert len(m.harness_git_sha) == 40
+    # Provenance is computed, so it is present and looks like a sha -- with the
+    # `-dirty` marker when the working tree is not HEAD, which is the normal
+    # state while developing and must not fail this assertion.
+    assert len(m.harness_git_sha.removesuffix("-dirty")) == 40
     assert m.started_at_ns > 0
+
+
+def test_provenance_marks_a_dirty_tree(tmp_path, monkeypatch):
+    """A dirty tree must be VISIBLE in the record, not silently absorbed.
+
+    Without the marker the field asserts benchmarks/README.md's tie-back
+    guarantee ("any result can be tied back to the exact analysis code that
+    scored it") for code that was never committed -- which is how
+    results/E/run-002..004 came to name a commit that cannot contain the
+    `save_stage_logs` output those runs carry.
+    """
+    monkeypatch.setattr(write_manifest, "tree_is_dirty", lambda: True)
+    run_dir = tmp_path / "A" / "run-001"
+    assert write_manifest.main(_argv(run_dir)) == 0
+    m = load_manifest(run_dir / "manifest.json")
+    assert m.harness_git_sha.endswith("-dirty")
+    assert len(m.harness_git_sha) == 40 + len("-dirty")
+
+
+def test_provenance_is_unsuffixed_on_a_clean_tree(tmp_path, monkeypatch):
+    monkeypatch.setattr(write_manifest, "tree_is_dirty", lambda: False)
+    run_dir = tmp_path / "A" / "run-001"
+    assert write_manifest.main(_argv(run_dir)) == 0
+    m = load_manifest(run_dir / "manifest.json")
+    assert not m.harness_git_sha.endswith("-dirty")
+    assert len(m.harness_git_sha) == 40
+
+
+def test_dirty_test_excludes_the_results_tree_and_untracked_files(monkeypatch):
+    """The run writes into benchmarks/results/ AS IT RUNS.
+
+    If that path counted, every manifest would be marked dirty by its own run
+    directory and the marker would carry no information at all. Asserted on the
+    git invocation because that is where the exclusion lives; a fixture repo
+    would test git's pathspec handling rather than this function's contract.
+    """
+    seen: list[tuple] = []
+    monkeypatch.setattr(write_manifest, "_git", lambda *a: seen.append(a) or "")
+    assert write_manifest.tree_is_dirty() is False
+    assert seen == [
+        (
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ".",
+            ":(exclude)benchmarks/results",
+        )
+    ]
+
+
+def test_dirty_test_reports_a_modified_tracked_file(monkeypatch):
+    monkeypatch.setattr(write_manifest, "_git", lambda *a: " M benchmarks/run.sh\n")
+    assert write_manifest.tree_is_dirty() is True
 
 
 def test_shm_on_records_true(tmp_path):

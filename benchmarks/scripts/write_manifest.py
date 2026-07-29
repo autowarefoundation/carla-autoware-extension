@@ -16,8 +16,20 @@ the P0 guarantee that an invalid manifest is REFUSED rather than written
 Provenance is computed here rather than passed in, so no caller can supply a
 stale value:
 
-* `harness_git_sha`  = `git rev-parse HEAD`
-* `patches_git_sha`  = `git log -1 --format=%H -- benchmarks/patches/`
+* `harness_git_sha`  = `git rev-parse HEAD`, with `-dirty` appended when the
+  working tree differs from it. Without that suffix the field ASSERTS a
+  tie-back (benchmarks/README.md's "any result can be tied back to the exact
+  analysis code that scored it") which a dirty tree makes false. Measured
+  2026-07-29 (Task 10): results/E/run-002..004 record `d0612c4`, a commit in
+  which `cells/python-bridge.sh` had no `save_stage_logs` at all -- yet
+  run-003 and run-004 contain the `bridge-stage*.log` files only that function
+  writes. The code that ran was uncommitted, and no commit exists to name it,
+  so the four records cannot be repaired retroactively; this stops the next one
+  from being unrepairable. `benchmarks/results/` is excluded from the dirty
+  test because the run writes into it while the run is happening.
+* `patches_git_sha`  = `git log -1 --format=%H -- benchmarks/patches/`, with the
+  same `-dirty` suffix on the same condition, for the same reason: run-001..004
+  claim `ec998b4`, which PREDATES the patch files their image was built from.
 * `dds_profile_sha256` = sha256 of the profile file (`--dds-profile none`
   records the empty string, which is what "no XML profile in play" means --
   distinguishable from a profile whose content happened to hash to zeros).
@@ -77,18 +89,49 @@ def _git(*args: str) -> str:
     return proc.stdout.strip()
 
 
+def tree_is_dirty() -> bool:
+    """Do tracked files differ from HEAD, ignoring benchmarks/results/?
+
+    The run writes into benchmarks/results/ while it runs, so that path must be
+    excluded or every manifest would be marked dirty by its own run directory.
+    Untracked files elsewhere are ignored too: an untracked scratch file cannot
+    change what the harness executed, while a modified tracked file can.
+    """
+    status = _git(
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        "--",
+        ".",
+        ":(exclude)benchmarks/results",
+    )
+    return bool(status.strip())
+
+
+def _dirty_suffix() -> str:
+    return "-dirty" if tree_is_dirty() else ""
+
+
 def harness_git_sha() -> str:
-    return _git("rev-parse", "HEAD")
+    """HEAD, suffixed `-dirty` when the working tree is not HEAD.
+
+    See the module docstring: an unsuffixed sha asserts a tie-back that a dirty
+    tree makes false, and four of cell E's bring-up runs assert exactly that.
+    """
+    return _git("rev-parse", "HEAD") + _dirty_suffix()
 
 
 def patches_git_sha() -> str:
-    """HEAD commit that last touched benchmarks/patches/.
+    """HEAD commit that last touched benchmarks/patches/, `-dirty` as above.
 
     Empty when no commit has touched it yet -- recorded as "" rather than
     substituted with the harness sha, so "the patch set is unversioned here"
-    stays distinguishable from "the patch set is at the harness commit".
+    stays distinguishable from "the patch set is at the harness commit". The
+    dirty suffix is NOT appended to that empty value: "" already says the patch
+    set is unversioned, which is strictly more informative than "-dirty".
     """
-    return _git("log", "-1", "--format=%H", "--", PATCHES_PATH)
+    sha = _git("log", "-1", "--format=%H", "--", PATCHES_PATH)
+    return sha + _dirty_suffix() if sha else sha
 
 
 def dds_profile_sha256(profile: str) -> str:

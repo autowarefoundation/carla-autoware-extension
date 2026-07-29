@@ -380,11 +380,27 @@ diagnose_localization_input() {
 # Two consecutive 5 s timeouts, rather than one, keep a scheduling hiccup on a
 # loaded host from condemning a healthy run while still landing well inside the
 # 420 s budget.
-carla_ticking() {
+#
+# The probe reports THREE outcomes, not two, and only one of them is a freeze.
+# An earlier version treated any non-zero exit as a strike, so a failed
+# `docker exec`, an import error or a refused connection would have been
+# escalated into an assertion that P1 Verdict 1 had occurred -- indicting the
+# bridge for a defect in the probe, which is the same class of mistake as the
+# frame-compare above. `time-out` in the RuntimeError text is CARLA's own
+# wording for `wait_for_tick` expiring ("time-out of 5000ms while waiting for
+# the simulator", verified live on this host), so it is what distinguishes a
+# frozen world from a probe that never ran.
+carla_tick_state() {
   cx "python3 -c \"
 import carla
-c = carla.Client('localhost', $BENCH_RPC_PORT); c.set_timeout(10.0)
-print(c.get_world().wait_for_tick(5.0).frame)\"" >/dev/null 2>&1
+try:
+    c = carla.Client('localhost', $BENCH_RPC_PORT); c.set_timeout(10.0)
+    print('TICKING', c.get_world().wait_for_tick(5.0).frame)
+except RuntimeError as exc:
+    print('FROZEN' if 'time-out' in str(exc) else 'PROBE_ERROR', type(exc).__name__)
+except Exception as exc:
+    print('PROBE_ERROR', type(exc).__name__)\"" 2>/dev/null |
+    tr -d '\r' | awk 'NF {print $1; exit}'
 }
 
 # --no-daemon, and it is load-bearing. MEASURED 2026-07-29 (Task 10): this loop
@@ -402,15 +418,21 @@ print(c.get_world().wait_for_tick(5.0).frame)\"" >/dev/null 2>&1
 echo "waiting up to ${STACK_TIMEOUT_S}s for the Autoware stack to localize"
 deadline=$((SECONDS + STACK_TIMEOUT_S))
 freeze_strikes=0
+probe_errors=0
 until cx "$AW_ENV
   timeout 20 ros2 topic echo --once --no-daemon \
     /localization/kinematic_state >/dev/null 2>&1" \
   >/dev/null 2>&1; do
-  if carla_ticking; then
-    freeze_strikes=0
-  else
-    freeze_strikes=$((freeze_strikes + 1))
-  fi
+  case "$(carla_tick_state)" in
+    TICKING) freeze_strikes=0; probe_errors=0 ;;
+    FROZEN) freeze_strikes=$((freeze_strikes + 1)) ;;
+    # Neither -- the probe itself did not run (docker exec died, the client
+    # could not connect, the interpreter raised something else). That says
+    # nothing about the sim clock, so it must NOT become a freeze strike.
+    # Counted separately and reported in its own words, because a probe that
+    # cannot answer is a launcher problem, not a bridge defect.
+    *) probe_errors=$((probe_errors + 1)); freeze_strikes=0 ;;
+  esac
   [ "$freeze_strikes" -lt 2 ] ||
     fail "the bridge stopped ticking CARLA during bring-up: two consecutive
   world.wait_for_tick(5.0) calls timed out, so the sim clock is frozen and every
@@ -419,6 +441,13 @@ until cx "$AW_ENV
   campaign; the run is filed crash:cell-launch because it never reached an armed
   window. Localization input nodes present:
 $(diagnose_localization_input)"
+  [ "$probe_errors" -lt 5 ] ||
+    fail "the CARLA tick probe could not run $probe_errors times in a row -- it
+  neither confirmed a tick nor timed out waiting for one, so NOTHING is being
+  claimed here about the sim clock or about P1 Verdict 1. Check that the
+  container is up and that the 0.9.15 client can reach port $BENCH_RPC_PORT:
+    docker exec $AW_CONTAINER python3 -c \"import carla; \
+carla.Client('localhost', $BENCH_RPC_PORT).get_server_version()\""
   [ "$SECONDS" -lt "$deadline" ] ||
     fail "/localization/kinematic_state never published within ${STACK_TIMEOUT_S}s
   while the sim clock kept advancing (so this is NOT the tick stall).
