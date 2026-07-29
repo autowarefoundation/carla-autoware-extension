@@ -135,10 +135,18 @@ docker compose -f "$COMPOSE" up -d "$AW_CONTAINER" >/dev/null
 # launched as ONE background process and killed as one at teardown. It runs
 # the spawn+tick runner in the foreground and therefore never returns; the
 # readiness probe below, not its exit status, is what "up" waits on.
+#
+# ROS_DOMAIN_ID=0 is passed explicitly even though run_e2e.sh:79 exports it
+# itself: this launcher's guarantee should not depend on a line in a script
+# in another directory, and the failure it prevents is silent (a login shell
+# exporting ROS_DOMAIN_ID=123 -- as this host's does, ~/.zshrc:126 -- puts
+# CARLA on a different DDS domain than the container and no topic is ever
+# discovered; Task 9's matrix row 7). Same pin as cells/tier4-native.sh.
 (
   cd "$BENCH_REPO"
   MAP="$BENCH_MAP" \
   WITH_AUTOWARE=1 \
+  ROS_DOMAIN_ID=0 \
   ROUTE_FILE="$BENCH_ROUTE_FILE" \
   CARLA_ROOT="$BENCH_CARLA_TREE" \
   CARLA_UNREAL_ENGINE_PATH="${CARLA_UNREAL_ENGINE_PATH:-$HOME/src/UnrealEngine}" \

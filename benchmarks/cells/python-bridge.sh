@@ -109,7 +109,14 @@ if [ "$MODE" = "plan" ]; then exit 0; fi
 # --------------------------------------------------------------------------
 mkdir -p "$BENCH_RUN_DIR"
 
-nohup "$CARLA_0915_SH" -RenderOffScreen -nosound \
+# ROS_DOMAIN_ID=0 is pinned on the sim process for uniformity with the other
+# launchers, not because this one is currently exposed: CARLA 0.9.15 has no
+# native ROS 2 layer, so this server is not a DDS participant and the bridge
+# that is one runs inside $AW_CONTAINER, which gets the domain explicitly
+# below. Pinning here costs nothing and removes the whole class of "the sim
+# inherited a login shell's ROS_DOMAIN_ID" defect from this file, which is
+# real for the UE5-tree launchers (see cells/tier4-native.sh).
+nohup env ROS_DOMAIN_ID=0 "$CARLA_0915_SH" -RenderOffScreen -nosound \
   "-carla-rpc-port=$BENCH_RPC_PORT" >"$LAUNCH_LOG" 2>&1 &
 echo $! >"$CARLA_PID_FILE"
 

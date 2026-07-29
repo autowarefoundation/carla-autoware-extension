@@ -111,7 +111,17 @@ mkdir -p "$BENCH_RUN_DIR"
 # -nosound is load-bearing on a headless host with no audio device (startup
 # can otherwise fail before LoadMap); -carla-rpc-port is pinned explicitly
 # because a collision surfaces as SIGABRT inside LoadMap, not a bind error.
-nohup "$EDITOR" "$UPROJECT" "$BENCH_MAP" \
+#
+# ROS_DOMAIN_ID=0 is pinned ON THIS PROCESS, not merely exported somewhere
+# upstream. `--ros2` makes the editor a Fast-DDS participant and the fork
+# reads the variable itself (ROS2.cpp:297-316, ObtainDomainId), while `nohup`
+# inherits the invoking shell's environment. This host's login shell exports
+# ROS_DOMAIN_ID=123 (~/.zshrc:126), so without this pin the fork lands on
+# domain 123 while every container of this harness lands on 0: the stack
+# starts, looks healthy, and not one topic is ever discovered. That is Task
+# 9's measured matrix row 7. `env` execs in place, so $! is still the
+# editor's own PID and the PID-file contract below is unchanged.
+nohup env ROS_DOMAIN_ID=0 "$EDITOR" "$UPROJECT" "$BENCH_MAP" \
   -game --ros2 "-carla-rpc-port=$BENCH_RPC_PORT" \
   -RenderOffScreen -nosound >"$LAUNCH_LOG" 2>&1 &
 echo $! >"$CARLA_PID_FILE"
