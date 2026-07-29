@@ -39,6 +39,15 @@ is unregistered for cell B pending Task 13) is a legitimate "not
 pre-registered yet" state and must fail loudly where it is used, never be
 silently substituted with a plausible-looking number.
 
+Each of the three bindings has a matching CLI pair (`--topic` /
+`--override-topic`, `--tick-hz` / `--override-tick-hz`,
+`--lidar-expected-hz` / `--override-lidar-expected-hz`, all resolved by
+`_resolve_override`): the plain form fills a `None` registry entry or must
+agree with a real one, and only the explicitly-named `--override-*` form
+may disagree with a real registered value -- a hand-typed flag can never
+silently outvote the registry the campaign's reproducibility claim rests
+on. See `_resolve_override`'s docstring.
+
 `--class <id>` is validated against cells.yaml via `cell_info.merge` (the
 same typo guard `cell_info.py` uses) but does NOT filter which run
 directories get scored: the manifest schema has no per-run class field yet
@@ -75,6 +84,17 @@ NOT_MEASURABLE = "publisher rate not measurable (no publisher_counts.json)"
 NOT_APPLICABLE_ABLATION = "quality not applicable (ablation arm, no closed loop)"
 
 EXIT_UNKNOWN_ID = 2
+
+# benchmarks/README.md's 2026-07-28 amendment log ("tick_hz set to null on
+# the tier4 cells (B, D, B-hf, B45) and on CAL-seam, naming Tasks 13 and
+# 14"): the owning task per cell for a null tick_hz binding. Not itself a
+# cells.yaml field (there is nowhere machine-readable to read "which task
+# owns this gap" from), so this is a small, explicitly-cited transcription
+# of that dated entry -- used only to make _tick_rate_ratio_series's error
+# message name a real task instead of a guessed one; a cell not listed
+# here (including any future one) falls back to a task-agnostic message
+# rather than asserting a number that could be wrong.
+TICK_HZ_PENDING_TASK = {"B": 13, "D": 13, "B-hf": 13, "B45": 13, "CAL-seam": 14}
 
 
 @dataclass(frozen=True)
@@ -124,7 +144,9 @@ def _rtf_series_from_resources(resources: dict) -> tuple[np.ndarray, np.ndarray]
     return sample_ns, rtf
 
 
-def _tick_rate_ratio_series(wall_ns: np.ndarray, tick_hz: float) -> tuple[np.ndarray, np.ndarray]:
+def _tick_rate_ratio_series(
+    wall_ns: np.ndarray, tick_hz: float | None, cell: str
+) -> tuple[np.ndarray, np.ndarray]:
     """Per-tick achieved ticks/s as a fraction of `tick_hz` (the cell's
     registered simulator step-rate target, `metrics["tick_hz"]` -- NOT the
     sensor's own scan rate; see the module docstring for why the two are
@@ -138,11 +160,30 @@ def _tick_rate_ratio_series(wall_ns: np.ndarray, tick_hz: float) -> tuple[np.nda
     than the input (the first tick has no preceding gap) and is
     timestamped at the LATER tick of each pair, matching when the rate
     becomes knowable.
+
+    A `None` `tick_hz` (e.g. cell B/B-hf today, see `TICK_HZ_PENDING_TASK`)
+    means `evaluate_ceiling` would receive BOTH `rtf=None` (the unpaced arm
+    never computes it) AND `tick_rate_ratio=None` at once -- a combination
+    `evaluate_ceiling` itself refuses ("need rtf ... or tick_rate_ratio,
+    got neither"), because a silent skip of the sustained-throughput
+    disjunct would misreport the point as "not reached": for the M4 sweep,
+    that would mean claiming an approach had headroom it was never tested
+    for. Raising here, loudly and by name, is the correct behaviour, not a
+    workaround pending a softer one -- the message says so explicitly, so
+    an operator who hits this reads "known pending dependency" and moves
+    on, rather than "the tool is broken" and starts debugging this tool.
     """
     if tick_hz is None:
+        task = TICK_HZ_PENDING_TASK.get(cell)
+        pending = f"pending Task {task}" if task else "not yet registered"
         raise ValueError(
-            "tick_hz is not registered for this cell's metrics (None): "
-            "cannot compute the unpaced arm's tick_rate_ratio"
+            f"metrics.tick_hz is null for cell {cell!r} ({pending} -- see "
+            "benchmarks/config/cells.yaml's metrics: block and "
+            "benchmarks/README.md's tick_hz amendment log): the unpaced "
+            f"arm's tick_rate_ratio cannot be computed for cell {cell!r}, "
+            "and this cell/class cannot be scored on the unpaced arm "
+            "until tick_hz is registered. This is a known pending "
+            "dependency, not a defect in this tool."
         )
     w = np.sort(np.asarray(wall_ns, dtype=np.int64))
     if w.size < 2:
@@ -251,36 +292,43 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     )
 
 
-def _resolve_tick_hz(
-    registered: float | None, cli_value: float | None, override: float | None
-) -> float | None:
-    """Resolve the effective `tick_hz` for a `main()` invocation.
+def _resolve_override(flag: str, metrics_key: str, registered, cli_value, override):
+    """Resolve one CLI-overridable registered `metrics[...]` binding.
 
-    Replaces the deleted `_check_paced_hz_consistency` guard (Minor 15):
-    that guard stopped the old global `PACED_TICK_HZ` literal from
-    drifting from `cells.yaml`; `tick_hz` now comes from the registry
-    itself, but an operator can still type `--tick-hz` on the command
-    line, and nothing was stopping THAT from silently displacing a real
-    registered value -- the drift risk moved, it did not disappear.
+    Generalizes the Minor 15 fix (originally `_resolve_tick_hz`, `--tick-hz`
+    only) to every override flag this tool exposes: `--tick-hz`,
+    `--lidar-expected-hz` and `--topic`. The reasoning does not distinguish
+    the three -- the campaign's reproducibility claim rests on the registry
+    being what the tools actually read, and a hand-typed flag that quietly
+    displaces a registered value defeats that identically in all three
+    cases. Replaced the deleted `_check_paced_hz_consistency` guard, which
+    stopped the old global `PACED_TICK_HZ` literal from drifting from
+    `cells.yaml`; the value now comes from the registry itself, so the risk
+    moved from "the constant drifts from cells.yaml" to "an operator's
+    plain flag silently outvotes cells.yaml", not away.
 
-    `override` (`--override-tick-hz`) always wins, with no consistency
-    check at all -- its name says the override is deliberate. Otherwise
-    `cli_value` (`--tick-hz`) is accepted when the registry has nothing to
-    disagree with (`registered is None`, e.g. cell B pending Task 13, so
-    `--tick-hz` legitimately fills a real gap) or when it agrees with the
-    registry; a `cli_value` that DISAGREES with a real registered value
-    is refused loudly here rather than silently winning, because the
-    registry is what the campaign's reproducibility claim rests on.
+    `override` (`--override-<flag>`) always wins, with no consistency
+    check at all -- the flag name says the override is deliberate.
+    Otherwise `cli_value` (`--<flag>`) is accepted when the registry has
+    nothing to disagree with (`registered is None`, e.g. cell B's
+    `lidar_expected_hz` pending Task 13, so `--lidar-expected-hz`
+    legitimately fills a real gap) or when it agrees with the registry; a
+    `cli_value` that DISAGREES with a real registered value is refused
+    loudly here rather than silently winning. The three escape hatches
+    (`--override-tick-hz`, `--override-lidar-expected-hz`,
+    `--override-topic`) share this one naming pattern deliberately, so an
+    operator who has learned one recognizes the other two as the same
+    family rather than having to relearn each tool's own convention.
     """
     if override is not None:
         return override
     if cli_value is not None:
         if registered is not None and cli_value != registered:
             raise ValueError(
-                f"--tick-hz {cli_value} disagrees with the registered "
-                f"metrics['tick_hz']={registered}; refusing to silently "
-                "override a registered value -- pass "
-                f"--override-tick-hz {cli_value} instead if this is a "
+                f"--{flag} {cli_value!r} disagrees with the registered "
+                f"metrics[{metrics_key!r}]={registered!r}; refusing to "
+                "silently override a registered value -- pass "
+                f"--override-{flag} {cli_value!r} instead if this is a "
                 "deliberate what-if"
             )
         return cli_value
@@ -349,7 +397,7 @@ def verdict_for_run(
     # ablation both tick at the paced target; only "unpaced" substitutes
     # tick_rate_ratio, per the spec's fourth disjunct).
     if manifest.arm == "unpaced":
-        sample_ns, tick_ratio = _tick_rate_ratio_series(wall_ns, tick_hz)
+        sample_ns, tick_ratio = _tick_rate_ratio_series(wall_ns, tick_hz, manifest.cell)
         rtf = None
     else:
         resources = read_resources_csv(run_dir / "resources.csv")
@@ -448,7 +496,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--topic",
         default=None,
         help="pointcloud topic for the publisher-side three-way reconciliation; "
-        "defaults to the cell's registered metrics['lidar_topic']",
+        "defaults to metrics['lidar_topic']. Disagreeing with a REGISTERED "
+        "value fails loudly -- see --override-topic",
+    )
+    p.add_argument(
+        "--override-topic",
+        default=None,
+        help="deliberately override a REGISTERED metrics['lidar_topic']; unlike "
+        "--topic this is never checked against the registry",
     )
     p.add_argument(
         "--tick-hz",
@@ -470,7 +525,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--lidar-expected-hz",
         type=float,
         default=None,
-        help="override metrics['lidar_expected_hz'] (tests)",
+        help="lidar_expected_hz to use when metrics['lidar_expected_hz'] is "
+        "unregistered (None); disagreeing with a REGISTERED value fails "
+        "loudly -- see --override-lidar-expected-hz",
+    )
+    p.add_argument(
+        "--override-lidar-expected-hz",
+        type=float,
+        default=None,
+        help="deliberately override a REGISTERED metrics['lidar_expected_hz']; "
+        "unlike --lidar-expected-hz this is never checked against the registry",
     )
     p.add_argument("--cells-yaml", default=None, help="override cells.yaml (tests)")
     return p
@@ -490,19 +554,25 @@ def main(argv: list[str] | None = None) -> int:
 
     sweep_arms = set(merged.get("sweep_arms") or [])
     # `metrics_for` is the single registered source for all three bindings
-    # (cell_info.metrics_for docstring). `tick_hz` goes through
-    # `_resolve_tick_hz` (Minor 15): a plain `--tick-hz` that disagrees with
-    # a REGISTERED value is refused rather than silently winning, so a
+    # (cell_info.metrics_for docstring). All three go through
+    # `_resolve_override` (Minor 15, generalized to `topic` and
+    # `lidar_expected_hz` too): a plain `--<flag>` that disagrees with a
+    # REGISTERED value is refused rather than silently winning, so a
     # hand-typed number can never quietly displace the registry the
-    # campaign's reproducibility claim rests on; `--override-tick-hz` is the
-    # explicit escape hatch. `topic`/`lidar_expected_hz` still use the
-    # simpler "override always wins" rule from earlier rounds.
-    topic = args.topic if args.topic is not None else metrics["lidar_topic"]
-    tick_hz = _resolve_tick_hz(metrics["tick_hz"], args.tick_hz, args.override_tick_hz)
-    lidar_expected_hz = (
-        args.lidar_expected_hz
-        if args.lidar_expected_hz is not None
-        else metrics["lidar_expected_hz"]
+    # campaign's reproducibility claim rests on; the matching
+    # `--override-<flag>` is each one's explicit escape hatch.
+    topic = _resolve_override(
+        "topic", "lidar_topic", metrics["lidar_topic"], args.topic, args.override_topic
+    )
+    tick_hz = _resolve_override(
+        "tick-hz", "tick_hz", metrics["tick_hz"], args.tick_hz, args.override_tick_hz
+    )
+    lidar_expected_hz = _resolve_override(
+        "lidar-expected-hz",
+        "lidar_expected_hz",
+        metrics["lidar_expected_hz"],
+        args.lidar_expected_hz,
+        args.override_lidar_expected_hz,
     )
 
     cell_dir = args.results_root / args.cell

@@ -445,37 +445,56 @@ def test_a_hf_real_registered_metrics_diverge_5x_and_score_cleanly(tmp_path):
     assert not v.verdict.reached
 
 
-# --- Minor 15: --tick-hz must not silently override a registered value ----
+# --- Minor 15: no plain flag may silently override a registered value ----
+# Generalized to all three CLI-overridable bindings (tick_hz,
+# lidar_expected_hz, topic): the reasoning does not distinguish them, so
+# the same parametrized suite exercises all three flag families through
+# the one shared `_resolve_override`.
+
+_OVERRIDE_FAMILIES = [
+    ("tick-hz", "tick_hz"),
+    ("lidar-expected-hz", "lidar_expected_hz"),
+    ("topic", "lidar_topic"),
+]
 
 
-def test_resolve_tick_hz_no_cli_input_returns_the_registered_value():
-    assert sweep_verdict._resolve_tick_hz(20.0, None, None) == 20.0
+@pytest.mark.parametrize("flag,key", _OVERRIDE_FAMILIES)
+def test_resolve_override_no_cli_input_returns_the_registered_value(flag, key):
+    assert sweep_verdict._resolve_override(flag, key, "REG", None, None) == "REG"
 
 
-def test_resolve_tick_hz_plain_flag_agreeing_with_registry_is_fine():
-    assert sweep_verdict._resolve_tick_hz(20.0, 20.0, None) == 20.0
+@pytest.mark.parametrize("flag,key", _OVERRIDE_FAMILIES)
+def test_resolve_override_plain_flag_agreeing_with_registry_is_fine(flag, key):
+    assert sweep_verdict._resolve_override(flag, key, "REG", "REG", None) == "REG"
 
 
-def test_resolve_tick_hz_plain_flag_fills_in_an_unregistered_binding():
-    """registered=None (e.g. cell B pending Task 13): nothing to disagree
-    with, so --tick-hz legitimately supplies the missing value."""
-    assert sweep_verdict._resolve_tick_hz(None, 25.0, None) == 25.0
+@pytest.mark.parametrize("flag,key", _OVERRIDE_FAMILIES)
+def test_resolve_override_plain_flag_fills_in_an_unregistered_binding(flag, key):
+    """registered=None (e.g. cell B's lidar_expected_hz pending Task 13, or
+    cell B's tick_hz likewise): nothing to disagree with, so the plain
+    flag legitimately supplies the missing value."""
+    assert sweep_verdict._resolve_override(flag, key, None, "NEW", None) == "NEW"
 
 
-def test_resolve_tick_hz_plain_flag_disagreeing_with_registry_fails_loudly():
-    """The Minor 15 fix itself: a hand-typed --tick-hz that disagrees with
-    a REAL registered value must not silently win."""
-    with pytest.raises(ValueError, match="tick_hz") as exc_info:
-        sweep_verdict._resolve_tick_hz(20.0, 25.0, None)
-    assert "--override-tick-hz" in str(exc_info.value)
+@pytest.mark.parametrize("flag,key", _OVERRIDE_FAMILIES)
+def test_resolve_override_plain_flag_disagreeing_with_registry_fails_loudly(flag, key):
+    """The Minor 15 fix itself, for every flag family: a hand-typed plain
+    flag that disagrees with a REAL registered value must not silently
+    win. The error names the disagreement and the matching --override-*
+    escape hatch."""
+    with pytest.raises(ValueError, match=key) as exc_info:
+        sweep_verdict._resolve_override(flag, key, "REG", "OTHER", None)
+    assert f"--override-{flag}" in str(exc_info.value)
 
 
-def test_resolve_tick_hz_override_flag_always_wins_with_no_check():
-    """--override-tick-hz is the deliberate-what-if escape hatch: it wins
+@pytest.mark.parametrize("flag,key", _OVERRIDE_FAMILIES)
+def test_resolve_override_flag_always_wins_with_no_check(flag, key):
+    """--override-<flag> is the deliberate-what-if escape hatch: it wins
     even against a real, disagreeing registered value, with no error."""
-    assert sweep_verdict._resolve_tick_hz(20.0, None, 999.0) == 999.0
-    # Wins even when --tick-hz is ALSO given (and would itself disagree).
-    assert sweep_verdict._resolve_tick_hz(20.0, 25.0, 999.0) == 999.0
+    assert sweep_verdict._resolve_override(flag, key, "REG", None, "OVERRIDE") == "OVERRIDE"
+    # Wins even when the plain flag is ALSO given (and would itself
+    # disagree with the registry on its own).
+    assert sweep_verdict._resolve_override(flag, key, "REG", "OTHER", "OVERRIDE") == "OVERRIDE"
 
 
 # --- fail-clearly on an unbound metric (never substitute a plausible number)
@@ -506,6 +525,60 @@ def test_missing_tick_hz_on_unpaced_arm_fails_clearly(tmp_path):
         verdict_for_run(run_dir, topic=TOPIC, tick_hz=None, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
 
+def test_missing_tick_hz_message_names_cell_and_pending_task(tmp_path):
+    """The message must read as "known pending dependency", not "the tool
+    is broken": it names the missing binding (metrics.tick_hz), the cell,
+    and cell B's real owning task (13, per benchmarks/README.md's
+    2026-07-28 tick_hz amendment log) -- an operator hitting this mid-sweep
+    must be able to tell this apart from a bug in the tool at a glance."""
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm="unpaced", approach="tier4-native", cell="B")
+    wall = BASE + np.arange(1201) * 50_000_000
+    _write_clock_csv(run_dir, wall)
+    _write_observer_csv(run_dir, topic="/sensing/lidar/top/pointcloud_raw_ex")
+    _write_publisher_counts(run_dir, "/sensing/lidar/top/pointcloud_raw_ex", 1190)
+    _write_quality(run_dir, gate_pass=True)
+
+    with pytest.raises(ValueError) as exc_info:
+        verdict_for_run(
+            run_dir,
+            topic="/sensing/lidar/top/pointcloud_raw_ex",
+            tick_hz=None,
+            lidar_expected_hz=LIDAR_EXPECTED_HZ,
+        )
+
+    message = str(exc_info.value)
+    assert "metrics.tick_hz" in message
+    assert "'B'" in message
+    assert "Task 13" in message
+    assert "not a defect in this tool" in message
+
+
+def test_missing_tick_hz_message_has_no_task_number_for_an_unmapped_cell(tmp_path):
+    """A cell not in the pending-task mapping (including any future one)
+    must not have a task number invented for it -- an unverified "Task N"
+    claim would be exactly the checkably-wrong-claim failure mode this
+    campaign has been burned by before."""
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(
+        run_dir, arm="unpaced", cell="A"
+    )  # A's tick_hz IS registered; None here is synthetic
+    wall = BASE + np.arange(1201) * 50_000_000
+    _write_clock_csv(run_dir, wall)
+    _write_observer_csv(run_dir)
+    _write_publisher_counts(run_dir, TOPIC, 1190)
+    _write_quality(run_dir, gate_pass=True)
+
+    with pytest.raises(ValueError) as exc_info:
+        verdict_for_run(run_dir, topic=TOPIC, tick_hz=None, lidar_expected_hz=LIDAR_EXPECTED_HZ)
+
+    message = str(exc_info.value)
+    assert "not yet registered" in message
+    assert "Task" not in message
+
+
 def test_missing_lidar_topic_fails_clearly(tmp_path):
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
@@ -529,8 +602,11 @@ def test_main_walks_results_root_and_prints_table(tmp_path, capsys):
     cell_dir.mkdir(parents=True)
     _healthy_paced_point(cell_dir, approach="extension")
 
+    # TOPIC ("/lidar") deliberately does not match cell A's real registered
+    # lidar_topic, so this must go through --override-topic (Minor 15,
+    # generalized): a plain --topic here would now be refused.
     rc = sweep_verdict.main(
-        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--topic", TOPIC]
+        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--override-topic", TOPIC]
     )
 
     assert rc == 0
@@ -626,7 +702,7 @@ def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):
     _healthy_paced_point(sweep_run, approach="extension")
 
     rc = sweep_verdict.main(
-        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--topic", TOPIC]
+        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--override-topic", TOPIC]
     )
 
     assert rc == 0
@@ -660,5 +736,45 @@ def test_main_override_tick_hz_flag_bypasses_the_registry_check(tmp_path):
             "--override-tick-hz",
             "999",
         ]
+    )
+    assert rc == 0
+
+
+def test_main_lidar_expected_hz_flag_disagreeing_with_registry_fails_loudly(tmp_path):
+    """The same Minor 15 guard, generalized: cell A's real registered
+    lidar_expected_hz is 20.0."""
+    with pytest.raises(ValueError, match="lidar_expected_hz"):
+        sweep_verdict.main(
+            ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--lidar-expected-hz", "999"]
+        )
+
+
+def test_main_override_lidar_expected_hz_flag_bypasses_the_registry_check(tmp_path):
+    rc = sweep_verdict.main(
+        [
+            "A",
+            "--class",
+            "vlp16",
+            "--results-root",
+            str(tmp_path),
+            "--override-lidar-expected-hz",
+            "999",
+        ]
+    )
+    assert rc == 0
+
+
+def test_main_topic_flag_disagreeing_with_registry_fails_loudly(tmp_path):
+    """The same Minor 15 guard, generalized: cell A's real registered
+    lidar_topic is /sensing/lidar/top/pointcloud_raw_ex, not TOPIC."""
+    with pytest.raises(ValueError, match="lidar_topic"):
+        sweep_verdict.main(
+            ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--topic", TOPIC]
+        )
+
+
+def test_main_override_topic_flag_bypasses_the_registry_check(tmp_path):
+    rc = sweep_verdict.main(
+        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--override-topic", TOPIC]
     )
     assert rc == 0
