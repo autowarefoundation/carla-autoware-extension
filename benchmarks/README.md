@@ -49,6 +49,30 @@ as cell E0's measured result. Cells E and E-opt run WITH this patch and
 say so. Like the spec's E-opt arm, this exception is flagged for the
 owner to strike; striking it drops cells E and E-opt, not E0.
 
+### Second named exception (pre-registered 2026-07-29, before any P3 run)
+
+**REGISTERED, NOT YET WRITTEN OR APPLIED.** A second one-file change on the
+bridge's publish path is granted, on the same owner-strikable footing as the
+first: `carla_ros.py`'s `pose()` publishes `ego_actor.get_transform()` as
+`/sensing/gnss/pose_with_covariance` in the `map` frame, i.e. the CARLA actor
+origin at the vehicle centre, where Autoware's contract for that topic is
+`base_link` at the rear axle. The offset is measured, not assumed: 1.4045 m
+along the heading against the 1.425 m the bridge itself applies in the opposite
+direction when it spawns sensors
+(`patches/python-bridge/README.md`, "E static localization bias").
+
+No patch file exists yet and none is applied, deliberately. The grant was
+requested on a hypothesis — that this offset was what blocked cell E's
+closed-loop engage — which was then **refuted**: with
+`use_autoware_pose_covariance_modifier` at its default `false`,
+`ekf_localizer`'s pose input is NDT's topic and not this one, and NDT's
+`regularization.enable` is `false`, so the only thing this topic reaches is
+`pose_initializer`'s initial-pose seed. Spending the exception now would spend it
+on a contested cause. It is therefore written and applied at cell E's re-gate,
+where the causal attribution can be clean, and it is recorded here so that the
+grant itself sits inside the pre-registration window rather than being invented
+after a number is known.
+
 ## Metrics
 
 ### M5 definitions (pre-registered 2026-07-28)
@@ -678,6 +702,39 @@ launch tree still starts seven `image_transport republish` nodes and two
 `multi_camera_combiner`, which is the node the spec names. The idle nodes'
 process cost is inside E's `autoware` container M3 series.
 
+### Ground truth is the CARLA actor origin; localization is `base_link`
+
+`benchmarks/scripts/collect_gt.py` records `ego_actor.get_transform()`, whose
+origin is the CARLA vehicle's own pivot at the **car centre**. Every Autoware
+pose the harness compares it against — `/localization/kinematic_state`, the NDT
+pose — is **`base_link`, at the rear axle**. The two differ by a constant
+longitudinal offset, so **every** M5 `pose_error` computed from `gt.csv` carries
+it, in every cell that uses `collect_gt`, not only the E family.
+
+**Measured, on cell E's static arm (`results/E/run-006`, 1179 paired samples,
+ego stationary):** signed dx **−1.4045 m** (sd 0.0049), signed dy **+0.0731 m**
+(sd 0.0004). The dx term matches the conversion the bridge itself applies in the
+opposite direction when it spawns sensors —
+`CoordinateTransformer.carla_base_link_to_vehicle_center_location` subtracts
+`DEFAULT_WHEELBASE / 2 = 1.425 m`, and
+`carla_sensor_kit_description/config/sensor_kit_calibration.yaml`'s header
+declares the same 1.425 m conversion — to within **0.021 m**, the residual being
+the `vehicle.toyota.prius` pivot's actual placement versus mid-wheelbase.
+
+**This is a confound to correct or to subtract, not a localization error.** The
+localization in that run is unbiased in x once the convention is accounted for.
+Task 16 owes one of the two: offset `gt.csv` to `base_link` before computing
+`pose_error`, or state this offset beside every `pose_error` number. What it must
+NOT do is read ~1.4 m of constant offset as approach-dependent accuracy, which is
+exactly what the raw comparison invites.
+
+A smaller, independent defect rides along in the E family only: the bridge's
+`DEFAULT_WHEELBASE = 2.850` disagrees with `sample_vehicle`'s
+`wheel_base: 2.79`, so the bridge places every E-family sensor **0.03 m**
+further forward than Autoware's TF chain believes it is. Recorded rather than
+patched — it is inside the harmonization the E family is measured under, and
+correcting it is a sensor-config change that would have to be re-gated.
+
 ### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
 
 CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
@@ -1206,6 +1263,29 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   cell definition changes with this entry. Completeness: the spec
   pre-registered the kit difference as a fallback with a confound row
   owed, Task 10 took that fallback, and nothing in this file recorded it.
+- **2026-07-29** — the patch policy above gained a **second** named
+  exception, for a `carla_ros.py` change that would publish
+  `/sensing/gnss/pose_with_covariance` at `base_link` instead of at the
+  CARLA actor origin. Granted by the owner, owner-strikable, and
+  **registered only — no patch file is written and none is applied.** It
+  is registered now so the grant sits inside the pre-registration window,
+  and deferred to cell E's re-gate because the hypothesis it was requested
+  on was refuted (that topic is not an `ekf_localizer` pose input in this
+  launch tree, and NDT regularization is off), so applying it now would
+  spend the exception on a contested cause. No margin, threshold or cell
+  definition changes with this entry.
+- **2026-07-29** — `## Known confounds` gained the ground-truth frame
+  entry: `collect_gt.py` records the CARLA actor origin (car centre) while
+  every Autoware pose it is compared against is `base_link` (rear axle),
+  so a constant longitudinal offset — measured at −1.4045 m on
+  `results/E/run-006` — sits in every cell's M5 `pose_error`. Task 16 owes
+  either the correction or the offset stated beside every number.
+  Completeness, not accommodation: the M5 definitions pre-register
+  `pose_error` against `gt.csv` and never said which frame `gt.csv` is in,
+  and the first live measurement of it made the gap visible. The entry also
+  records the E-family-only 0.03 m sensor-placement inconsistency between
+  the bridge's `DEFAULT_WHEELBASE` 2.850 and `sample_vehicle`'s 2.79. No
+  margin, threshold or cell definition changes with this entry.
 
 ## How to run
 
