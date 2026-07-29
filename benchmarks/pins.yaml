@@ -85,7 +85,7 @@ autoware_045:
 # steady) -- see the Task 4 report's fix-report section. No further
 # engine relink is permitted from here on (D8).
 engine:
-  build_id: "4210e602-78ec-46e1-8f2f-03fadbe036a3" # settled value, all 3 trees agree
+  build_id: 4210e602-78ec-46e1-8f2f-03fadbe036a3 # settled value, all 3 trees agree
 extension_carla_fork:
   path: ~/src/carla-autoware-integration
   branch: feat/autoware-seminative-phase-b

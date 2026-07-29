@@ -10,9 +10,22 @@ repos:
         args: [--unsafe]
       - id: detect-private-key
       - id: end-of-file-fixer
+        # benchmarks/patches/** are byte-exact `git apply`-able artifacts
+        # verified against their upstream tree; a trailing-newline fixup
+        # would drift them from what was verified. See the trailing-
+        # whitespace exclude below for the same reasoning in more detail.
+        exclude: ^benchmarks/patches/
       - id: mixed-line-ending
+        # See the trailing-whitespace exclude below: any generic text
+        # mutator is unsafe on these byte-exact patch files.
+        exclude: ^benchmarks/patches/
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        # In a unified diff, a blank context line is one significant
+        # space, not empty. This hook strips it, turning "- " (a
+        # blank/whitespace-only context line) into "-", which can break
+        # `git apply` on these byte-exact, verified patch artifacts.
+        exclude: ^benchmarks/patches/
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.49.1
@@ -27,7 +40,12 @@ repos:
         args: [--no-error-on-unmatched-pattern]
         # Verbatim copies of the lab repo's G0 interop contract; must stay
         # byte-identical to their source, not reformatted to house style.
-        exclude: ^scripts/(expected_topics\.yaml|spike_stack\.json)$
+        # benchmarks/patches/** are byte-exact, verified `git apply`
+        # artifacts: a unified diff's blank context line is one
+        # significant space, and a mutating formatter can strip it,
+        # breaking `git apply` even though the diff still "looks" the
+        # same.
+        exclude: ^(scripts/(expected_topics\.yaml|spike_stack\.json)|benchmarks/patches/)
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0

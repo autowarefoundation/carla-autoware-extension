@@ -18,9 +18,9 @@ A run may be marked `excluded: true` in its manifest ONLY for:
    broken observer/injector) — reason `harness:<commit>`.
 4. Sim-clock stall: the clock watchdog observed no `/clock` advance for
    > 5 s wall while the run was armed — reason `stall:clock`. (The
-   python-bridge tick-stall defect, P1 Verdict 1; also covers any
-   approach's frozen-clock hang.) This is a FROZEN clock; a clock that
-   keeps advancing, only slowly, is criterion 10, not this one.
+   > python-bridge tick-stall defect, P1 Verdict 1; also covers any
+   > approach's frozen-clock hang.) This is a FROZEN clock; a clock that
+   > keeps advancing, only slowly, is criterion 10, not this one.
 5. Nishi-Shinjuku first run after a CARLA boot is a warm-up and is
    ALWAYS discarded (cold-start lag spikes to 107 s, P1 Verdict 5) —
    reason `warmup:nishi`. The warm-up run spawns the exact sensor suite.
