@@ -335,8 +335,19 @@ ran from clean, committed trees and their shas are exact. To stop this recurring
 HEAD (`benchmarks/results/` excluded, since the run writes there as it runs), so a manifest can no
 longer silently assert a tie-back it does not have.
 
+**One provenance remap, disclosed.** Task 10's own history was later split so the pre-registration
+amendments sat in dedicated commits, per `benchmarks/README.md`'s amendment rule. That rewrote every
+commit sha from the patch commit onwards, leaving `run-005`..`run-008` recording
+`harness_git_sha` / `patches_git_sha` / `harness:<commit>` values that pointed at commits which no
+longer exist. Those four records were remapped. The remap is content-preserving and was verified
+before it was applied: the rewritten tip's tree hash is **byte-identical** to the pre-rewrite tip's, so
+each new sha names exactly the code the old one named. The mapping was `845cd55→b81200d`,
+`a35c9b9→fac5cb7`, `cdbc129→7425084`, `69344a1→4557e5c`. Every sha in every E-family manifest now
+resolves in this repository. `run-001`..`run-004` were left untouched, because their problem is the one
+above and no remap can fix it.
+
 **Retained artifacts.** `run-008` carries `bridge-stage1.log` and `bridge-stage2.log`; the gate run
-`run-007` does **not**, because teardown's stage-log copy landed only after it (`69344a1`), so the
+`run-007` does **not**, because teardown's stage-log copy landed only after it (`4557e5c`), so the
 gate's own diag-graph dump is gone and the (c) diagnosis above is read from the retry. The observer
 transport matrix and the bring-up probe wrote into a scratch directory outside the repository and
 retained **no committed artifacts** — their numbers are reported here and are not independently

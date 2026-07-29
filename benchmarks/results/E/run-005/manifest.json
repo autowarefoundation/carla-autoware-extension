@@ -4,8 +4,8 @@
   "map_name": "Town10HD_Opt",
   "run_index": 5,
   "arm": "static",
-  "harness_git_sha": "845cd550bda08edf1f1071af26d4315883e1f034",
-  "patches_git_sha": "845cd550bda08edf1f1071af26d4315883e1f034",
+  "harness_git_sha": "b81200df1d8fd840bddb27c83521e28845f39aa5",
+  "patches_git_sha": "b81200df1d8fd840bddb27c83521e28845f39aa5",
   "transport": {
     "rmw": "rmw_cyclonedds_cpp",
     "shm_enabled": false,
@@ -15,7 +15,7 @@
   "autoware_image": "bridge-bench-patched:latest",
   "started_at_ns": 1785362514555045009,
   "excluded": true,
-  "exclusion_reason": "harness:a35c9b9",
+  "exclusion_reason": "harness:fac5cb7",
   "placement": {
     "carla_rpc_port": "2100",
     "container_image": "bridge-bench-patched:latest",

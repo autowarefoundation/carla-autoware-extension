@@ -4,8 +4,8 @@
   "map_name": "Town10HD_Opt",
   "run_index": 8,
   "arm": "closed-loop",
-  "harness_git_sha": "69344a1ae06a95e30762a8aa8396ed03f1ab0536",
-  "patches_git_sha": "69344a1ae06a95e30762a8aa8396ed03f1ab0536",
+  "harness_git_sha": "4557e5cff16ebccdfad690f0b8689c830c9eb44d",
+  "patches_git_sha": "4557e5cff16ebccdfad690f0b8689c830c9eb44d",
   "transport": {
     "rmw": "rmw_cyclonedds_cpp",
     "shm_enabled": false,
