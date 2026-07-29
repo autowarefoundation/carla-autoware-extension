@@ -202,6 +202,54 @@ def test_sensor_pose_matrix_rotates_local_x_to_world_y_at_yaw_90():
     np.testing.assert_allclose(world, [0.0, 1.0, 0.0], atol=1e-9)
 
 
+def _rotation_from_elementary_matrices(roll_deg: float, pitch_deg: float, yaw_deg: float) -> np.ndarray:
+    """Independent reference rotation, built from first principles.
+
+    Composes the standard right-handed elementary rotation matrices about
+    X (roll), Y (pitch), and Z (yaw) as ``Rz(yaw) @ Ry(pitch) @ Rx(roll)``
+    -- roll applied first, then pitch, then yaw, CARLA/UE's Euler order.
+    This is assembled from separate 3x3 blocks, deliberately not sharing
+    a code path with ``sensor_pose_matrix``'s combined closed-form terms,
+    so it can catch a sign error in that closed form rather than just
+    restating it.
+    """
+    r, p, y = np.radians(roll_deg), np.radians(pitch_deg), np.radians(yaw_deg)
+    cr, sr = np.cos(r), np.sin(r)
+    cp, sp = np.cos(p), np.sin(p)
+    cy, sy = np.cos(y), np.sin(y)
+    rot_x = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    rot_y = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
+    rot_z = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
+    return rot_z @ rot_y @ rot_x
+
+
+def test_sensor_pose_matrix_matches_independent_rotation_at_nonzero_roll():
+    m = build_pcd_from_gt.sensor_pose_matrix(0.0, 0.0, 0.0, 30.0, 0.0, 0.0)
+    expected = _rotation_from_elementary_matrices(30.0, 0.0, 0.0)
+    np.testing.assert_allclose(m[:3, :3], expected, atol=1e-9)
+
+
+def test_sensor_pose_matrix_matches_independent_rotation_at_nonzero_pitch():
+    m = build_pcd_from_gt.sensor_pose_matrix(0.0, 0.0, 0.0, 0.0, 40.0, 0.0)
+    expected = _rotation_from_elementary_matrices(0.0, 40.0, 0.0)
+    np.testing.assert_allclose(m[:3, :3], expected, atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    "roll_deg, pitch_deg, yaw_deg",
+    [
+        (15.0, -25.0, 50.0),
+        (-40.0, 10.0, -120.0),
+        (90.0, 45.0, -30.0),
+    ],
+)
+def test_sensor_pose_matrix_matches_independent_rotation_combined_roll_pitch_yaw(roll_deg, pitch_deg, yaw_deg):
+    m = build_pcd_from_gt.sensor_pose_matrix(1.0, -2.0, 3.5, roll_deg, pitch_deg, yaw_deg)
+    expected = _rotation_from_elementary_matrices(roll_deg, pitch_deg, yaw_deg)
+    np.testing.assert_allclose(m[:3, :3], expected, atol=1e-9)
+    np.testing.assert_allclose(m[:3, 3], [1.0, -2.0, 3.5], atol=1e-9)  # translation untouched by the fix
+
+
 def test_transform_cloud_to_map_reuses_the_pinned_converter_not_a_local_copy():
     """The brief's hard requirement: the CARLA-world -> map-frame conversion
     must come from ``scripts.e2e.verify_mgrs_handedness`` -- the single
@@ -211,14 +259,24 @@ def test_transform_cloud_to_map_reuses_the_pinned_converter_not_a_local_copy():
 
 
 def test_transform_cloud_to_map_applies_pose_then_the_pinned_mgrs_offset():
+    """Uses a tilted pose (nonzero roll/pitch/yaw), not translation-only,
+    so this integration-style test also exercises ``sensor_pose_matrix``'s
+    rotation -- a translation-only pose can't tell a correct rotation
+    matrix from a wrong one. The expected world point is derived
+    independently via ``_rotation_from_elementary_matrices`` rather than
+    by calling ``sensor_pose_matrix`` itself."""
     offset = mgrs.MAP_OFFSETS["Town10HD_Opt"]  # (0, 0, 0): Town10's registered offset
-    local = np.array([[1.0, 2.0, 3.0, 0.5]])
-    pose = (10.0, 5.0, 2.0, 0.0, 0.0, 0.0)  # translation only
+    local_xyz = np.array([1.0, 2.0, 3.0])
+    local = np.array([[*local_xyz, 0.5]])
+    pose = (10.0, 5.0, 2.0, 15.0, -25.0, 50.0)  # roll, pitch, yaw all nonzero
 
     mapped = build_pcd_from_gt.transform_cloud_to_map(local, pose, offset)
 
-    # world = (11, 7, 5); map = (world_x, -world_y, world_z) on the pinned Y flip.
-    np.testing.assert_allclose(mapped, [[11.0, -7.0, 5.0, 0.5]], atol=1e-6)
+    rotation = _rotation_from_elementary_matrices(15.0, -25.0, 50.0)
+    world = rotation @ local_xyz + np.array([10.0, 5.0, 2.0])
+    # map = (world_x, -world_y, world_z) on the pinned Y flip.
+    expected = np.array([[world[0], -world[1], world[2], 0.5]])
+    np.testing.assert_allclose(mapped, expected, atol=1e-6)
 
 
 def test_voxel_downsample_keeps_one_point_per_occupied_cell():

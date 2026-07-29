@@ -52,9 +52,10 @@ Sweep = tuple[np.ndarray, Pose6]  # (Nx4 x/y/z/intensity in sensor frame, pose a
 def sensor_pose_matrix(x: float, y: float, z: float, roll_deg: float, pitch_deg: float, yaw_deg: float) -> np.ndarray:
     """4x4 rigid transform: sensor-local frame -> CARLA world frame (metres).
 
-    Mirrors ``carla.Transform.get_matrix()`` (LibCarla ``Transform.h``):
-    the rotation is built from yaw (about Z), pitch (about Y), and roll
-    (about X) in that composition order, all in degrees (CARLA/UE
+    Mirrors ``carla.Transform.get_matrix()`` (LibCarla
+    ``geom/Transform.h``, ``GetMatrix()``): the rotation equals
+    ``Rz(yaw) @ Ry(pitch) @ Rx(roll)`` -- roll about X applied first,
+    then pitch about Y, then yaw about Z -- all in degrees (CARLA/UE
     convention), then translated by (x, y, z).
     """
     cy, sy = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
@@ -62,9 +63,9 @@ def sensor_pose_matrix(x: float, y: float, z: float, roll_deg: float, pitch_deg:
     cr, sr = np.cos(np.radians(roll_deg)), np.sin(np.radians(roll_deg))
     return np.array(
         [
-            [cp * cy, cy * sp * sr - sy * cr, -cy * sp * cr - sy * sr, x],
-            [cp * sy, sy * sp * sr + cy * cr, -sy * sp * cr + cy * sr, y],
-            [sp, -cp * sr, cp * cr, z],
+            [cp * cy, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr, x],
+            [cp * sy, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr, y],
+            [-sp, cp * sr, cp * cr, z],
             [0.0, 0.0, 0.0, 1.0],
         ]
     )
