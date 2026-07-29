@@ -267,6 +267,39 @@ def test_read_points_binary_compressed_is_soa_not_interleaved():
     assert not np.allclose(decoded, naive_aos)  # SoA reading != naive AoS reinterpretation
 
 
+def test_read_points_binary_rejects_a_truncated_payload(tmp_path):
+    """A plain `DATA binary` file whose payload is short must be refused,
+    not read as however many whole points it happens to contain: the
+    header still declares POINTS 5, so the silent result is a map missing
+    its tail that every consumer downstream treats as complete. This
+    tool's own output is `DATA binary`, so a reproduction check of the
+    shifted bundle re-reads through exactly this branch."""
+    src = tmp_path / "in.pcd"
+    with open(src, "wb") as f:
+        f.write(BINARY_HEADER.encode("ascii"))
+        f.write(POINTS5[:3].astype(np.float32).tobytes())  # 3 of the 5 points
+
+    with open(src, "rb") as f:
+        _, data_format, n_points, n_fields = shift_pcd.read_header(f)
+        assert (data_format, n_points) == ("binary", 5)
+        with pytest.raises(shift_pcd.PcdFormatError, match="mismatch"):
+            shift_pcd.read_points(f, data_format, n_points, n_fields)
+
+
+def test_main_refuses_a_truncated_binary_file_without_a_traceback(tmp_path, capsys):
+    """The CLI path: refusal reaches the operator as a message and a
+    non-zero exit code, the same way a corrupt compressed stream does."""
+    src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
+    with open(src, "wb") as f:
+        f.write(BINARY_HEADER.encode("ascii"))
+        f.write(POINTS5[:3].astype(np.float32).tobytes())
+
+    rc = shift_pcd.main(["--in", str(src), "--out", str(dst), "--dy", "-0.475"])
+    assert rc == shift_pcd.EXIT_BAD_FORMAT
+    assert "mismatch" in capsys.readouterr().err
+    assert not dst.exists()
+
+
 def test_read_points_binary_compressed_rejects_uncompressed_length_mismatch(tmp_path):
     src = tmp_path / "in.pcd"
     header = BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")

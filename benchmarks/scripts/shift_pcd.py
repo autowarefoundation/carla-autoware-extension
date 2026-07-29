@@ -184,7 +184,20 @@ def read_points(f, data_format: str, n_points: int, n_fields: int) -> np.ndarray
     """Read ``n_points`` rows of ``n_fields`` float32 columns following
     the header, for any of :data:`SUPPORTED_DATA_FORMATS`."""
     if data_format == "binary":
-        raw = f.read(n_points * n_fields * 4)  # float32 fields, 4 bytes each
+        expected_len = n_points * n_fields * 4  # float32 fields, 4 bytes each
+        raw = f.read(expected_len)
+        # Checked for the same reason the binary_compressed branch below
+        # checks its two lengths: a truncated payload otherwise yields
+        # FEWER points than the header's POINTS n declares, silently, and
+        # every consumer downstream reads a complete-looking map that is
+        # missing its tail. This tool's own output is DATA binary, so a
+        # reproduction check of the shifted bundle re-reads through here.
+        if len(raw) != expected_len:
+            raise PcdFormatError(
+                f"binary payload length mismatch: read {len(raw)} bytes, "
+                f"expected {expected_len} for {n_points} points x {n_fields} "
+                f"fields x 4 bytes"
+            )
         return np.frombuffer(raw, dtype=np.float32).reshape(-1, n_fields)
     if data_format == "binary_compressed":
         compressed_len = int.from_bytes(f.read(4), "little")
