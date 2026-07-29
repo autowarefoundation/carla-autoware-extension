@@ -19,9 +19,13 @@ difference `arrival_system_ns - header_stamp_ns` -- no sim/wall affine fit
 
 Percentile and rate math is not reimplemented: achieved Hz comes from
 `benchmarks.analysis.cadence.inter_arrival_stats` (the same helper
-`report.py` uses); one-hop latency percentiles are `numpy.percentile` calls
-inline, exactly like `report.py`'s own `one_hop_p50_ms`/`one_hop_p99_ms`.
-CSV parsing goes through the shared `benchmarks.analysis.bench_io` readers.
+`report.py` uses); the direct-difference one-hop latency is
+`benchmarks.analysis.latency.segment_sim_ms` (dst - src, in ms) -- it needs
+no sim-to-wall affine fit here because both timestamps it is fed are
+already wall clock, but the arithmetic is identical, so it is reused rather
+than reimplemented. Percentiles are `numpy.percentile` calls inline,
+exactly like `report.py`'s own `one_hop_p50_ms`/`one_hop_p99_ms`. CSV
+parsing goes through the shared `benchmarks.analysis.bench_io` readers.
 """
 
 from __future__ import annotations
@@ -34,15 +38,7 @@ import numpy as np
 
 from benchmarks.analysis.bench_io import read_observer_csv, read_resources_csv
 from benchmarks.analysis.cadence import inter_arrival_stats
-
-
-def _one_hop_ms(header_stamp_ns: np.ndarray, arrival_system_ns: np.ndarray) -> np.ndarray:
-    """Direct wall-clock one-hop latency in ms: both stamps are wall `now()`
-    taken on the same host (extension seam and in-core publisher alike), so
-    no sim-to-wall conversion applies -- see the module docstring."""
-    return (
-        arrival_system_ns.astype(np.float64) - header_stamp_ns.astype(np.float64)
-    ) / 1e6
+from benchmarks.analysis.latency import segment_sim_ms
 
 
 def summarize_run(run_dir) -> dict:
@@ -57,7 +53,7 @@ def summarize_run(run_dir) -> dict:
     topics = {}
     for topic, cols in read_observer_csv(run_dir / "observer.csv").items():
         cad = inter_arrival_stats(cols["arrival_system_ns"])
-        one_hop = _one_hop_ms(cols["header_stamp_ns"], cols["arrival_system_ns"])
+        one_hop = segment_sim_ms(cols["header_stamp_ns"], cols["arrival_system_ns"])
         topics[topic] = {
             "hz": cad.hz,
             "n": cad.n,
