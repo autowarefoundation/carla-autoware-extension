@@ -338,13 +338,14 @@ longer silently assert a tie-back it does not have.
 **One provenance remap, disclosed.** Task 10's own history was later split so the pre-registration
 amendments sat in dedicated commits, per `benchmarks/README.md`'s amendment rule. That rewrote every
 commit sha from the patch commit onwards, leaving `run-005`..`run-008` recording
-`harness_git_sha` / `patches_git_sha` / `harness:<commit>` values that pointed at commits which no
-longer exist. Those four records were remapped. The remap is content-preserving and was verified
-before it was applied: the rewritten tip's tree hash is **byte-identical** to the pre-rewrite tip's, so
-each new sha names exactly the code the old one named. The mapping was `845cd55→b81200d`,
-`a35c9b9→fac5cb7`, `cdbc129→7425084`, `69344a1→4557e5c`. Every sha in every E-family manifest now
-resolves in this repository. `run-001`..`run-004` were left untouched, because their problem is the one
-above and no remap can fix it.
+`harness_git_sha` / `patches_git_sha` / `harness:<commit>` values that pointed at commits which are now
+**unreachable** — they still exist as objects, but nothing in the repository references them, so they
+are unresolvable by name and collectable. Those four records were remapped. The remap is
+content-preserving and was verified before it was applied: the rewritten tip's tree hash is
+**byte-identical** to the pre-rewrite tip's, so each new sha names exactly the code the old one named.
+The mapping was `845cd55→b81200d`, `a35c9b9→fac5cb7`, `cdbc129→7425084`, `69344a1→4557e5c`. Every sha
+in every E-family manifest now resolves in this repository. `run-001`..`run-004` were left untouched,
+because their problem is the one above and no remap can fix it.
 
 **Retained artifacts.** `run-008` carries `bridge-stage1.log` and `bridge-stage2.log`; the gate run
 `run-007` does **not**, because teardown's stage-log copy landed only after it (`4557e5c`), so the
@@ -433,7 +434,8 @@ launcher's `wait_for_tick` check now names it when it happens.
 The gate is `results/E/run-007` (`bash benchmarks/run.sh E --arm closed-loop --rpc-port 2100`, the
 first closed-loop run made after (a) and (b) had both passed through the real observer). It was
 excluded `gate:arm-failed`. The findings' method was then applied ONCE, as `results/E/run-008`, which
-failed identically.
+failed at **the same step, for the same reported reason, and in a measurably different state** — see
+the side-by-side table below, which is why "failed identically" would overstate it.
 
 **E therefore degrades to static-arm only, per the spec's pre-committed risk clause: "the E2E-latency
 half of C2 is dropped."** No third attempt was made.
@@ -449,9 +451,12 @@ to work on a cell that demonstrably drives does this FAIL become a property of t
 
 One correction to the retry's framing, since it was reported as "idle host": `run-008` started at
 1-min **loadavg 2.21** against the gate's **1.37**, so the retry was not on a quieter host than the
-gate. What the retry did apply was cleared shared memory (`shm_root_cleared` 300 → 0 remaining) and
-fresh processes. The load difference is recorded rather than smoothed over; both values are far below
-the loadavg ≥ 8 preflight bar, so neither run is excludable on host load.
+gate. Nor did it clear more shared memory — its own manifest records `shm_root_cleared: 0` and
+`shm_root_remaining: 0`, because `run-007`'s preflight had already cleared 300 segments and none had
+regrown; the 300 belongs to the gate, not to the retry. What the retry did apply was a
+verified-empty `/dev/shm` and fresh processes. Both loadavg values are far below the ≥ 8 preflight
+bar, so neither run is excludable on host load — the point of recording the difference is that "idle
+host" was not the variable the retry actually changed.
 
 Both runs reached a live, localizing stack, but they were **not** equally healthy and an earlier
 revision of this file wrongly said they were. Side by side:
@@ -533,14 +538,48 @@ The live hypotheses, with what would discriminate them:
 
 | # | Hypothesis | Discriminator |
 | - | ---------- | ------------- |
-| H1 | The map→base_link TF genuinely updates below 1 Hz — the TF broadcast is decoupled from the odometry publish, so 19.84 Hz on `/localization/kinematic_state` says nothing about it. | Add `/tf` to `config/observer_topics/E.yaml` and measure the map→base_link update rate directly. This is the cheapest and most decisive test and it needs no new cell. |
+| H1 | The map→base_link TF genuinely updates below 1 Hz — the TF broadcast is decoupled from the odometry publish, so 19.84 Hz on `/localization/kinematic_state` says nothing about it. | Measure the **map→base_link pair specifically**, which needs a frame-filtering subscriber — see "What will and will not discriminate H1" below. Adding `/tf` to the observer topic list does NOT do it. |
 | H2 | The monitor's own measurement is unreliable here, in the same class as the false silence above — a property of the consumer, not of the DUT. | Run the identical monitor against a cell known to drive (A or C). If it also errors there while that cell drives, the monitor is not measuring what the mode check assumes. |
 | H3 | A diagnostics-delivery or sim-time-scheduling problem: three sibling entries in the same dump (`/autoware/localization/state`, `/adapi/mrm_request/delegate`, and earlier the whole graph) are STALE, which is a diagnostics symptom rather than a localization symptom. | Record `/diagnostics` and `/diagnostics_graph` rates alongside `/tf`; a graph that is itself late explains STALE without any localization defect. |
 
 H1 and H2 are not mutually exclusive with each other, and none of the three is established. **The
 honest state is: (c) fails at the AD-API mode-availability check on a `/tf` rate assertion whose
-truth is unverified.** The next E attempt should carry the H1 instrumentation, which is a topic-list
-change, not a source change.
+truth is unverified.**
+
+##### What will and will not discriminate H1
+
+An earlier revision of this file said the H1 test was "add `/tf` to
+`config/observer_topics/E.yaml`… the cheapest and most decisive test", framed as "a topic-list change,
+not a source change". **That was wrong on both counts and is withdrawn.** It cannot answer the
+question, for two independent reasons in `observer/src/bench_observer.cpp`:
+
+- **The `generic` kind mis-parses `TFMessage`.** `stamp_from_cdr` assumes a leading
+  `std_msgs/Header`: it reads `stamp.sec` at CDR byte 4 and `stamp.nanosec` at byte 8.
+  `tf2_msgs/msg/TFMessage` is a *sequence* of `TransformStamped`, so byte 4 is the sequence length and
+  byte 8 is the first transform's `stamp.sec`. The rows would still carry valid *arrival* stamps, so
+  they would look plausible, while `header_stamp_ns` would be nonsense — worse than an obvious failure.
+- **There is no frame filter.** A `generic` subscription records every message on `/tf` from every
+  broadcaster. The quantity in question is one pair, map→base_link, and `/tf` also carries the
+  vehicle's own high-rate chain. A healthy aggregate rate would therefore make H1 look **refuted when
+  it is untested** — exactly backwards at the point the re-gate exists to settle.
+
+What would actually discriminate it, with the cost stated plainly rather than minimised:
+
+- **As a recorded, re-derivable metric: an observer source change.** A typed `tf` kind subscribing
+  `tf2_msgs/msg/TFMessage` and filtering `header.frame_id == "map" && child_frame_id == "base_link"`.
+  That is C++ in `bench_observer.cpp`, a rebuild of `bench-observer:universe-devel`, and a new
+  `local_digest` in `pins.yaml` — **not** a topic-list line. **Flagged for R3**, which is already
+  adding a typed observer kind for the NDT pose topic; the two changes are the same shape and should
+  land together rather than being built twice.
+- **As a one-off answer at the re-gate, without touching the observer:** either a purpose-written
+  typed subscriber in the container that filters the frame pair and logs its rate into the run
+  directory (the same instrument class that already measured 20.00 Hz on `/clock` in this cell when
+  the `ros2` CLI reported silence), or `ros2 run tf2_ros tf2_monitor map base_link`, which is present
+  in the image and reports the average rate and delay for exactly that chain. Both are bring-up
+  artifacts rather than observer metrics, so they answer H1 without feeding M1/M2.
+
+The honest summary: H1's discriminator is **not** free. Either R3's typed kind carries it, or the
+re-gate runs a separate probe and records the result as evidence beside the run.
 
 #### On the granted second patch exception
 
@@ -612,8 +651,11 @@ Two caveats belong beside that ruling, and both are open items rather than resul
    `/localization/pose_estimator/pose_with_covariance`, and `bench_observer` only writes x/y for
    `odometry`-kind entries, whose subscription type is `nav_msgs/msg/Odometry` — a
    `PoseWithCovarianceStamped` cannot be recorded that way. So `evaluate_quality`'s `ndt_xy` argument
-   is not satisfiable from the CSV contract as it stands, for any cell. Since `kinematic_state` is
-   EKF-fused and one of its inputs (the bridge's GNSS pose) is derived from the same
-   `ego_actor.get_transform()` that ground truth comes from, it also cannot cleanly isolate a
-   pcd-internal offset. The ruling above is therefore sound on the y axis and unaffected by this, but
-   a pcd-isolating measurement needs the NDT pose recorded, which is a pre-P3 gap for Task 16.
+   is not satisfiable from the CSV contract as it stands, for any cell. An earlier revision added that
+   `kinematic_state` "cannot cleanly isolate a pcd-internal offset" because the bridge's GNSS pose is
+   one of the EKF's inputs — **that reason is withdrawn, for the same reason the (c) mechanism above
+   was withdrawn**: `ekf_localizer`'s only pose input in this tree is the NDT topic, so
+   `kinematic_state` is NDT-derived and carries no ground-truth-derived pose at all. It is an
+   EKF-smoothed NDT estimate rather than the raw NDT pose, which is the only remaining reason to want
+   the NDT topic recorded directly. The y ruling stands unchanged and is, if anything, better founded
+   than that caveat suggested; recording the NDT pose is still a pre-P3 gap for Task 16.

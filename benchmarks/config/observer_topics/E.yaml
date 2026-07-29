@@ -26,6 +26,17 @@
 # (benchmarks/observer/src/bench_observer.cpp). `generic` records
 # serialized size; `odometry` also writes odometry.csv (size 0 sentinel).
 # out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+#
+# DO NOT add /tf here to answer cell E's H1 hypothesis (the map->base_link TF
+# rate that blocked the AD-API engage; patches/python-bridge/README.md, "What
+# will and will not discriminate H1"). A `generic` line cannot do it, twice
+# over: `stamp_from_cdr` assumes a leading std_msgs/Header, and TFMessage is a
+# SEQUENCE of TransformStamped, so header_stamp_ns would be silently nonsense;
+# and `generic` has no frame filter, so the rate recorded would be aggregate
+# /tf across every broadcaster, which can look healthy while the one pair in
+# question is not. Answering H1 needs a typed `tf` kind that filters on
+# child_frame_id -- an observer source change plus an image rebuild, flagged
+# for R3 alongside the typed kind it is already adding for the NDT pose.
 /**:
   ros__parameters:
     topics:

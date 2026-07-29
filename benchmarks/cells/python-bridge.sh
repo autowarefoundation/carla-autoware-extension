@@ -390,16 +390,35 @@ diagnose_localization_input() {
 # wording for `wait_for_tick` expiring ("time-out of 5000ms while waiting for
 # the simulator", verified live on this host), so it is what distinguishes a
 # frozen world from a probe that never ran.
+#
+# CONNECTING SITS OUTSIDE THE FROZEN-ELIGIBLE REGION, which is why there are two
+# `try` blocks rather than one. `carla.Client` and `get_world()` raise
+# RuntimeError carrying the SAME "time-out" wording when the server is merely
+# unreachable: measured 2026-07-29 against a free port, verbatim "time-out of
+# 10000ms while waiting for the simulator, make sure the simulator is ready and
+# connected to localhost:2100". Matching that text across the whole sequence
+# therefore classified an absent or not-yet-listening server as FROZEN -- both
+# classifiers were run side by side on that unreachable port and the one-`try`
+# form answered FROZEN where this form answers PROBE_ERROR. Left as it was, a
+# server the probe never reached would have accumulated freeze strikes and been
+# reported as the bridge's tick loop stalling. Only `wait_for_tick` on an
+# ALREADY-OBTAINED world can answer the tick question, so only its timeout is
+# allowed to mean FROZEN.
 carla_tick_state() {
   cx "python3 -c \"
 import carla
 try:
     c = carla.Client('localhost', $BENCH_RPC_PORT); c.set_timeout(10.0)
-    print('TICKING', c.get_world().wait_for_tick(5.0).frame)
-except RuntimeError as exc:
-    print('FROZEN' if 'time-out' in str(exc) else 'PROBE_ERROR', type(exc).__name__)
+    world = c.get_world()
 except Exception as exc:
-    print('PROBE_ERROR', type(exc).__name__)\"" 2>/dev/null |
+    print('PROBE_ERROR', type(exc).__name__)
+else:
+    try:
+        print('TICKING', world.wait_for_tick(5.0).frame)
+    except RuntimeError as exc:
+        print('FROZEN' if 'time-out' in str(exc) else 'PROBE_ERROR', type(exc).__name__)
+    except Exception as exc:
+        print('PROBE_ERROR', type(exc).__name__)\"" 2>/dev/null |
     tr -d '\r' | awk 'NF {print $1; exit}'
 }
 
@@ -407,9 +426,9 @@ except Exception as exc:
 # used to poll with a plain `ros2 topic echo --once`, and against a stack that
 # was demonstrably localizing -- NDT at 13 Hz, `EKF Activation succeeded`,
 # `/localization/kinematic_state` delivering x=53.942 y=-141.087 to an rclpy
-# subscriber in the same second -- every poll FAILED, so the launcher sat out its
-# whole 420 s budget and reported "never published". Cause: the loop's own first
-# poll starts a `ros2cli` daemon while the stack is still absent, the daemon
+# subscriber in the same second -- every poll FAILED, so the launcher sat out
+# its whole 420 s budget and reported "never published". Cause: the loop's own
+# first poll starts a `ros2cli` daemon while the stack is absent, the daemon
 # caches that empty node graph, and every later poll is answered from the cache.
 # Stopping the daemon by hand made the very next poll succeed. `--no-daemon`
 # removes the cache from the path; a stale-daemon false negative here is
