@@ -326,17 +326,38 @@ KEEP_LAST 1); `ROS2.cpp:121-130` then applies
 `ApplyVehicleAccelerationControl` with no engage or gear gating. So ego
 speed is a direct assay of delivery. Publishing
 `autoware_control_msgs/msg/Control` with `acceleration: 2.0` at 10 Hz
-from the pinned Autoware image, back to back on **one** ego:
+from the pinned Autoware image, the two arms back to back. Each row
+states its own publish window, because the two differ:
 
-| Autoware-side transport       | ego speed after 8 s      | verdict           |
-| ----------------------------- | ------------------------ | ----------------- |
-| fastrtps, no profile (SHM on) | 0.000 m/s, moved 0.001 m | **not delivered** |
-| fastrtps + `udp_only.xml`     | 15.93 m/s, moved 61.6 m  | **delivered**     |
+| Autoware-side transport       | publish window | ego result                                     | verdict           |
+| ----------------------------- | -------------- | ---------------------------------------------- | ----------------- |
+| fastrtps, no profile (SHM on) | 15 s           | never leaves rest: 0.000 m/s, 0.001 m          | **not delivered** |
+| fastrtps + `udp_only.xml`     | 12 s           | 15.93 m/s and 61.6 m by 8 s after motion onset | **delivered**     |
 
 The `udp_only` arm accelerates at 1.99 m/s² against a commanded
 2.0 m/s² (1.936 → 3.920 → 5.915 → 7.928 → 9.938 → 11.937 → 13.919 →
-15.927 m/s on consecutive seconds). The SHM-on arm never moves, in the
-same session, on the same actor, with a byte-identical command.
+15.927 m/s on consecutive seconds).
+
+**What this pairing controls, precisely.** Both arms ran inside one
+`spawn_ego.py` process against **actor id 27**, with no teardown, respawn
+or world reset between them: that process logs a single `READY` line, and
+its CARLA-API LiDAR frame counter runs monotonically 10 → 890 across
+both — the SHM-on arm at frames 240–450, the `udp_only` arm at frames
+580–730. Across 89 sampled seconds the log contains exactly **one**
+rest-to-motion transition, and it is in the `udp_only` arm. Actor,
+blueprint, spawn pose, CARLA process, engine build, map, sim tick and the
+published message bytes are therefore all held fixed, and the
+Autoware-side transport is the only variable.
+
+**What it does not control.** Arm order is fixed, not randomised: SHM-on
+ran first, `udp_only` second, so this pair alone does not exclude a
+warm-up effect — a separate earlier `udp_only` run on a **different**
+actor (id 25) does, having accelerated identically from a cold ego
+(0 → 19.09 m/s, 80.7 m, same 2.00 m/s² slope). There is one replicate per
+arm, not n ≥ 10; this is a delivered / not-delivered determination, not a
+metric measurement, and nothing downstream scores it as one. The unequal
+publish windows are immaterial in the direction that matters: the failing
+arm got the **longer** one.
 
 **So ingress fails and succeeds under exactly the same conditions as
 egress, and the same one-line fix cures both.** With
