@@ -14,17 +14,30 @@ each run directory under `benchmarks/results/<cell>/`:
     processes that share a `sample_system_ns` and with the sampler's `-1`
     "not yet measured" sentinel rows dropped (see `_rtf_series_from_resources`).
   * unpaced arm: `tick_rate_ratio`, computed directly from clock.csv's
-    per-tick wall-arrival gaps against `PACED_TICK_HZ` (see its docstring
-    for why this is a literal rather than a config read).
+    per-tick wall-arrival gaps against the cell's registered `tick_hz`
+    (`cells.yaml`'s per-cell `metrics:` block, read via
+    `cell_info.metrics_for`; see `_tick_rate_ratio_series`).
   * every arm: `publisher_rate_ratio`, from the M2 three-way reconciliation
     (`analysis/cadence.reconcile_drops`) between an expected count (window
-    duration x `PACED_TICK_HZ`), the publisher-side count in
+    duration x the cell's registered `lidar_expected_hz` -- a SEPARATE
+    binding from `tick_hz`: the sensor's own scan rate, not the simulator's
+    step rate, and they diverge 5x on the high-frequency sensitivity cells
+    A-hf/B-hf; see `_expected_lidar_count`), the publisher-side count in
     `publisher_counts.json` (absent for E-cells: see
     `_publisher_rate_ratio`), and the observer-side count in observer.csv.
   * every arm: `quality_ok`, read from `quality.json`'s `gate_pass` -- the
-    M5 gate's own already-computed verdict (see `_quality_ok`). This module
+    M5 gate's own already-computed verdict (see `_quality_ok`; schema
+    registered in `benchmarks/README.md`'s "M5 gate result"). This module
     does not call `analysis/quality.py`'s `evaluate_quality` itself: its
     pose/route/goal inputs are not among the files this tool reads.
+
+`lidar_topic`, `tick_hz` and `lidar_expected_hz` all come from
+`cell_info.metrics_for(doc, cell)`, the registered per-cell binding
+accessor (`cells.yaml`'s `metrics:` block) -- never hardcoded and never
+re-derived from a second source. A `None` binding (e.g. `lidar_expected_hz`
+is unregistered for cell B pending Task 13) is a legitimate "not
+pre-registered yet" state and must fail loudly where it is used, never be
+silently substituted with a plausible-looking number.
 
 `--class <id>` is validated against cells.yaml via `cell_info.merge` (the
 same typo guard `cell_info.py` uses) but does NOT filter which run
@@ -51,33 +64,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import yaml
 
 from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv, read_resources_csv
 from benchmarks.analysis.cadence import reconcile_drops
 from benchmarks.analysis.ceiling import CeilingVerdict, evaluate_ceiling
 from benchmarks.analysis.manifest import load_manifest
-from benchmarks.scripts.cell_info import UnknownIdError, load_cells_doc, merge
-from benchmarks.scripts.collect_gt import DEFAULT_LIDAR_TOPIC
-
-# The M4 sweep's paced tick target (spec: M4). cells.yaml carries this only
-# indirectly -- camera_classes[*].fps is 20 in every entry, with a comment
-# equating it to "the 20 Hz tick ceiling" -- and no dedicated tick-rate
-# field exists yet (no physics.yaml in this tree), so this is a literal,
-# flagged here rather than silently hardcoded elsewhere.
-# `_check_paced_hz_consistency` asserts this literal cannot drift from the
-# camera_classes fps values without being caught; `--paced-hz` overrides it
-# if a dedicated config value takes over later.
-PACED_TICK_HZ = 20.0
-
-# observer_topics/<cell>.yaml is the committed source of truth for a cell's
-# LiDAR topic name (already consumed by run.sh and cells/calibration.sh);
-# `_lidar_topic_for_cell` reads it. `DEFAULT_LIDAR_TOPIC` (collect_gt.py's
-# own constant, the key it writes publisher_counts.json under) is the
-# fallback for a cell whose file is absent or has no PointCloud2 entry
-# (e.g. CAL-seam, deliberately empty pending Task 14).
-OBSERVER_TOPICS_DIR = Path(__file__).resolve().parent.parent / "config" / "observer_topics"
-POINTCLOUD_TYPE = "sensor_msgs/msg/PointCloud2"
+from benchmarks.scripts.cell_info import UnknownIdError, load_cells_doc, merge, metrics_for
 
 NOT_MEASURABLE = "publisher rate not measurable (no publisher_counts.json)"
 NOT_APPLICABLE_ABLATION = "quality not applicable (ablation arm, no closed loop)"
@@ -132,8 +124,11 @@ def _rtf_series_from_resources(resources: dict) -> tuple[np.ndarray, np.ndarray]
     return sample_ns, rtf
 
 
-def _tick_rate_ratio_series(wall_ns: np.ndarray, paced_hz: float) -> tuple[np.ndarray, np.ndarray]:
-    """Per-tick achieved ticks/s as a fraction of `paced_hz`.
+def _tick_rate_ratio_series(wall_ns: np.ndarray, tick_hz: float) -> tuple[np.ndarray, np.ndarray]:
+    """Per-tick achieved ticks/s as a fraction of `tick_hz` (the cell's
+    registered simulator step-rate target, `metrics["tick_hz"]` -- NOT the
+    sensor's own scan rate; see the module docstring for why the two are
+    separate bindings).
 
     clock.csv has one row per /clock receipt, i.e. one row per world tick,
     so consecutive rows' wall-arrival gap directly IS the tick period: the
@@ -144,17 +139,46 @@ def _tick_rate_ratio_series(wall_ns: np.ndarray, paced_hz: float) -> tuple[np.nd
     timestamped at the LATER tick of each pair, matching when the rate
     becomes knowable.
     """
+    if tick_hz is None:
+        raise ValueError(
+            "tick_hz is not registered for this cell's metrics (None): "
+            "cannot compute the unpaced arm's tick_rate_ratio"
+        )
     w = np.sort(np.asarray(wall_ns, dtype=np.int64))
     if w.size < 2:
         raise ValueError("need >= 2 clock.csv rows to compute a tick-rate series")
     gap_s = np.diff(w).astype(np.float64) / 1e9
     if np.any(gap_s <= 0):
         raise ValueError("clock.csv has non-increasing wall timestamps")
-    return w[1:], (1.0 / gap_s) / paced_hz
+    return w[1:], (1.0 / gap_s) / tick_hz
+
+
+def _expected_lidar_count(window_s: float, lidar_expected_hz: float | None) -> int:
+    """Expected LiDAR message count for the M2 three-way reconciliation.
+
+    `lidar_expected_hz` is the sensor's own expected scan rate --
+    `metrics["lidar_expected_hz"]`, a per-cell binding registered
+    SEPARATELY from `tick_hz` because they diverge 5x on the
+    high-frequency sensitivity cells A-hf/B-hf (`--fixed_delta` moves the
+    world tick, not the rig's `sensor_tick`). A `None` binding is a
+    legitimate "not pre-registered yet" state (e.g. cell B, pending
+    Task 13) and must fail loudly here rather than silently substituting
+    a plausible-looking number -- exactly the defect this split exists to
+    prevent (a shared constant reported `publisher_rate_ratio ~= 0.2` and
+    fired a ceiling disjunct spuriously on A-hf/B-hf).
+    """
+    if lidar_expected_hz is None:
+        raise ValueError(
+            "lidar_expected_hz is not registered for this cell's metrics "
+            "(None): the M4 sweep's expected LiDAR message count cannot be "
+            "computed until it is filled in (see benchmarks/README.md's "
+            "achieved_rate_ratio registration)"
+        )
+    return max(1, round(window_s * lidar_expected_hz))
 
 
 def _publisher_rate_ratio(
-    run_dir: Path, topic: str, expected_count: int
+    run_dir: Path, topic: str | None, expected_count: int
 ) -> tuple[float, float, str | None]:
     """publisher_rate_ratio (an `evaluate_ceiling` input) plus
     observer_loss_rate (a diagnostic only -- `evaluate_ceiling` does not
@@ -173,6 +197,11 @@ def _publisher_rate_ratio(
     the note is what keeps that non-firing visible rather than looking
     like a clean, measured pass.
     """
+    if topic is None:
+        raise ValueError(
+            "lidar_topic is not registered for this cell's metrics (None): "
+            "cannot compute the publisher-side three-way reconciliation"
+        )
     observed = read_observer_csv(run_dir / "observer.csv").get(topic)
     observed_count = int(observed["arrival_system_ns"].size) if observed else 0
 
@@ -197,17 +226,20 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     itself: its pose/route/goal inputs are not among the files listed for
     this tool (resources.csv, clock.csv, observer.csv,
     publisher_counts.json). `quality_ok` is the M5 gate step's own
-    already-computed verdict, read back here. `quality.json` is this
-    tool's minimal contract for that verdict --
-    `{"gate_pass": bool, "reasons": [...]}`, mirroring
-    `dataclasses.asdict(QualityStats)`'s key field -- pending whichever
-    task lands the actual M5-gate writer.
+    already-computed verdict, read back here. `quality.json`'s schema is
+    registered in `benchmarks/README.md`'s "M5 gate result":
+    `dataclasses.asdict(QualityStats)` verbatim plus `arm`, `window_sim_ns`,
+    `ladder_branch` and `expected_ndt_hz` provenance keys. `gate_pass` is
+    registered as the single field a consumer may treat as the verdict, so
+    this reads exactly that field and nothing else from the wider schema.
 
-    On the ablation arm (publish disabled, no closed loop, so no M5
-    measurement is possible) a missing file defaults to True with a note.
-    On every other arm a missing file is a hard error: silently assuming a
-    pass on an arm that IS supposed to be closing the loop is exactly the
-    failure mode this campaign guards against.
+    No writer for `quality.json` exists yet (the M5 gate step is a
+    separate, not-yet-landed task). On the ablation arm (publish disabled,
+    no closed loop, so no M5 measurement is possible) a missing file
+    defaults to True with a note. On every other arm a missing file is a
+    hard error: silently assuming a pass on an arm that IS supposed to be
+    closing the loop is exactly the failure mode this campaign guards
+    against.
     """
     path = run_dir / "quality.json"
     if path.exists():
@@ -217,49 +249,6 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     raise FileNotFoundError(
         f"{path} missing: the M5 quality gate result is required to score a {arm!r} sweep point"
     )
-
-
-def _lidar_topic_for_cell(cell: str, observer_topics_dir: Path | None = None) -> str:
-    """The LiDAR pointcloud topic name for `cell`.
-
-    Reads `observer_topics/<cell>.yaml` (a ROS 2 params file: `/**:
-    ros__parameters: topics: ["<topic>|<type>|<kind>", ...]`, the same file
-    `run.sh` and `cells/calibration.sh` already consume) and returns the
-    first entry whose type is `sensor_msgs/msg/PointCloud2`. Falls back to
-    `collect_gt.DEFAULT_LIDAR_TOPIC` when the file is missing or carries no
-    such entry (e.g. CAL-seam's deliberately-empty topic list) -- never to
-    a made-up literal.
-    """
-    path = (observer_topics_dir or OBSERVER_TOPICS_DIR) / f"{cell}.yaml"
-    if path.exists():
-        doc = yaml.safe_load(path.read_text()) or {}
-        params = ((doc.get("/**") or {}).get("ros__parameters")) or {}
-        for entry in params.get("topics") or []:
-            name, _, rest = str(entry).partition("|")
-            msg_type = rest.split("|", 1)[0]
-            if msg_type == POINTCLOUD_TYPE:
-                return name
-    return DEFAULT_LIDAR_TOPIC
-
-
-def _check_paced_hz_consistency(doc: dict, paced_hz: float) -> None:
-    """Refuse to silently drift `PACED_TICK_HZ` away from cells.yaml's
-    camera_classes fps entries, the one place cells.yaml machine-encodes
-    the 20 Hz tick ceiling (see PACED_TICK_HZ's own docstring). Only
-    checked when `paced_hz` is still the module default: an explicit
-    `--paced-hz` override is a deliberate what-if the operator asked for,
-    not a claim about camera_classes.
-    """
-    if paced_hz != PACED_TICK_HZ:
-        return
-    for entry in doc.get("camera_classes") or []:
-        fps = entry.get("fps")
-        if fps is not None and fps != paced_hz:
-            raise ValueError(
-                f"PACED_TICK_HZ={paced_hz} no longer matches cells.yaml "
-                f"camera_classes {entry.get('id')!r} fps={fps}; update one "
-                "to match the other (see PACED_TICK_HZ's docstring)"
-            )
 
 
 def _peek_arm(run_dir: Path) -> str | None:
@@ -273,8 +262,21 @@ def _peek_arm(run_dir: Path) -> str | None:
         return None
 
 
-def verdict_for_run(run_dir: Path, *, topic: str, paced_hz: float = PACED_TICK_HZ) -> RunVerdict:
-    """Assemble `evaluate_ceiling`'s inputs for one run directory."""
+def verdict_for_run(
+    run_dir: Path,
+    *,
+    topic: str | None,
+    tick_hz: float | None,
+    lidar_expected_hz: float | None,
+) -> RunVerdict:
+    """Assemble `evaluate_ceiling`'s inputs for one run directory.
+
+    `topic`, `tick_hz` and `lidar_expected_hz` are the cell's registered
+    `metrics:` bindings (`cell_info.metrics_for`) -- callers pass them in
+    explicitly (`main` resolves them per cell) rather than this function
+    defaulting any of them, so an unregistered (`None`) binding cannot be
+    silently papered over with a plausible-looking number.
+    """
     run_dir = Path(run_dir)
     manifest = load_manifest(run_dir / "manifest.json")
     errs = manifest.validate()
@@ -301,17 +303,17 @@ def verdict_for_run(run_dir: Path, *, topic: str, paced_hz: float = PACED_TICK_H
 
     _clock_ns, wall_ns = read_clock_csv(run_dir / "clock.csv")
     window_s = (int(wall_ns.max()) - int(wall_ns.min())) / 1e9
-    # The registered scan-rate target, applied identically on every arm
-    # (ceiling.py: "applied identically to every sweep point"): the
-    # publisher-side count is expected against the same paced target
-    # regardless of whether the TICK itself is paced this run.
-    expected_count = max(1, round(window_s * paced_hz))
+    # Applied identically on every arm (ceiling.py: "applied identically to
+    # every sweep point"): the publisher-side count is expected against
+    # the sensor's own registered scan rate regardless of whether the
+    # TICK itself is paced this run.
+    expected_count = _expected_lidar_count(window_s, lidar_expected_hz)
 
     # Every arm other than "unpaced" is scored via the rtf path (paced and
     # ablation both tick at the paced target; only "unpaced" substitutes
     # tick_rate_ratio, per the spec's fourth disjunct).
     if manifest.arm == "unpaced":
-        sample_ns, tick_ratio = _tick_rate_ratio_series(wall_ns, paced_hz)
+        sample_ns, tick_ratio = _tick_rate_ratio_series(wall_ns, tick_hz)
         rtf = None
     else:
         resources = read_resources_csv(run_dir / "resources.csv")
@@ -410,13 +412,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--topic",
         default=None,
         help="pointcloud topic for the publisher-side three-way reconciliation; "
-        "defaults to the cell's observer_topics/<cell>.yaml entry",
+        "defaults to the cell's registered metrics['lidar_topic']",
     )
-    p.add_argument("--paced-hz", type=float, default=PACED_TICK_HZ)
-    p.add_argument("--cells-yaml", default=None, help="override cells.yaml (tests)")
     p.add_argument(
-        "--observer-topics-dir", default=None, type=Path, help="override observer_topics/ (tests)"
+        "--tick-hz", type=float, default=None, help="override metrics['tick_hz'] (tests)"
     )
+    p.add_argument(
+        "--lidar-expected-hz",
+        type=float,
+        default=None,
+        help="override metrics['lidar_expected_hz'] (tests)",
+    )
+    p.add_argument("--cells-yaml", default=None, help="override cells.yaml (tests)")
     return p
 
 
@@ -427,13 +434,22 @@ def main(argv: list[str] | None = None) -> int:
     # validated lookup rather than re-parsing cells.yaml a second way.
     try:
         merged = merge(doc, args.cell, args.class_id)
+        metrics = metrics_for(doc, args.cell)
     except UnknownIdError as exc:
         print(f"SWEEP_VERDICT FAIL: {exc}", file=sys.stderr)
         return EXIT_UNKNOWN_ID
-    _check_paced_hz_consistency(doc, args.paced_hz)
 
     sweep_arms = set(merged.get("sweep_arms") or [])
-    topic = args.topic or _lidar_topic_for_cell(args.cell, args.observer_topics_dir)
+    # `metrics_for` is the single registered source for all three bindings
+    # (cell_info.metrics_for docstring); a CLI override, when given, wins
+    # (used by tests, and by an operator overriding a still-null binding).
+    topic = args.topic if args.topic is not None else metrics["lidar_topic"]
+    tick_hz = args.tick_hz if args.tick_hz is not None else metrics["tick_hz"]
+    lidar_expected_hz = (
+        args.lidar_expected_hz
+        if args.lidar_expected_hz is not None
+        else metrics["lidar_expected_hz"]
+    )
 
     cell_dir = args.results_root / args.cell
     verdicts = []
@@ -442,7 +458,11 @@ def main(argv: list[str] | None = None) -> int:
         if _peek_arm(run_dir) not in sweep_arms:
             skipped += 1
             continue
-        verdicts.append(verdict_for_run(run_dir, topic=topic, paced_hz=args.paced_hz))
+        verdicts.append(
+            verdict_for_run(
+                run_dir, topic=topic, tick_hz=tick_hz, lidar_expected_hz=lidar_expected_hz
+            )
+        )
     print(render_verdicts(args.cell, args.class_id, verdicts, skipped_out_of_arm=skipped))
     return 0
 

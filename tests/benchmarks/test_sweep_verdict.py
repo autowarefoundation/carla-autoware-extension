@@ -19,16 +19,24 @@ import pytest
 from benchmarks.analysis.ceiling import CeilingVerdict
 from benchmarks.analysis.manifest import RunManifest
 from benchmarks.scripts import sweep_verdict
+from benchmarks.scripts.cell_info import load_cells_doc, metrics_for
 from benchmarks.scripts.sweep_verdict import RunVerdict, render_verdicts, verdict_for_run
 
 BASE = 1_700_000_000_000_000_000
 TOPIC = "/lidar"
+# Matches cell A's real registration in cells.yaml's metrics: block (tick_hz
+# and lidar_expected_hz coincide there), so main()-level tests that target
+# cell A need no --tick-hz/--lidar-expected-hz override.
+TICK_HZ = 20.0
+LIDAR_EXPECTED_HZ = 20.0
 
 
 # --- synthetic run directory builders -------------------------------------
 
 
-def _write_manifest(run_dir, *, arm, approach="python-bridge", excluded=False, exclusion_reason=""):
+def _write_manifest(
+    run_dir, *, arm, approach="python-bridge", cell="A", excluded=False, exclusion_reason=""
+):
     placement = {
         "run_mode": "container",
         "container_image": "img@sha256:deadbeef",
@@ -37,7 +45,7 @@ def _write_manifest(run_dir, *, arm, approach="python-bridge", excluded=False, e
     if approach in ("extension", "tier4-native"):
         placement["engine_build_id"] = "b4c93e55-fc8f-42fc-b377-358910364e1c"
     RunManifest(
-        cell="A",
+        cell=cell,
         approach=approach,
         map_name="Town10HD_Opt",
         run_index=1,
@@ -85,10 +93,31 @@ def _write_publisher_counts(run_dir, topic, count):
     (run_dir / "publisher_counts.json").write_text(json.dumps({topic: count}))
 
 
-def _write_quality(run_dir, gate_pass=True, reasons=None):
-    (run_dir / "quality.json").write_text(
-        json.dumps({"gate_pass": gate_pass, "reasons": reasons or []})
-    )
+def _write_quality(run_dir, gate_pass=True, reasons=None, **extra):
+    # Registered schema (benchmarks/README.md "M5 gate result"):
+    # dataclasses.asdict(QualityStats) verbatim plus four provenance keys.
+    # `gate_pass` is the only field a consumer may treat as the verdict, so
+    # these defaults are otherwise arbitrary placeholders -- present so the
+    # fixture matches the registered SHAPE, not because sweep_verdict reads
+    # them.
+    doc = {
+        "pose_err_p50_m": 0.05,
+        "pose_err_p95_m": 0.12,
+        "pose_err_max_m": 0.20,
+        "pose_bias_m": 0.03,
+        "lateral_dev_p95_m": 0.08,
+        "goal_closest_approach_m": 0.5,
+        "goal_terminal_distance_m": 0.5,
+        "ndt_rate_ratio": 1.0,
+        "gate_pass": gate_pass,
+        "reasons": reasons or [],
+        "arm": "closed-loop",
+        "window_sim_ns": [0, 5_000_000_000],
+        "ladder_branch": "absolute",
+        "expected_ndt_hz": 10.0,
+    }
+    doc.update(extra)
+    (run_dir / "quality.json").write_text(json.dumps(doc))
 
 
 def _healthy_paced_point(run_dir, *, arm="paced", approach="python-bridge", dip=None):
@@ -119,7 +148,7 @@ def test_paced_point_over_ceiling_via_rtf(tmp_path):
     run_dir.mkdir()
     _healthy_paced_point(run_dir, dip=(20, 35))  # 15 s sustained rtf dip
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert v.verdict.reached
     assert len(v.verdict.reasons) == 1
@@ -144,11 +173,11 @@ def test_unpaced_point_over_ceiling_via_tick_ratio(tmp_path):
     _write_clock_csv(run_dir, wall)
     _write_observer_csv(run_dir)
     window_s = sum(gaps_s)
-    expected = round(window_s * sweep_verdict.PACED_TICK_HZ)
+    expected = round(window_s * LIDAR_EXPECTED_HZ)
     _write_publisher_counts(run_dir, TOPIC, round(expected * 0.99))
     _write_quality(run_dir, gate_pass=True)
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert v.verdict.reached
     assert len(v.verdict.reasons) == 1
@@ -165,7 +194,7 @@ def test_publisher_rate_firing(tmp_path):
     # Override the healthy publisher count with a starved one: 500/1200.
     _write_publisher_counts(run_dir, TOPIC, 500)
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert v.verdict.reached
     assert len(v.verdict.reasons) == 1
@@ -179,7 +208,7 @@ def test_quality_firing(tmp_path):
     _healthy_paced_point(run_dir)
     _write_quality(run_dir, gate_pass=False, reasons=["pose_error drift 0.4 >= 0.2"])
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert v.verdict.reached
     assert len(v.verdict.reasons) == 1
@@ -193,18 +222,18 @@ def test_quality_firing(tmp_path):
 def test_excluded_run_never_enters_a_verdict(tmp_path):
     run_dir = tmp_path / "run-000"
     run_dir.mkdir()
-    _write_manifest(run_dir, arm="paced", excluded=True, exclusion_reason="crash:carla")
+    _write_manifest(run_dir, arm="paced", excluded=True, exclusion_reason="crash:cell-launch")
     # No clock.csv / resources.csv / observer.csv / quality.json at all: an
     # excluded run legitimately may have none of these (exclusions.md).
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert v.excluded
     assert v.verdict is None
-    assert v.exclusion_reason == "crash:carla"
+    assert v.exclusion_reason == "crash:cell-launch"
     table = render_verdicts("A", "vlp16", [v])
     assert "EXCLUDED" in table
-    assert "crash:carla" in table
+    assert "crash:cell-launch" in table
 
 
 def test_missing_publisher_counts_is_not_measurable_not_zero(tmp_path):
@@ -222,7 +251,7 @@ def test_missing_publisher_counts_is_not_measurable_not_zero(tmp_path):
     _write_quality(run_dir, gate_pass=True)
     # Deliberately no publisher_counts.json.
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert not v.verdict.reached
     assert v.verdict.reasons == []
@@ -252,7 +281,7 @@ def test_zero_published_count_fires_and_reports_nan_not_zero(tmp_path):
     # No quality.json: the ablation arm defaults quality_ok=True with a note
     # (no closed loop runs, so no M5 measurement is possible).
 
-    v = verdict_for_run(run_dir, topic=TOPIC)
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
     assert v.verdict.reached
     assert len(v.verdict.reasons) == 1
@@ -278,7 +307,7 @@ def test_non_ablation_arm_requires_quality_json(tmp_path):
     # No quality.json.
 
     with pytest.raises(FileNotFoundError, match="quality"):
-        verdict_for_run(run_dir, topic=TOPIC)
+        verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
 
 # --- table rendering is pure formatting (no filesystem) --------------------
@@ -316,58 +345,6 @@ def test_render_verdicts_reports_skipped_out_of_arm_count():
     )
 
 
-# --- LiDAR topic resolution (observer_topics/<cell>.yaml) -----------------
-
-
-def test_lidar_topic_for_cell_reads_observer_topics_yaml_for_a():
-    """Regression: cell A's own committed observer_topics/A.yaml, not a
-    guessed literal. This is the real repo file, not a synthetic fixture."""
-    assert sweep_verdict._lidar_topic_for_cell("A") == "/sensing/lidar/top/pointcloud_raw_ex"
-
-
-def test_lidar_topic_for_cell_reads_the_bridges_own_topic_for_e():
-    """E-cells' bridge emits on a different, patched-around topic name --
-    the whole reason observer_topics/E.yaml exists as ITS OWN file rather
-    than sharing A's."""
-    assert sweep_verdict._lidar_topic_for_cell("E") == "/sensing/lidar/top/pointcloud_before_sync"
-
-
-def test_lidar_topic_for_cell_falls_back_when_no_pointcloud_entry(tmp_path):
-    """CAL-seam's real file has an empty topics list (Task 14 not yet
-    landed); any cell whose file is absent or PointCloud2-less must fall
-    back to collect_gt.DEFAULT_LIDAR_TOPIC, never silently return None or
-    raise."""
-    (tmp_path / "Q.yaml").write_text("/**:\n  ros__parameters:\n    topics: []\n")
-    assert sweep_verdict._lidar_topic_for_cell("Q", tmp_path) == sweep_verdict.DEFAULT_LIDAR_TOPIC
-    # A cell with no file at all (not even empty) takes the same fallback.
-    assert (
-        sweep_verdict._lidar_topic_for_cell("Nonexistent", tmp_path)
-        == sweep_verdict.DEFAULT_LIDAR_TOPIC
-    )
-
-
-# --- PACED_TICK_HZ / camera_classes[*].fps consistency ---------------------
-
-
-def test_check_paced_hz_consistency_passes_against_the_real_cells_yaml():
-    from benchmarks.scripts.cell_info import load_cells_doc
-
-    sweep_verdict._check_paced_hz_consistency(load_cells_doc(), sweep_verdict.PACED_TICK_HZ)
-
-
-def test_check_paced_hz_consistency_raises_on_drift():
-    doc = {"camera_classes": [{"id": "cam1", "fps": 30}]}
-    with pytest.raises(ValueError, match="cam1"):
-        sweep_verdict._check_paced_hz_consistency(doc, sweep_verdict.PACED_TICK_HZ)
-
-
-def test_check_paced_hz_consistency_skips_when_paced_hz_is_overridden():
-    """An explicit --paced-hz is a deliberate what-if; it must not be
-    penalized for disagreeing with camera_classes."""
-    doc = {"camera_classes": [{"id": "cam1", "fps": 20}]}
-    sweep_verdict._check_paced_hz_consistency(doc, 25.0)  # would not raise
-
-
 # --- _rtf_series_from_resources: dedup, not concatenation ------------------
 
 
@@ -386,6 +363,123 @@ def test_rtf_series_from_resources_dedups_across_processes_not_concatenates():
     assert out_ns.size == 5
     np.testing.assert_array_equal(out_ns, sample_ns)
     np.testing.assert_allclose(out_rtf, rtf)
+
+
+# --- S2: tick_hz and lidar_expected_hz are separate, non-conflatable -------
+
+
+def test_tick_hz_and_lidar_expected_hz_are_independent_bindings(tmp_path):
+    """A-hf/B-hf-shaped regression: tick_hz (world tick target) and
+    lidar_expected_hz (sensor scan rate) diverge 5x on those cells. A
+    shared constant would size expected_count off tick_hz and report
+    publisher_rate_ratio ~= 0.2 here (500 Hz world / 100 Hz sensor), firing
+    the ceiling spuriously; reading the two bindings separately must not."""
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm="unpaced")
+    wall = BASE + np.arange(6001) * 10_000_000  # steady 100 Hz, 60.0s
+    _write_clock_csv(run_dir, wall)
+    _write_observer_csv(run_dir)
+    # Sized against lidar_expected_hz=20, NOT tick_hz=100: 60s * 20 = 1200.
+    _write_publisher_counts(run_dir, TOPIC, 1190)
+    _write_quality(run_dir, gate_pass=True)
+
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=100.0, lidar_expected_hz=20.0)
+
+    assert not v.verdict.reached
+    assert v.publisher_rate_ratio == pytest.approx(1190 / 1200)
+
+
+def test_unpaced_tick_ratio_uses_tick_hz_not_lidar_expected_hz(tmp_path):
+    """Swap-detector: ticks running steady at 30 Hz score BELOW the 90%
+    threshold against tick_hz=100 (ratio 0.30, must fire) but ABOVE it
+    against lidar_expected_hz=20 (ratio 1.50, would NOT fire) -- so this
+    test only passes if the tick-rate denominator is genuinely tick_hz."""
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm="unpaced")
+    gap_ns = round(1e9 / 30)
+    wall = BASE + np.arange(2001) * gap_ns  # steady 30 Hz, ~66.7s
+    _write_clock_csv(run_dir, wall)
+    _write_observer_csv(run_dir)
+    window_s = (int(wall[-1]) - int(wall[0])) / 1e9
+    expected = round(window_s * 20.0)
+    _write_publisher_counts(run_dir, TOPIC, round(expected * 0.99))
+    _write_quality(run_dir, gate_pass=True)
+
+    v = verdict_for_run(run_dir, topic=TOPIC, tick_hz=100.0, lidar_expected_hz=20.0)
+
+    assert v.verdict.reached
+    assert len(v.verdict.reasons) == 1
+    assert "tick rate" in v.verdict.reasons[0]
+
+
+def test_a_hf_real_registered_metrics_diverge_5x_and_score_cleanly(tmp_path):
+    """Grounds the S2 fix in the real, committed cells.yaml: A-hf's own
+    registered metrics: block, not a synthetic stand-in. A-hf is not a
+    sweep_classes cell (applies_to excludes it), so this calls
+    verdict_for_run directly with metrics_for's real numbers rather than
+    through main()'s --class gate."""
+    metrics = metrics_for(load_cells_doc(), "A-hf")
+    assert metrics["tick_hz"] == 100.0
+    assert metrics["lidar_expected_hz"] == 20.0
+
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm="unpaced")
+    wall = BASE + np.arange(6001) * 10_000_000  # steady 100 Hz
+    _write_clock_csv(run_dir, wall)
+    _write_observer_csv(run_dir)
+    window_s = (int(wall[-1]) - int(wall[0])) / 1e9
+    expected = round(window_s * metrics["lidar_expected_hz"])
+    _write_publisher_counts(run_dir, TOPIC, round(expected * 0.99))
+    _write_quality(run_dir, gate_pass=True)
+
+    v = verdict_for_run(
+        run_dir,
+        topic=TOPIC,
+        tick_hz=metrics["tick_hz"],
+        lidar_expected_hz=metrics["lidar_expected_hz"],
+    )
+
+    assert not v.verdict.reached
+
+
+# --- fail-clearly on an unbound metric (never substitute a plausible number)
+
+
+def test_missing_lidar_expected_hz_fails_clearly(tmp_path):
+    """cell B's real registration: lidar_expected_hz is null pending Task
+    13. Must raise, never fall back to tick_hz or any other number."""
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _healthy_paced_point(run_dir)
+
+    with pytest.raises(ValueError, match="lidar_expected_hz"):
+        verdict_for_run(run_dir, topic=TOPIC, tick_hz=TICK_HZ, lidar_expected_hz=None)
+
+
+def test_missing_tick_hz_on_unpaced_arm_fails_clearly(tmp_path):
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm="unpaced")
+    wall = BASE + np.arange(1201) * 50_000_000
+    _write_clock_csv(run_dir, wall)
+    _write_observer_csv(run_dir)
+    _write_publisher_counts(run_dir, TOPIC, 1190)
+    _write_quality(run_dir, gate_pass=True)
+
+    with pytest.raises(ValueError, match="tick_hz"):
+        verdict_for_run(run_dir, topic=TOPIC, tick_hz=None, lidar_expected_hz=LIDAR_EXPECTED_HZ)
+
+
+def test_missing_lidar_topic_fails_clearly(tmp_path):
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _healthy_paced_point(run_dir)
+
+    with pytest.raises(ValueError, match="lidar_topic"):
+        verdict_for_run(run_dir, topic=None, tick_hz=TICK_HZ, lidar_expected_hz=LIDAR_EXPECTED_HZ)
 
 
 # --- CLI ---------------------------------------------------------------
@@ -412,12 +506,12 @@ def test_main_walks_results_root_and_prints_table(tmp_path, capsys):
     assert "cell A, class vlp16" in out
 
 
-def test_main_resolves_lidar_topic_from_the_real_observer_topics_yaml(tmp_path, capsys):
-    """No --topic given: main() must resolve cell A's real, committed
-    observer_topics/A.yaml topic on its own and score the point normally
-    (not "not measurable") -- this is the exact gap Finding 1 reported:
-    without this resolution, the tool KeyErrors on every mandatory sweep
-    cell (A/B/E) it exists to score."""
+def test_main_resolves_lidar_topic_from_cells_yaml_metrics(tmp_path, capsys):
+    """S1: no --topic given. main() must resolve cell A's real, registered
+    metrics_for(...)["lidar_topic"] on its own and score the point
+    normally (not "not measurable") -- this is the exact gap Finding 1
+    reported: without this resolution, the tool KeyErrors on every
+    mandatory sweep cell (A/B/E) it exists to score."""
     cell_dir = tmp_path / "A" / "run-001"
     cell_dir.mkdir(parents=True)
     _write_manifest(cell_dir, arm="paced", approach="extension")
@@ -434,6 +528,55 @@ def test_main_resolves_lidar_topic_from_the_real_observer_topics_yaml(tmp_path, 
     assert rc == 0
     out = capsys.readouterr().out
     assert "not measurable" not in out
+
+
+def test_main_resolves_the_bridges_own_topic_for_cell_e(tmp_path, capsys):
+    """E's registered lidar_topic differs from A/B's (the bridge's own
+    as-emitted name). E's lidar_expected_hz is registered null pending
+    Task 10/20, so --lidar-expected-hz overrides just that one binding to
+    isolate the topic-resolution check from the (separately tested)
+    unbound-metric failure."""
+    cell_dir = tmp_path / "E" / "run-001"
+    cell_dir.mkdir(parents=True)
+    _write_manifest(cell_dir, arm="paced", approach="python-bridge", cell="E")
+    sample_ns = BASE + np.arange(60) * 1_000_000_000
+    _write_resources_csv(cell_dir, sample_ns, np.full(60, 0.99))
+    wall = BASE + np.arange(1201) * 50_000_000
+    _write_clock_csv(cell_dir, wall)
+    _write_observer_csv(cell_dir, topic="/sensing/lidar/top/pointcloud_before_sync")
+    # No publisher_counts.json: E genuinely has none (bridge is the sole
+    # listener) -- resolves as "not measurable", which is fine here since
+    # this test is only checking WHICH topic name was looked up.
+    _write_quality(cell_dir, gate_pass=True)
+
+    rc = sweep_verdict.main(
+        ["E", "--class", "vlp16", "--results-root", str(tmp_path), "--lidar-expected-hz", "20.0"]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "not measurable" in out  # publisher count genuinely absent for E
+    assert "reasons" in out  # table rendered, i.e. no crash resolving the topic
+
+
+def test_main_on_cell_b_fails_clearly_when_lidar_expected_hz_is_unbound(tmp_path):
+    """The one thing the registration deliberately left open: cell B's
+    lidar_expected_hz is null pending Task 13 (metric-definitions-report.md
+    open question 1). main() must fail clearly end-to-end, not substitute
+    a plausible number (e.g. tick_hz, or A's value)."""
+    cell_dir = tmp_path / "B" / "run-001"
+    cell_dir.mkdir(parents=True)
+    _write_manifest(cell_dir, arm="paced", approach="tier4-native", cell="B")
+    sample_ns = BASE + np.arange(60) * 1_000_000_000
+    _write_resources_csv(cell_dir, sample_ns, np.full(60, 0.99))
+    wall = BASE + np.arange(1201) * 50_000_000
+    _write_clock_csv(cell_dir, wall)
+    _write_observer_csv(cell_dir, topic="/sensing/lidar/top/pointcloud_raw_ex")
+    _write_publisher_counts(cell_dir, "/sensing/lidar/top/pointcloud_raw_ex", 1190)
+    _write_quality(cell_dir, gate_pass=True)
+
+    with pytest.raises(ValueError, match="lidar_expected_hz"):
+        sweep_verdict.main(["B", "--class", "vlp16", "--results-root", str(tmp_path)])
 
 
 def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):
