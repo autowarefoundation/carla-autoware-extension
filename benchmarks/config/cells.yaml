@@ -33,11 +33,9 @@
 #
 # tick_hz, lidar_expected_hz and ndt_expected_hz are DIFFERENT numbers that
 # happen to coincide at 20.0 on the extension cells; tick_hz diverges on the
-# high-frequency cells. Never substitute one for the other. ndt_scan_matcher
-# emits one pose per input cloud and the sensing chain that feeds it
-# (crop_box -> concatenate -> downsample) is rate-preserving, so
-# ndt_expected_hz tracks lidar_expected_hz unless a cell's chain decimates --
-# it is registered separately so that a cell where it does cannot be missed.
+# high-frequency cells. Never substitute one for the other. ndt_expected_hz
+# tracks the SENSOR rate rather than the tick rate, and is registered
+# separately so a cell whose chain decimates cannot be missed.
 #
 # A `null` binding is NOT a default to fill in at analysis time: it means the
 # value is not pre-registered yet, so the metric is UNAVAILABLE for that cell
@@ -65,7 +63,16 @@ cells:
       # P1 Verdict 4 measured live. A sweep class changes channels/points,
       # never sensor_tick, so this is a per-cell and not a per-class value.
       lidar_expected_hz: 20.0
-      ndt_expected_hz: 20.0 # one pose per input cloud; chain rate-preserving
+      # MEASURED, not inferred: docs/e2e-report.md's live re-run records this
+      # rig localizing at "NDT ~20 Hz (400 samples)" with the ekf-fused
+      # kinematic_state at 19.97 Hz and the sensing chain feeding it alive at
+      # ~20 Hz. That gate ran on the Nishi-Shinjuku map (cell C); the rate is a
+      # property of the rig and tick, not of the map, so cell A inherits it --
+      # the same reasoning lidar_expected_hz already uses across A/C. (The
+      # mechanism -- one NDT pose per input cloud, rate-preserving chain --
+      # explains the number but is an assertion about Autoware, not evidence
+      # from this repo, so it is not what this binding rests on.)
+      ndt_expected_hz: 20.0
   - id: B
     approach: tier4-native
     carla: 0.10-tier4
@@ -107,6 +114,8 @@ cells:
       cpu_process_label: carla-server
       tick_hz: 20.0
       lidar_expected_hz: 20.0 # same rig as cell A; only the map differs
+      # docs/e2e-report.md's ~20 Hz NDT measurement is from the Nishi-Shinjuku
+      # e2e gate, i.e. THIS cell's map, and cell A inherits it as the same rig.
       ndt_expected_hz: 20.0
   - id: D
     approach: tier4-native
@@ -239,7 +248,18 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      tick_hz: 100.0 # fixed_delta 0.01 -- the point of this cell
+      # REGISTERED TARGET, not yet a setting. The mechanism is committed --
+      # runner/__main__.py's --fixed-delta (Task 12, landed) -- but no
+      # committed launcher passes 0.01 for this cell: cells/extension.sh sends
+      # no fixed-delta argument, so today an A-hf run would tick at the
+      # runner's 0.05 default and this binding would describe an intent the
+      # run did not honour. That is weaker than cell A's 20.0 (a committed
+      # default that applies with no wiring) and stronger than B-hf's, where
+      # no launcher exists at all -- which is why B-hf is null and this is
+      # not. Owed before any A-hf run counts: the launcher must pass
+      # --fixed-delta 0.01, AND the applied value must be recorded per run
+      # (launch env or manifest) so the target is checked, not trusted.
+      tick_hz: 100.0
       # UNCHANGED at 20.0: --fixed-delta moves the world tick, not the rig's
       # sensor_tick, and min(1/0.05, 100.0) is still 20. This is the pair the
       # tick_hz/lidar_expected_hz split exists for.

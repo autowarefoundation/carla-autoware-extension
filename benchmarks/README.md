@@ -113,9 +113,12 @@ three different numbers. They coincide at 20.0 on the extension cells and
 not the rig's `sensor_tick`). An expected message COUNT must be derived from
 `lidar_expected_hz`; only the M4 ceiling's unpaced `tick_rate_ratio` disjunct
 divides by `tick_hz`; and the M5 gate's "NDT rate ≥ 90% of expected" criterion
-(`analysis/quality.py`'s `expected_ndt_hz`) divides by `ndt_expected_hz`,
-which follows the SENSOR rate — `ndt_scan_matcher` emits one pose per input
-cloud — and never the tick rate.
+(`analysis/quality.py`'s `expected_ndt_hz`) divides by `ndt_expected_hz`, which
+follows the SENSOR rate and never the tick rate. `ndt_expected_hz: 20.0` on the
+extension cells rests on a live measurement recorded in this repo —
+`docs/e2e-report.md`'s re-run, NDT at ~20 Hz over 400 samples with the
+ekf-fused `kinematic_state` at 19.97 Hz — not on the (true, but out-of-repo)
+argument that `ndt_scan_matcher` emits one pose per input cloud.
 
 **Scoring window.** All five are computed over the run's registered scoring
 window (see "Scoring windows" above), resolved once per run:
@@ -127,37 +130,68 @@ The warm-up discard is `20_000_000_000` ns throughout (an int, matching
   `/localization/kinematic_state` rows against the polyline and
   `stations.start_m`/`end_m` of `config/routes/<map>.yaml` — bounds are SIM
   ns.
-- every other arm (`static`, `paced`, `unpaced`, `ablation`) on a cell with a
-  sim clock: `static_window(t0, end, 20_000_000_000)` where `t0` and `end` are
-  the FIRST and LAST `arrival_system_ns` in `clock.csv` — bounds are WALL ns.
-- The other domain's bounds come from the run's own affine clock fit
-  (`analysis/clockfit.py` `fit_sim_wall_affine` over `clock.csv`): sim → wall
-  by `sim_to_wall`, wall → sim by its exact inverse
-  `(wall_ns - fit.intercept_ns) / fit.slope`.
-- Rows are filtered on the column native to their file: `observer.csv` on
+- every other arm (`static`, `paced`, `unpaced`, `ablation`): see the two
+  branches below, selected per run by a mechanical test on the run's own data,
+  not by any config field.
+
+**The window's branch is decided by the run's `clock.csv`, not by a cell
+attribute.** What makes a sim/wall fit possible is whether a `/clock` series
+exists — nothing else — so that is what the rule tests, applied per run:
+
+- **Fittable branch — `clock.csv` holds ≥ 2 data rows** (exactly
+  `fit_sim_wall_affine`'s own stated precondition, "need >= 2 paired (sim,
+  wall) samples"): `static_window(t0, end, 20_000_000_000)` where `t0` and
+  `end` are the FIRST and LAST `arrival_system_ns` in `clock.csv` — bounds are
+  WALL ns. The other domain's bounds come from the run's affine fit
+  (`analysis/clockfit.py` `fit_sim_wall_affine`): sim → wall by `sim_to_wall`,
+  wall → sim by its exact inverse `(wall_ns - fit.intercept_ns) / fit.slope`.
+  Rows are filtered on the column native to their file: `observer.csv` on
   `header_stamp_ns` (sim), `published_time.csv` on `source_header_ns` (sim),
   `resources.csv` on `sample_system_ns` (wall).
+- **Unfittable branch — fewer than 2 data rows**: `static_window(t0, end,
+20_000_000_000)` over **`observer.csv`**'s `arrival_system_ns`, first and
+  last row of the cell's `lidar_topic`. There is no sim domain, so no
+  conversion exists and none is applied; `observer.csv` rows are filtered on
+  **`arrival_system_ns`** here — the same column the bounds are taken from, so
+  the warm-up boundary is exact rather than offset by one message's transport.
+  `header_stamp_ns` is itself wall time on such a run (the bench publishers
+  stamp with wall `now()`), so the metric definitions below read the same way
+  with no special case, and `one_hop_wall_ms` reduces to the direct
+  `arrival_system_ns - header_stamp_ns` — `cal_report._one_hop_ms`'s form.
 
-**Calibration cells have no clock, so they get their own window.** A cell whose
-`cells.yaml` `carla:` is `none` (today: `CAL-rmw`, and `cell_info.merge`'s
-`has_sim_clock` is the same discriminator) publishes no `/clock` at all:
-`clock.csv` stays header-only by design, and no affine fit is possible
-(`scripts/cal_report.py` says so and computes accordingly). For those cells:
+**Expected branch per cell, so a surprise is loud.** The calibration-approach
+cells (`cells.yaml` `approach: calibration` — `CAL-rmw` and `CAL-seam`) are
+expected to take the unfittable branch: they are transport/serialization
+instruments with no simulation loop, and `config/processes/CAL-seam.yaml`
+registers no ticking runner, unlike cells A/C which register `python3 -m
+runner`. Every other cell is expected to take the fittable branch. A run that
+takes the branch its cell was not expected to take is a **loud finding to be
+reported, not a silent fallback** — it means the cell did not run the way it
+is registered to.
 
-- the window is `static_window(t0, end, 20_000_000_000)` over **`observer.csv`**'s
-  `arrival_system_ns` — first and last row of the cell's `lidar_topic`;
-- there is no sim domain, so no domain conversion applies. `header_stamp_ns`
-  IS wall time there (both bench publishers stamp with wall `now()`), which is
-  why the metric definitions below read the same way with no special case;
-- consequently `one_hop_wall_ms` on a calibration cell is the direct
-  `arrival_system_ns - header_stamp_ns` (`cal_report._one_hop_ms`), not the
-  fit-converted form.
+> **Open contradiction in committed code, owed to Task 14 before any CAL-seam
+> run.** `cells.yaml` gives `CAL-seam` `carla: 0.10-fork`, so
+> `cell_info.merge`'s `has_sim_clock` is true, so `run.sh` starts the clock
+> watchdog for it (step 7), waits for a sim span off `clock.csv` on the unpaced
+> path (step 10), and routes step 14 to `report.py`'s fit-strict renderer. But
+> `scripts/cal_report.py` — which is the **CAL-seam** tool specifically, not a
+> generic calibration one; its own first line says so — asserts that this cell
+> has no `/clock` and that no fit is "needed, or even possible". Both cannot
+> hold. If CAL-seam really has no `/clock`, every run of it is excluded
+> `stall:clock` before analysis sees it, and `has_sim_clock` (or the `carla:`
+> field it derives from) is wrong; if it does tick, `cal_report.py`'s premise
+> is. This amendment does not pick: the metric rule above is correct either
+> way, because it tests the data instead of the attribute. Task 14 must settle
+> it — and register `CAL-seam`'s `tick_hz`, left `null` here for the same
+> reason — before the cell is first run. It is unlaunchable today
+> (`cells/calibration.sh` refuses it), so nothing is blocked meanwhile.
 
 **Recorded consequence for Task 16.** The `one_hop_wall_ms` margin is frozen
-from CAL-rmw, i.e. from an observer-windowed, unfitted wall term, and applied
-to a duel term that is `/clock`-windowed and fit-converted. The measurand is
-the same; the window basis and the fit are not. Task 16 must state that
-alongside the frozen number rather than presenting the transfer as exact.
+from CAL-rmw, which takes the unfittable branch: an observer-windowed, unfitted
+wall term. It is applied to a duel term that is `/clock`-windowed and
+fit-converted. The measurand is the same; the window basis and the fit are not.
+Task 16 must state that alongside the frozen number rather than presenting the
+transfer as exact.
 
 Windowing is not optional for these five. The 20 s warm-up covers map load,
 NDT convergence and stack settling, which A and B do differently; against a
@@ -167,7 +201,9 @@ NDT convergence and stack settling, which A and B do differently; against a
 per-sample) series — one run-level scalar per run. Across runs:
 `analysis/stats.py` `bootstrap_ci_median_diff` + `equivalence_decision` on the
 two cells' run-level scalars, `delta = median(A) - median(B)`, lower better.
-Messages are never pooled across runs. Excluded runs never contribute.
+Messages are never pooled across runs. Excluded runs never contribute. **Runs
+of another arm never contribute** — see "Arm scoping" above; the filter is on
+`manifest.arm` and it is part of the aggregation step, not a separate concern.
 
 `achieved_rate_ratio` is the one EXEMPTION from the median-of-a-series rule:
 it is already a single run-level scalar, `(n − 1) / span` over the in-window
@@ -253,8 +289,9 @@ clock; `source_header_ns` is the publishing node's own header stamp), and must
 be RECORDED by Tasks 13/20 alongside the topic name, not assumed. It must be
 recorded **per image**, not once: `B45` pins a different Autoware image
 (`pins.yaml` `autoware_045`) from every other stack cell, and nothing
-guarantees the two agree. The three reachable combinations are pre-registered
-here so the choice cannot be made after seeing the number:
+guarantees the two agree. The discriminator below is applied per column, so all
+FOUR combinations are distinguishable and all four are pre-registered here —
+the choice cannot be made after seeing the number:
 
 - (a) BOTH stamps in the SIM domain →
   `staleness_ms(source_header_ns, published_ns)`.
@@ -264,10 +301,18 @@ here so the choice cannot be made after seeing the number:
 - (c) BOTH stamps in the WALL domain (the node is not on sim time) →
   `staleness_ms(...)` again: the domains match, so the plain difference is
   correct, and the result is a wall-domain staleness with sub-tick resolution.
+- (d) `source_header_ns` WALL, `published_stamp` SIM → **no formula; the metric
+  is UNAVAILABLE and the observation must be reported.** This combination is
+  incoherent rather than merely inconvenient: it says a node stamped a
+  sim-clock publish time onto a message whose own header it wrote from the
+  wall clock, which no single-clock node does. Treating it as (b)-reversed
+  would produce a large negative staleness that reads like a real result.
+  Registered as a fail-loud so the discovery pass re-checks the topic rather
+  than the analysis inventing an arithmetic for it.
 
 The discriminator is mechanical and unambiguous: a wall stamp is a Unix epoch
 (> 1e18 ns); a sim stamp is a run-length offset (< 1e13 ns for any window this
-harness records). It is applied per column, so (c) is distinguishable from (a).
+harness records).
 
 **Contingent response under branch (a), pre-registered now.** This needs no
 data: if both stamps land on the `/clock` grid, every per-message value is a
@@ -646,13 +691,28 @@ Amendments made so far:
   for exactly that purpose did not carry it — and on the high-frequency
   cells sourcing it from `tick_hz` would fail every run five-fold while
   reading as a localization result.
-- **2026-07-28** — "Scoring window" gained a **calibration-cell window**
+- **2026-07-28** — "Scoring window" gained a second, unfittable branch
   (`static_window` over `observer.csv`'s `arrival_system_ns`, no domain
   conversion) and the recorded consequence for Task 16's margin
   transfer. Completeness: every non-closed-loop arm was bound to a
   window over `clock.csv` and a conversion through the clock fit, and a
-  `carla: none` cell has neither — including `CAL-rmw`, the cell
-  `one_hop_wall_ms`'s margin is frozen from.
+  cell that publishes no `/clock` has neither — including `CAL-rmw`, the
+  cell `one_hop_wall_ms`'s margin is frozen from.
+- **2026-07-28** (supersedes the entry above, same amendment window) —
+  the branch is now selected **per run** by a mechanical test on the
+  run's own `clock.csv` (≥ 2 data rows = `fit_sim_wall_affine`'s own
+  stated precondition), with the expected branch recorded per cell so a
+  surprise is a loud finding; and the contradiction between
+  `cells.yaml`'s `CAL-seam: carla: 0.10-fork` (which makes `run.sh`
+  start the clock watchdog and use the fit-strict renderer) and
+  `scripts/cal_report.py`'s assertion that CAL-seam has no `/clock` is
+  recorded as Task 14's to settle. Completeness: the branch had been
+  keyed off the `carla:` field and justified by citing `cal_report.py`,
+  which is the **CAL-seam** tool specifically, not a generic calibration
+  one — so the rule was keyed on an attribute that does not determine
+  fittability, against evidence scoped to a different cell than the one
+  it was applied to. Testing the data instead of the attribute makes the
+  rule correct whichever way Task 14 resolves the contradiction.
 - **2026-07-28** — `config/cells.yaml`: `tick_hz` set to `null` on the
   tier4 cells (`B`, `D`, `B-hf`, `B45`) and on `CAL-seam`, naming
   Tasks 13 and 14. Completeness: those values were transcribed from an
@@ -660,6 +720,35 @@ Amendments made so far:
   same cells was left `null` for being un-sourced — the same evidence
   held to two standards. The bar is now stated once in `cells.yaml` and
   applied uniformly: committed evidence in this repo, or `null`.
+- **2026-07-28** — `ndt_expected_hz: 20.0` on `A`/`C` re-grounded on
+  `docs/e2e-report.md`'s live re-run (NDT ~20 Hz over 400 samples,
+  `kinematic_state` 19.97 Hz) instead of on the mechanism ("one pose per
+  input cloud, rate-preserving chain"). Completeness: the mechanism is
+  an assertion about Autoware, which does not clear the evidence bar
+  this amendment set one entry earlier — and in-repo evidence that does
+  clear it already existed and had simply not been cited.
+- **2026-07-28** — `A-hf`'s `tick_hz: 100.0` labelled explicitly as a
+  registered TARGET, with the wiring it still needs named (no committed
+  launcher passes `--fixed-delta 0.01`) and a requirement that the
+  applied value be recorded per run so the target is checked rather than
+  trusted. Completeness: it cleared the evidence bar in letter (the
+  `--fixed-delta` mechanism is committed) but not in spirit, and an
+  unapplied target that reads like a setting is the silent-wrong-number
+  class this campaign guards against. It is kept rather than nulled
+  because the mechanism exists here, unlike `B-hf`'s, where no launcher
+  exists at all.
+- **2026-07-28** — the clock-domain taxonomy for `control_staleness_ms`
+  gained its **fourth** combination (source WALL, published SIM) as an
+  explicit fail-loud with no formula. Completeness: the text asserted
+  three combinations were "reachable" while the discriminator is applied
+  per column, so the fourth was unregistered rather than excluded — and
+  computing it as a reversed branch (b) would yield a large negative
+  staleness that reads like a real result.
+- **2026-07-28** — the aggregation rule's exclusion list gained "runs of
+  another arm never contribute". Completeness: the arm rule was
+  registered under "Arm scoping" but not restated where a tool author
+  writing the aggregation step would look, next to the exclusion and
+  no-pooling clauses it belongs with.
 
 ## How to run
 
