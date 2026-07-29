@@ -80,7 +80,7 @@ from benchmarks.analysis.latency import one_hop_wall_ms as _one_hop_wall_ms_seri
 from benchmarks.analysis.manifest import ARMS, RunManifest, load_manifest
 from benchmarks.analysis.stats import bootstrap_ci_median_diff, equivalence_decision, load_margins
 from benchmarks.analysis.window import spatial_window, static_window
-from benchmarks.scripts.cell_info import cell_entry, load_cells_doc, metrics_for
+from benchmarks.scripts.cell_info import UnknownIdError, cell_entry, load_cells_doc, metrics_for
 
 # Pre-registered minimum runs per side for the primary duel (README.md,
 # spec: Statistical treatment). Not read from margins.yaml -- it applies
@@ -101,11 +101,14 @@ WARMUP_NS = 20_000_000_000
 # lidar_expected_hz, which all come from `metrics_for`.
 ODOM_TOPIC = "/localization/kinematic_state"
 
-# control_staleness_ms's registered clock-domain discriminator: a wall
-# stamp is a Unix epoch (> 1e18 ns); a sim stamp is a run-length offset
-# (< 1e13 ns for any window this harness records). Mechanical and
-# unambiguous -- see benchmarks/README.md, control_staleness_ms.
+# control_staleness_ms's registered clock-domain discriminator: TWO
+# disjoint bands, not one cut. A wall stamp is a Unix epoch (> 1e18 ns);
+# a sim stamp is a run-length offset (< 1e13 ns for any window this
+# harness records). A median in neither band is unclassifiable and must
+# be reported so, not defaulted to either branch -- see
+# benchmarks/README.md, control_staleness_ms.
 WALL_STAMP_FLOOR_NS = 1e18
+SIM_STAMP_CEIL_NS = 1e13
 
 
 class MetricUnavailableError(RuntimeError):
@@ -304,11 +307,23 @@ def _resolve_window(run_dir: Path, manifest: RunManifest) -> _RunWindow:
 
 def cell_run_values(
     cell_dir: Path,
-    extractor: Callable[[Path, RunManifest], float],
+    extractor: Callable[[Path, RunManifest, _RunWindow], float],
     *,
     arm: str | None = None,
 ) -> tuple[list[float], int, list[str]]:
     """Run-level values for one cell directory, over every `run-*` it holds.
+
+    The scoring window is resolved HERE, once per run, and passed to
+    `extractor` rather than each extractor re-resolving it: README.md
+    says the window is "resolved once per run", and a caller walking
+    five metrics over the same run previously paid for `_resolve_window`
+    (a clock-fit least-squares pass and, on the closed-loop arm, a full
+    `odometry.csv` read plus `window._project`'s O(points x segments)
+    loop) five times over for identical results. `extractor` here
+    therefore takes `(run_dir, manifest, window)`, not `(run_dir,
+    manifest)`; window resolution failures are caught by the same
+    try/except as the extractor call, so they are reported exactly like
+    an extractor failure would be.
 
     `arm`, when given, restricts to runs whose manifest `arm` matches
     exactly -- a cell's run-* tree holds every arm it registers (e.g.
@@ -323,10 +338,11 @@ def cell_run_values(
     passed to `extractor` -- that is the whole point of the exclusion
     mechanism (benchmarks/config/exclusions.md: a run marked excluded
     must not contribute to a verdict). A run whose manifest is missing,
-    invalid, or whose extractor call raises is DROPPED and reported by
-    name in `errors`, not silently skipped and not treated as excluded --
-    mirroring report.render_cell's tolerance for one bad run not making
-    a whole cell unreadable, while still surfacing every failure.
+    invalid, whose window cannot be resolved, or whose extractor call
+    raises is DROPPED and reported by name in `errors`, not silently
+    skipped and not treated as excluded -- mirroring report.render_
+    cell's tolerance for one bad run not making a whole cell unreadable,
+    while still surfacing every failure.
 
     Returns `(values, n_excluded, errors)`.
     """
@@ -350,7 +366,8 @@ def cell_run_values(
             n_excluded += 1
             continue
         try:
-            values.append(extractor(run_dir, manifest))
+            window = _resolve_window(run_dir, manifest)
+            values.append(extractor(run_dir, manifest, window))
         except Exception as exc:  # noqa: BLE001 - reported, never swallowed
             errors.append(f"{run_dir.name}: FAILED {type(exc).__name__}: {exc}")
     return values, n_excluded, errors
@@ -364,28 +381,30 @@ def cell_run_values(
 # ---------------------------------------------------------------------------
 
 
-def extract_one_hop_wall_ms(run_dir: Path, manifest: RunManifest, lidar_topic: str) -> float:
+def extract_one_hop_wall_ms(
+    run_dir: Path, manifest: RunManifest, window: _RunWindow, lidar_topic: str
+) -> float:
     """one_hop_wall_ms (README: transport, margin 2.0): median wall
     latency of `lidar_topic` arrivals against the run's own clock fit,
     over the scoring window. The same measurand report.summarize_run
     reports per topic as one_hop_p50_ms, narrowed to the registered
-    topic and window."""
+    topic and window. `window` is resolved once per run by the caller
+    (`cell_run_values`), not re-resolved here."""
     run_dir = Path(run_dir)
-    win = _resolve_window(run_dir, manifest)
     topics = read_observer_csv(run_dir / "observer.csv")
     if lidar_topic not in topics:
         raise MetricUnavailableError(f"{lidar_topic} not in {run_dir / 'observer.csv'}")
     cols = topics[lidar_topic]
     stamps = cols["header_stamp_ns"]
-    in_w = (stamps >= win.sim_lo) & (stamps <= win.sim_hi)
+    in_w = (stamps >= window.sim_lo) & (stamps <= window.sim_hi)
     if not np.any(in_w):
         raise MetricUnavailableError(f"no {lidar_topic} rows inside the scoring window")
-    hop = _one_hop_wall_ms_series(stamps[in_w], cols["arrival_system_ns"][in_w], win.fit)
+    hop = _one_hop_wall_ms_series(stamps[in_w], cols["arrival_system_ns"][in_w], window.fit)
     return float(np.median(hop))
 
 
 def extract_lidar_to_ndt_sim_ms(
-    run_dir: Path, manifest: RunManifest, lidar_topic: str, ndt_topic: str
+    run_dir: Path, manifest: RunManifest, window: _RunWindow, lidar_topic: str, ndt_topic: str
 ) -> float:
     """lidar_to_ndt_sim_ms (README: pipeline, margin 5.0): matched pairs
     via exact `header_stamp_ns` equality (the scan matcher re-stamps its
@@ -395,14 +414,15 @@ def extract_lidar_to_ndt_sim_ms(
     -- NOT a `clock_ns` diff, which quantizes to the world-tick period
     (50 ms) against this metric's 5.0 ms margin."""
     run_dir = Path(run_dir)
-    win = _resolve_window(run_dir, manifest)
     topics = read_observer_csv(run_dir / "observer.csv")
     for topic in (lidar_topic, ndt_topic):
         if topic not in topics:
             raise MetricUnavailableError(f"{topic} not in {run_dir / 'observer.csv'}")
     lidar, ndt = topics[lidar_topic], topics[ndt_topic]
-    l_mask = (lidar["header_stamp_ns"] >= win.sim_lo) & (lidar["header_stamp_ns"] <= win.sim_hi)
-    n_mask = (ndt["header_stamp_ns"] >= win.sim_lo) & (ndt["header_stamp_ns"] <= win.sim_hi)
+    l_mask = (lidar["header_stamp_ns"] >= window.sim_lo) & (
+        lidar["header_stamp_ns"] <= window.sim_hi
+    )
+    n_mask = (ndt["header_stamp_ns"] >= window.sim_lo) & (ndt["header_stamp_ns"] <= window.sim_hi)
     l_stamp, l_arrival = lidar["header_stamp_ns"][l_mask], lidar["arrival_system_ns"][l_mask]
     n_stamp, n_arrival = ndt["header_stamp_ns"][n_mask], ndt["arrival_system_ns"][n_mask]
     i, j = match_stamps(l_stamp, n_stamp)
@@ -412,13 +432,13 @@ def extract_lidar_to_ndt_sim_ms(
             "(stamp propagation broken for this run)"
         )
     gap_ms = (
-        (n_arrival[j].astype(np.float64) - l_arrival[i].astype(np.float64)) / win.fit.slope / 1e6
+        (n_arrival[j].astype(np.float64) - l_arrival[i].astype(np.float64)) / window.fit.slope / 1e6
     )
     return float(np.median(gap_ms))
 
 
 def extract_control_staleness_ms(
-    run_dir: Path, manifest: RunManifest, published_time_topic: str | None
+    run_dir: Path, manifest: RunManifest, window: _RunWindow, published_time_topic: str | None
 ) -> float:
     """control_staleness_ms (README: M1b staleness, margin 10.0). Source
     is keyed by `control_published_time_topic` -- the PublishedTime
@@ -427,17 +447,20 @@ def extract_control_staleness_ms(
     the PublishedTime companion is a different topic).
 
     Implements BOTH registered clock-domain branches with the mechanical
-    discriminator (a wall stamp is a Unix epoch, > 1e18 ns; a sim stamp
-    is a run-length offset): which domain `published_ns` is in is an
-    empirical property of the pinned Autoware image, not a choice made
-    here.
+    discriminator: a wall stamp is a Unix epoch (> 1e18 ns, branch b); a
+    sim stamp is a run-length offset (< 1e13 ns, branch a). These are
+    two DISJOINT registered bands, not a single cut -- a median that
+    falls in neither (e.g. a monotonic/uptime-based `published_stamp`,
+    plausible for a publisher to emit) is UNCLASSIFIABLE and must be
+    reported as such, not defaulted into branch (a): silently reading it
+    as sim-domain would yield a nonsense ~1e8 ms "staleness" instead of
+    surfacing that this run's clock domain was never registered.
     """
     if published_time_topic is None:
         raise MetricUnavailableError(
             "control_published_time_topic is not registered for this cell (Tasks 13/20)"
         )
     run_dir = Path(run_dir)
-    win = _resolve_window(run_dir, manifest)
     published = read_published_time_csv(run_dir / "published_time.csv")
     if published_time_topic not in published:
         raise MetricUnavailableError(
@@ -445,20 +468,27 @@ def extract_control_staleness_ms(
         )
     cols = published[published_time_topic]
     src = cols["source_header_ns"]
-    mask = (src >= win.sim_lo) & (src <= win.sim_hi)
+    mask = (src >= window.sim_lo) & (src <= window.sim_hi)
     if not np.any(mask):
         raise MetricUnavailableError(f"no {published_time_topic} rows inside the scoring window")
     src_w, pub_w = src[mask], cols["published_ns"][mask]
-    if float(np.median(pub_w)) > WALL_STAMP_FLOOR_NS:
+    median_pub = float(np.median(pub_w))
+    if median_pub > WALL_STAMP_FLOOR_NS:
         # branch (b): wall domain
-        stale = _one_hop_wall_ms_series(src_w, pub_w, win.fit)
-    else:
+        stale = _one_hop_wall_ms_series(src_w, pub_w, window.fit)
+    elif median_pub < SIM_STAMP_CEIL_NS:
         stale = staleness_ms(src_w, pub_w)  # branch (a): sim domain
+    else:
+        raise MetricUnavailableError(
+            f"{published_time_topic} published_ns median {median_pub:.3e} ns falls in neither "
+            f"registered clock-domain band (sim < {SIM_STAMP_CEIL_NS:.0e}, "
+            f"wall > {WALL_STAMP_FLOOR_NS:.0e}); clock domain not determinable"
+        )
     return float(np.median(stale))
 
 
 def extract_carla_process_cpu_pct(
-    run_dir: Path, manifest: RunManifest, process_label: str | None
+    run_dir: Path, manifest: RunManifest, window: _RunWindow, process_label: str | None
 ) -> float:
     """carla_process_cpu_pct (README: M3, margin 10.0 absolute points):
     median `cpu_pct` from `resources.csv` for the process labelled
@@ -467,7 +497,6 @@ def extract_carla_process_cpu_pct(
     if process_label is None:
         raise MetricUnavailableError("cpu_process_label is not registered for this cell")
     run_dir = Path(run_dir)
-    win = _resolve_window(run_dir, manifest)
     processes = read_resources_csv(run_dir / "resources.csv")
     if process_label not in processes:
         raise MetricUnavailableError(
@@ -476,14 +505,18 @@ def extract_carla_process_cpu_pct(
         )
     cols = processes[process_label]
     stamps = cols["sample_system_ns"]
-    mask = (stamps >= win.wall_lo) & (stamps <= win.wall_hi)
+    mask = (stamps >= window.wall_lo) & (stamps <= window.wall_hi)
     if not np.any(mask):
         raise MetricUnavailableError(f"no {process_label!r} samples inside the scoring window")
     return float(np.median(cols["cpu_pct"][mask]))
 
 
 def extract_achieved_rate_ratio(
-    run_dir: Path, manifest: RunManifest, lidar_topic: str, expected_hz: float | None
+    run_dir: Path,
+    manifest: RunManifest,
+    window: _RunWindow,
+    lidar_topic: str,
+    expected_hz: float | None,
 ) -> float:
     """achieved_rate_ratio (README: M2, margin 0.02):
     `cadence.inter_arrival_stats(header_stamp_ns).hz / lidar_expected_hz`
@@ -495,12 +528,11 @@ def extract_achieved_rate_ratio(
     if expected_hz <= 0:
         raise ValueError(f"lidar_expected_hz must be > 0, got {expected_hz}")
     run_dir = Path(run_dir)
-    win = _resolve_window(run_dir, manifest)
     topics = read_observer_csv(run_dir / "observer.csv")
     if lidar_topic not in topics:
         raise MetricUnavailableError(f"{lidar_topic} not in {run_dir / 'observer.csv'}")
     stamps = topics[lidar_topic]["header_stamp_ns"]
-    in_w = stamps[(stamps >= win.sim_lo) & (stamps <= win.sim_hi)]
+    in_w = stamps[(stamps >= window.sim_lo) & (stamps <= window.sim_hi)]
     if in_w.size < 2:
         raise MetricUnavailableError(
             f"fewer than 2 {lidar_topic} arrivals inside the scoring window"
@@ -508,12 +540,15 @@ def extract_achieved_rate_ratio(
     return float(inter_arrival_stats(in_w).hz / expected_hz)
 
 
-def _extract_fit_residual_ns(run_dir: Path, manifest: RunManifest) -> float:
+def _extract_fit_residual_ns(run_dir: Path, manifest: RunManifest, window: _RunWindow) -> float:
     """The run's own sim<->wall clock-fit residual (ns), reported
     alongside one_hop_wall_ms per its registered definition: the duel
     term carries this fit's error on top of the transport it measures.
     Not itself windowed -- the fit is over the whole run's /clock
-    series, independent of any metric's scoring window."""
+    series, independent of any metric's scoring window; `window` is
+    accepted (and ignored) only so this extractor matches
+    `cell_run_values`'s uniform `(run_dir, manifest, window)` contract."""
+    del window
     clock_ns, clock_wall = read_clock_csv(Path(run_dir) / "clock.csv")
     fit = fit_sim_wall_affine(clock_ns, clock_wall)
     return float(fit.max_abs_residual_ns)
@@ -526,14 +561,18 @@ def _extract_fit_residual_ns(run_dir: Path, manifest: RunManifest) -> float:
 # one identical error per run).
 # ---------------------------------------------------------------------------
 
-_Binder = Callable[[dict], "tuple[Callable[[Path, RunManifest], float] | None, str | None]"]
+_Binder = Callable[
+    [dict], "tuple[Callable[[Path, RunManifest, _RunWindow], float] | None, str | None]"
+]
 
 
 def _bind_one_hop_wall_ms(metrics: dict):
     topic = metrics["lidar_topic"]
     if topic is None:
         return None, "lidar_topic not registered for this cell"
-    return (lambda run_dir, manifest: extract_one_hop_wall_ms(run_dir, manifest, topic)), None
+    return (
+        lambda run_dir, manifest, window: extract_one_hop_wall_ms(run_dir, manifest, window, topic)
+    ), None
 
 
 def _bind_lidar_to_ndt_sim_ms(metrics: dict):
@@ -542,8 +581,8 @@ def _bind_lidar_to_ndt_sim_ms(metrics: dict):
     if missing:
         return None, f"{', '.join(missing)} not registered for this cell"
     return (
-        lambda run_dir, manifest: extract_lidar_to_ndt_sim_ms(
-            run_dir, manifest, lidar_topic, ndt_topic
+        lambda run_dir, manifest, window: extract_lidar_to_ndt_sim_ms(
+            run_dir, manifest, window, lidar_topic, ndt_topic
         )
     ), None
 
@@ -552,14 +591,22 @@ def _bind_control_staleness_ms(metrics: dict):
     topic = metrics["control_published_time_topic"]
     if topic is None:
         return None, "control_published_time_topic not registered for this cell (Tasks 13/20)"
-    return (lambda run_dir, manifest: extract_control_staleness_ms(run_dir, manifest, topic)), None
+    return (
+        lambda run_dir, manifest, window: extract_control_staleness_ms(
+            run_dir, manifest, window, topic
+        )
+    ), None
 
 
 def _bind_carla_process_cpu_pct(metrics: dict):
     label = metrics["cpu_process_label"]
     if label is None:
         return None, "cpu_process_label not registered for this cell"
-    return (lambda run_dir, manifest: extract_carla_process_cpu_pct(run_dir, manifest, label)), None
+    return (
+        lambda run_dir, manifest, window: extract_carla_process_cpu_pct(
+            run_dir, manifest, window, label
+        )
+    ), None
 
 
 def _bind_achieved_rate_ratio(metrics: dict):
@@ -572,8 +619,8 @@ def _bind_achieved_rate_ratio(metrics: dict):
     if missing:
         return None, f"{', '.join(missing)} not registered for this cell"
     return (
-        lambda run_dir, manifest: extract_achieved_rate_ratio(
-            run_dir, manifest, lidar_topic, expected_hz
+        lambda run_dir, manifest, window: extract_achieved_rate_ratio(
+            run_dir, manifest, window, lidar_topic, expected_hz
         )
     ), None
 
@@ -594,12 +641,24 @@ METRIC_BINDERS: dict[str, _Binder] = {
 def _attach_fit_residual_note(
     row: VerdictRow, cell_a_dir: Path, cell_b_dir: Path, *, arm: str
 ) -> VerdictRow:
-    fit_a, _, _ = cell_run_values(cell_a_dir, _extract_fit_residual_ns, arm=arm)
-    fit_b, _, _ = cell_run_values(cell_b_dir, _extract_fit_residual_ns, arm=arm)
-    if not fit_a or not fit_b:
+    """Attach one_hop_wall_ms's registered fit_residual_ns context. Any
+    per-run failure from either `cell_run_values` call (e.g. a run whose
+    clock fit itself could not be computed) is folded into the row's
+    notes rather than discarded -- a note that is simply MISSING gives
+    no reason a reader could act on, whereas a run-level error mirrors
+    exactly how the metric's own extractor failures are surfaced above."""
+    fit_a, _, errors_a = cell_run_values(cell_a_dir, _extract_fit_residual_ns, arm=arm)
+    fit_b, _, errors_b = cell_run_values(cell_b_dir, _extract_fit_residual_ns, arm=arm)
+    notes = row.notes
+    fit_errors = errors_a + errors_b
+    if fit_errors:
+        notes = _append_note(notes, "fit_residual_ns: " + "; ".join(fit_errors))
+    if fit_a and fit_b:
+        note = f"fit_residual_ns median: a={np.median(fit_a):.0f} b={np.median(fit_b):.0f}"
+        notes = _append_note(notes, note)
+    if notes == row.notes:
         return row
-    note = f"fit_residual_ns median: a={np.median(fit_a):.0f} b={np.median(fit_b):.0f}"
-    return dataclasses.replace(row, notes=_append_note(row.notes, note))
+    return dataclasses.replace(row, notes=notes)
 
 
 def _registered_arms(cells_doc: dict, cell_a_id: str, cell_b_id: str) -> list[str]:
@@ -749,19 +808,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
+EXIT_UNKNOWN_ID = 2
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     margins = load_margins(args.margins)
     cells_doc = load_cells_doc(args.cells_yaml)
-    table = build_verdict_table(
-        Path(args.results) / args.cell_a,
-        Path(args.results) / args.cell_b,
-        args.cell_a,
-        args.cell_b,
-        margins,
-        cells_doc,
-        min_n=args.min_n,
-    )
+    try:
+        table = build_verdict_table(
+            Path(args.results) / args.cell_a,
+            Path(args.results) / args.cell_b,
+            args.cell_a,
+            args.cell_b,
+            margins,
+            cells_doc,
+            min_n=args.min_n,
+        )
+    except UnknownIdError as exc:
+        # Match cell_info.main's own handling: an unregistered cell id
+        # (or a cell with no `metrics:` block, or one sharing no arm
+        # with its counterpart) is an operator typo, not a crash.
+        print(f"CELL FAIL: {exc}", file=sys.stderr)
+        return EXIT_UNKNOWN_ID
     print(table)
     return 0
 
