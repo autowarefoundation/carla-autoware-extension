@@ -1,0 +1,38 @@
+{
+  "cell": "E",
+  "approach": "python-bridge",
+  "map_name": "Town10HD_Opt",
+  "run_index": 8,
+  "arm": "closed-loop",
+  "harness_git_sha": "69344a1ae06a95e30762a8aa8396ed03f1ab0536",
+  "patches_git_sha": "69344a1ae06a95e30762a8aa8396ed03f1ab0536",
+  "transport": {
+    "rmw": "rmw_cyclonedds_cpp",
+    "shm_enabled": false,
+    "dds_profile_sha256": ""
+  },
+  "carla_version": "0.9.15",
+  "autoware_image": "bridge-bench-patched:latest",
+  "started_at_ns": 1785363728404903023,
+  "excluded": true,
+  "exclusion_reason": "gate:arm-failed",
+  "placement": {
+    "carla_rpc_port": "2100",
+    "container_image": "bridge-bench-patched:latest",
+    "cpu_governor": "powersave",
+    "free_gb": "416",
+    "loadavg": "2.21",
+    "nproc": "24",
+    "observer_env": {
+      "image": "bench-observer:universe-devel",
+      "rmw": "rmw_cyclonedds_cpp",
+      "shm": "off",
+      "topics_file": "E.yaml"
+    },
+    "results_fs": "/home",
+    "run_mode": "shipping-headless",
+    "shm_root_cleared": "0",
+    "shm_root_remaining": "0",
+    "shm_user_cleared": "0"
+  }
+}

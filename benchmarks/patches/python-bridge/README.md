@@ -386,3 +386,117 @@ criterion 4 rests on it:
   `initialpose_callback`. Ticking the world from the harness would unfreeze it and is exactly the
   kind of workaround this campaign forbids: the bridge is the measured ticking authority, so a
   harness tick would make the recorded pacing an artifact of the instrument.
+
+The stall did NOT occur on either gate run: `run-007`'s clock.csv holds 1683 rows at 19.93 Hz with a
+largest gap of 0.060 s, `run-008`'s 1383 rows at 19.92 Hz with 0.077 s. It is intermittent, and the
+launcher's `wait_for_tick` check now names it when it happens.
+
+### Acceptance (c): FAIL. Cell E degrades to static-arm only
+
+The gate is `results/E/run-007` (`bash benchmarks/run.sh E --arm closed-loop --rpc-port 2100`, the
+first closed-loop run made after (a) and (b) had both passed through the real observer). It was
+excluded `gate:arm-failed`. The findings' own method — idle host, `/dev/shm` `fastrtps_*` cleared to
+zero, fresh processes — was then applied ONCE, as `results/E/run-008`, which failed identically.
+
+**E therefore degrades to static-arm only, per the spec's pre-committed risk clause: "the E2E-latency
+half of C2 is dropped."** No third attempt was made.
+
+Both runs are otherwise healthy, which is what makes the failure localizable. On `run-008`:
+
+```text
+  19.87 Hz  n=1378  /sensing/lidar/top/pointcloud_raw_ex
+  12.87 Hz  n= 892  /localization/pose_estimator/pose_with_covariance
+  19.88 Hz  n=1380  /localization/kinematic_state
+   8.52 Hz  n= 588  /control/command/control_cmd
+  19.92 Hz  n=1383  /clock, largest gap 0.077 s
+```
+
+The route planned (no "Planning failed", no "route is empty"), a trajectory was produced, and ego
+never moved: ground-truth net displacement **0.000 m**, goal closest approach 250.859 m, which is the
+spawn-to-goal distance. It never moved because it was never engaged.
+
+`arm_and_goal.py`'s `change_to_autonomous` was refused for 60 s with "The target mode is not
+available. Please check the diagnostics." The diag graph, from the dump immediately after the last
+attempt (`bridge-stage2.log`, saved by teardown), names exactly three things — perception, control,
+vehicle, system and map are all OK by then:
+
+```text
+- /autoware/modes/autonomous ERROR
+    - /autoware/localization ERROR
+        - /autoware/localization/state STALE
+        - /autoware/localization/topic_rate_check/transform ERROR
+    - /autoware/planning ERROR
+        - /autoware/planning/topic_rate_check/trajectory ERROR
+    - /adapi/mrm_request/delegate STALE
+```
+
+So the refusal is a **`/tf` map→base_link RATE check**, with the trajectory rate failing downstream of
+it (`system.topic_state_monitor_transform_map_to_base_link`: "/tf topic rate has dropped to the error
+level"; `autoware_operation_mode_transition_manager`: "Subscribed trajectory is timed out"). Two
+independent pieces of evidence point at `ekf_localizer` being fed inputs it cannot reconcile:
+
+- **Queue overflow.** "[EKF] Twist queue size is exceeding max_queue_size (2)" 12 times and "[EKF]
+  Pose queue size is exceeding max_queue_size (5)" 3 times. The bridge publishes ego status, GNSS
+  pose and IMU all at 20 Hz.
+- **Outlier rejection.** "The Mahalanobis distance 92.7543 is over the limit 49.5000" and again at
+  51.6970. The filter is being handed two pose sources that disagree far beyond its gate.
+
+**The candidate cause is a SECOND source-level bridge defect, and it is NOT patched here.**
+`carla_ros.py`'s `pose()` publishes `ego_actor.get_transform()` straight out as
+`/sensing/gnss/pose_with_covariance` in the `map` frame, i.e. the CARLA actor origin — which sits at
+the vehicle centre, not at `base_link` (the rear axle). Autoware's GNSS pose is contractually
+`base_link`'s. The offset is measured independently by the D3 companion measurement below: the
+localization output sits 1.4045 m behind ground truth along the heading, and `sample_vehicle`'s
+geometry puts the bounding-box centre 1.345 m ahead of the rear axle (`wheel_base` 2.79,
+`rear_overhang` 1.1, `front_overhang` 1.0). A GNSS pose ~1.34-1.40 m from NDT's pose is precisely
+what produces a Mahalanobis blow-up and an unstable fused TF.
+
+Fixing that would be a second patch to bridge source, which
+`benchmarks/README.md`'s patch policy does not cover: `0001` is a named, pre-registered exception and
+the policy explicitly does not widen. **It is therefore reported as a patch-policy amendment request,
+not folded in.**
+
+One qualifier belongs on the FAIL, because it bounds what the result licenses. The engage path used
+here is the AD API's `change_to_autonomous`, which requires the whole diag graph to be available.
+`run.sh` already records that this **diverges** from the only engage path this repository has ever
+driven to a live gate — `scripts/e2e/gate_g2_closed_loop.sh` publishes `/autoware/engage` and
+`arm_closed_loop.sh` turns MRM off — and that the divergence is unresolved. So the measured claim is
+"cell E cannot be engaged through the AD-API mode-availability check", and whether cells A, B and C
+clear that same check is UNTESTED. If they do not, the divergence is a campaign-level blocker rather
+than a property of the bridge.
+
+### E static localization bias (the D3 companion measurement)
+
+Measured on `results/E/run-006` (static arm, ego stationary, 1179 paired samples after a 5 s warm-up
+discard, joined with the analysis package's own nearest-stamp join at its own 25 ms tolerance):
+
+| quantity                            | value                      |
+| ----------------------------------- | -------------------------- |
+| signed mean dx (localization − GT)  | **−1.4045 m** (sd 0.0049)  |
+| signed mean dy (localization − GT)  | **+0.0731 m** (sd 0.0004)  |
+| \|error\| p50 / p95 / max           | 1.4061 / 1.4149 / 1.4198 m |
+| ground-truth motion over the window | 0.000 m                    |
+
+**Ruling: the y bias is ≈ 0, not ≈ +0.48 m, so cell E keeps the STOCK pcd bundle.** The
+bundle-internal offset that A and B carry does not reproduce on 0.9.15: +0.0731 m is 15 % of the
++0.48 m branch point, and it is not itself a frame artifact (at the spawn heading of 0.32°, a 1.4 m
+longitudinal offset contributes only 0.008 m to y).
+
+Two caveats belong beside that ruling, and both are open items rather than results:
+
+1. **The dx term is a frame convention, not a map error, and it is not registered as a confound.**
+   1.4045 m along the heading matches `sample_vehicle`'s bounding-box-centre-to-rear-axle distance
+   (1.345 m) and its `wheel_base`/2 (1.395 m). `collect_gt.py` records `ego_actor.get_transform()`,
+   the CARLA actor origin at the vehicle centre; Autoware reports `base_link` at the rear axle. That
+   offset is in the M5 `pose_error` of **every** cell that uses `collect_gt`, not just E, and nothing
+   in `benchmarks/README.md` registers it. Task 16 owes either the correction or the confound row.
+2. **This number is `/localization/kinematic_state`, not the NDT pose, because the NDT pose has no
+   recorded x/y.** `cells.yaml` binds `ndt_topic` to
+   `/localization/pose_estimator/pose_with_covariance`, and `bench_observer` only writes x/y for
+   `odometry`-kind entries, whose subscription type is `nav_msgs/msg/Odometry` — a
+   `PoseWithCovarianceStamped` cannot be recorded that way. So `evaluate_quality`'s `ndt_xy` argument
+   is not satisfiable from the CSV contract as it stands, for any cell. Since `kinematic_state` is
+   EKF-fused and one of its inputs (the bridge's GNSS pose) is derived from the same
+   `ego_actor.get_transform()` that ground truth comes from, it also cannot cleanly isolate a
+   pcd-internal offset. The ruling above is therefore sound on the y axis and unaffected by this, but
+   a pcd-isolating measurement needs the NDT pose recorded, which is a pre-P3 gap for Task 16.
