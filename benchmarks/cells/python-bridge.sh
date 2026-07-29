@@ -365,38 +365,46 @@ diagnose_localization_input() {
 # from "the stack is still coming up" unless the sim clock is checked directly.
 # Measured 2026-07-29 (Task 10): the tick froze ~70 s of sim time in, moments
 # after localization initialized, and the launcher then sat out its whole
-# remaining budget before reporting the wrong thing. Two consecutive samples
-# with no frame advance (>= 15 s apart, i.e. >= 300 frames at the 20 Hz tick)
-# is unambiguous, and two strikes rather than one keeps a transient RPC failure
-# from condemning a healthy run.
-carla_frame() {
+# remaining budget before reporting the wrong thing.
+#
+# `wait_for_tick`, NOT a frame-number comparison. A first version of this check
+# connected a fresh client and compared `get_snapshot().frame` across samples,
+# and it FALSELY condemned results/E/run-005 fifteen seconds into a healthy
+# bring-up: `get_snapshot()` returns the episode state this client has received
+# so far, so a client that has just connected reports frame 0 whether or not the
+# world is ticking, and two such reads are equal for that reason alone. (The
+# same artifact is why a frozen world reports "actors 0" -- one external tick on
+# a frozen probe world returned frame 1396 and 27 actors, the ego among them.)
+# `wait_for_tick` instead BLOCKS for the next world state and raises on timeout,
+# so it tests the property in question directly and needs no baseline sample.
+# Two consecutive 5 s timeouts, rather than one, keep a scheduling hiccup on a
+# loaded host from condemning a healthy run while still landing well inside the
+# 420 s budget.
+carla_ticking() {
   cx "python3 -c \"
 import carla
 c = carla.Client('localhost', $BENCH_RPC_PORT); c.set_timeout(10.0)
-print(c.get_world().get_snapshot().frame)\"" 2>/dev/null | tr -cd '0-9'
+print(c.get_world().wait_for_tick(5.0).frame)\"" >/dev/null 2>&1
 }
 
 echo "waiting up to ${STACK_TIMEOUT_S}s for the Autoware stack to localize"
 deadline=$((SECONDS + STACK_TIMEOUT_S))
-frame_prev="$(carla_frame)"
 freeze_strikes=0
 until cx "$AW_ENV
   timeout 10 ros2 topic echo --once /localization/kinematic_state >/dev/null 2>&1" \
   >/dev/null 2>&1; do
-  frame_now="$(carla_frame)"
-  if [ -n "$frame_now" ] && [ "$frame_now" = "$frame_prev" ]; then
-    freeze_strikes=$((freeze_strikes + 1))
-  else
+  if carla_ticking; then
     freeze_strikes=0
+  else
+    freeze_strikes=$((freeze_strikes + 1))
   fi
-  frame_prev="$frame_now"
   [ "$freeze_strikes" -lt 2 ] ||
-    fail "the bridge stopped ticking CARLA during bring-up: the world stayed on
-  frame $frame_now across two samples >= 15 s apart, so the sim clock is frozen
-  and every node on sim time is stopped with it. This is the python-bridge
-  sync-tick stall (P1 Verdict 1, exclusions.md criterion 4), deliberately NOT
-  patched by this campaign; the run is filed crash:cell-launch because it never
-  reached an armed window. Localization input nodes present:
+    fail "the bridge stopped ticking CARLA during bring-up: two consecutive
+  world.wait_for_tick(5.0) calls timed out, so the sim clock is frozen and every
+  node on sim time is stopped with it. This is the python-bridge sync-tick stall
+  (P1 Verdict 1, exclusions.md criterion 4), deliberately NOT patched by this
+  campaign; the run is filed crash:cell-launch because it never reached an armed
+  window. Localization input nodes present:
 $(diagnose_localization_input)"
   [ "$SECONDS" -lt "$deadline" ] ||
     fail "/localization/kinematic_state never published within ${STACK_TIMEOUT_S}s
