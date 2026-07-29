@@ -75,12 +75,16 @@ LIDAR_TOPIC = "/sensing/lidar/top/pointcloud_raw_ex"
 NDT_TOPIC = "/localization/pose_estimator/pose_with_covariance"
 CONTROL_TOPIC = "/control/command/control_cmd"
 
-# resources.csv's `process` column is an operator-chosen label from the
-# run's process-map YAML (benchmarks/sampler/sample_resources.py
-# --processes), which is not yet committed anywhere in this repo. "carla"
-# is this tool's assumed default label for the CARLA server process --
-# override with --carla-process-label if the real process map differs.
-DEFAULT_CARLA_PROCESS_LABEL = "carla"
+# resources.csv's `process` column is the `label` field of the run's
+# process-map YAML (benchmarks/config/processes/<cell>.yaml, read by
+# benchmarks/sampler/sample_resources.py's --processes and written
+# verbatim into resources.csv). Every one of the eleven committed
+# per-cell maps that has a CARLA entry (all but CAL-rmw, which runs no
+# simulator) labels it "carla-server" uniformly -- see
+# benchmarks/config/processes/A.yaml and B.yaml for the primary duel's
+# two. Override with --carla-process-label only if a future process map
+# diverges from that convention.
+DEFAULT_CARLA_PROCESS_LABEL = "carla-server"
 
 
 class MetricUnavailableError(RuntimeError):
@@ -143,18 +147,25 @@ def verdict_row(
 
     if a.size < 3 or b.size < 3:
         notes.append(
-            f"insufficient data for a bootstrap CI (need >= 3 per side; "
-            f"got a={a.size}, b={b.size})"
+            f"insufficient data for a bootstrap CI (need >= 3 per side; got a={a.size}, b={b.size})"
         )
         return VerdictRow(
-            metric, int(a.size), int(b.size), None, None, margin,
-            "insufficient-data", "; ".join(notes),
+            metric,
+            int(a.size),
+            int(b.size),
+            None,
+            None,
+            margin,
+            "insufficient-data",
+            "; ".join(notes),
         )
 
     delta = float(np.median(a) - np.median(b))
     ci = bootstrap_ci_median_diff(a, b, iters=iters, seed=seed, alpha=alpha)
     verdict = equivalence_decision(delta, ci, margin)
-    return VerdictRow(metric, int(a.size), int(b.size), delta, ci, margin, verdict, "; ".join(notes))
+    return VerdictRow(
+        metric, int(a.size), int(b.size), delta, ci, margin, verdict, "; ".join(notes)
+    )
 
 
 def render_table(rows: list[VerdictRow]) -> str:
@@ -294,9 +305,7 @@ def extract_control_staleness_ms(run_dir: Path) -> float:
     run_dir = Path(run_dir)
     published = read_published_time_csv(run_dir / "published_time.csv")
     if CONTROL_TOPIC not in published:
-        raise MetricUnavailableError(
-            f"{CONTROL_TOPIC} not in {run_dir / 'published_time.csv'}"
-        )
+        raise MetricUnavailableError(f"{CONTROL_TOPIC} not in {run_dir / 'published_time.csv'}")
     cols = published[CONTROL_TOPIC]
     stale = staleness_ms(cols["source_header_ns"], cols["published_ns"])
     return float(np.median(stale))
@@ -390,22 +399,23 @@ def build_verdict_table(
         values_a, excluded_a, errors_a = cell_run_values(Path(cell_a_dir), extractor)
         values_b, excluded_b, errors_b = cell_run_values(Path(cell_b_dir), extractor)
         row = verdict_row(
-            metric, values_a, values_b, float(spec["margin"]),
-            min_n=min_n, excluded_a=excluded_a, excluded_b=excluded_b,
+            metric,
+            values_a,
+            values_b,
+            float(spec["margin"]),
+            min_n=min_n,
+            excluded_a=excluded_a,
+            excluded_b=excluded_b,
         )
         run_errors = errors_a + errors_b
         if run_errors:
             extra = "; ".join(run_errors)
-            row = dataclasses.replace(
-                row, notes=(row.notes + "; " if row.notes else "") + extra
-            )
+            row = dataclasses.replace(row, notes=(row.notes + "; " if row.notes else "") + extra)
         rows.append(row)
     out = [render_table(rows)]
     if unavailable:
         out.append("")
-        out.append(
-            "Metrics with no wired extractor in this run: " + ", ".join(sorted(unavailable))
-        )
+        out.append("Metrics with no wired extractor in this run: " + ", ".join(sorted(unavailable)))
     return "\n".join(out)
 
 
@@ -416,27 +426,40 @@ def build_verdict_table(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Primary A/B duel equivalence verdict.")
-    p.add_argument("cell_a", nargs="?", default="A", help="cell dir name for approach A (default: A)")
-    p.add_argument("cell_b", nargs="?", default="B", help="cell dir name for approach B (default: B)")
     p.add_argument(
-        "--results", default="benchmarks/results", type=Path,
+        "cell_a", nargs="?", default="A", help="cell dir name for approach A (default: A)"
+    )
+    p.add_argument(
+        "cell_b", nargs="?", default="B", help="cell dir name for approach B (default: B)"
+    )
+    p.add_argument(
+        "--results",
+        default="benchmarks/results",
+        type=Path,
         help="results root (default: benchmarks/results)",
     )
     p.add_argument(
-        "--margins", default=MARGINS_YAML, type=Path,
+        "--margins",
+        default=MARGINS_YAML,
+        type=Path,
         help="margins.yaml path (default: benchmarks/config/margins.yaml)",
     )
     p.add_argument(
-        "--min-n", type=int, default=MIN_RUNS,
+        "--min-n",
+        type=int,
+        default=MIN_RUNS,
         help=f"pre-registered minimum runs per side (default: {MIN_RUNS})",
     )
     p.add_argument(
-        "--expected-lidar-hz", type=float, default=None,
+        "--expected-lidar-hz",
+        type=float,
+        default=None,
         help="expected LiDAR publish rate for achieved_rate_ratio; omit to "
         "leave that metric unwired (not pre-registered for the primary duel yet)",
     )
     p.add_argument(
-        "--carla-process-label", default=DEFAULT_CARLA_PROCESS_LABEL,
+        "--carla-process-label",
+        default=DEFAULT_CARLA_PROCESS_LABEL,
         help=f"resources.csv 'process' label for the CARLA process "
         f"(default: {DEFAULT_CARLA_PROCESS_LABEL!r})",
     )

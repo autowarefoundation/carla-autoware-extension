@@ -7,8 +7,11 @@ filesystem), and the aggregation layer (`cell_run_values`,
 DIRECTORIES built the same way tests/benchmarks/test_report.py does.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
+import yaml
 from benchmarks.analysis.manifest import RunManifest
 from benchmarks.scripts.duel_verdict import (
     CONTROL_TOPIC,
@@ -165,8 +168,9 @@ def test_render_table_renders_all_four_verdicts_together():
 # ---------------------------------------------------------------------------
 
 
-def _write_manifest(run_dir, *, cell="A", approach="extension", excluded=False,
-                     exclusion_reason="", run_index=1):
+def _write_manifest(
+    run_dir, *, cell="A", approach="extension", excluded=False, exclusion_reason="", run_index=1
+):
     RunManifest(
         cell=cell,
         approach=approach,
@@ -232,8 +236,12 @@ def _make_run(
     d = tmp_path / cell / name
     d.mkdir(parents=True)
     _write_manifest(
-        d, cell=cell, approach=approach, excluded=excluded,
-        exclusion_reason=exclusion_reason, run_index=run_index,
+        d,
+        cell=cell,
+        approach=approach,
+        excluded=excluded,
+        exclusion_reason=exclusion_reason,
+        run_index=run_index,
     )
 
     period_ns = int(1e9 / lidar_hz)
@@ -316,6 +324,27 @@ def test_extract_carla_process_cpu_pct_raises_for_unknown_label(tmp_path):
         extract_carla_process_cpu_pct(cell / "run-001", process_label="autoware")
 
 
+def test_default_carla_process_label_matches_committed_process_maps():
+    """Cross-check DEFAULT_CARLA_PROCESS_LABEL against the ACTUAL
+    committed benchmarks/config/processes/{A,B}.yaml, not a
+    self-contained synthetic fixture -- a fixture built with whatever
+    label this module already assumes can never catch that assumption
+    drifting from the real config (Task 22 Step 1 review, Finding 1: the
+    default silently stopped matching real resources.csv data because
+    the committed process maps label the CARLA process "carla-server",
+    not "carla"). Both of the primary duel's process maps must agree
+    with the default so achieved_rate_ratio's sibling metric,
+    carla_process_cpu_pct, is reachable by default on real P3 data."""
+    processes_dir = Path(__file__).resolve().parents[2] / "benchmarks" / "config" / "processes"
+    for cell in ("A", "B"):
+        doc = yaml.safe_load((processes_dir / f"{cell}.yaml").read_text())
+        carla_entries = [
+            e for e in doc["processes"] if "CarlaUnreal.uproject" in e.get("pattern", "")
+        ]
+        assert len(carla_entries) == 1, f"{cell}.yaml: expected exactly one CARLA-server entry"
+        assert carla_entries[0]["label"] == DEFAULT_CARLA_PROCESS_LABEL
+
+
 def test_extract_achieved_rate_ratio(tmp_path):
     cell = _make_run(tmp_path, lidar_hz=10.0)
     ratio = extract_achieved_rate_ratio(cell / "run-001", expected_hz=10.0)
@@ -335,8 +364,11 @@ def test_cell_run_values_skips_excluded_and_counts_them(tmp_path):
     for i in range(1, 4):
         cell = _make_run(tmp_path, name=f"run-{i:03d}", one_hop_extra_ms=7.0)
     _make_run(
-        tmp_path, name="run-004", one_hop_extra_ms=999.0,
-        excluded=True, exclusion_reason="gate:aborted-before-window",
+        tmp_path,
+        name="run-004",
+        one_hop_extra_ms=999.0,
+        excluded=True,
+        exclusion_reason="gate:aborted-before-window",
     )
     values, n_excluded, errors = cell_run_values(cell, extract_one_hop_wall_ms)
     assert n_excluded == 1
@@ -367,8 +399,12 @@ def test_build_extractors_includes_achieved_rate_ratio_only_when_expected_hz_giv
     with_hz = build_extractors(expected_lidar_hz=10.0)
     assert "achieved_rate_ratio" not in without
     assert "achieved_rate_ratio" in with_hz
-    for m in ("one_hop_wall_ms", "lidar_to_ndt_sim_ms", "control_staleness_ms",
-              "carla_process_cpu_pct"):
+    for m in (
+        "one_hop_wall_ms",
+        "lidar_to_ndt_sim_ms",
+        "control_staleness_ms",
+        "carla_process_cpu_pct",
+    ):
         assert m in without
 
 
@@ -379,17 +415,30 @@ def test_build_verdict_table_end_to_end(tmp_path):
     named rather than silently dropped."""
     for i in range(1, 11):
         _make_run(
-            tmp_path, cell="A", name=f"run-{i:03d}", approach="extension",
-            one_hop_extra_ms=7.0 + 0.01 * i, cpu_pct=40.0 + i,
+            tmp_path,
+            cell="A",
+            name=f"run-{i:03d}",
+            approach="extension",
+            one_hop_extra_ms=7.0 + 0.01 * i,
+            cpu_pct=40.0 + i,
         )
     _make_run(
-        tmp_path, cell="A", name="run-011", approach="extension",
-        one_hop_extra_ms=999.0, excluded=True, exclusion_reason="gate:bad",
+        tmp_path,
+        cell="A",
+        name="run-011",
+        approach="extension",
+        one_hop_extra_ms=999.0,
+        excluded=True,
+        exclusion_reason="gate:bad",
     )
     for i in range(1, 5):  # deliberately under n >= 10 for B
         _make_run(
-            tmp_path, cell="B", name=f"run-{i:03d}", approach="tier4-native",
-            one_hop_extra_ms=9.0 + 0.01 * i, cpu_pct=55.0 + i,
+            tmp_path,
+            cell="B",
+            name=f"run-{i:03d}",
+            approach="tier4-native",
+            one_hop_extra_ms=9.0 + 0.01 * i,
+            cpu_pct=55.0 + i,
         )
 
     margins = {
@@ -398,9 +447,7 @@ def test_build_verdict_table_end_to_end(tmp_path):
         "achieved_rate_ratio": {"margin": 0.02},  # no extractor wired below
     }
     extractors = build_extractors()  # no expected_lidar_hz -> ratio unavailable
-    table = build_verdict_table(
-        tmp_path / "A", tmp_path / "B", margins, extractors, min_n=10
-    )
+    table = build_verdict_table(tmp_path / "A", tmp_path / "B", margins, extractors, min_n=10)
 
     assert "one_hop_wall_ms" in table
     assert "carla_process_cpu_pct" in table
