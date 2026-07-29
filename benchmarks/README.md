@@ -107,13 +107,15 @@ direction.
 
 `tick_hz` (paced world tick, `1 / fixed_delta_seconds`), `lidar_expected_hz`
 (sensor publish target) and `ndt_expected_hz` (NDT pose-output target) are
-three different numbers. They coincide at 20.0 on the extension cells and are
-independent everywhere: `--fixed-delta` moves the world tick and not the rig's
-`sensor_tick`, so on the high-frequency cells (`A-hf`, `B-hf`) `tick_hz` is a
-different number from the other two — which is why both of those cells can
-carry `tick_hz: null` while `A-hf` keeps `lidar_expected_hz`/`ndt_expected_hz`
-at 20.0. Substituting one for another is never correct, even where they
-happen to agree. An expected message COUNT must be derived from
+three different numbers. They coincide at 20.0 on cells `A` and `C` and are
+independent everywhere: `--fixed-delta` moves the world tick, the rig's
+`sensor_tick` is a separate knob, and the NDT rate follows the sensor. The
+high-frequency cells are where that separation bites — Task 26 configures both
+`A-hf` and `B-hf` by setting the tick AND the sensor ticks explicitly, so
+neither cell's sensor rate can be derived from its tick rate, and all three
+bindings on both cells are `null` until Task 26 registers what it applied.
+Substituting one for another is never correct, even where they happen to
+agree. An expected message COUNT must be derived from
 `lidar_expected_hz`; only the M4 ceiling's unpaced `tick_rate_ratio` disjunct
 divides by `tick_hz`; and the M5 gate's "NDT rate ≥ 90% of expected" criterion
 (`analysis/quality.py`'s `expected_ndt_hz`) divides by `ndt_expected_hz`, which
@@ -804,6 +806,27 @@ Amendments made so far:
   fallback" is the half of the discriminator rule that makes it safe
   rather than merely correct, and it was prose with no owner and no
   code — unlike every other obligation registered here.
+- **2026-07-28** — the high-frequency cells' unregistered bindings now
+  name **Task 26** ("Optional cells — E-opt, A-hf/B-hf", owner-strikable)
+  by number, where they previously named their owner only by
+  description. Completeness: every comparable obligation here names a
+  task number, and the tools' pending-task mappings are keyed off these
+  names — a cell whose owner exists only in prose yields a generic error
+  instead of one naming the task an operator is waiting on. Recorded
+  with it: Task 26 is strikable, so `null` is a legitimate permanent end
+  state for these cells, not a gap awaiting closure.
+- **2026-07-28** (supersedes the two `A-hf` entries above, same
+  amendment window) — `A-hf`'s `lidar_expected_hz` and `ndt_expected_hz`
+  also set to `null`, and `B-hf`'s `ndt_expected_hz` re-pointed at
+  Task 26. Completeness: both were registered at 20.0 on the reasoning
+  that `--fixed-delta` moves only the world tick, so `A-hf` inherits
+  cell `A`'s `sensor_tick` and `min(1 / sensor_tick, tick_hz)` stays 20.
+  Reading Task 26 to name it as owner falsified that: its Step 2 sets
+  `A-hf`'s LiDAR `sensor_tick` **explicitly**, to neither cell `A`'s
+  value nor the tick period, so the sensor rate is neither inherited nor
+  derivable from the tick — and it does the same for `B-hf`. A wrong
+  `lidar_expected_hz` is the denominator of `achieved_rate_ratio` and,
+  through `ndt_expected_hz`, of the M5 gate's rate criterion.
 
 ## How to run
 

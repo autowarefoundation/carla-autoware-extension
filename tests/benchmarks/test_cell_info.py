@@ -161,26 +161,33 @@ def test_registered_rates_are_positive_or_explicitly_unregistered(doc, cell):
 
 
 @pytest.mark.parametrize("cell", ["A-hf", "B-hf"])
-def test_high_frequency_cells_do_not_register_an_unwired_tick_rate(doc, cell):
-    """Neither high-frequency cell has a committed launcher that applies a
-    fixed-delta -- cells/extension.sh passes no such argument and the tier4
-    launcher does not exist -- so both carry `tick_hz: null`. A number here
-    would be an intent no run is obliged to honour and nothing checks, which
-    is the silent-wrong-number class this campaign exists to avoid."""
-    assert cell_info.metrics_for(doc, cell)["tick_hz"] is None
+@pytest.mark.parametrize("key", ["tick_hz", "lidar_expected_hz", "ndt_expected_hz"])
+def test_high_frequency_cells_register_no_rate_task_26_has_not_applied(doc, cell, key):
+    """Task 26 Step 2 configures both high-frequency cells end to end -- the
+    world tick AND the sensor ticks, set explicitly and separately -- and it has
+    not run (it is also owner-strikable, so it may never). No committed launcher
+    applies any of it: cells/extension.sh passes no fixed-delta and the tier4
+    launcher does not exist.
+
+    The sensor rates are the subtle half. An earlier revision registered 20.0
+    for A-hf's, reasoning that --fixed-delta moves only the world tick so the
+    cell inherits cell A's sensor_tick. Task 26 sets A-hf's LiDAR sensor_tick
+    explicitly, to neither cell A's value nor the tick period, so the rate is
+    neither inherited nor derivable -- and a wrong lidar_expected_hz feeds
+    achieved_rate_ratio (M2) and, through ndt_expected_hz, the M5 gate."""
+    assert cell_info.metrics_for(doc, cell)[key] is None
 
 
-def test_a_hf_sensor_rates_survive_its_unregistered_tick_rate(doc):
-    """A-hf is the discriminating case for the tick/sensor/NDT split: its world
-    tick is unregistered, but the sensor rates are pinned by the rig either way
-    -- min(1/sensor_tick, tick) is 20 for any tick >= 20 -- so nulling tick_hz
-    costs these two nothing. That is only expressible BECAUSE the three are
-    separate bindings; a tool that read the cell as "rates unknown" because ONE
-    rate is null would drop a cell it can perfectly well score."""
-    metrics = cell_info.metrics_for(doc, "A-hf")
+def test_a_partly_unregistered_cell_is_not_an_all_or_nothing_cell(doc):
+    """The three rate bindings are independent keys, so "one is null" must not
+    read as "this cell has no rates". CAL-rmw is the discriminating case: no
+    world tick and no NDT, but a registered publisher rate -- so a tool that
+    gated on all-rates-present would skip a cell whose achieved_rate_ratio is
+    perfectly computable."""
+    metrics = cell_info.metrics_for(doc, "CAL-rmw")
     assert metrics["tick_hz"] is None
-    assert metrics["lidar_expected_hz"] == 20.0
-    assert metrics["ndt_expected_hz"] == 20.0
+    assert metrics["ndt_expected_hz"] is None
+    assert metrics["lidar_expected_hz"] == 10.0
 
 
 @pytest.mark.parametrize("cell", ALL_CELL_IDS)
