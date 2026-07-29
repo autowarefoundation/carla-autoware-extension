@@ -906,6 +906,7 @@ def _metrics(**overrides) -> dict:
         "cpu_process_label": "carla-server",
         "tick_hz": 20.0,
         "lidar_expected_hz": 20.0,
+        "ndt_expected_hz": 20.0,
     }
     m.update(overrides)
     return m
