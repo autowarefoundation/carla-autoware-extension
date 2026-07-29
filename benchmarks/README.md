@@ -404,6 +404,30 @@ shared-mode term in A − B; the M2 three-way reconciliation
 (`cadence.reconcile_drops` over `publisher_counts.json`) separates publisher
 drop from observer loss and is reported per cell alongside the duel row.
 
+**Reconciliation window and scope.** Computed over the SAME resolved
+scoring window this metric uses for that run — never a second,
+independent window — and reported per cell AND per arm, never pooled
+across either axis (mirroring "Arm scoping" above). Expected count:
+`max(1, round(window_s * lidar_expected_hz))`, `window_s` the window's
+own span in seconds. An absent `publisher_counts.json` (the E-cell
+case: the bridge is the sensor stream's only listener, so no
+independent publisher-side count exists) is NOT MEASURABLE, distinct
+from a present file recording a real zero throughput
+(`cadence.reconcile_drops`'s own NaN `observer_loss_rate` branch).
+
+**Cross-run reduction — owner ruling, 2026-07-28: median AND max, both
+reported**, for both `publisher_drop_rate` and `observer_loss_rate`,
+over each cell's measurable runs for that arm. Median keeps continuity
+with the campaign's per-run → per-cell convention; max is reported
+alongside because this output is an instrument-artefact DETECTOR, not
+a central-tendency estimate of one — at the registered minimum of
+n = 3 measurable runs, a single run in which the observer lost 40% of
+its frames IS the finding, and median alone would report a clean 0.000
+over it. `observer_loss_rate`'s reduction (both median and max)
+excludes runs where it is NaN (a real, file-backed zero-throughput
+run), with that count reported separately so it is never silently
+folded into either statistic.
+
 `lidar_expected_hz` is the cell's registered sensor target, filled by the
 relation P1 Verdict 4 measured live: effective rate = `min(1 / sensor_tick,
 tick_hz)`. It is registered only where committed code fixes it today (the
@@ -866,6 +890,21 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   derivable from the tick — and it does the same for `B-hf`. A wrong
   `lidar_expected_hz` is the denominator of `achieved_rate_ratio` and,
   through `ndt_expected_hz`, of the M5 gate's rate criterion.
+- **2026-07-28** — `achieved_rate_ratio` gained the M2 three-way
+  reconciliation's **window/scope rule** (same resolved window as the
+  metric itself, reported per cell and per arm, "not measurable" vs. a
+  file-backed real zero kept distinct) and its **cross-run reduction
+  rule — owner ruling: median AND max, both reported**, for
+  `publisher_drop_rate` and `observer_loss_rate`. Completeness: the
+  reconciliation was registered as existing (2026-07-28, above) but its
+  own scope and cross-run reduction were not — a gap Task S4's
+  implementation surfaced rather than resolved unilaterally. The
+  reviewer objected that this output is an instrument-artefact detector
+  the five duel metrics' median-only convention would under-report at
+  the registered n = 3 minimum; the owner ruled median stays (continuity
+  with that convention) with max added beside it (so a lone high-loss
+  run is not buried). Margins are unchanged; this is a diagnostic, not a
+  duel metric, and carries no margin of its own.
 
 ## How to run
 
