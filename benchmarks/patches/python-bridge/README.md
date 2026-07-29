@@ -317,6 +317,32 @@ inside the container measured `/clock` at 20.00 Hz, `/sensing/lidar/top/pointclo
 
 ## Cell E bring-up gate (Task 10)
 
+### What these runs did and did NOT retain, and where their provenance is broken
+
+Two limitations on this evidence, disclosed because a reader would otherwise assume neither.
+
+**Provenance: `run-001` to `run-004` record a `harness_git_sha` that cannot be true.** All four claim
+`d0612c4`, a commit in which `cells/python-bridge.sh` contains no `save_stage_logs` function at all —
+yet `run-003` and `run-004` contain the `bridge-stage1.log` / `bridge-stage2.log` files that only that
+function writes. All four also claim `patches_git_sha: ec998b4`, which **predates the patch files**
+their `bridge-bench-patched` image was built from. The explanation is that they ran from an
+uncommitted working tree, so `git rev-parse HEAD` named a commit that did not contain the code being
+executed. **These four records cannot be repaired truthfully — no commit exists that contains what
+ran — so the tie-back guarantee in `benchmarks/README.md`'s Pre-registration section does not hold for
+them.** They are bring-up iterations, all excluded, and none carries a measurement. `run-005` onward
+ran from clean, committed trees and their shas are exact. To stop this recurring,
+`scripts/write_manifest.py` now appends `-dirty` to both sha fields whenever tracked files differ from
+HEAD (`benchmarks/results/` excluded, since the run writes there as it runs), so a manifest can no
+longer silently assert a tie-back it does not have.
+
+**Retained artifacts.** `run-008` carries `bridge-stage1.log` and `bridge-stage2.log`; the gate run
+`run-007` does **not**, because teardown's stage-log copy landed only after it (`69344a1`), so the
+gate's own diag-graph dump is gone and the (c) diagnosis above is read from the retry. The observer
+transport matrix and the bring-up probe wrote into a scratch directory outside the repository and
+retained **no committed artifacts** — their numbers are reported here and are not independently
+re-derivable from this tree. Every number attributed to `run-006`, `run-007` and `run-008` IS
+re-derivable from the committed CSVs.
+
 ### Acceptance (a) and (b): PASS
 
 `0001` works. Measured in-container on the 2026-07-29 bring-up probe, with the full stack up:
@@ -391,29 +417,49 @@ The stall did NOT occur on either gate run: `run-007`'s clock.csv holds 1683 row
 largest gap of 0.060 s, `run-008`'s 1383 rows at 19.92 Hz with 0.077 s. It is intermittent, and the
 launcher's `wait_for_tick` check now names it when it happens.
 
-### Acceptance (c): FAIL. Cell E degrades to static-arm only
+### Acceptance (c): FAIL. Cell E degrades to static-arm only — PROVISIONALLY
 
 The gate is `results/E/run-007` (`bash benchmarks/run.sh E --arm closed-loop --rpc-port 2100`, the
 first closed-loop run made after (a) and (b) had both passed through the real observer). It was
-excluded `gate:arm-failed`. The findings' own method — idle host, `/dev/shm` `fastrtps_*` cleared to
-zero, fresh processes — was then applied ONCE, as `results/E/run-008`, which failed identically.
+excluded `gate:arm-failed`. The findings' method was then applied ONCE, as `results/E/run-008`, which
+failed identically.
 
 **E therefore degrades to static-arm only, per the spec's pre-committed risk clause: "the E2E-latency
 half of C2 is dropped."** No third attempt was made.
 
-Both runs are otherwise healthy, which is what makes the failure localizable. On `run-008`:
+**That degradation is PROVISIONAL, not final, and the condition that settles it is named.** The
+failure is specifically that the AD API's `change_to_autonomous` refused, and **that engage path has
+never been verified live for ANY cell** — the only arming path this repository has driven to a live
+gate publishes `/autoware/engage` (`scripts/e2e/gate_g2_closed_loop.sh`, with `arm_closed_loop.sh`
+turning MRM off), a divergence `run.sh` already records as unresolved. Task 13 (cell B) and Task 15
+(cell C) verify the AD-API path live. **If either of them needs the `/autoware/engage` fallback, cell
+E's (c) runs are reclassified `harness:<commit>` and E is re-gated**; only if the AD-API path is shown
+to work on a cell that demonstrably drives does this FAIL become a property of the bridge.
 
-```text
-  19.87 Hz  n=1378  /sensing/lidar/top/pointcloud_raw_ex
-  12.87 Hz  n= 892  /localization/pose_estimator/pose_with_covariance
-  19.88 Hz  n=1380  /localization/kinematic_state
-   8.52 Hz  n= 588  /control/command/control_cmd
-  19.92 Hz  n=1383  /clock, largest gap 0.077 s
-```
+One correction to the retry's framing, since it was reported as "idle host": `run-008` started at
+1-min **loadavg 2.21** against the gate's **1.37**, so the retry was not on a quieter host than the
+gate. What the retry did apply was cleared shared memory (`shm_root_cleared` 300 → 0 remaining) and
+fresh processes. The load difference is recorded rather than smoothed over; both values are far below
+the loadavg ≥ 8 preflight bar, so neither run is excludable on host load.
 
-The route planned (no "Planning failed", no "route is empty"), a trajectory was produced, and ego
-never moved: ground-truth net displacement **0.000 m**, goal closest approach 250.859 m, which is the
-spawn-to-goal distance. It never moved because it was never engaged.
+Both runs reached a live, localizing stack, but they were **not** equally healthy and an earlier
+revision of this file wrongly said they were. Side by side:
+
+| topic                                               | run-007 (gate)     | run-008 (retry)    |
+| --------------------------------------------------- | ------------------ | ------------------ |
+| `/sensing/lidar/top/pointcloud_raw_ex`              | 19.86 Hz           | 19.87 Hz           |
+| `/localization/pose_estimator/pose_with_covariance` | 9.79 Hz            | 12.87 Hz           |
+| `/localization/kinematic_state`                     | 19.94 Hz           | 19.88 Hz           |
+| `/control/command/control_cmd`                      | **1.30 Hz**        | **8.52 Hz**        |
+| `/clock` (largest gap)                              | 19.93 Hz (0.060 s) | 19.92 Hz (0.077 s) |
+
+`run-007`'s gated control output at 1.30 Hz is **indistinguishable from a static-arm run** — the
+vehicle command gate was emitting little more than its periodic emergency command — while `run-008`'s
+8.52 Hz shows the gate cycling far more actively. The two runs therefore failed at the same step but
+not in the same state, and any account that treats them as one repeated observation is overstating the
+evidence. Neither run moved: ground-truth net displacement **0.000 m** in both, goal closest approach
+250.859 m, which is the spawn-to-goal distance. The route planned in both (no "Planning failed", no
+"route is empty") and a trajectory was produced. Ego never moved because it was never engaged.
 
 `arm_and_goal.py`'s `change_to_autonomous` was refused for 60 s with "The target mode is not
 available. Please check the diagnostics." The diag graph, from the dump immediately after the last
@@ -430,40 +476,70 @@ vehicle, system and map are all OK by then:
     - /adapi/mrm_request/delegate STALE
 ```
 
-So the refusal is a **`/tf` map→base_link RATE check**, with the trajectory rate failing downstream of
-it (`system.topic_state_monitor_transform_map_to_base_link`: "/tf topic rate has dropped to the error
-level"; `autoware_operation_mode_transition_manager`: "Subscribed trajectory is timed out"). Two
-independent pieces of evidence point at `ekf_localizer` being fed inputs it cannot reconcile:
+So the proximate refusal is a **`/tf` map→base_link rate check**
+(`system.topic_state_monitor_transform_map_to_base_link`: "/tf topic is timeout" and "/tf topic rate
+has dropped to the error level"), with the trajectory rate failing downstream of it
+(`autoware_operation_mode_transition_manager`: "Subscribed trajectory is timed out"). The monitor's
+own thresholds, from `autoware_launch/config/system/component_state_monitor/topics.yaml`, are
+`warn_rate: 5.0`, `error_rate: 1.0`, `timeout: 1.0` — so it is asserting that the map→base_link
+transform updated at **under 1 Hz**, or not at all for a second.
 
-- **Queue overflow.** "[EKF] Twist queue size is exceeding max_queue_size (2)" 12 times and "[EKF]
-  Pose queue size is exceeding max_queue_size (5)" 3 times. The bridge publishes ego status, GNSS
-  pose and IMU all at 20 Hz.
-- **Outlier rejection.** "The Mahalanobis distance 92.7543 is over the limit 49.5000" and again at
-  51.6970. The filter is being handed two pose sources that disagree far beyond its gate.
+#### The cause is NOT isolated. These are the live hypotheses
 
-**The candidate cause is a SECOND source-level bridge defect, and it is NOT patched here.**
-`carla_ros.py`'s `pose()` publishes `ego_actor.get_transform()` straight out as
-`/sensing/gnss/pose_with_covariance` in the `map` frame, i.e. the CARLA actor origin — which sits at
-the vehicle centre, not at `base_link` (the rear axle). Autoware's GNSS pose is contractually
-`base_link`'s. The offset is measured independently by the D3 companion measurement below: the
-localization output sits 1.4045 m behind ground truth along the heading, and `sample_vehicle`'s
-geometry puts the bounding-box centre 1.345 m ahead of the rear axle (`wheel_base` 2.79,
-`rear_overhang` 1.1, `front_overhang` 1.0). A GNSS pose ~1.34-1.40 m from NDT's pose is precisely
-what produces a Mahalanobis blow-up and an unstable fused TF.
+An earlier revision of this file asserted a single cause — that `ekf_localizer` was being fed two
+mutually inconsistent pose sources, the bridge's GNSS pose and NDT's. **That account is retracted. It
+is refuted by the launch tree, and its corroboration was too thin to carry it.**
 
-Fixing that would be a second patch to bridge source, which
-`benchmarks/README.md`'s patch policy does not cover: `0001` is a named, pre-registered exception and
-the policy explicitly does not widen. **It is therefore reported as a patch-policy amendment request,
-not folded in.**
+Refuted, read out of the running image:
 
-One qualifier belongs on the FAIL, because it bounds what the result licenses. The engage path used
-here is the AD API's `change_to_autonomous`, which requires the whole diag graph to be available.
-`run.sh` already records that this **diverges** from the only engage path this repository has ever
-driven to a live gate — `scripts/e2e/gate_g2_closed_loop.sh` publishes `/autoware/engage` and
-`arm_closed_loop.sh` turns MRM off — and that the divergence is unresolved. So the measured claim is
-"cell E cannot be engaged through the AD-API mode-availability check", and whether cells A, B and C
-clear that same check is UNTESTED. If they do not, the divergence is a campaign-level blocker rather
-than a property of the bridge.
+- `tier4_localization_launch/.../pose_twist_fusion_filter.launch.xml` gives `ekf_localizer`
+  `input_pose_with_cov_name = /localization/pose_estimator/pose_with_covariance` — and with
+  `use_autoware_pose_covariance_modifier` at its default `false`, `ndt_scan_matcher` publishes
+  *directly* to that topic. **`/sensing/gnss/pose_with_covariance` is not an `ekf_localizer` pose
+  input at all.**
+- Its only two consumers in this tree are `ndt_scan_matcher`'s `input_regularization_pose_topic` —
+  and `regularization.enable` is **`false`** in the `autoware_launch` NDT param file — and
+  `pose_initializer`'s `sub_gnss_pose_cov`, i.e. the INITIAL pose only.
+- So the Mahalanobis rejections compare NDT's pose against the EKF's own prediction, not GNSS against
+  NDT. The sentence "the filter is being handed two pose sources that disagree" was simply wrong.
+
+Too thin to carry it, even had it not been refuted: 4 Mahalanobis lines and 15 queue warnings across
+roughly 2400 recorded messages.
+
+And the contrary evidence is strong. In the exact window containing "/tf topic is timeout"
+(timestamps `…845.227` and `…848.230`), the observer recorded `/localization/kinematic_state` —
+published by the **same node that broadcasts that TF** — at **19.84 Hz with a largest gap of
+0.062 s**. At `…847.982`, in-container `behavior_velocity_planner` reported the map↔base_link lookup
+failing by **50 ms of extrapolation**, which is positive proof the transform was flowing. A monitor
+claiming < 1 Hz against 19.84 Hz of output from the same node is not yet an explained observation.
+
+Crucially, this cell has a **documented history of consumer-side false silence** (see "Observer
+transport matrix" above: `ros2 topic hz` reported SILENT on four topics an rclpy counter measured at
+19.7–20.0 Hz in the same minute, and a stale `ros2cli` daemon reported a publishing topic as absent
+for 420 s). Any diagnosis here must weigh that class of explanation, and the earlier revision did not.
+
+The live hypotheses, with what would discriminate them:
+
+| # | Hypothesis | Discriminator |
+| - | ---------- | ------------- |
+| H1 | The map→base_link TF genuinely updates below 1 Hz — the TF broadcast is decoupled from the odometry publish, so 19.84 Hz on `/localization/kinematic_state` says nothing about it. | Add `/tf` to `config/observer_topics/E.yaml` and measure the map→base_link update rate directly. This is the cheapest and most decisive test and it needs no new cell. |
+| H2 | The monitor's own measurement is unreliable here, in the same class as the false silence above — a property of the consumer, not of the DUT. | Run the identical monitor against a cell known to drive (A or C). If it also errors there while that cell drives, the monitor is not measuring what the mode check assumes. |
+| H3 | A diagnostics-delivery or sim-time-scheduling problem: three sibling entries in the same dump (`/autoware/localization/state`, `/adapi/mrm_request/delegate`, and earlier the whole graph) are STALE, which is a diagnostics symptom rather than a localization symptom. | Record `/diagnostics` and `/diagnostics_graph` rates alongside `/tf`; a graph that is itself late explains STALE without any localization defect. |
+
+H1 and H2 are not mutually exclusive with each other, and none of the three is established. **The
+honest state is: (c) fails at the AD-API mode-availability check on a `/tf` rate assertion whose
+truth is unverified.** The next E attempt should carry the H1 instrumentation, which is a topic-list
+change, not a source change.
+
+#### On the granted second patch exception
+
+The owner has granted a second patch-policy exception (registered in `benchmarks/README.md`,
+**registered only, not applied**). It was requested on the retracted hypothesis above, and the
+refutation matters for how it is spent: because `/sensing/gnss/pose_with_covariance` is not an
+`ekf_localizer` pose input and NDT regularization is disabled, **correcting the GNSS pose frame cannot
+affect this `/tf` rate failure through the filter.** Its reachable effect is on the INITIAL pose that
+`pose_initializer` seeds. So the patch should be written and applied at E's re-gate, against a cause
+that has actually been isolated — not now, on this one.
 
 ### E static localization bias (the D3 companion measurement)
 
@@ -484,12 +560,42 @@ longitudinal offset contributes only 0.008 m to y).
 
 Two caveats belong beside that ruling, and both are open items rather than results:
 
-1. **The dx term is a frame convention, not a map error, and it is not registered as a confound.**
-   1.4045 m along the heading matches `sample_vehicle`'s bounding-box-centre-to-rear-axle distance
-   (1.345 m) and its `wheel_base`/2 (1.395 m). `collect_gt.py` records `ego_actor.get_transform()`,
-   the CARLA actor origin at the vehicle centre; Autoware reports `base_link` at the rear axle. That
-   offset is in the M5 `pose_error` of **every** cell that uses `collect_gt`, not just E, and nothing
-   in `benchmarks/README.md` registers it. Task 16 owes either the correction or the confound row.
+1. **The dx term is a frame convention, not a map error — and the chain is now read out, not
+   inferred.** An earlier revision guessed at two candidate constants (1.345 and 1.395 m) without
+   reading the transform chain. Read from the running image, it is a single declared constant and the
+   geometry is self-consistent:
+
+   - `carla_sensor_kit_description/config/sensor_kit_calibration.yaml`'s own header states the
+     convention: "base_link at rear axle center on ground … Conversion from CARLA vehicle origin
+     ('car center') to base_link: `x_base = x_car_center + 1.425` (WB=2.850 m)", and every sensor x
+     in that file carries the conversion in its comment — e.g.
+     `velodyne_top_base_link: x: 1.035 # -0.390 + 1.425`.
+   - `sensors_calibration.yaml` puts `sensor_kit_base_link` at all-zero relative to `base_link`, so
+     the kit frame IS `base_link`.
+   - The bridge converts BACK when it spawns: `sensor_kit_loader.py:585` calls
+     `CoordinateTransformer.carla_base_link_to_vehicle_center_location(...)`, which is
+     `x_vehicle_center = x - wheelbase / 2.0` with `DEFAULT_WHEELBASE = 2.850`, i.e. **−1.425 m**. So
+     the CARLA LiDAR is attached at car-centre −0.390 m, exactly the native value in the kit comment.
+
+   The chain is therefore consistent: the sensor is physically where the kit intends relative to the
+   true rear axle, NDT recovers `base_link` at the rear axle, and `collect_gt.py` records
+   `ego_actor.get_transform()` — the CARLA actor origin at the car centre. Predicted
+   dx = −1.425·cos(yaw) ≈ −1.425 m; **measured −1.4045 m, within 0.021 m.** The residual is the
+   `vehicle.toyota.prius` pivot's actual placement versus mid-wheelbase, which no static read settles
+   and which would need a live `bounding_box.location` query.
+
+   Two consequences, both open items rather than results:
+
+   - **The localization is not biased in x at all.** dx is entirely a ground-truth convention offset.
+     It sits in the M5 `pose_error` of **every** cell that uses `collect_gt`, not just E, and nothing
+     in `benchmarks/README.md` registered it until this task's confound row. Task 16 owes either the
+     correction (offset GT to `base_link`) or the confound row's arithmetic.
+   - **The bridge's `DEFAULT_WHEELBASE = 2.850` disagrees with `sample_vehicle`'s `wheel_base: 2.79`**
+     (`front_overhang` 1.0, `rear_overhang` 1.1). The bridge places every sensor using 1.425 m while
+     Autoware's TF chain is built for a 1.395 m vehicle, so each E-family sensor sits **0.03 m**
+     further forward than the TF says. That is a real, previously unrecorded harmonization defect in
+     the E family's sensor placement; it is small next to the 1.4 m convention offset but it is not
+     zero, and it is now a confound row.
 2. **This number is `/localization/kinematic_state`, not the NDT pose, because the NDT pose has no
    recorded x/y.** `cells.yaml` binds `ndt_topic` to
    `/localization/pose_estimator/pose_with_covariance`, and `bench_observer` only writes x/y for

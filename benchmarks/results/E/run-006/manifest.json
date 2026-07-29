@@ -15,7 +15,7 @@
   "autoware_image": "bridge-bench-patched:latest",
   "started_at_ns": 1785362741040606320,
   "excluded": true,
-  "exclusion_reason": "stall:clock",
+  "exclusion_reason": "harness:cdbc129",
   "placement": {
     "carla_rpc_port": "2100",
     "container_image": "bridge-bench-patched:latest",
