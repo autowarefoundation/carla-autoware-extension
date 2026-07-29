@@ -380,9 +380,9 @@ CAMERA_BLUEPRINT = "sensor.camera.rgb"
 
 # Defaults mirror benchmarks/config/cells.yaml's camera_classes (cam1/cam3/cam6: all
 # 1600x900 @ 20 fps -- the tick ceiling; a higher request is silently clamped, P1 Verdict 4).
-_CAMERA_DEFAULT_WIDTH = 1600
-_CAMERA_DEFAULT_HEIGHT = 900
-_CAMERA_DEFAULT_SENSOR_TICK = "0.05"  # 1 / 20 fps
+CAMERA_DEFAULT_WIDTH = 1600
+CAMERA_DEFAULT_HEIGHT = 900
+CAMERA_DEFAULT_SENSOR_TICK = "0.05"  # 1 / 20 fps
 
 # All spawned cameras attach at this single, deliberately simple pose (ego origin, identity
 # rotation) rather than the kit's per-camera frames (camera0/camera_link .. camera5/
@@ -405,9 +405,9 @@ def camera_topic(index: int) -> str:
 
 def camera_attributes(
     index: int,
-    width: int = _CAMERA_DEFAULT_WIDTH,
-    height: int = _CAMERA_DEFAULT_HEIGHT,
-    sensor_tick: float | str = _CAMERA_DEFAULT_SENSOR_TICK,
+    width: int = CAMERA_DEFAULT_WIDTH,
+    height: int = CAMERA_DEFAULT_HEIGHT,
+    sensor_tick: float | str = CAMERA_DEFAULT_SENSOR_TICK,
     overrides: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Native ROS 2 attributes for the ``index``-th camera (all values are strings).
@@ -442,9 +442,9 @@ def spawn_camera(
     blueprint_library,
     ego,
     index: int,
-    width: int = _CAMERA_DEFAULT_WIDTH,
-    height: int = _CAMERA_DEFAULT_HEIGHT,
-    sensor_tick: float | str = _CAMERA_DEFAULT_SENSOR_TICK,
+    width: int = CAMERA_DEFAULT_WIDTH,
+    height: int = CAMERA_DEFAULT_HEIGHT,
+    sensor_tick: float | str = CAMERA_DEFAULT_SENSOR_TICK,
 ):
     """Spawn the ``index``-th camera attached to ``ego`` (see ``camera_attributes``)."""
     return _spawn_sensor(
@@ -465,9 +465,9 @@ def spawn_cameras(
     blueprint_library,
     ego,
     count: int,
-    width: int = _CAMERA_DEFAULT_WIDTH,
-    height: int = _CAMERA_DEFAULT_HEIGHT,
-    sensor_tick: float | str = _CAMERA_DEFAULT_SENSOR_TICK,
+    width: int = CAMERA_DEFAULT_WIDTH,
+    height: int = CAMERA_DEFAULT_HEIGHT,
+    sensor_tick: float | str = CAMERA_DEFAULT_SENSOR_TICK,
 ):
     """Spawn ``count`` cameras (indices ``0``..``count - 1``) attached to ``ego``
     (``--cameras``, default 0 -- no cameras, today's exact rig).

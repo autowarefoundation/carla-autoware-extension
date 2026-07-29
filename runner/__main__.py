@@ -17,13 +17,21 @@ import sys
 
 from runner.kit import DEFAULT_SENSOR_KIT_CALIBRATION, DEFAULT_SENSORS_CALIBRATION, load_kit
 from runner.loop import (
+    DEFAULT_FIXED_DELTA,
     apply_substep_config,
     extension_exports_init,
     load_physics_config,
     run_async_loop,
     run_sync_loop,
 )
-from runner.spawn import spawn_cameras, spawn_ego, spawn_sensors
+from runner.spawn import (
+    CAMERA_DEFAULT_HEIGHT,
+    CAMERA_DEFAULT_SENSOR_TICK,
+    CAMERA_DEFAULT_WIDTH,
+    spawn_cameras,
+    spawn_ego,
+    spawn_sensors,
+)
 
 
 def _brake_to_stop(ego) -> None:
@@ -180,28 +188,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--camera-width",
         type=int,
-        default=1600,
-        help="camera image_size_x, pixels (default: 1600, matches cam1/cam3/cam6)",
+        default=CAMERA_DEFAULT_WIDTH,
+        help=f"camera image_size_x, pixels (default: {CAMERA_DEFAULT_WIDTH}, matches "
+        "cam1/cam3/cam6)",
     )
     p.add_argument(
         "--camera-height",
         type=int,
-        default=900,
-        help="camera image_size_y, pixels (default: 900, matches cam1/cam3/cam6)",
+        default=CAMERA_DEFAULT_HEIGHT,
+        help=f"camera image_size_y, pixels (default: {CAMERA_DEFAULT_HEIGHT}, matches "
+        "cam1/cam3/cam6)",
     )
     p.add_argument(
         "--camera-tick",
         type=float,
-        default=0.05,
-        help="camera sensor_tick, seconds (default: 0.05 = 20 fps, the tick ceiling -- a "
-        "higher request is silently clamped, P1 Verdict 4)",
+        default=CAMERA_DEFAULT_SENSOR_TICK,
+        help=f"camera sensor_tick, seconds (default: {CAMERA_DEFAULT_SENSOR_TICK} = 20 fps, "
+        "the tick ceiling -- a higher request is silently clamped, P1 Verdict 4)",
     )
     p.add_argument(
         "--fixed-delta",
         type=float,
-        default=0.05,
-        help="world fixed_delta_seconds, seconds (default: 0.05, today's exact cadence); "
-        "for A-hf, pass 0.01",
+        default=DEFAULT_FIXED_DELTA,
+        help=f"world fixed_delta_seconds, seconds (default: {DEFAULT_FIXED_DELTA}, today's "
+        "exact cadence); for A-hf, pass 0.01",
     )
     p.add_argument(
         "--unpaced",

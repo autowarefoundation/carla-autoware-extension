@@ -42,9 +42,15 @@ def _default_should_continue() -> bool:
     return True
 
 
+# Today's exact cadence (20 Hz): the one source of truth for both loop functions' own
+# ``fixed_delta`` default AND ``runner/__main__.py``'s ``--fixed-delta`` argparse default,
+# so the two never drift apart (--fixed-delta unset must reproduce this exactly).
+DEFAULT_FIXED_DELTA = 0.05
+
+
 def run_sync_loop(
     world,
-    fixed_delta: float = 0.05,
+    fixed_delta: float = DEFAULT_FIXED_DELTA,
     on_tick: Callable[[], None] | None = None,
     should_continue: Callable[[], bool] | None = None,
     paced: bool = True,
@@ -93,7 +99,7 @@ def run_sync_loop(
 
 def run_async_loop(
     world,
-    fixed_delta: float = 0.05,
+    fixed_delta: float = DEFAULT_FIXED_DELTA,
     on_tick: Callable[[], None] | None = None,
     should_continue: Callable[[], bool] | None = None,
     paced: bool = True,
@@ -134,13 +140,33 @@ def load_physics_config(path: str) -> dict[str, float | int]:
     (float, seconds) and ``max_substeps`` (int). This is the single source of substepping
     parity between the extension (approach A) and the tier4-native fork (approach B)
     runners -- harmonising the two is what makes the A-vs-B benchmark duel a fair comparison.
+
+    Raises ``ValueError`` naming the key, the file, and the cause (run_g0.sh preflight
+    style -- same mandate as ``_apply_attributes``'s ``RuntimeError``/
+    ``select_spawn_point``'s ``IndexError``) if a key is missing/null -- the committed
+    ``benchmarks/config/physics.yaml`` ships with both keys null until Task 13 fills them
+    in, so this is the expected failure mode of pointing ``--substep-config`` at it as-is
+    -- or present but not a number.
     """
     with open(path) as f:
-        doc = yaml.safe_load(f)
-    return {
-        "max_substep_delta_time": float(doc["max_substep_delta_time"]),
-        "max_substeps": int(doc["max_substeps"]),
-    }
+        doc = yaml.safe_load(f) or {}
+    config: dict[str, float | int] = {}
+    for key, cast in (("max_substep_delta_time", float), ("max_substeps", int)):
+        value = doc.get(key)
+        if value is None:
+            raise ValueError(
+                f"{path!r} does not set {key!r} to a number (found {value!r}): "
+                "benchmarks/config/physics.yaml's schema is filled in by Task 13 -- pass "
+                "a physics.yaml with both max_substep_delta_time and max_substeps set, "
+                "or omit --substep-config to skip substepping parity."
+            )
+        try:
+            config[key] = cast(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{path!r} has a malformed {key!r} value {value!r}: {exc}"
+            ) from exc
+    return config
 
 
 def apply_substep_config(world, config: dict[str, float | int]) -> None:

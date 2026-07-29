@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-from runner.__main__ import build_arg_parser, select_spawn_point
+from runner.__main__ import build_arg_parser, build_lidar_overrides, select_spawn_point
 from runner.__main__ import main as runner_main
 from runner.loop import (
     apply_substep_config,
@@ -181,6 +181,57 @@ def test_lidar_override_flags_parse():
     assert args.lidar_range == 100.0
 
 
+# --- build_lidar_overrides: the flag-name -> attribute-key seam ---
+#
+# CLI parsing (above) and top_lidar_attributes(overrides=...)'s merge behaviour (in
+# test_runner_kit.py) are both covered elsewhere; this is the mapping BETWEEN them
+# (args.lidar_channels -> "channels", args.lidar_pps -> "points_per_second", ... + the
+# str() conversion) -- exercised directly so a silent key-name typo or a missing str()
+# cannot flow straight into the P4 sweep-class results uncaught.
+
+
+def test_build_lidar_overrides_empty_when_every_flag_omitted():
+    # No key present at all (not a key with a None value) -- this is what makes
+    # top_lidar_attributes(overrides=build_lidar_overrides(args)) a true no-op by default.
+    args = build_arg_parser().parse_args([])
+    assert build_lidar_overrides(args) == {}
+
+
+def test_build_lidar_overrides_maps_every_flag_to_its_attribute_key_as_str():
+    args = build_arg_parser().parse_args(
+        [
+            "--lidar-channels",
+            "16",
+            "--lidar-pps",
+            "288000",
+            "--lidar-rotation-hz",
+            "10",
+            "--lidar-range",
+            "100",
+        ]
+    )
+    overrides = build_lidar_overrides(args)
+    assert overrides == {
+        "channels": "16",
+        "points_per_second": "288000",
+        "rotation_frequency": "10.0",
+        "range": "100.0",
+    }
+    assert all(isinstance(v, str) for v in overrides.values())
+
+
+def test_build_lidar_overrides_partial_combination_yields_only_given_keys():
+    # Only --lidar-channels/--lidar-range given -> only those two keys, nothing for the
+    # two omitted flags (--lidar-pps/--lidar-rotation-hz).
+    args = build_arg_parser().parse_args(["--lidar-channels", "32", "--lidar-range", "50"])
+    assert build_lidar_overrides(args) == {"channels": "32", "range": "50.0"}
+
+
+def test_build_lidar_overrides_single_flag_given():
+    args = build_arg_parser().parse_args(["--lidar-pps", "4600000"])
+    assert build_lidar_overrides(args) == {"points_per_second": "4600000"}
+
+
 def test_cameras_defaults_to_zero_no_cameras():
     # Today's exact rig spawns no cameras at all -- the M4 camera arm is opt-in.
     args = build_arg_parser().parse_args([])
@@ -232,6 +283,37 @@ def test_load_physics_config_reads_both_keys(tmp_path):
     physics_yaml.write_text("max_substep_delta_time: 0.01\nmax_substeps: 10\n")
     config = load_physics_config(str(physics_yaml))
     assert config == {"max_substep_delta_time": 0.01, "max_substeps": 10}
+
+
+def test_load_physics_config_names_key_file_and_cause_when_null(tmp_path):
+    # The committed benchmarks/config/physics.yaml ships with both keys null (Task 13
+    # fills them in) -- pointing --substep-config at it as-is must fail loudly, naming the
+    # missing key and the file, not a bare TypeError from float(None).
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time:\nmax_substeps: 10\n")
+    with pytest.raises(ValueError) as exc:
+        load_physics_config(str(physics_yaml))
+    msg = str(exc.value)
+    assert "max_substep_delta_time" in msg  # names the missing key
+    assert str(physics_yaml) in msg  # names the file
+
+
+def test_load_physics_config_names_key_file_and_cause_when_key_missing_entirely(tmp_path):
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time: 0.01\n")  # max_substeps absent
+    with pytest.raises(ValueError, match="max_substeps"):
+        load_physics_config(str(physics_yaml))
+
+
+def test_load_physics_config_names_key_file_and_cause_when_malformed(tmp_path):
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time: not_a_number\nmax_substeps: 10\n")
+    with pytest.raises(ValueError) as exc:
+        load_physics_config(str(physics_yaml))
+    msg = str(exc.value)
+    assert "max_substep_delta_time" in msg
+    assert "not_a_number" in msg
+    assert str(physics_yaml) in msg
 
 
 def test_apply_substep_config_sets_world_settings():
