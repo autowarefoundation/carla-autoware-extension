@@ -631,12 +631,24 @@ PY
   # /control/trajectory_follower/control_cmd, which flows even while the gate
   # suppresses everything. A silent gate is a bring-up gate failure
   # (exclusions.md criterion 2), recorded, not hidden.
+  #
+  # --no-daemon is load-bearing here. MEASURED 2026-07-29 (Task 10): a
+  # `ros2 topic echo --once` answered out of a stale `ros2cli` daemon cache
+  # reports SILENCE on a topic that is demonstrably publishing. The daemon
+  # caches the node graph as it stood when the first CLI call in that container
+  # started it -- during a bring-up, before the stack existed -- and answers
+  # every later call from that snapshot. In cells/python-bridge.sh's readiness
+  # loop this burned a whole 420 s budget against a stack that was localizing;
+  # here it would exclude a healthy run `gate:control_cmd-silent`, recording
+  # "the vehicle was never under command" as a fact about the approach. Fresh
+  # discovery costs a few seconds and buys a truthful answer.
   if [ "$window_arm" != "static" ] && [ "${ARM_ENABLED:-0}" = "1" ]; then
-    show "${AW_EXEC:-<from launch.env>} bash -lc '<setup> timeout 15 ros2 topic echo --once /control/command/control_cmd'"
+    show "${AW_EXEC:-<from launch.env>} bash -lc '<setup> timeout 25 ros2 topic echo --once --no-daemon /control/command/control_cmd'"
     if [ "$DRY_RUN" = "0" ]; then
       # shellcheck disable=SC2086
       if ${AW_EXEC} bash -lc "$AW_SETUP
-        timeout 15 ros2 topic echo --once /control/command/control_cmd >/dev/null 2>&1"; then
+        timeout 25 ros2 topic echo --once --no-daemon \
+          /control/command/control_cmd >/dev/null 2>&1"; then
         echo "      OK: /control/command/control_cmd is flowing"
       else
         CONTROL_SILENT=1

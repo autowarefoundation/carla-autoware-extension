@@ -81,7 +81,7 @@ bench_observer_images:
   universe-devel:
     base: autoware_universe_devel.digest # built now (serves cells A/B/C/D/E/CAL)
     tag: bench-observer:universe-devel
-    local_digest: sha256:180a0897d109e784c66360cc4a29ea18a1074c0dd475b45fbe4c26ce5cec7f0e
+    local_digest: sha256:805d2e345d0b33a0a6dadfe06fa76d8caa99a737ebe94a3d4d9748ed190af54b
     # bench-observer:045, base = autoware_045.digest, built in Task 21 once
     # B45's disk is freed.
 # Cell B45: the tier4 native path is documented against Autoware 0.45.1 and

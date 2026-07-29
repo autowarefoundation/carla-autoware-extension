@@ -387,11 +387,24 @@ c = carla.Client('localhost', $BENCH_RPC_PORT); c.set_timeout(10.0)
 print(c.get_world().wait_for_tick(5.0).frame)\"" >/dev/null 2>&1
 }
 
+# --no-daemon, and it is load-bearing. MEASURED 2026-07-29 (Task 10): this loop
+# used to poll with a plain `ros2 topic echo --once`, and against a stack that
+# was demonstrably localizing -- NDT at 13 Hz, `EKF Activation succeeded`,
+# `/localization/kinematic_state` delivering x=53.942 y=-141.087 to an rclpy
+# subscriber in the same second -- every poll FAILED, so the launcher sat out its
+# whole 420 s budget and reported "never published". Cause: the loop's own first
+# poll starts a `ros2cli` daemon while the stack is still absent, the daemon
+# caches that empty node graph, and every later poll is answered from the cache.
+# Stopping the daemon by hand made the very next poll succeed. `--no-daemon`
+# removes the cache from the path; a stale-daemon false negative here is
+# indistinguishable from "this approach cannot localize", which is precisely the
+# claim this campaign exists to make correctly.
 echo "waiting up to ${STACK_TIMEOUT_S}s for the Autoware stack to localize"
 deadline=$((SECONDS + STACK_TIMEOUT_S))
 freeze_strikes=0
 until cx "$AW_ENV
-  timeout 10 ros2 topic echo --once /localization/kinematic_state >/dev/null 2>&1" \
+  timeout 20 ros2 topic echo --once --no-daemon \
+    /localization/kinematic_state >/dev/null 2>&1" \
   >/dev/null 2>&1; do
   if carla_ticking; then
     freeze_strikes=0

@@ -130,11 +130,30 @@ public:
     const auto qos =
       rclcpp::QoS(rclcpp::KeepLast(1000)).best_effort().durability_volatile();
 
+    // clock.csv is FLUSHED PER ROW, and only clock.csv. It is not merely an
+    // output file: scripts/clock_watchdog.py polls it once a second as the
+    // run's liveness signal, and exclusions.md criterion 4 excludes the run
+    // once its newest arrival stamp ages past 5 s. A block-buffered ofstream
+    // breaks that contract -- at ~33 bytes per row and 20 Hz the default 8 KiB
+    // buffer only reaches the file every ~12 s, so the watchdog sees a file
+    // frozen for longer than the threshold on a PERFECTLY HEALTHY run and
+    // condemns it under a legitimate-looking pre-registered reason. Measured
+    // 2026-07-29 (Task 10): results/E/run-006 was excluded stall:clock while
+    // its own clock.csv holds 1280 rows at 19.94 Hz with a largest gap between
+    // consecutive arrival stamps of 0.055 s -- no stall existed. Unfixed, this
+    // would have excluded every P3 run of every cell that has a sim clock.
+    //
+    // The cost is one <=33-byte write(2) per /clock message, 20 per second, on
+    // the executor thread. The other three streams stay buffered on purpose:
+    // none of them is a liveness signal, and observer.csv carries the very
+    // arrival stamps M1/M2 are computed from, so a per-row syscall there would
+    // land inside the hop being measured.
     clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
       "/clock", qos,
       [this](const rosgraph_msgs::msg::Clock & msg) {
         latest_clock_ns_ = stamp_ns(msg.clock);
-        clock_csv_ << latest_clock_ns_ << ',' << now_system_ns() << '\n';
+        clock_csv_ << latest_clock_ns_ << ',' << now_system_ns() << '\n'
+                   << std::flush;
       });
 
     for (const auto & spec : topics) {
