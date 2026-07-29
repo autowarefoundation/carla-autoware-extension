@@ -206,6 +206,11 @@ Verdict 8.4's "invisible to every `ros2` CLI" is reproduced exactly —
 but by the _consumer's_ transport configuration, not by anything in
 the fork.
 
+Both directions were measured, and they behave the same way:
+sensing **out** of the fork (matrix rows 1–11 below) and control **in**
+to it (the ingress table further down, assayed by ego motion). Both
+fail with shared memory on and both work with `udp_only.xml`.
+
 Evidence run: tier4 editor `-game` Town10HD_Opt `--ros2
 -carla-rpc-port=3000 -RenderOffScreen -nosound`, engine BuildId
 `4210e602-78ec-46e1-8f2f-03fadbe036a3` (matches `pins.yaml`), one
@@ -284,14 +289,70 @@ on the host's wireless NIC and on Cyclone's graph being flaky for
 bare-DDS publishers (row 11 receives data while `topic list` denies
 the topic exists). Do not use them.
 
-**Row 9 is the answer to the campaign's decision question: the
-Autoware container CAN consume the fork's topics.** Cell B's closed
-loop is feasible; the joint-failure clause is not triggered.
+Row 9 answers only half of the campaign's decision question: it is
+**egress** (fork → consumer). A closed loop also needs **ingress**
+(Autoware → fork), and the mechanism above is not automatically
+symmetric — see the next section, which measures it.
+
+### Control ingress (Autoware → fork) — measured, and it decides the GO
+
+The fork's _subscribers_ build their participants exactly as its
+publishers do (`AutowareSubscriber.cpp:94-97`,
+`CarlaEgoVehicleControlSubscriber.cpp:51-54`: copy
+`PARTICIPANT_QOS_DEFAULT`, then `.name()`), so the same reasoning had
+to be checked in the writer→reader direction: a `udp_only.xml` Autoware
+**writer** has no SHM transport at all, and if the fork's readers
+announced SHM-only locators it could never reach them. Cell B's
+`control_topic: /control/command/control_cmd` travels exactly that
+path.
+
+**They do not.** Unlike the participants' default (user-data) locators,
+the fork's _reader_ announcements carry **both** a UDPv4 loopback
+locator and a SHM one:
+
+```text
+[EDP-reader] topic="rt/control/command/control_cmd"
+             type="autoware_control_msgs::msg::dds_::Control_"
+               reader-uni  kind=1 127.0.0.1:7415
+               reader-uni  kind=16 :7419
+```
+
+so a UDP-only writer has something to send to. Confirmed physically,
+not by inspection: a `role_name=hero` ego makes `ActorDispatcher` call
+`ROS2::AddActorCallback`, which constructs `AutowareController` and its
+readers on `/control/command/control_cmd` (RELIABLE, TRANSIENT_LOCAL,
+KEEP_LAST 1); `ROS2.cpp:121-130` then applies
+`longitudinal.acceleration` straight through
+`ApplyVehicleAccelerationControl` with no engage or gear gating. So ego
+speed is a direct assay of delivery. Publishing
+`autoware_control_msgs/msg/Control` with `acceleration: 2.0` at 10 Hz
+from the pinned Autoware image, back to back on **one** ego:
+
+| Autoware-side transport       | ego speed after 8 s      | verdict           |
+| ----------------------------- | ------------------------ | ----------------- |
+| fastrtps, no profile (SHM on) | 0.000 m/s, moved 0.001 m | **not delivered** |
+| fastrtps + `udp_only.xml`     | 15.93 m/s, moved 61.6 m  | **delivered**     |
+
+The `udp_only` arm accelerates at 1.99 m/s² against a commanded
+2.0 m/s² (1.936 → 3.920 → 5.915 → 7.928 → 9.938 → 11.937 → 13.919 →
+15.927 m/s on consecutive seconds). The SHM-on arm never moves, in the
+same session, on the same actor, with a byte-identical command.
+
+**So ingress fails and succeeds under exactly the same conditions as
+egress, and the same one-line fix cures both.** With
+`FASTRTPS_DEFAULT_PROFILES_FILE=udp_only.xml` on the Autoware side,
+cell B's closed loop is feasible in **both** directions and the spec's
+joint-failure clause is not triggered. Without it, an Autoware stack
+would come up, match every endpoint, and drive nothing — the ego would
+sit still while the logs looked healthy.
 
 ### The invocation cells B / B-hf / B45 (and D) must use
 
+The cell id is **positional**, and `--arm` is required
+(`run.sh:70-72,89`); `run.sh --cell B …` exits 2 with the usage block.
+
 ```bash
-bash benchmarks/run.sh --cell B ... --rmw rmw_fastrtps_cpp --shm off
+bash benchmarks/run.sh B --arm static --rmw rmw_fastrtps_cpp --shm off
 ```
 
 `run.sh` maps `--rmw rmw_fastrtps_cpp --shm off` to
@@ -310,12 +371,16 @@ default (row 5: records nothing). The recorded `observer_env` is:
 }
 ```
 
-The **Autoware side of a B-family cell needs the same treatment**:
-Task 13's launch must give the Autoware container
-`ROS_DOMAIN_ID=0`, `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and
+The **Autoware side of a B-family cell needs the same treatment, and
+for the closed loop it is not optional**: Task 13's launch must give
+the Autoware container `ROS_DOMAIN_ID=0`,
+`RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and
 `FASTRTPS_DEFAULT_PROFILES_FILE` pointing at `udp_only.xml`
-(bind-mounted), or its subscribers will match CARLA's writers and
-still receive nothing — row 8, the silent shape.
+(bind-mounted). Without it, sensing does not arrive (row 8) **and**
+control does not arrive (ingress table above) — both silently, with
+every endpoint matched. Because that switches the DUT's own middleware
+transport for the B family only, it is a registered confound; see
+`benchmarks/README.md`, "Known confounds".
 
 Acceptance check, run live: the stock `bench_observer` binary, invoked
 exactly as `run.sh` invokes it, with `B.yaml`'s LiDAR row, recorded
