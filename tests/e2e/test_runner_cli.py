@@ -16,7 +16,14 @@ import pytest
 
 from runner.__main__ import build_arg_parser, select_spawn_point
 from runner.__main__ import main as runner_main
-from runner.loop import extension_exports_init, run_async_loop, run_sync_loop
+from runner.loop import (
+    apply_substep_config,
+    extension_exports_init,
+    load_physics_config,
+    run_async_loop,
+    run_sync_loop,
+)
+from runner.spawn import camera_attributes
 
 # --- --extension-check: negative path (mandatory) ---
 
@@ -139,6 +146,100 @@ def test_select_spawn_point_rejects_a_negative_index():
 def test_select_spawn_point_rejects_any_index_on_a_map_with_no_spawn_points():
     with pytest.raises(IndexError, match="the map has 0 spawn points"):
         select_spawn_point([], 0)
+
+
+# --- M4 knobs: sweep-class, camera, pacing, substepping CLI flags ---
+#
+# Regression pins first: every new flag must default to "no override" / today's exact
+# runner behaviour when omitted, so the existing Nishi/Town10 gates stay green.
+
+
+def test_lidar_override_flags_default_to_none():
+    args = build_arg_parser().parse_args([])
+    assert args.lidar_channels is None
+    assert args.lidar_pps is None
+    assert args.lidar_rotation_hz is None
+    assert args.lidar_range is None
+
+
+def test_lidar_override_flags_parse():
+    args = build_arg_parser().parse_args(
+        [
+            "--lidar-channels",
+            "16",
+            "--lidar-pps",
+            "288000",
+            "--lidar-rotation-hz",
+            "10",
+            "--lidar-range",
+            "100",
+        ]
+    )
+    assert args.lidar_channels == 16
+    assert args.lidar_pps == 288000
+    assert args.lidar_rotation_hz == 10.0
+    assert args.lidar_range == 100.0
+
+
+def test_cameras_defaults_to_zero_no_cameras():
+    # Today's exact rig spawns no cameras at all -- the M4 camera arm is opt-in.
+    args = build_arg_parser().parse_args([])
+    assert args.cameras == 0
+    assert args.camera_width == 1600
+    assert args.camera_height == 900
+    assert args.camera_tick == 0.05  # 1/20 fps, the tick ceiling
+
+
+def test_fixed_delta_defaults_to_todays_0_05():
+    assert build_arg_parser().parse_args([]).fixed_delta == 0.05
+
+
+def test_unpaced_defaults_to_false():
+    assert build_arg_parser().parse_args([]).unpaced is False
+
+
+def test_unpaced_flag_sets_true():
+    assert build_arg_parser().parse_args(["--unpaced"]).unpaced is True
+
+
+def test_substep_config_defaults_to_none():
+    assert build_arg_parser().parse_args([]).substep_config is None
+
+
+def test_cameras_two_produces_two_camera_specs_with_indexed_topics():
+    # The brief's Step 1 CLI test: --cameras 2 -> two camera specs, indexed ros_name/
+    # ros_topic_name, sensor_tick from --camera-tick. Built the same way __main__.main()
+    # builds them (camera_attributes per index, driven by the parsed CLI args), but
+    # exercised here pure-Python -- no CARLA connection needed.
+    args = build_arg_parser().parse_args(["--cameras", "2", "--camera-tick", "0.1"])
+    specs = [
+        camera_attributes(i, args.camera_width, args.camera_height, args.camera_tick)
+        for i in range(args.cameras)
+    ]
+    assert len(specs) == 2
+    assert specs[0]["ros_topic_name"] == specs[0]["ros_name"] == "/sensing/camera/camera0/image_raw"
+    assert specs[1]["ros_topic_name"] == specs[1]["ros_name"] == "/sensing/camera/camera1/image_raw"
+    assert specs[0]["sensor_tick"] == specs[1]["sensor_tick"] == "0.1"
+    assert specs[0]["image_size_x"] == "1600"
+    assert specs[0]["image_size_y"] == "900"
+
+
+# --- physics.yaml substep-config loading + application ---
+
+
+def test_load_physics_config_reads_both_keys(tmp_path):
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time: 0.01\nmax_substeps: 10\n")
+    config = load_physics_config(str(physics_yaml))
+    assert config == {"max_substep_delta_time": 0.01, "max_substeps": 10}
+
+
+def test_apply_substep_config_sets_world_settings():
+    world = _FakeWorld()
+    apply_substep_config(world, {"max_substep_delta_time": 0.005, "max_substeps": 16})
+    settings = world.get_settings()
+    assert settings.max_substep_delta_time == 0.005
+    assert settings.max_substeps == 16
 
 
 # --- tick loop helpers: should_continue wiring against a fake world ---
@@ -288,3 +389,56 @@ def test_run_async_loop_sets_asynchronous_mode():
 
     assert world.applied_settings[0][0] is False
     assert world.get_settings().synchronous_mode is False
+
+
+# --- --unpaced: skip the real-time pacing sleep, tick as fast as possible ---
+#
+# ``paced`` defaults to True on both loops -- today's exact real-time-paced behaviour --
+# so every EXISTING test above (which never passes ``paced``) is itself a regression pin.
+
+
+def test_run_sync_loop_paced_by_default_sleeps_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    # perf_counter() called twice per iteration (t0, then after tick+on_tick); a 0.0 delta
+    # between them means the tick "ran instantly", well under fixed_delta -- the pacing sleep
+    # must fire to hold the 20 Hz cadence.
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_sync_loop(world, fixed_delta=0.05, should_continue=_stop_after(1))
+
+    assert sleep_calls == [0.05]
+
+
+def test_run_sync_loop_unpaced_never_sleeps_even_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_sync_loop(world, fixed_delta=0.05, should_continue=_stop_after(1), paced=False)
+
+    assert sleep_calls == []
+
+
+def test_run_async_loop_paced_by_default_sleeps_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_async_loop(world, fixed_delta=0.05, should_continue=_stop_after(1))
+
+    assert sleep_calls == [0.05]
+
+
+def test_run_async_loop_unpaced_never_sleeps_even_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_async_loop(world, fixed_delta=0.05, should_continue=_stop_after(1), paced=False)
+
+    assert sleep_calls == []

@@ -1,0 +1,14 @@
+# Physics substepping parity values shared between the extension (approach A) and the
+# tier4-native fork (approach B) CARLA runners (M4, three-approach evaluation P2-P4 plan).
+# Harmonising max_substep_delta_time/max_substeps across both runners is what makes the
+# A-vs-B benchmark duel a fair comparison -- an uncontrolled physics-substep mismatch would
+# confound the load-sweep results with a physics-fidelity difference instead.
+#
+# Consumed by runner/__main__.py's --substep-config flag (loaded by
+# runner/loop.py::load_physics_config, applied via runner/loop.py::apply_substep_config to
+# carla.WorldSettings before the run). Keys match carla.WorldSettings verbatim.
+#
+# TASK 13 FILLS IN THE VALUES BELOW, sourced from the tier4 demo script's hardcoded
+# substepping literals -- do not invent physics numbers here.
+max_substep_delta_time: # seconds; carla.WorldSettings.max_substep_delta_time
+max_substeps: # count; carla.WorldSettings.max_substeps
