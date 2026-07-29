@@ -274,6 +274,19 @@ cells:
       # rate verification, which is exactly the check an earlier revision of
       # this comment asked for without knowing whose it was.
       #
+      # CONFIRM THE INTENDED SENSOR_TICK BEFORE APPLYING IT. Task 26 Step 2
+      # writes A-hf's LiDAR sensor_tick as 0.1 -- 10 Hz, which is HALF cell
+      # A's 20 Hz, on a cell whose entire purpose is HIGHER frequency, and
+      # alongside an IMU at 0.01 on the same line. 0.1 is also exactly the
+      # TIER4 demo's unpatched baseline (see cell B above: "P1 measured the
+      # unpatched demo at sensor_tick=0.1 (10 Hz) against the extension's
+      # 0.05"), so a tier4-side figure may have been carried into the
+      # extension-side line. This records the question; it does NOT answer it.
+      # 0.1 and 0.01 are both coherent readings and nothing in this repo
+      # discriminates between them, so registering either would be a guess
+      # presented as a fact -- unlike control_staleness_ms's clock-domain
+      # branches, which a run's own data decides. Raised with the plan owner.
+      #
       # `arms: [closed-loop] # fixed_delta 0.01` above still records the cell's
       # INTENT; these keys record what a run will actually do, and today
       # nothing does any of it.

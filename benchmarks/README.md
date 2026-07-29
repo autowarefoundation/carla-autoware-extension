@@ -815,8 +815,11 @@ Amendments made so far:
   instead of one naming the task an operator is waiting on. Recorded
   with it: Task 26 is strikable, so `null` is a legitimate permanent end
   state for these cells, not a gap awaiting closure.
-- **2026-07-28** (supersedes the two `A-hf` entries above, same
-  amendment window) — `A-hf`'s `lidar_expected_hz` and `ndt_expected_hz`
+- **2026-07-28** (EXTENDS the `tick_hz` correction above to that cell's
+  two sibling bindings — it supersedes neither entry: both of those are
+  about `tick_hz` alone, while these two fields shipped at 20.0 with the
+  `metrics:` block and never had an amendment entry of their own) —
+  `A-hf`'s `lidar_expected_hz` and `ndt_expected_hz`
   also set to `null`, and `B-hf`'s `ndt_expected_hz` re-pointed at
   Task 26. Completeness: both were registered at 20.0 on the reasoning
   that `--fixed-delta` moves only the world tick, so `A-hf` inherits
