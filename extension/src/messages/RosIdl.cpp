@@ -34,6 +34,8 @@
 #include <geometry_msgs/msg/detail/pose_with_covariance_stamped__rosidl_typesupport_fastrtps_cpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <sensor_msgs/msg/detail/point_cloud2__rosidl_typesupport_fastrtps_cpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 namespace carla {
 namespace autoware {
@@ -149,6 +151,8 @@ CARLA_AW_BRIDGE(geometry_msgs, PoseStamped,
                 "geometry_msgs::msg::dds_::PoseStamped_")
 CARLA_AW_BRIDGE(geometry_msgs, PoseWithCovarianceStamped,
                 "geometry_msgs::msg::dds_::PoseWithCovarianceStamped_")
+CARLA_AW_BRIDGE(sensor_msgs, PointCloud2,
+                "sensor_msgs::msg::dds_::PointCloud2_")
 #undef CARLA_AW_BRIDGE
 
 }  // namespace autoware

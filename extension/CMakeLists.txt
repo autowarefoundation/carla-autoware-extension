@@ -9,6 +9,10 @@ find_package(fastcdr REQUIRED)
 find_package(autoware_control_msgs REQUIRED)
 find_package(autoware_vehicle_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+# sensor_msgs/PointCloud2: the CAL-seam bench publisher's message type
+# (BenchCloudPublisher). A core ROS 2 package, always present alongside
+# geometry_msgs in a sourced ROS environment.
+find_package(sensor_msgs REQUIRED)
 set(ROS_MSG_LIBS
   fastcdr
   autoware_control_msgs::autoware_control_msgs__rosidl_typesupport_cpp
@@ -16,7 +20,9 @@ set(ROS_MSG_LIBS
   autoware_vehicle_msgs::autoware_vehicle_msgs__rosidl_typesupport_cpp
   autoware_vehicle_msgs::autoware_vehicle_msgs__rosidl_typesupport_fastrtps_cpp
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
-  geometry_msgs::geometry_msgs__rosidl_typesupport_fastrtps_cpp)
+  geometry_msgs::geometry_msgs__rosidl_typesupport_fastrtps_cpp
+  sensor_msgs::sensor_msgs__rosidl_typesupport_cpp
+  sensor_msgs::sensor_msgs__rosidl_typesupport_fastrtps_cpp)
 
 # OBJECT library so the unit tests can link the implementation directly: the
 # shared library below hides every symbol except the two exported C entry
@@ -27,6 +33,7 @@ add_library(extension-objects OBJECT
   src/messages/RosIdl.cpp
   src/publishers/StatusPublishers.cpp
   src/publishers/GnssPosePublisher.cpp
+  src/publishers/BenchCloudPublisher.cpp
   src/subscribers/ControlSubscribers.cpp
   src/engage/EngageStateMachine.cpp
   src/ExtensionInit.cpp

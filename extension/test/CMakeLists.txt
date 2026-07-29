@@ -4,7 +4,7 @@ find_package(GTest REQUIRED)
 
 add_executable(extension_tests test_smoke.cpp test_status_publishers.cpp
   test_gnss_pose.cpp test_control_conversion.cpp test_engage.cpp test_init.cpp
-  test_rosidl.cpp)
+  test_rosidl.cpp test_bench_cloud_publisher.cpp)
 # src/ is added so the tests can reach implementation-detail headers (e.g.
 # publishers/StatusPublishers.h) that live next to their .cpp rather than
 # under the public include tree; include/ arrives via extension-objects.
