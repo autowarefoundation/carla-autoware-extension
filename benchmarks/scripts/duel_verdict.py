@@ -931,7 +931,8 @@ def _cell_reconciliation_row(
         obs_median = float(np.median(non_nan_obs))
         obs_max = float(np.max(non_nan_obs))
     else:
-        obs_median = obs_max = float("nan")  # every measurable run had published_count == 0
+        # Every measurable run had published_count == 0.
+        obs_median = obs_max = float("nan")
 
     notes: list[str] = []
     if not records:

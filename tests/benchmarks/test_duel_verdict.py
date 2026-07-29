@@ -1448,9 +1448,12 @@ def test_cell_reconciliation_row_distinguishes_not_measurable_from_zero_publishe
     # here, so this alone does not pin median vs. mean -- see the
     # dedicated 3-run pin below for that.
     assert row.publisher_drop_rate_median == pytest.approx(0.5, abs=0.1)
-    assert row.publisher_drop_rate_max == pytest.approx(1.0, abs=0.05)  # run-002
-    assert row.observer_loss_rate_median == pytest.approx(0.0, abs=0.1)  # from run-003 only
-    assert row.observer_loss_rate_max == pytest.approx(0.0, abs=0.1)  # only 1 non-NaN run
+    # run-002 alone: its pub_drop is 1.0, the higher of the two.
+    assert row.publisher_drop_rate_max == pytest.approx(1.0, abs=0.05)
+    # Both from run-003 only: it is the sole non-NaN (measurable, non-
+    # zero-published) run, so median == max == its own value.
+    assert row.observer_loss_rate_median == pytest.approx(0.0, abs=0.1)
+    assert row.observer_loss_rate_max == pytest.approx(0.0, abs=0.1)
     assert NOT_MEASURABLE in row.notes
     assert "published_count == 0" in row.notes
 
