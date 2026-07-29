@@ -1,8 +1,11 @@
-"""Tests for the Town10 pcd registration tools (Task 11 Step 1).
+"""Tests for the Town10 pcd registration tools (Task 11 Step 1, amended
+by S1 for the real bundle's layout).
 
-Covers ``benchmarks/scripts/shift_pcd.py`` (rigid pcd shift, both the
-binary and ascii layouts, plus the rejection paths for an unsupported
-header) and the transform-and-downsample core of
+Covers ``benchmarks/scripts/shift_pcd.py`` (rigid pcd shift across both
+supported field layouts -- ``x y z intensity`` and ``x y z`` -- all
+three ``DATA`` encodings -- ``ascii``, ``binary``, and
+``binary_compressed`` -- plus the rejection paths for a header outside
+that supported set) and the transform-and-downsample core of
 ``benchmarks/scripts/build_pcd_from_gt.py`` -- the CARLA client loop
 around that core is not testable without a live simulator, so only the
 plain-numpy core is exercised here. Both scripts share this one test file
@@ -12,6 +15,7 @@ because Task 11 Step 1's file scope lists a single test file to create.
 from __future__ import annotations
 
 import hashlib
+import io
 
 import numpy as np
 import pytest
@@ -33,6 +37,22 @@ BINARY_HEADER = (
     "DATA binary\n"
 )
 
+# The real Town10 bundle's layout: x/y/z only, no intensity (verified
+# on disk against ~/autoware_map/town10/pointcloud_map.pcd's header).
+XYZ_HEADER = (
+    "# .PCD v0.7 - Point Cloud Data file format\n"
+    "VERSION 0.7\n"
+    "FIELDS x y z\n"
+    "SIZE 4 4 4\n"
+    "TYPE F F F\n"
+    "COUNT 1 1 1\n"
+    "WIDTH 5\n"
+    "HEIGHT 1\n"
+    "VIEWPOINT 0 0 0 1 0 0 0\n"
+    "POINTS 5\n"
+    "DATA binary\n"
+)
+
 POINTS5 = np.array(
     [
         [0.0, 0.0, 0.0, 0.1],
@@ -43,6 +63,7 @@ POINTS5 = np.array(
     ],
     dtype=np.float32,
 )
+POINTS5_XYZ = POINTS5[:, :3].copy()
 
 
 def _write_binary_pcd(path, header: str = BINARY_HEADER, points: np.ndarray = POINTS5) -> None:
@@ -57,6 +78,39 @@ def _write_ascii_pcd(path, points: np.ndarray = POINTS5) -> str:
         f.write(header.encode("ascii"))
         np.savetxt(f, points, fmt="%.6f")
     return header
+
+
+def _lzf_literal_compress(data: bytes) -> bytes:
+    """Encode ``data`` as LZF using literal runs only (``ctrl = n - 1``
+    for each <=32-byte chunk). Valid LZF framing that shares no logic
+    with ``shift_pcd.lzf_decompress``'s back-reference handling, so a
+    shared bug can't make a round trip look correct by accident."""
+    out = bytearray()
+    for i in range(0, len(data), 32):
+        chunk = data[i : i + 32]
+        out.append(len(chunk) - 1)
+        out.extend(chunk)
+    return bytes(out)
+
+
+def _write_binary_compressed_pcd(
+    path, header: str, points: np.ndarray, uncompressed_len: int | None = None
+) -> None:
+    """Write a ``DATA binary_compressed`` PCD: SoA (field-major) float32
+    payload, LZF-encoded with literal runs only via
+    :func:`_lzf_literal_compress`. ``uncompressed_len`` overrides the
+    declared uncompressed byte count, to build a deliberately-wrong
+    header for the mismatch test."""
+    soa = points.astype(np.float32).T.copy()  # (n_fields, n_points), field-major
+    raw = soa.tobytes()
+    compressed = _lzf_literal_compress(raw)
+    if uncompressed_len is None:
+        uncompressed_len = len(raw)
+    with open(path, "wb") as f:
+        f.write(header.encode("ascii"))
+        f.write(len(compressed).to_bytes(4, "little"))
+        f.write(uncompressed_len.to_bytes(4, "little"))
+        f.write(compressed)
 
 
 # --- shift_pcd: binary round trip -------------------------------------------
@@ -91,6 +145,18 @@ def test_shift_binary_pcd_leaves_intensity_untouched(tmp_path):
     np.testing.assert_allclose(out_points[:, 3], POINTS5[:, 3], atol=1e-6)
 
 
+def test_shift_binary_pcd_applies_dz_to_the_z_column_only(tmp_path):
+    src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
+    _write_binary_pcd(src)
+
+    shift_pcd.main(["--in", str(src), "--out", str(dst), "--dz", "2.0"])
+
+    header_len = len(BINARY_HEADER.encode("ascii"))
+    out_points = np.frombuffer(dst.read_bytes()[header_len:], dtype=np.float32).reshape(-1, 4)
+    np.testing.assert_allclose(out_points[:, 2], POINTS5[:, 2] + 2.0, atol=1e-6)
+    np.testing.assert_allclose(out_points[:, :2], POINTS5[:, :2], atol=1e-6)  # x/y untouched
+
+
 # --- shift_pcd: ascii round trip --------------------------------------------
 
 
@@ -111,6 +177,129 @@ def test_shift_ascii_pcd_applies_the_shift_and_preserves_the_header(tmp_path):
     np.testing.assert_allclose(out_points, expected, atol=1e-6)
 
 
+# --- shift_pcd: xyz-only layout (the real Town10 bundle) ----------------------
+
+
+def test_shift_xyz_only_binary_pcd_applies_the_shift_and_preserves_the_header(tmp_path):
+    """The real Town10 bundle's layout: x/y/z only, no intensity."""
+    src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
+    _write_binary_pcd(src, header=XYZ_HEADER, points=POINTS5_XYZ)
+
+    rc = shift_pcd.main(["--in", str(src), "--out", str(dst), "--dx", "1.0", "--dy", "-0.475"])
+    assert rc == 0
+
+    header_bytes = XYZ_HEADER.encode("ascii")
+    out_bytes = dst.read_bytes()
+    assert out_bytes[: len(header_bytes)] == header_bytes  # byte-identical header
+
+    out_points = np.frombuffer(out_bytes[len(header_bytes) :], dtype=np.float32).reshape(-1, 3)
+    expected = POINTS5_XYZ.copy()
+    expected[:, 0] += 1.0
+    expected[:, 1] += -0.475
+    np.testing.assert_allclose(out_points, expected, atol=1e-6)
+
+
+# --- shift_pcd: binary_compressed round trip ----------------------------------
+
+
+def test_shift_binary_compressed_pcd_round_trips_with_the_shift_applied(tmp_path):
+    src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
+    header = BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")
+    _write_binary_compressed_pcd(src, header, POINTS5)
+
+    rc = shift_pcd.main(["--in", str(src), "--out", str(dst), "--dx", "1.0", "--dy", "-0.475"])
+    assert rc == 0
+
+    out_header = header.replace("DATA binary_compressed\n", "DATA binary\n")
+    out_header_bytes = out_header.encode("ascii")
+    out_bytes = dst.read_bytes()
+    # Only the DATA line changes; everything else stays byte-identical.
+    assert out_bytes[: len(out_header_bytes)] == out_header_bytes
+
+    out_points = np.frombuffer(out_bytes[len(out_header_bytes) :], dtype=np.float32).reshape(-1, 4)
+    expected = POINTS5.copy()
+    expected[:, 0] += 1.0
+    expected[:, 1] += -0.475
+    np.testing.assert_allclose(out_points, expected, atol=1e-6)
+
+
+def test_shift_xyz_only_binary_compressed_pcd_matches_the_real_bundles_layout(tmp_path):
+    """The exact combination the real Town10 bundle uses: ``FIELDS x y
+    z`` (no intensity) plus ``DATA binary_compressed``."""
+    src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
+    header = XYZ_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")
+    _write_binary_compressed_pcd(src, header, POINTS5_XYZ)
+
+    rc = shift_pcd.main(["--in", str(src), "--out", str(dst), "--dy", "-0.475"])
+    assert rc == 0
+
+    out_header = header.replace("DATA binary_compressed\n", "DATA binary\n")
+    out_header_bytes = out_header.encode("ascii")
+    out_bytes = dst.read_bytes()
+    assert out_bytes[: len(out_header_bytes)] == out_header_bytes
+
+    out_points = np.frombuffer(out_bytes[len(out_header_bytes) :], dtype=np.float32).reshape(-1, 3)
+    expected = POINTS5_XYZ.copy()
+    expected[:, 1] += -0.475
+    np.testing.assert_allclose(out_points, expected, atol=1e-6)
+
+
+def test_read_points_binary_compressed_is_soa_not_interleaved():
+    """Pins field-major (SoA) decoding: field 0 for every point, then
+    field 1 for every point, etc. A reader that (wrongly) reshapes the
+    decompressed payload as interleaved (AoS) float32 quads without
+    transposing gets different -- and here, provably different --
+    numbers, so this fails under that mutation."""
+    soa = POINTS5.T.copy()  # (4, 5): all x, then all y, then all z, then all i
+    raw = soa.tobytes()
+    compressed = _lzf_literal_compress(raw)
+
+    buf = io.BytesIO()
+    buf.write(len(compressed).to_bytes(4, "little"))
+    buf.write(len(raw).to_bytes(4, "little"))
+    buf.write(compressed)
+    buf.seek(0)
+
+    decoded = shift_pcd.read_points(buf, "binary_compressed", n_points=5, n_fields=4)
+    np.testing.assert_allclose(decoded, POINTS5, atol=1e-6)
+
+    naive_aos = np.frombuffer(raw, dtype=np.float32).reshape(-1, 4)
+    assert not np.allclose(decoded, naive_aos)  # SoA reading != naive AoS reinterpretation
+
+
+def test_read_points_binary_compressed_rejects_uncompressed_length_mismatch(tmp_path):
+    src = tmp_path / "in.pcd"
+    header = BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")
+    _write_binary_compressed_pcd(src, header, POINTS5, uncompressed_len=1)
+
+    with open(src, "rb") as f:
+        _, data_format, n_points, n_fields = shift_pcd.read_header(f)
+        with pytest.raises(shift_pcd.PcdFormatError, match="mismatch"):
+            shift_pcd.read_points(f, data_format, n_points, n_fields)
+
+
+# --- shift_pcd: pure LZF decompressor -----------------------------------------
+
+
+def test_lzf_decompress_handles_literal_runs():
+    payload = bytes(range(50))  # forces two literal-run chunks (32 + 18 bytes)
+    compressed = _lzf_literal_compress(payload)
+    assert shift_pcd.lzf_decompress(compressed) == payload
+
+
+def test_lzf_decompress_handles_an_overlapping_back_reference():
+    """Hand-built LZF stream: a 2-byte literal run (``"AB"``) followed by
+    an 8-byte back-reference with ``offset=1`` (2 bytes back). Since
+    ``offset + 1`` (2) ``< length + 2`` (8), the source range overlaps
+    the destination range still being written -- this is the case a
+    slice-based (rather than byte-by-byte) copy gets wrong."""
+    literal = bytes([1]) + b"AB"  # ctrl=1 -> 2 literal bytes "AB"
+    back_ref = bytes([6 << 5, 1])  # length field=6 -> copy 8 bytes, offset=1
+    compressed = literal + back_ref
+
+    assert shift_pcd.lzf_decompress(compressed) == b"ABABABABAB"  # "AB" x 5
+
+
 # --- shift_pcd: provenance ---------------------------------------------------
 
 
@@ -128,16 +317,17 @@ def test_shift_prints_sha256_of_input_and_output(tmp_path, capsys):
 # --- shift_pcd: rejection paths -----------------------------------------------
 
 
-def test_rejects_wrong_fields(tmp_path):
-    """The real Town10 bundle's layout: x/y/z only, no intensity."""
+def test_rejects_a_fields_combination_outside_the_two_supported_layouts(tmp_path):
+    """Neither of the two supported layouts (``x y z`` / ``x y z
+    intensity``) -- e.g. a 2-field header -- must still be refused."""
     src = tmp_path / "in.pcd"
     header = (
-        BINARY_HEADER.replace("FIELDS x y z intensity\n", "FIELDS x y z\n")
-        .replace("SIZE 4 4 4 4\n", "SIZE 4 4 4\n")
-        .replace("TYPE F F F F\n", "TYPE F F F\n")
-        .replace("COUNT 1 1 1 1\n", "COUNT 1 1 1\n")
+        BINARY_HEADER.replace("FIELDS x y z intensity\n", "FIELDS x y\n")
+        .replace("SIZE 4 4 4 4\n", "SIZE 4 4\n")
+        .replace("TYPE F F F F\n", "TYPE F F\n")
+        .replace("COUNT 1 1 1 1\n", "COUNT 1 1\n")
     )
-    _write_binary_pcd(src, header=header, points=POINTS5[:, :3])
+    _write_binary_pcd(src, header=header, points=POINTS5[:, :2])
     with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="FIELDS"):
         shift_pcd.read_header(f)
 
@@ -156,29 +346,32 @@ def test_rejects_wrong_type(tmp_path):
         shift_pcd.read_header(f)
 
 
-def test_rejects_binary_compressed_data_even_with_matching_fields(tmp_path):
-    """Regression for the real bundle: ``~/autoware_map/town10/pointcloud_map.pcd``
-    is ``DATA binary_compressed`` (LZF-compressed), which this tool does not
-    decompress. Accepting it would misread the compressed bytes as raw
-    float32 and silently corrupt the map, so it must fail loudly even when
-    FIELDS/SIZE/TYPE already match x/y/z/intensity."""
+def test_rejects_count_not_all_ones(tmp_path):
+    """COUNT must be checked, not ignored: a non-``1`` COUNT is not the
+    flat one-scalar-per-point-per-field layout this tool assumes, even
+    though FIELDS/SIZE/TYPE otherwise match a supported layout."""
     src = tmp_path / "in.pcd"
-    _write_binary_pcd(
-        src, header=BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")
-    )
-    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="binary_compressed"):
+    _write_binary_pcd(src, header=BINARY_HEADER.replace("COUNT 1 1 1 1\n", "COUNT 1 1 1 2\n"))
+    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="COUNT"):
+        shift_pcd.read_header(f)
+
+
+def test_rejects_an_unsupported_data_format(tmp_path):
+    src = tmp_path / "in.pcd"
+    _write_binary_pcd(src, header=BINARY_HEADER.replace("DATA binary\n", "DATA xdr\n"))
+    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="DATA"):
         shift_pcd.read_header(f)
 
 
 def test_main_refuses_a_malformed_input_and_does_not_write_output(tmp_path, capsys):
     src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
-    header = BINARY_HEADER.replace("FIELDS x y z intensity\n", "FIELDS x y z\n")
-    _write_binary_pcd(src, header=header, points=POINTS5[:, :3])
+    header = BINARY_HEADER.replace("COUNT 1 1 1 1\n", "COUNT 1 1 1 2\n")
+    _write_binary_pcd(src, header=header)
 
     rc = shift_pcd.main(["--in", str(src), "--out", str(dst), "--dy", "-0.475"])
 
     assert rc != 0
-    assert "FIELDS" in capsys.readouterr().err
+    assert "COUNT" in capsys.readouterr().err
     assert not dst.exists()
 
 
@@ -328,8 +521,9 @@ def test_build_pcd_from_gt_writes_via_shift_pcds_header_and_writer(tmp_path):
     shift_pcd.write_pcd(out, header, points, "binary")
 
     with open(out, "rb") as f:
-        header_lines, fmt, n_points = shift_pcd.read_header(f)
-        read_back = shift_pcd.read_points(f, fmt, n_points)
+        header_lines, fmt, n_points, n_fields = shift_pcd.read_header(f)
+        read_back = shift_pcd.read_points(f, fmt, n_points, n_fields)
     assert fmt == "binary"
     assert n_points == 1
+    assert n_fields == 4
     np.testing.assert_allclose(read_back, points, atol=1e-6)
