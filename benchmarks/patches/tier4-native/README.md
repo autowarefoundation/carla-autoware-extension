@@ -40,7 +40,7 @@ git apply /path/to/benchmarks/patches/tier4-native/0002-glibc-compat.patch
 
   **Byte-identity of `GlibcCompat.c` against upstream `815b8ba2c` was
   verified** (`git show 815b8ba2c:LibCarla/source/carla/GlibcCompat.c |
-  diff - LibCarla/source/carla/GlibcCompat.c` — empty diff, exit 0).
+diff - LibCarla/source/carla/GlibcCompat.c` — empty diff, exit 0).
 
   **Client-archive caveat:** the shim attaches to `carla-server` only.
   `libcarla-client.a` keeps unshimmed `isoc23` references. This is
@@ -196,15 +196,193 @@ misdiagnose as a build problem.
 - A stalled sync-mode CARLA (bridge or otherwise holding the tick
   authority) may ignore `SIGTERM` — send `SIGKILL` if it does not exit.
 
-## ROS 2 wire visibility — placeholder
+## ROS 2 wire visibility — verdict (Task 9)
 
-**This section is a placeholder.** Task 9 (Approach B wire-visibility
-diagnostic) will fill it in with its verdict on whether the tier4
-fork's native ROS 2 topics are observable on the wire from this host,
-and how. As of P1 (Verdict 8.4), native ROS 2 topics from this fork
-were invisible to every `ros2` CLI tried on this host even though
-`ROS_DOMAIN_ID`, QoS, and Fast-DDS shared memory all checked out
-normal; gate (c) was measured client-side via the CARLA API as a
-stand-in, not on the wire. Do not treat that stand-in as equivalent to
-an on-the-wire measurement — it is exactly what Task 9 exists to
-resolve.
+**RESOLVED. Rung 1 of the pre-registered ladder: a config-level fix.**
+The fork's native ROS 2 topics ARE on the wire and ARE measurable from
+a stock `bench-observer:universe-devel` container. No observer variant
+is needed, no image is rebuilt, and B's M1/M2 are measurable. P1
+Verdict 8.4's "invisible to every `ros2` CLI" is reproduced exactly —
+but by the _consumer's_ transport configuration, not by anything in
+the fork.
+
+Evidence run: tier4 editor `-game` Town10HD_Opt `--ros2
+-carla-rpc-port=3000 -RenderOffScreen -nosound`, engine BuildId
+`4210e602-78ec-46e1-8f2f-03fadbe036a3` (matches `pins.yaml`), one
+VLP16 LiDAR spawned through the CARLA API with the fork's own
+`autoware_demo.py` attributes (`ros_name=velodyne_top`,
+`ros_topic_name=/sensing/lidar/top/pointcloud_raw_ex`,
+`sensor_tick=0.1`) plus `enable_for_ros()`. CARLA-API-side cadence
+over the same run: **10.002 Hz** (3300 frames).
+
+### Root cause — two independent faults, both consumer-side
+
+1. **Shared memory.** Every fork publisher builds its participant from
+   `PARTICIPANT_QOS_DEFAULT`, so Fast-DDS 2.11.2's builtin transports
+   (SHM + UDPv4) apply and the participant announces its **user-data
+   locators as SHM only** (`kind=16`); metatraffic stays on UDPv4.
+   A Fast-DDS **2.6.11** reader (ROS 2 Humble — the observer image and
+   the Autoware image both) with SHM enabled therefore selects the SHM
+   locator, and 2.11.2's SHM segment protocol is not interoperable
+   with 2.6.11's. The result is the confusing shape P1 hit: discovery
+   and endpoint matching **succeed** (`ros2 topic list` and
+   `ros2 topic info -v` show the publisher with correct type and QoS)
+   while **no sample ever arrives**. Turning SHM off on the consumer
+   forces UDPv4 and data flows at full rate.
+2. **The harness's default observer transport.** `--rmw
+rmw_cyclonedds_cpp` with `docker/cyclonedds.xml` (interfaces pinned
+   to `lo`) sees **nothing at all** against the fork — no topic list
+   entry, no echo, no rate. That is verbatim "invisible to every
+   `ros2` CLI", and it is the campaign's own default.
+
+A third, purely environmental trap sits on top of both: this host's
+login shell exports `ROS_DOMAIN_ID=123` and
+`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` (`~/.zshrc:126-127`). Any
+probe run from a login shell without overriding them lands on domain
+123 with Cyclone and sees nothing, whatever the transport. Export
+`ROS_DOMAIN_ID=0` in every shell and pass it into every container.
+
+**The fork cannot be reconfigured from its own side.** Neither
+`FASTRTPS_DEFAULT_PROFILES_FILE` nor `FASTDDS_BUILTIN_TRANSPORTS`
+reaches its participants: `create_participant` selects the
+XML-derived default QoS by **pointer identity** with
+`PARTICIPANT_QOS_DEFAULT`, and every fork publisher copies that object
+before setting `.name()`, which loses the identity. Measured, not
+inferred — a stand-in publisher using the fork's exact code shape kept
+announcing SHM locators under both env knobs, and switched to UDPv4
+only when built from `get_default_participant_qos()`. So the fix has
+to be applied at the consumer, which is what the matrix below does.
+
+### Transport matrix (live fork, `/sensing/lidar/top/pointcloud_raw_ex`)
+
+`LIST` = `ros2 topic list` shows it; `ECHO` = `ros2 topic echo --once`
+returns; `RATE` = `ros2 topic hz`. The `ros2` daemon is stopped in
+every cell first, so no cell is a cached negative.
+
+`LHO` is `ROS_LOCALHOST_ONLY`. Rows 1–7 run in the observer image
+`bench-observer:universe-devel`; rows 8–11 run in the exact pinned
+`autoware_universe_devel.digest` image cell B launches Autoware from.
+Both are ROS 2 Humble with Fast-DDS 2.6.11.
+
+| #   | rmw      | profile          | LHO | domain  | LIST | ECHO | RATE       |
+| --- | -------- | ---------------- | --- | ------- | ---- | ---- | ---------- |
+| 1   | fastrtps | none (SHM on)    | 0   | 0       | yes  | no   | —          |
+| 2   | fastrtps | `udp_only.xml`   | 0   | 0       | yes  | yes  | **10.006** |
+| 3   | fastrtps | none (SHM on)    | 1   | 0       | no   | no   | —          |
+| 4   | fastrtps | `udp_only.xml`   | 1   | 0       | yes  | yes  | 10.071     |
+| 5   | cyclone  | `cyclonedds.xml` | 0   | 0       | no   | no   | —          |
+| 6   | cyclone  | none             | 0   | 0       | yes  | yes  | 10.020     |
+| 7   | fastrtps | `udp_only.xml`   | 0   | **123** | no   | no   | —          |
+| 8   | fastrtps | none (SHM on)    | 0   | 0       | yes  | no   | —          |
+| 9   | fastrtps | `udp_only.xml`   | 0   | 0       | yes  | yes  | **10.070** |
+| 10  | cyclone  | `cyclonedds.xml` | 0   | 0       | no   | no   | —          |
+| 11  | cyclone  | none             | 0   | 0       | no   | yes  | 9.930      |
+
+Rows 6 and 11 work only because Cyclone with no profile binds a
+routable interface (`wlp130s0f0`) — they make the measurement depend
+on the host's wireless NIC and on Cyclone's graph being flaky for
+bare-DDS publishers (row 11 receives data while `topic list` denies
+the topic exists). Do not use them.
+
+**Row 9 is the answer to the campaign's decision question: the
+Autoware container CAN consume the fork's topics.** Cell B's closed
+loop is feasible; the joint-failure clause is not triggered.
+
+### The invocation cells B / B-hf / B45 (and D) must use
+
+```bash
+bash benchmarks/run.sh --cell B ... --rmw rmw_fastrtps_cpp --shm off
+```
+
+`run.sh` maps `--rmw rmw_fastrtps_cpp --shm off` to
+`--dds-profile benchmarks/observer/config/udp_only.xml` and mounts it
+as `FASTRTPS_DEFAULT_PROFILES_FILE` in the observer container, which
+is exactly the configuration measured in rows 2/4/9. Do NOT pass
+`--shm on` (row 1: records nothing) and do NOT leave the Cyclone
+default (row 5: records nothing). The recorded `observer_env` is:
+
+```json
+{
+  "image": "bench-observer:universe-devel",
+  "rmw": "rmw_fastrtps_cpp",
+  "shm": "off",
+  "topics_file": "B.yaml"
+}
+```
+
+The **Autoware side of a B-family cell needs the same treatment**:
+Task 13's launch must give the Autoware container
+`ROS_DOMAIN_ID=0`, `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and
+`FASTRTPS_DEFAULT_PROFILES_FILE` pointing at `udp_only.xml`
+(bind-mounted), or its subscribers will match CARLA's writers and
+still receive nothing — row 8, the silent shape.
+
+Acceptance check, run live: the stock `bench_observer` binary, invoked
+exactly as `run.sh` invokes it, with `B.yaml`'s LiDAR row, recorded
+**243 rows in 24 s (10.1 Hz)** into `observer.csv` with plausible
+`size_bytes` (64–76 KB) plus 1711 `/clock` rows. Topic names on the
+wire are exactly the ones `observer_topics/B*.yaml` already register —
+no correction was needed.
+
+### Limits of what the wire exposes
+
+`ros2 node list` returns **empty**: the fork publishes as a bare DDS
+application (`_CREATED_BY_BARE_DDS_APP_`), so no ROS graph node exists
+for CARLA. Anything that enumerates nodes, or that needs node
+parameters or lifecycle, will find nothing on the CARLA side. Topic-
+level introspection is unaffected. With one LiDAR the fork's whole
+published set is `/clock`, `/tf`,
+`/sensing/lidar/top/pointcloud_raw_ex` (`/rosout`,
+`/parameter_events` come from the consumer).
+
+### Refuted hypotheses (kept with what refuted them)
+
+- **"Fast-DDS version gap 2.11.2 vs Jazzy 2.14.6."** Refuted. Host
+  ROS 2 Jazzy with `rmw_fastrtps_cpp` and SHM **on** both lists and
+  receives (9.979 Hz). 2.11.2↔2.14.6 SHM interoperates; only
+  2.11.2↔2.6.11 does not — so the version gap is real but points at
+  **Humble**, the opposite of the standing note.
+- **"Use Humble instead of Jazzy."** Refuted, and actively harmful:
+  Humble is precisely the version whose SHM cannot read 2.11.2's.
+- **"`WITH_ROS2` is not compiled into the editor build."** Refuted.
+  `libUnrealEditor-Carla.so` carries `NEEDED
+libcarla-ros2-native.so` and 121 undefined `carla::ros2::*` symbols.
+- **"The fork hardcodes a transport, interface whitelist or
+  `SHM_DEFAULT`."** Refuted. `grep -rn
+"TransportDescriptor\|whitelist\|SHM_DEFAULT\|useBuiltinTransports"
+LibCarla/source/carla/ros2/` returns **zero** matches; participant
+  QoS is stock `PARTICIPANT_QOS_DEFAULT`.
+- **"The participant never reaches the wire."** Refuted without a
+  packet capture: the `UnrealEditor` PID owns 21 UDP sockets including
+  `0.0.0.0:7400` (SPDP) and `7410`–`7417`, creates 12
+  `/dev/shm/fastrtps_*` segments, and an independent raw participant
+  observes its SPDP **and** its EDP writer announcements for
+  `rt/clock`, `rt/tf` and `rt/sensing/lidar/top/pointcloud_raw_ex`
+  (type `sensor_msgs::msg::dds_::PointCloud2_`).
+- **"SPDP present but endpoint matching fails."** Refuted: matching
+  succeeds in every cell that lists the topic; only the SHM-locator
+  data path fails.
+- **"The fork's Fast-DDS 2.11.2 SHM path is broken."** Refuted. A raw
+  2.11.2 subscriber takes 200 samples in 20 s straight off the live
+  fork over SHM.
+
+### Reproducing the raw 2.11.2 probe
+
+Not committed — rung 1 fired, so no `bench-observer-fastdds211` image
+exists. Should a later task need a version-matched subscriber, it
+links only already-built artifacts (no fork or engine rebuild):
+Fast-DDS 2.11.2 and headers from
+`~/src/carla-autoware-native/Build/Ros2Native/install`, the fork's
+generated typesupport from
+`LibCarla/source/carla/ros2/types/{PointCloud2,Header,Time,PointField}
+{,PubSubTypes}.cpp`, compiled with the **UE5 sysroot clang and
+libc++** — `Build/Ros2Native/install/lib/libfastrtps.so.2.11.2`
+exports `std::__1::` symbols, so a stock `g++`/libstdc++ build cannot
+link it. Two traps cost real time and are worth repeating: attach the
+participant listener with `StatusMask::none()`, because a participant
+listener with an active mask claims
+`SubscriberListener::on_data_on_readers` and thereby suppresses
+`DataReaderListener::on_data_available` (the probe then reports zero
+samples on a working wire); and `DataWriter::write(void*)` returns
+`bool`, not `ReturnCode_t`, so an unchecked `!=` comparison hides
+write failures.

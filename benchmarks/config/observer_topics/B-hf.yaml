@@ -5,11 +5,16 @@
 # control topic is the GATED /control/command/control_cmd, not the raw
 # /control/trajectory_follower/control_cmd.
 #
-# NOT yet confirmed on the wire for this approach: P1 Verdict 8.4 found
-# the tier4 fork's native ROS 2 topics invisible to every ros2 CLI on
-# this host. Task 9 (wire-visibility diagnostic) settles whether these
-# names are observable as written; if it finds different as-emitted
-# names, this file is corrected there, before any B-family P3 run.
+# CONFIRMED ON THE WIRE by Task 9 (wire-visibility diagnostic): the
+# LiDAR row's name is emitted exactly as written here by the fork
+# (`ros_topic_name=/sensing/lidar/top/pointcloud_raw_ex` -> DDS topic
+# `rt/sensing/lidar/top/pointcloud_raw_ex`), recorded live at 10.1 Hz
+# by the stock bench_observer. No name needed correcting. P1 Verdict
+# 8.4's "invisible to every ros2 CLI" was the CONSUMER's transport:
+# this cell MUST run `--rmw rmw_fastrtps_cpp --shm off`, because the
+# fork announces SHM-only user-data locators that ROS 2 Humble's
+# Fast-DDS 2.6.11 matches but cannot read. See
+# benchmarks/patches/tier4-native/README.md, "ROS 2 wire visibility".
 #
 # PublishedTime topics are NOT listed here yet. They are appended in
 # Tasks 13/20, after live discovery on the running stack
