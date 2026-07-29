@@ -20,13 +20,14 @@ A future `bench_observer` must emit the following files for every run:
 | `resources.csv`      | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                            | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                             |
 | `odometry.csv`       | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size. |
 | `gt.csv`             | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                      | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                |
+| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                     | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below.                                                                                                     |
 | `manifest.json`      | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `quality.json`       | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. NO WRITER EXISTS YET — the task that lands the M5 gate step writes it.                                                                                                                                                                                                   |
 
 Results are laid out on disk as:
 
 ```text
-benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,gt.csv,quality.json}
+benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,gt.csv,publisher_counts.json,quality.json}
 ```
 
 ## Patch policy
@@ -407,13 +408,60 @@ drop from observer loss and is reported per cell alongside the duel row.
 **Reconciliation window and scope.** Computed over the SAME resolved
 scoring window this metric uses for that run — never a second,
 independent window — and reported per cell AND per arm, never pooled
-across either axis (mirroring "Arm scoping" above). Expected count:
-`max(1, round(window_s * lidar_expected_hz))`, `window_s` the window's
-own span in seconds. An absent `publisher_counts.json` (the E-cell
-case: the bridge is the sensor stream's only listener, so no
-independent publisher-side count exists) is NOT MEASURABLE, distinct
-from a present file recording a real zero throughput
-(`cadence.reconcile_drops`'s own NaN `observer_loss_rate` branch).
+across either axis (mirroring "Arm scoping" above). **All three counts
+are windowed to that one interval**; a term left whole-run against
+windowed counterparts is not a coarser answer but a different quantity,
+and on a healthy run it clamps `publisher_drop_rate` to 0.000 while
+fabricating `observer_loss_rate` out of the interval mismatch alone.
+
+- expected: `max(1, round(window_s * lidar_expected_hz))`, `window_s`
+  the window's own span in **SIM** seconds (`lidar_expected_hz` is a
+  sim-domain rate — see below).
+- observed: `observer.csv` rows for the cell's `lidar_topic` whose
+  `header_stamp_ns` lies in the closed interval `[sim_lo, sim_hi]`.
+- published: `publisher_counts.json` entries for the same topic whose
+  recorded sim stamp lies in that same closed interval.
+
+`publisher_counts.json` (schema `publisher_counts/2`, written by
+`scripts/collect_gt.py --count-lidar`, read by
+`analysis/publisher_counts.py`) records one sim stamp per published
+message — CARLA's episode `elapsed_seconds` through
+`collect_gt.sim_ns_from_elapsed`, i.e. the same domain and rounding rule
+as `gt.csv`'s `sim_ns` — precisely so the publisher-side term can be
+windowed identically to the other two. A file in the earlier
+`{topic: count}` shape holds a whole-run count that cannot be windowed
+after the fact: it is REFUSED by name (surfaced as that run's FAILED
+note), never read as though its count had been windowed.
+
+An absent `publisher_counts.json` (the E-cell case: the bridge is the
+sensor stream's only listener, so no independent publisher-side count
+exists) is NOT MEASURABLE, distinct from a present file recording a real
+zero throughput (`cadence.reconcile_drops`'s own NaN `observer_loss_rate`
+branch) and from a refused one (a file that exists and cannot be
+interpreted).
+
+**Output states.** Four states this table renders. All are mechanically
+discriminable from the data, so both branches of each are registered
+here rather than settled in the implementation:
+
+1. `lidar_topic` or `lidar_expected_hz` **not registered** (`null`) for a
+   cell: that cell's row is `UNAVAILABLE` with all four rates `-`,
+   decided without touching a single run directory. The counterpart
+   cell's row is still computed — this diagnostic is per cell, unlike
+   the duel row itself, which needs both sides bound to render at all.
+2. `lidar_expected_hz` **registered but invalid** (`<= 0`): the same
+   `UNAVAILABLE` row, mirroring `achieved_rate_ratio`'s own guard for
+   the same binding. Without it the `max(1, …)` floor above would report
+   a clean-looking ~0.000 drop rate beside that metric failing outright
+   for the very same cell.
+3. **Every measurable run had `published_count == 0`**: both observer
+   statistics render `NaN`, not absent. `-` is reserved for "no
+   measurable run at all"; a cell that measurably published nothing is a
+   finding, and the two must not print the same.
+4. A **per-run failure** (window unresolvable, `publisher_counts.json`
+   refused, `lidar_topic` absent from that run's `observer.csv`): the run
+   enters neither statistic and neither count, and is named in the row's
+   notes with its exception type — never dropped silently.
 
 **Cross-run reduction — owner ruling, 2026-07-28: median AND max, both
 reported**, for both `publisher_drop_rate` and `observer_loss_rate`,
@@ -427,6 +475,12 @@ over it. `observer_loss_rate`'s reduction (both median and max)
 excludes runs where it is NaN (a real, file-backed zero-throughput
 run), with that count reported separately so it is never silently
 folded into either statistic.
+
+The two axes therefore reduce over different populations, and **both
+sample sizes are printed**: `n measurable` is the publisher pair's n,
+and `n observer` (`n measurable` − `n zero-published`) is the observer
+pair's. One printed n beside four rates would misstate whichever pair it
+did not belong to.
 
 `lidar_expected_hz` is the cell's registered sensor target, filled by the
 relation P1 Verdict 4 measured live: effective rate = `min(1 / sensor_tick,
@@ -905,6 +959,41 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   with that convention) with max added beside it (so a lone high-loss
   run is not buried). Margins are unchanged; this is a diagnostic, not a
   duel metric, and carries no margin of its own.
+- **2026-07-28 — owner ruling** — the M2 reconciliation's **published
+  count is windowed too**, and `publisher_counts.json` gained the schema
+  (`publisher_counts/2`) that makes windowing it possible: one sim stamp
+  per published message instead of a single whole-run total, registered
+  in the data contract at the top of this file. A file in the old shape
+  is refused by name rather than reinterpreted.
+  Completeness: the window rule registered one entry above said "the
+  SAME resolved scoring window" while only two of the three counts were
+  in fact windowed — the published one was a cumulative `sensor.listen`
+  counter with no window at all. On a healthy 60 s static run against
+  the registered [t0 + 20 s, end] window that combination reports
+  `publisher_drop_rate` 0.000 (clamped, structurally blind to any real
+  drop below ~33%) and `observer_loss_rate` ~0.333 (fabricated by the
+  interval mismatch), on exactly the two cells this diagnostic exists to
+  arbitrate between. The alternatives were rejected on the record:
+  reconciling whole-run everywhere would readmit the warm-up this
+  section's own window rule removes, and emitting nothing would leave
+  `achieved_rate_ratio`'s publisher/observer split undecidable. This
+  lands before any P3 run, so no measurement is scored under the old
+  shape. Margins are unchanged.
+- **2026-07-28** — the reconciliation's **four output states** (null
+  binding, invalid `lidar_expected_hz <= 0`, all-runs-zero-published
+  `NaN`, per-run failure) registered explicitly. Completeness: all four
+  are implemented and all four are mechanically discriminable from data,
+  so the campaign's standing rule — pre-register both branches of any
+  discriminable state — applied to them; the invalid-binding row in
+  particular existed only in code. No behaviour changes with this entry.
+- **2026-07-28** — the reconciliation table reports **both sample
+  sizes** (`n measurable` for the publisher pair, `n observer` for the
+  observer pair). Completeness: the reduction population registered
+  above is "each cell's measurable runs", but the observer pair
+  additionally excludes the NaN (zero-published) runs, so its true n was
+  never printed and a reader pairing the one printed n with an observer
+  statistic would overstate that statistic's sample size — by all of it
+  when every measurable run published nothing.
 
 ## How to run
 
