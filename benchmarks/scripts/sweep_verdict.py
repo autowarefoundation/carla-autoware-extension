@@ -289,7 +289,7 @@ def _expected_lidar_count(window_s: float, lidar_expected_hz: float | None) -> i
 
 
 def _publisher_rate_ratio(
-    run_dir: Path, topic: str | None, expected_count: int
+    run_dir: Path, topic: str | None, n_expected: int
 ) -> tuple[float, float, str | None]:
     """publisher_rate_ratio (an `evaluate_ceiling` input) plus
     observer_loss_rate (a diagnostic only -- `evaluate_ceiling` does not
@@ -331,7 +331,7 @@ def _publisher_rate_ratio(
         return 1.0, float("nan"), NOT_MEASURABLE
 
     published_count = read_publisher_counts(counts_path).whole_run_count(topic)
-    drop = reconcile_drops(expected_count, published_count, observed_count)
+    drop = reconcile_drops(n_expected, published_count, observed_count)
     # reconcile_drops.observer_loss_rate is NaN exactly when published_count
     # == 0: a real, file-backed zero-throughput run, distinct from the
     # "not measurable" (file absent) case above. It is returned as-is;
@@ -535,7 +535,7 @@ def verdict_for_run(
     # every sweep point"): the publisher-side count is expected against
     # the sensor's own registered scan rate regardless of whether the
     # TICK itself is paced this run.
-    expected_count = _expected_lidar_count(window_s, lidar_expected_hz)
+    n_expected = _expected_lidar_count(window_s, lidar_expected_hz)
 
     # Every arm other than "unpaced" is scored via the rtf path (paced and
     # ablation both tick at the paced target; only "unpaced" substitutes
@@ -548,7 +548,7 @@ def verdict_for_run(
         sample_ns, rtf = _rtf_series_from_resources(resources)
         tick_ratio = None
 
-    pub_ratio, obs_loss, pub_note = _publisher_rate_ratio(run_dir, topic, expected_count)
+    pub_ratio, obs_loss, pub_note = _publisher_rate_ratio(run_dir, topic, n_expected)
     quality_ok, quality_note = _quality_ok(run_dir, manifest.arm)
 
     verdict = evaluate_ceiling(sample_ns, rtf, pub_ratio, quality_ok, tick_rate_ratio=tick_ratio)

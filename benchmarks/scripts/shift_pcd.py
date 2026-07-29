@@ -100,10 +100,10 @@ def read_header(f) -> tuple[list[str], str, int, int]:
             f"unsupported FIELDS/SIZE/TYPE combination: FIELDS {fields!r} "
             f"SIZE {size!r} TYPE {type_!r}"
         )
-    expected_count = " ".join(["1"] * n_fields)
-    if count != expected_count:
+    required_count = " ".join(["1"] * n_fields)
+    if count != required_count:
         raise PcdFormatError(
-            f"unsupported COUNT {count!r}, expected {expected_count!r} for "
+            f"unsupported COUNT {count!r}, expected {required_count!r} for "
             "a flat (one scalar per point per field) layout"
         )
 
