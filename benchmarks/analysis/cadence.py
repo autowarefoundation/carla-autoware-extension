@@ -48,3 +48,23 @@ def reconcile_drops(expected_count: int, published_count: int, observed_count: i
         float("nan") if published_count == 0 else max(0.0, 1.0 - observed_count / published_count)
     )
     return DropStats(pub_drop, obs_loss)
+
+
+def expected_count(window_s: float, expected_hz: float) -> int:
+    """Expected message count over a `window_s`-second window at
+    `expected_hz` -- `reconcile_drops`'s expected-count term.
+    `max(1, ...)` floors the expectation at one message so a
+    vanishingly short window never compares against a zero
+    denominator.
+
+    Shared arithmetic for both consumers of the M2 three-way
+    reconciliation: `sweep_verdict.py` (window = clock.csv's whole-run
+    wall extent) and `duel_verdict.py` (window = the run's registered
+    scoring window, `_resolve_window`'s resolved bounds). The two tools
+    differ in WHICH window they resolve and pass in -- not in this
+    arithmetic -- so only this one line is shared; each caller keeps
+    its own `expected_hz is None` handling; that state means "not
+    pre-registered yet" and must fail loudly on the caller's own terms,
+    so this function only ever receives a real float.
+    """
+    return max(1, round(window_s * expected_hz))

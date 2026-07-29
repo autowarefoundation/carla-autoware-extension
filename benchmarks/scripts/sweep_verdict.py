@@ -85,7 +85,7 @@ from pathlib import Path
 import numpy as np
 
 from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv, read_resources_csv
-from benchmarks.analysis.cadence import reconcile_drops
+from benchmarks.analysis.cadence import expected_count, reconcile_drops
 from benchmarks.analysis.ceiling import CeilingVerdict, evaluate_ceiling
 from benchmarks.analysis.manifest import load_manifest
 from benchmarks.scripts.cell_info import UnknownIdError, load_cells_doc, merge, metrics_for
@@ -264,7 +264,11 @@ def _expected_lidar_count(window_s: float, lidar_expected_hz: float | None) -> i
             "computed until it is filled in (see benchmarks/README.md's "
             "achieved_rate_ratio registration)"
         )
-    return max(1, round(window_s * lidar_expected_hz))
+    # The arithmetic itself (max(1, round(window_s * hz))) is shared with
+    # duel_verdict.py's own reconciliation via cadence.expected_count; only
+    # the None-handling above (this tool raises; duel_verdict.py surfaces
+    # a visible UNAVAILABLE note instead) is caller-specific.
+    return expected_count(window_s, lidar_expected_hz)
 
 
 def _publisher_rate_ratio(

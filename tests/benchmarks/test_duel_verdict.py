@@ -23,28 +23,40 @@ implementation diverge, and a mutation to the rejected form is described
 inline where it matters (D1, D7).
 """
 
+import json
+import math
 from pathlib import Path
 
 import numpy as np
 import pytest
 import yaml
+from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv
+from benchmarks.analysis.cadence import expected_count
 from benchmarks.analysis.clockfit import fit_sim_wall_affine, sim_to_wall
 from benchmarks.analysis.manifest import RunManifest, load_manifest
+from benchmarks.analysis.window import static_window
 from benchmarks.scripts.cell_info import UnknownIdError
 from benchmarks.scripts.duel_verdict import (
     METRIC_BINDERS,
+    NOT_MEASURABLE,
     ODOM_TOPIC,
     SIM_STAMP_CEIL_NS,
     WALL_STAMP_FLOOR_NS,
     WARMUP_NS,
     MetricUnavailableError,
+    ReconciliationRow,
     _bind_achieved_rate_ratio,
     _bind_carla_process_cpu_pct,
     _bind_control_staleness_ms,
     _bind_lidar_to_ndt_sim_ms,
     _bind_one_hop_wall_ms,
+    _cell_reconciliation_row,
+    _reconcile_run,
     _registered_arms,
     _resolve_window,
+    _RunWindow,
+    _wall_to_sim,
+    _walk_cell_runs,
     build_verdict_table,
     cell_run_values,
     extract_achieved_rate_ratio,
@@ -52,6 +64,7 @@ from benchmarks.scripts.duel_verdict import (
     extract_control_staleness_ms,
     extract_lidar_to_ndt_sim_ms,
     extract_one_hop_wall_ms,
+    render_reconciliation_table,
     render_table,
     verdict_row,
 )
@@ -1216,3 +1229,338 @@ def test_main_reports_no_common_arm_cleanly(tmp_path, capsys):
     rc = main(["E0", "E-opt", "--results", str(tmp_path / "results")])
     assert rc == EXIT_UNKNOWN_ID
     assert "CELL FAIL" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# M2 three-way reconciliation: achieved_rate_ratio's registered companion
+# output. Layer 2 (`_reconcile_run`, over synthetic run-* directories),
+# then Layer 3 (`_cell_reconciliation_row`/`render_reconciliation_table`,
+# and the full `build_verdict_table` integration).
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_run_returns_none_when_publisher_counts_absent(tmp_path):
+    """publisher_counts.json absent (the E-cell case: the bridge is the
+    sensor stream's only listener, so no independent publisher-side
+    count exists) must return None -- "not measurable" -- never a
+    zero-count DropStats, which would read as total publisher failure
+    instead of "no evidence either way"."""
+    cell = _make_run(tmp_path, lidar_hz=10.0, run_duration_s=40.0)
+    run_dir = cell / "run-001"
+    assert _reconcile_run(run_dir, _window_of(run_dir), LIDAR_TOPIC, 10.0) is None
+
+
+def test_reconcile_run_zero_published_count_reports_nan_observer_loss(tmp_path):
+    """The opposite, file-backed case: publisher_counts.json exists and
+    genuinely records 0. Distinct from the absent-file case above --
+    must return a real DropStats, with observer_loss_rate NaN (see
+    cadence.reconcile_drops) rather than a misleading 0.0."""
+    cell = _make_run(tmp_path, lidar_hz=10.0, run_duration_s=40.0)
+    run_dir = cell / "run-001"
+    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: 0}))
+    drop = _reconcile_run(run_dir, _window_of(run_dir), LIDAR_TOPIC, 10.0)
+    assert drop is not None
+    assert drop.publisher_drop_rate == 1.0
+    assert math.isnan(drop.observer_loss_rate)
+
+
+def test_reconcile_run_raises_when_topic_missing_from_observer_csv(tmp_path):
+    cell = _make_run(tmp_path)
+    run_dir = cell / "run-001"
+    (run_dir / "publisher_counts.json").write_text(json.dumps({"/no/such/topic": 10}))
+    with pytest.raises(MetricUnavailableError):
+        _reconcile_run(run_dir, _window_of(run_dir), "/no/such/topic", 10.0)
+
+
+def test_reconcile_run_excludes_pre_window_rows(tmp_path):
+    """Static-arm window-gating pin: the resolved window's 20 s warm-up
+    discard must gate the EXPECTED count (via window_s) and the
+    OBSERVED count (via the in-window row filter) alike, not just avoid
+    crashing. `pre_window_decimate` thins the pre-window portion to
+    1/5th density; published_count is set to the TRUE post-warmup
+    expectation, so the correctly-windowed computation reports a
+    healthy (~0) drop on both terms.
+
+    The rejected mutation -- a static_window built with NO warm-up
+    discard, i.e. duel_verdict.py's own originally-reported defect of
+    applying no scoring window at all -- is built explicitly below and
+    shown to report a visibly different, wrong drop rate against the
+    SAME published_count: this is the exact "static/whole-run window"
+    mutation the S4 brief requires be ruled out.
+    """
+    lidar_expected_hz = 10.0
+    cell = _make_run(
+        tmp_path,
+        lidar_hz=lidar_expected_hz,
+        run_duration_s=40.0,
+        pre_window_decimate=5,
+        outlier_until_ns=WARMUP_NS,
+    )
+    run_dir = cell / "run-001"
+    window = _window_of(run_dir)
+    window_s = (window.sim_hi - window.sim_lo) / 1e9
+    n_expected = expected_count(window_s, lidar_expected_hz)
+    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: n_expected}))
+
+    drop_correct = _reconcile_run(run_dir, window, LIDAR_TOPIC, lidar_expected_hz)
+    assert drop_correct.publisher_drop_rate == pytest.approx(0.0, abs=0.05)
+    assert drop_correct.observer_loss_rate == pytest.approx(0.0, abs=0.1)
+
+    # The rejected mutation: static_window with warmup_ns=0 (no discard
+    # at all) instead of the registered WARMUP_NS.
+    clock_ns, clock_wall = read_clock_csv(run_dir / "clock.csv")
+    fit = fit_sim_wall_affine(clock_ns, clock_wall)
+    wall_lo_w, wall_hi_w = static_window(int(clock_wall.min()), int(clock_wall.max()), 0)
+    window_wrong = _RunWindow(
+        fit,
+        int(round(float(_wall_to_sim(fit, wall_lo_w)))),
+        int(round(float(_wall_to_sim(fit, wall_hi_w)))),
+        int(wall_lo_w),
+        int(wall_hi_w),
+    )
+    drop_wrong = _reconcile_run(run_dir, window_wrong, LIDAR_TOPIC, lidar_expected_hz)
+    assert drop_wrong.publisher_drop_rate > 0.3
+
+
+def test_reconcile_run_closed_loop_uses_the_resolved_spatial_window(tmp_path):
+    """Mutation-testing pin (S4 brief): the M2 reconciliation must use
+    the SAME resolved window achieved_rate_ratio does -- window.
+    spatial_window on the closed-loop arm, never window.static_window.
+
+    Same stationary-then-moving fixture as test_extract_one_hop_wall_ms_
+    closed_loop_uses_route_spatial_window: the TRUE spatial window
+    (~13.3 s, starting only once station >= 20 m is reached at ~55.8 s)
+    is a small fraction of the buggy static window's 50 s span
+    [20 s, 70 s]. publisher_counts.json is set to EXACTLY the observed
+    count inside the TRUE spatial window, so the correctly-resolved
+    window must report a healthy (~0) publisher_drop_rate; substituting
+    a static/whole-run window -- the mutation performed explicitly below
+    -- prices in far more expected messages against the SAME
+    published_count and reports a large, wrong drop rate instead. A
+    prior reviewer found a test named for using the spatial window that
+    in fact passed identically under a static one; this test's second
+    half exists specifically so that failure mode cannot recur silently
+    here.
+    """
+    cell = _make_run(
+        tmp_path,
+        arm="closed-loop",
+        lidar_hz=10.0,
+        outlier_until_ns=55_000_000_000,
+        stationary_until_s=55.0,
+        run_duration_s=70.0,
+    )
+    run_dir = cell / "run-001"
+    window = _window_of(run_dir)
+    # Fixture's premise (mirrors the existing D7 closed-loop test).
+    assert window.sim_lo > 55_000_000_000
+
+    topics = read_observer_csv(run_dir / "observer.csv")
+    stamps = topics[LIDAR_TOPIC]["header_stamp_ns"]
+    true_in_window = int(np.count_nonzero((stamps >= window.sim_lo) & (stamps <= window.sim_hi)))
+    lidar_expected_hz = 10.0
+    (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: true_in_window}))
+
+    drop_correct = _reconcile_run(run_dir, window, LIDAR_TOPIC, lidar_expected_hz)
+    assert drop_correct.publisher_drop_rate == pytest.approx(0.0, abs=0.05)
+
+    # The rejected mutation, performed explicitly: substitute a
+    # static/whole-run window for the spatial one.
+    clock_ns, clock_wall = read_clock_csv(run_dir / "clock.csv")
+    fit = fit_sim_wall_affine(clock_ns, clock_wall)
+    wall_lo_w, wall_hi_w = static_window(int(clock_wall.min()), int(clock_wall.max()), WARMUP_NS)
+    window_wrong = _RunWindow(
+        fit,
+        int(round(float(_wall_to_sim(fit, wall_lo_w)))),
+        int(round(float(_wall_to_sim(fit, wall_hi_w)))),
+        int(wall_lo_w),
+        int(wall_hi_w),
+    )
+    drop_wrong = _reconcile_run(run_dir, window_wrong, LIDAR_TOPIC, lidar_expected_hz)
+    assert drop_wrong.publisher_drop_rate > 0.5
+
+
+# ---------------------------------------------------------------------------
+# _cell_reconciliation_row / ReconciliationRow / render_reconciliation_table
+# ---------------------------------------------------------------------------
+
+
+def test_cell_reconciliation_row_none_binding_is_unavailable_without_touching_runs():
+    row = _cell_reconciliation_row("B", "static", _metrics(lidar_expected_hz=None), records=[])
+    assert row.n_measurable == 0 and row.n_not_measurable == 0
+    assert row.publisher_drop_rate is None and row.observer_loss_rate is None
+    assert "UNAVAILABLE" in row.notes
+    assert "lidar_expected_hz" in row.notes
+    assert "cell B" in row.notes
+
+
+def test_cell_reconciliation_row_notes_no_runs_found_when_records_empty():
+    row = _cell_reconciliation_row("A", "static", _metrics(), records=[])
+    assert row.n_measurable == 0 and row.n_not_measurable == 0
+    assert "no runs found" in row.notes
+
+
+def test_cell_reconciliation_row_distinguishes_not_measurable_from_zero_published(tmp_path):
+    """The three per-run states a cell's reconciliation summary must
+    keep visibly distinct: run-001 has no publisher_counts.json at all
+    (not measurable), run-002's file records a real 0 (NaN observer
+    loss, counted separately), run-003 is a normal healthy measurement.
+    n_measurable counts every run with a FILE (run-002 and run-003); the
+    NaN one is additionally called out via n_zero_published so it is
+    never silently averaged away."""
+    lidar_expected_hz = 10.0
+    for name in ("run-001", "run-002", "run-003"):
+        _make_run(tmp_path, name=name, lidar_hz=lidar_expected_hz, run_duration_s=40.0)
+    cell_dir = tmp_path / "A"
+    (cell_dir / "run-002" / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: 0}))
+    window = _window_of(cell_dir / "run-003")
+    window_s = (window.sim_hi - window.sim_lo) / 1e9
+    n_expected = expected_count(window_s, lidar_expected_hz)
+    (cell_dir / "run-003" / "publisher_counts.json").write_text(
+        json.dumps({LIDAR_TOPIC: n_expected})
+    )
+
+    records, _, _ = _walk_cell_runs(cell_dir, arm="static")
+    row = _cell_reconciliation_row(
+        "A", "static", _metrics(lidar_expected_hz=lidar_expected_hz), records
+    )
+    assert row.n_not_measurable == 1  # run-001
+    assert row.n_zero_published == 1  # run-002
+    assert row.n_measurable == 2  # run-002 + run-003 both have a file
+    assert row.publisher_drop_rate == pytest.approx(0.5, abs=0.1)  # median([1.0, ~0.0])
+    assert row.observer_loss_rate == pytest.approx(0.0, abs=0.1)  # from run-003 only
+    assert NOT_MEASURABLE in row.notes
+    assert "published_count == 0" in row.notes
+
+
+def test_render_reconciliation_table_has_required_columns():
+    rows = [ReconciliationRow("A", "static", 3, 0, 0, 0.0, 0.0, "")]
+    md = render_reconciliation_table(rows)
+    header = md.splitlines()[0].lower()
+    for col in ("cell", "arm", "measurable", "publisher_drop_rate", "observer_loss_rate"):
+        assert col in header
+
+
+def test_render_reconciliation_table_renders_nan_and_dash_distinctly():
+    rows = [
+        ReconciliationRow("A", "static", 2, 1, 1, 0.5, float("nan"), "n"),
+        ReconciliationRow("B", "static", 0, 0, 0, None, None, "UNAVAILABLE: x"),
+    ]
+    md = render_reconciliation_table(rows)
+    a_line = next(line for line in md.splitlines() if line.startswith("| A |"))
+    b_line = next(line for line in md.splitlines() if line.startswith("| B |"))
+    assert "NaN" in a_line
+    assert "| - | - |" in b_line  # both rates absent, not "0.000"/"NaN"
+
+
+# ---------------------------------------------------------------------------
+# build_verdict_table integration: the reconciliation section end to end.
+# ---------------------------------------------------------------------------
+
+
+def test_build_verdict_table_no_reconciliation_section_when_achieved_rate_ratio_not_registered(
+    tmp_path,
+):
+    for i in range(1, 4):
+        _make_run(tmp_path, cell="A", name=f"run-{i:03d}", one_hop_extra_ms=7.0)
+        _make_run(tmp_path, cell="B", name=f"run-{i:03d}", one_hop_extra_ms=8.0)
+    doc = _cells_doc(arms=("static",))
+    margins = {"one_hop_wall_ms": {"margin": 2.0}}
+    table = build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=3)
+    assert "M2 three-way reconciliation" not in table
+
+
+def test_build_verdict_table_reconciliation_reported_per_cell_per_arm(tmp_path):
+    """The registered shape (README.md, achieved_rate_ratio): the M2
+    reconciliation is reported per cell AND per arm -- one row each for
+    cell A and cell B, for both the static and the closed-loop arm (4
+    rows total), never pooled across either axis."""
+    lidar_expected_hz = 20.0
+    for cell in ("A", "B"):
+        for i in range(1, 4):
+            _make_run(
+                tmp_path,
+                cell=cell,
+                name=f"run-{i:03d}",
+                arm="static",
+                lidar_hz=lidar_expected_hz,
+                run_duration_s=40.0,
+            )
+            _make_run(
+                tmp_path,
+                cell=cell,
+                name=f"run-{i + 3:03d}",
+                arm="closed-loop",
+                lidar_hz=lidar_expected_hz,
+                run_duration_s=40.0,
+            )
+    for cell in ("A", "B"):
+        for run_dir in sorted((tmp_path / cell).glob("run-*")):
+            window = _window_of(run_dir)
+            window_s = (window.sim_hi - window.sim_lo) / 1e9
+            n_expected = expected_count(window_s, lidar_expected_hz)
+            (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: n_expected}))
+    doc = _cells_doc(arms=("static", "closed-loop"))
+    margins = {"achieved_rate_ratio": {"margin": 0.02}}
+    table = build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=3)
+    assert "M2 three-way reconciliation" in table
+    lines = table.splitlines()
+    for cell in ("A", "B"):
+        for arm in ("static", "closed-loop"):
+            assert any(line.startswith(f"| {cell} | {arm} |") for line in lines), (
+                f"missing reconciliation row for cell {cell}, arm {arm}"
+            )
+
+
+def test_build_verdict_table_reconciliation_unavailable_for_one_cell_does_not_block_other_rows(
+    tmp_path,
+):
+    """Semantics #3 of the S4 brief: a null lidar_expected_hz (cell B's,
+    pending Task 13) must be visible in the reconciliation output
+    WITHOUT crashing the whole table -- the duel's other metric rows
+    (here, one_hop_wall_ms) are still valid and must still render. Cell
+    A's OWN reconciliation, whose binding IS registered, must still be
+    computed even though the achieved_rate_ratio DUEL row itself is
+    unavailable (it needs both cells bound)."""
+    lidar_expected_hz = 20.0
+    for i in range(1, 4):
+        _make_run(
+            tmp_path,
+            cell="A",
+            name=f"run-{i:03d}",
+            arm="static",
+            one_hop_extra_ms=7.0,
+            lidar_hz=lidar_expected_hz,
+            run_duration_s=40.0,
+        )
+        _make_run(
+            tmp_path,
+            cell="B",
+            name=f"run-{i:03d}",
+            arm="static",
+            one_hop_extra_ms=8.0,
+            lidar_hz=lidar_expected_hz,
+            run_duration_s=40.0,
+        )
+        run_dir = tmp_path / "A" / f"run-{i:03d}"
+        window = _window_of(run_dir)
+        window_s = (window.sim_hi - window.sim_lo) / 1e9
+        n_expected = expected_count(window_s, lidar_expected_hz)
+        (run_dir / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: n_expected}))
+    doc = _cells_doc(arms=("static",), b_overrides={"lidar_expected_hz": None})
+    margins = {
+        "one_hop_wall_ms": {"margin": 2.0},
+        "achieved_rate_ratio": {"margin": 0.02},
+    }
+    table = build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=3)
+    lines = table.splitlines()
+
+    b_recon = next(line for line in lines if line.startswith("| B | static |"))
+    assert "UNAVAILABLE" in b_recon
+    assert "lidar_expected_hz" in b_recon
+
+    a_recon = next(line for line in lines if line.startswith("| A | static |"))
+    assert "UNAVAILABLE" not in a_recon
+
+    one_hop_line = next(line for line in lines if line.startswith("| one_hop_wall_ms "))
+    assert "insufficient-data" not in one_hop_line

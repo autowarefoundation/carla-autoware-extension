@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from benchmarks.analysis.cadence import inter_arrival_stats, reconcile_drops
+from benchmarks.analysis.cadence import expected_count, inter_arrival_stats, reconcile_drops
 
 
 def test_steady_20hz():
@@ -37,3 +37,12 @@ def test_zero_published_reports_nan_observer_loss():
     d = reconcile_drops(expected_count=100, published_count=0, observed_count=0)
     assert d.publisher_drop_rate == 1.0
     assert math.isnan(d.observer_loss_rate)
+
+
+def test_expected_count_rounds_to_nearest():
+    assert expected_count(window_s=20.0, expected_hz=10.0) == 200
+    assert expected_count(window_s=13.3, expected_hz=10.0) == 133
+
+
+def test_expected_count_floors_at_one_for_a_vanishing_window():
+    assert expected_count(window_s=0.0001, expected_hz=10.0) == 1

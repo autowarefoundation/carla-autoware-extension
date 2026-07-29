@@ -52,12 +52,23 @@ An unbound metric (a registered `None` binding, e.g. cell B's
 "insufficient-data" plus an UNAVAILABLE reason -- without ever touching
 a run directory for that metric, so a null binding cannot be mistaken
 for a metric that was measured and happened to come back short.
+
+`achieved_rate_ratio`'s registered companion output, the M2 three-way
+reconciliation (`ReconciliationRow` / `_cell_reconciliation_row` /
+`render_reconciliation_table`), is appended after the main table: per
+cell, per arm, over the SAME resolved scoring window (never a second,
+independent one), separating publisher drop from observer loss via
+`benchmarks.analysis.cadence.reconcile_drops` -- never re-implemented
+here either. See that section's own comment block for what is and is
+not shared with `sweep_verdict.py`'s equivalent, M4-scoped computation.
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,7 +84,12 @@ from benchmarks.analysis.bench_io import (
     read_published_time_csv,
     read_resources_csv,
 )
-from benchmarks.analysis.cadence import inter_arrival_stats
+from benchmarks.analysis.cadence import (
+    DropStats,
+    expected_count,
+    inter_arrival_stats,
+    reconcile_drops,
+)
 from benchmarks.analysis.clockfit import AffineFit, fit_sim_wall_affine, sim_to_wall
 from benchmarks.analysis.latency import match_stamps, staleness_ms
 from benchmarks.analysis.latency import one_hop_wall_ms as _one_hop_wall_ms_series
@@ -712,6 +728,219 @@ METRIC_BINDERS: dict[str, _Binder] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# M2 three-way reconciliation: achieved_rate_ratio's registered companion
+# output (benchmarks/README.md, achieved_rate_ratio: "the M2 three-way
+# reconciliation (cadence.reconcile_drops over publisher_counts.json)
+# separates publisher drop from observer loss and is reported per cell
+# alongside the duel row"). This is a diagnostic, not a duel metric: no
+# margin, no cross-cell equivalence verdict -- so it is reported PER CELL
+# (never as an A-B delta), alongside the arm-scoped achieved_rate_ratio
+# row it explains. `sweep_verdict.py` implements the same idea for the M4
+# sweep, over a DIFFERENT window (clock.csv's whole-run wall extent, no
+# warm-up discard) -- the two tools share the expected-count arithmetic
+# itself (`cadence.expected_count`) but not the window it is applied to,
+# nor the file-reading wrapper around it: sweep_verdict's wrapper folds
+# "not measurable" into a ratio/NaN pair shaped for evaluate_ceiling's
+# numeric contract, which this tool has no equivalent consumer for.
+# ---------------------------------------------------------------------------
+
+# Same wording sweep_verdict.py uses for the identical condition -- a
+# duplicated literal, not duplicated logic (see the block comment above).
+NOT_MEASURABLE = "publisher rate not measurable (no publisher_counts.json)"
+
+
+def _reconcile_run(
+    run_dir: Path, window: _RunWindow, lidar_topic: str, lidar_expected_hz: float
+) -> DropStats | None:
+    """One run's M2 reconciliation, over the SAME resolved scoring
+    window `extract_achieved_rate_ratio` uses for this run
+    (`window.sim_lo`/`sim_hi`) -- not a second, independently-resolved
+    window and not the whole run. The metric-definition amendment's
+    most dangerous catch was exactly this tool once aggregating whole
+    runs, warm-up included, instead of the registered scoring window;
+    this reconciliation must not repeat that.
+
+    Expected count: `cadence.expected_count(window_s, lidar_expected_hz)`,
+    `window_s` THIS window's own SIM-domain span -- the same relation
+    `sweep_verdict._expected_lidar_count` uses, applied to a different
+    window (see the module-level comment above for why the two differ).
+
+    Published count: `publisher_counts.json`'s count for `lidar_topic`,
+    valid as the publisher-side proxy for A/B cells only -- absent for
+    E-cells, where the bridge is the sensor stream's only listener.
+    Returns None exactly when the file is absent: "not measurable", a
+    state `cadence.reconcile_drops` cannot even be asked about, and
+    distinct from a present file recording a real zero (that reaches
+    `reconcile_drops`'s own NaN branch instead, via the return below).
+
+    Observed count: in-window `observer.csv` rows for `lidar_topic`,
+    filtered on the sim-domain `header_stamp_ns` -- the same column and
+    the same bounds `extract_achieved_rate_ratio` filters on. A `lidar_
+    topic` altogether absent from this run's `observer.csv` raises
+    MetricUnavailableError (mirroring `extract_achieved_rate_ratio`'s
+    own requirement for the same topic on the same run) rather than
+    being read as a silent zero.
+    """
+    run_dir = Path(run_dir)
+    counts_path = run_dir / "publisher_counts.json"
+    if not counts_path.is_file():
+        return None
+    published_count = int(json.loads(counts_path.read_text())[lidar_topic])
+    topics = read_observer_csv(run_dir / "observer.csv")
+    if lidar_topic not in topics:
+        raise MetricUnavailableError(f"{lidar_topic} not in {run_dir / 'observer.csv'}")
+    stamps = topics[lidar_topic]["header_stamp_ns"]
+    observed_count = int(np.count_nonzero((stamps >= window.sim_lo) & (stamps <= window.sim_hi)))
+    window_s = (window.sim_hi - window.sim_lo) / 1e9
+    n_expected = expected_count(window_s, lidar_expected_hz)
+    return reconcile_drops(n_expected, published_count, observed_count)
+
+
+@dataclass(frozen=True)
+class ReconciliationRow:
+    """One cell's M2 three-way reconciliation summary for one arm --
+    reported alongside (never instead of, never pooled into) that arm's
+    achieved_rate_ratio duel row. Computed independently PER CELL,
+    unlike the duel row itself (which needs BOTH cells bound to render
+    at all): a cell whose own lidar_topic/lidar_expected_hz IS
+    registered still gets a useful reconciliation even when its
+    counterpart's binding is null -- the current state of cell B's,
+    A-hf's and B-hf's lidar_expected_hz -- so a null binding on one side
+    never withholds a computable diagnostic on the other.
+
+    `publisher_drop_rate`/`observer_loss_rate` are the MEDIAN over this
+    cell's measurable runs (mirroring the campaign's general per-run ->
+    per-cell reduction), excluding runs where `publisher_counts.json`
+    was absent (`n_not_measurable`) and, for `observer_loss_rate` only,
+    excluding runs where it was NaN (`n_zero_published`, a real
+    file-backed zero-throughput run) -- reported as counts rather than
+    folded silently into the median, per the brief's requirement that
+    both be visible and distinguishable. `benchmarks/README.md` registers
+    that this output exists and how it is computed per run; it does not
+    itself state a cross-run reduction rule, so this median choice is an
+    implementation judgment, not a re-derivation of the registration.
+    """
+
+    cell: str
+    arm: str
+    n_measurable: int
+    n_not_measurable: int
+    n_zero_published: int
+    publisher_drop_rate: float | None  # median over measurable runs
+    observer_loss_rate: float | None  # median over measurable, non-NaN runs
+    notes: str = ""
+
+
+def _cell_reconciliation_row(
+    cell_id: str, arm: str, metrics: dict, records: list[_RunRecord]
+) -> ReconciliationRow:
+    """`ReconciliationRow` for one (cell, arm), from the SAME per-arm
+    `records` `build_verdict_table` already walked for this cell (no
+    extra directory walk) -- reusing `metrics["lidar_topic"]`/`metrics
+    ["lidar_expected_hz"]`, never a second, independently-derived
+    binding.
+
+    A `None` binding renders UNAVAILABLE without touching a single run
+    record, mirroring how `_bind_achieved_rate_ratio` reports the same
+    gap for the duel row itself: a registered null is a legitimate
+    "not pre-registered yet" state, never a value to guess.
+    """
+    lidar_topic, lidar_expected_hz = metrics["lidar_topic"], metrics["lidar_expected_hz"]
+    missing = [
+        k
+        for k, v in (("lidar_topic", lidar_topic), ("lidar_expected_hz", lidar_expected_hz))
+        if v is None
+    ]
+    if missing:
+        return ReconciliationRow(
+            cell_id,
+            arm,
+            0,
+            0,
+            0,
+            None,
+            None,
+            f"UNAVAILABLE: {', '.join(missing)} not registered for cell {cell_id}",
+        )
+    drops: list[DropStats] = []
+    n_not_measurable = 0
+    errors: list[str] = []
+    for rec in records:
+        if rec.window is None:
+            errors.append(f"{rec.run_dir.name}: FAILED window: {rec.window_error}")
+            continue
+        try:
+            drop = _reconcile_run(rec.run_dir, rec.window, lidar_topic, lidar_expected_hz)
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            errors.append(f"{rec.run_dir.name}: FAILED {type(exc).__name__}: {exc}")
+            continue
+        if drop is None:
+            n_not_measurable += 1
+        else:
+            drops.append(drop)
+
+    n_zero_published = sum(1 for d in drops if math.isnan(d.observer_loss_rate))
+    pub_median = float(np.median([d.publisher_drop_rate for d in drops])) if drops else None
+    non_nan_obs = [d.observer_loss_rate for d in drops if not math.isnan(d.observer_loss_rate)]
+    if not drops:
+        obs_median = None
+    elif non_nan_obs:
+        obs_median = float(np.median(non_nan_obs))
+    else:
+        obs_median = float("nan")  # every measurable run had published_count == 0
+
+    notes: list[str] = []
+    if not records:
+        notes.append("no runs found for this arm")
+    if errors:
+        notes.append("; ".join(errors))
+    if n_not_measurable:
+        notes.append(f"{n_not_measurable} run(s): {NOT_MEASURABLE}")
+    if n_zero_published:
+        notes.append(f"{n_zero_published} run(s) had published_count == 0 (observer_loss_rate NaN)")
+    return ReconciliationRow(
+        cell_id,
+        arm,
+        len(drops),
+        n_not_measurable,
+        n_zero_published,
+        pub_median,
+        obs_median,
+        "; ".join(notes),
+    )
+
+
+def _fmt_reconciliation_rate(value: float | None) -> str:
+    if value is None:
+        return "-"
+    if math.isnan(value):
+        # Deliberate: a bare "%.3f" turns NaN into the string "nan",
+        # easy to misread as "0.00" at a glance -- reconcile_drops's own
+        # NaN branch is a different, real condition (see its docstring).
+        return "NaN"
+    return f"{value:.3f}"
+
+
+def render_reconciliation_table(rows: list[ReconciliationRow]) -> str:
+    """Markdown table for the M2 three-way reconciliation, one row PER
+    CELL per arm (see `ReconciliationRow`'s docstring) -- companion to
+    `render_table`'s duel rows, never merged into them."""
+    lines = [
+        "| cell | arm | n measurable | n not measurable | n zero-published "
+        "| publisher_drop_rate (median) | observer_loss_rate (median) | notes |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for r in rows:
+        pub_s = f"{r.publisher_drop_rate:.3f}" if r.publisher_drop_rate is not None else "-"
+        obs_s = _fmt_reconciliation_rate(r.observer_loss_rate)
+        lines.append(
+            f"| {r.cell} | {r.arm} | {r.n_measurable} | {r.n_not_measurable} "
+            f"| {r.n_zero_published} | {pub_s} | {obs_s} | {r.notes} |"
+        )
+    return "\n".join(lines)
+
+
 def _attach_fit_residual_note(
     row: VerdictRow, records_a: list[_RunRecord], records_b: list[_RunRecord]
 ) -> VerdictRow:
@@ -801,6 +1030,7 @@ def build_verdict_table(
         bound[metric] = (extractor_a, reason_a, extractor_b, reason_b, spec)
 
     rows: list[VerdictRow] = []
+    reconciliation_rows: list[ReconciliationRow] = []
     for arm in arms:
         # Each cell's run-* tree for THIS arm is walked exactly once
         # here (window resolved once per run), and the resulting
@@ -809,6 +1039,17 @@ def build_verdict_table(
         # calling cell_run_values (which re-walks) once per metric.
         records_a, excluded_a, walk_errors_a = _walk_cell_runs(Path(cell_a_dir), arm=arm)
         records_b, excluded_b, walk_errors_b = _walk_cell_runs(Path(cell_b_dir), arm=arm)
+        if "achieved_rate_ratio" in margins:
+            # The M2 reconciliation is achieved_rate_ratio's registered
+            # companion (README.md), so it is only computed when that
+            # metric is actually registered for this invocation -- reusing
+            # the SAME per-arm records walked above, never a second walk.
+            reconciliation_rows.append(
+                _cell_reconciliation_row(cell_a_id, arm, metrics_a, records_a)
+            )
+            reconciliation_rows.append(
+                _cell_reconciliation_row(cell_b_id, arm, metrics_b, records_b)
+            )
         for metric, spec in margins.items():
             if metric not in bound:
                 continue  # already recorded in `unbindable`, once, above
@@ -865,6 +1106,15 @@ def build_verdict_table(
             "Margin metrics with no registered extractor in this tool: "
             + ", ".join(sorted(unbindable))
         )
+    if reconciliation_rows:
+        out.append("")
+        out.append(
+            "M2 three-way reconciliation (cadence.reconcile_drops over "
+            "publisher_counts.json), per cell alongside the achieved_rate_ratio "
+            'duel row above (README.md, "achieved_rate_ratio"):'
+        )
+        out.append("")
+        out.append(render_reconciliation_table(reconciliation_rows))
     return "\n".join(out)
 
 
