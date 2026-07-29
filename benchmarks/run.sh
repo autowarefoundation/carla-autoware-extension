@@ -53,6 +53,10 @@ RPC_PORT=2000
 RMW="rmw_cyclonedds_cpp"
 SHM=""
 DDS_PROFILE=""
+# Whether --dds-profile was PASSED, as distinct from defaulted below. The
+# per-family default is corrected once the approach is known (step 1), and an
+# explicit operator choice must survive that correction.
+DDS_PROFILE_EXPLICIT=0
 
 die() { echo "RUN FAIL: $*" >&2; exit 2; }
 
@@ -80,7 +84,7 @@ while [ $# -gt 0 ]; do
     --rpc-port) RPC_PORT="$2"; shift 2 ;;
     --rmw) RMW="$2"; shift 2 ;;
     --shm) SHM="$2"; shift 2 ;;
-    --dds-profile) DDS_PROFILE="$2"; shift 2 ;;
+    --dds-profile) DDS_PROFILE="$2"; DDS_PROFILE_EXPLICIT=1; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h | --help) usage ;;
     *) die "unknown argument $1" ;;
@@ -189,6 +193,25 @@ do_run() {
   arms="$(printf '%s' "$cell_json" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['arms']))")"
   sweep_arms="$(printf '%s' "$cell_json" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['sweep_arms']))")"
   echo "      cell=$CELL approach=$approach map=$map_name carla=$carla_kind arms=[$arms]"
+
+  # Observer profile, corrected per FAMILY now that the approach is known. The
+  # blanket Cyclone default above ($REPO/docker/cyclonedds.xml, interfaces pinned
+  # to `lo`) is the configuration benchmarks/README.md's DDS confound table
+  # registers for cells A and C -- and it is NOT what that table registers for the
+  # python-bridge family, which is "rmw_cyclonedds_cpp, default profile". The
+  # difference is measured, not stylistic: against a live bridge, bench_observer on
+  # the `lo`-pinned profile recorded 0 clock and 0 observer rows in 20 s where the
+  # default profile recorded 366/365 (patches/python-bridge/README.md, "Observer
+  # transport matrix"), because this cell's stack is Fast-DDS and Fast-DDS
+  # announces no loopback unicast locators. Applying the wrong default here filed
+  # results/E/run-001 with a header-only observer. cells/python-bridge.sh refuses
+  # the `lo` profile outright, so this is the fix and that is its backstop; an
+  # explicit --dds-profile still wins, and still meets that refusal.
+  if [ "$approach" = "python-bridge" ] && [ "$RMW" = "rmw_cyclonedds_cpp" ] &&
+    [ "$DDS_PROFILE_EXPLICIT" = "0" ] && [ "$DDS_PROFILE" != "none" ]; then
+    echo "      dds_profile: $DDS_PROFILE -> none (registered for the $approach family)"
+    DDS_PROFILE=none
+  fi
   [ -n "$CLASS_ID" ] && echo "      class=$CLASS_ID $(json_field "$cell_json" points_per_second) pts/s"
 
   window_arm="$ARM"
@@ -244,7 +267,19 @@ do_run() {
       carla_tree="$(eval echo "$(pin tier4_carla_fork.path)")"
       ;;
     python-bridge)
-      autoware_image="${BENCH_BRIDGE_IMAGE:-$(pin bridge_bench.tag)}"
+      # E0 is the AS-SHIPPED measurement, so it gets the unpatched image; E and
+      # E-opt get the patched one (pins.yaml bridge_bench_patched, built from
+      # docker/bridge-bench-patched.Dockerfile). Resolved HERE because this is
+      # the value the manifest records: cells/python-bridge.sh reads it back out
+      # of BENCH_AUTOWARE_IMAGE rather than re-deriving it, so the image the run
+      # used and the image the manifest claims cannot diverge. That launcher
+      # additionally verifies the resolved image's CONTENT against the cell, in
+      # both directions, so a wrong BENCH_BRIDGE_IMAGE fails loudly.
+      if [ "$CELL" = "E0" ]; then
+        autoware_image="${BENCH_BRIDGE_IMAGE:-$(pin bridge_bench.tag)}"
+      else
+        autoware_image="${BENCH_BRIDGE_IMAGE:-$(pin bridge_bench_patched.tag)}"
+      fi
       carla_tree=""
       ;;
     calibration)

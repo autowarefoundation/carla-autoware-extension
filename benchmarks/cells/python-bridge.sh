@@ -10,11 +10,15 @@
 # stages (stage 1 overrides autoware_carla_interface's Town01 default;
 # stage 2 uses simulator_type:=awsim so it does not pull in a second bridge).
 #
-# E0 runs the AS-SHIPPED bridge and is fully launchable here: its image is
-# the pinned `bridge-bench` (pins.yaml). E and E-opt run WITH
-# patches/python-bridge/0001-lidar-is-dense.patch, whose image is built by
-# Task 10; `plan` refuses those cells until that image exists, rather than
-# silently measuring the unpatched bridge and filing it as E.
+# E0 runs the AS-SHIPPED bridge: its image is the pinned `bridge-bench`
+# (pins.yaml bridge_bench). E and E-opt run the PATCHED image
+# (pins.yaml bridge_bench_patched, built from
+# docker/bridge-bench-patched.Dockerfile with 0001-lidar-is-dense.patch and
+# 0002-sensor-config-harmonized.patch). run.sh resolves which one per cell and
+# records it in the manifest; `plan` here re-checks the resolved image's actual
+# CONTENT rather than its tag, in both directions, so neither "measured the
+# unpatched bridge and filed it as E" nor "measured the patched bridge and
+# filed it as as-shipped E0" is expressible.
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_MAP:?}" "${BENCH_ARM:?}"
@@ -28,12 +32,36 @@ AW_CONTAINER=bridge-bench
 LAUNCH_LOG="$BENCH_RUN_DIR/launch.log"
 CARLA_PID_FILE="$BENCH_RUN_DIR/carla.pid"
 READY_TIMEOUT_S=300
+# Second readiness gate below: the Autoware stack itself. Measured cold-start
+# to first /localization/kinematic_state on this host is ~110-130 s with the
+# CUDA perception stack on; 420 s leaves room for a slower disk without
+# waiting so long that the bridge's ~10-minute sync-tick stall (P1 Verdict 1,
+# deliberately NOT patched) eats the scoring window.
+STACK_TIMEOUT_S=420
 # Container-side map bundle, mounted read-only from the host (same bundle the
 # UE5 cells' compose mounts). e2e_simulator.launch.xml's map_path:=.
 MAP_BUNDLE_HOST="$HOME/autoware_map/town10"
 MAP_BUNDLE="/autoware_map/town10"
 
-fail() { echo "LAUNCH FAIL (python-bridge/$BENCH_CELL): $*" >&2; exit 2; }
+# Both bridge launch logs live inside the container, and teardown REMOVES the
+# container (the image differs per cell, so it may not be left up for the next
+# one). A readiness failure would therefore destroy the only record of why, as
+# it did twice while this launcher was being brought into shape. Copy them into
+# the run directory on every failure path, so an excluded run carries its own
+# diagnosis. A no-op before the container exists.
+save_stage_logs() {
+  docker inspect "$AW_CONTAINER" >/dev/null 2>&1 || return 0
+  for stage in 1 2; do
+    docker cp "$AW_CONTAINER:/tmp/bridge-stage$stage.log" \
+      "$BENCH_RUN_DIR/bridge-stage$stage.log" >/dev/null 2>&1 || true
+  done
+}
+
+fail() {
+  save_stage_logs
+  echo "LAUNCH FAIL (python-bridge/$BENCH_CELL): $*" >&2
+  exit 2
+}
 
 # --------------------------------------------------------------------------
 # plan
@@ -47,26 +75,104 @@ fail() { echo "LAUNCH FAIL (python-bridge/$BENCH_CELL): $*" >&2; exit 2; }
   (fetch with ansible-playbook autoware.dev_env.download_artifacts; without it
   the launch tree aborts on lidar_centerpoint's param file)"
 
+# Spawn pose from the committed route file, so this cell starts where the route
+# was scored -- exactly as cells/extension.sh does. The bridge takes it as a
+# SINGLE comma-separated `spawn_point:=x,y,z,roll,pitch,yaw` string in the
+# CARLA frame (carla_autoware.py's load_world splits on ","; a value that does
+# not split into 6 items falls back to a RANDOM spawn, silently, which is what
+# the P1 pass measured). Note the bridge adds +2 m to z on its own ("so the car
+# did not stuck on the road when spawned") -- shipped behaviour, left alone.
+SPAWN_POINT="$(BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" python3 - <<'PY'
+import os
+
+import yaml
+
+route = yaml.safe_load(open(os.environ["BENCH_ROUTE_FILE"]))
+pose = route.get("spawn_pose")
+if not pose:
+    # spawn_index is CARLA's live recommended-spawn list, which this bridge
+    # cannot be given: its spawn_point parameter is a pose, and anything that
+    # is not six comma-separated numbers means "randomize". Failing here beats
+    # a run that silently starts somewhere else than the scored route.
+    raise SystemExit(
+        "route file has no spawn_pose; the bridge takes a pose, not a "
+        "spawn_index, and an unparseable value spawns RANDOMLY"
+    )
+print(f"{pose['x']},{pose['y']},{pose['z']},0,0,{pose['yaw_deg']}")
+PY
+)" || fail "could not derive the spawn pose from $BENCH_ROUTE_FILE"
+
+# run.sh resolves the per-cell image and exports it as BENCH_AUTOWARE_IMAGE --
+# the SAME string it writes into the manifest. Reading it here instead of
+# re-deriving it is what makes the manifest's `container_image` a fact about
+# this run rather than a parallel guess. BENCH_BRIDGE_IMAGE still overrides for
+# a hand-driven launch, and run.sh honours the same variable, so the two stay
+# in step.
+IMAGE="${BENCH_BRIDGE_IMAGE:-${BENCH_AUTOWARE_IMAGE:-}}"
+[ -n "$IMAGE" ] ||
+  fail "no bridge image resolved: run.sh exports BENCH_AUTOWARE_IMAGE, and
+  BENCH_BRIDGE_IMAGE overrides it for a hand-driven launch"
+docker image inspect "$IMAGE" >/dev/null 2>&1 || fail "image not present locally: $IMAGE"
+
+# Observer transport. MEASURED 2026-07-29 (Task 10) with the REAL bench_observer
+# binary against a live bridge, 20 s dwell per row, patches/python-bridge/
+# README.md "Observer transport matrix":
+#
+#   cyclone + docker/cyclonedds.xml (`lo`)   clock 0    observer 0
+#   cyclone + DEFAULT profile                clock 366  observer 365
+#   fastrtps + image default (SHM on)        clock 386  observer 385
+#   fastrtps + observer/config/udp_only.xml  clock 385  observer 386
+#
+# The `lo`-pinned profile discovers NOTHING here: the stack is Fast-DDS (image
+# default) and Fast-DDS announces no loopback unicast locators, so a Cyclone
+# participant confined to `lo` never matches it. That is the whole of cell E
+# run-001's header-only observer.csv/clock.csv. benchmarks/README.md's confound
+# table registers this cell family's observer as "rmw_cyclonedds_cpp, DEFAULT
+# profile", which the matrix confirms works; run.sh's per-invocation default
+# contradicts it, so refuse rather than record an empty observer as a property
+# of the bridge.
+if [ "${BENCH_RMW:-}" = "rmw_cyclonedds_cpp" ] && [ "${BENCH_DDS_PROFILE:-none}" != "none" ]; then
+  fail "cell $BENCH_CELL needs the observer on CycloneDDS' DEFAULT profile, but
+  BENCH_DDS_PROFILE=$BENCH_DDS_PROFILE confines it to \`lo\`, where it cannot
+  discover this cell's Fast-DDS stack (measured: 0 clock rows and 0 observer
+  rows in 20 s, against 366/365 on the default profile in the same minute).
+  Re-run with --dds-profile none, which is the configuration
+  benchmarks/README.md's DDS confound table registers for the E family."
+fi
+
+# The patch marker, checked inside the resolved image. `is_dense` is 0001's own
+# line, so this tests what the run will actually execute -- not the tag, which
+# is just a name somebody chose. No --gpus needed for a grep.
+PATCH_MARKER='is_dense=True'
+CARLA_UTILS=/opt/autoware/lib/python3.10/site-packages/autoware_carla_interface/modules/carla_utils.py
+if docker run --rm "$IMAGE" grep -q "$PATCH_MARKER" "$CARLA_UTILS" 2>/dev/null; then
+  IMAGE_PATCHED=1
+else
+  IMAGE_PATCHED=0
+fi
+
 case "$BENCH_CELL" in
   E0)
-    # As-shipped: the pinned image, unpatched.
-    IMAGE="${BENCH_BRIDGE_IMAGE:-bridge-bench:latest}"
+    # As-shipped, and that is the measurement: E0 exists to record the bridge's
+    # own defaults failing, so a patched image here would quietly turn E0 into
+    # a second copy of E.
+    [ "$IMAGE_PATCHED" = "0" ] ||
+      fail "cell E0 measures the AS-SHIPPED bridge, but $IMAGE carries
+      patches/python-bridge/0001-lidar-is-dense.patch ($CARLA_UTILS contains
+      '$PATCH_MARKER'). Use pins.yaml bridge_bench.tag (bridge-bench:latest)."
     ;;
   E | E-opt)
-    IMAGE="${BENCH_BRIDGE_IMAGE:-}"
-    if [ -z "$IMAGE" ]; then
+    [ "$IMAGE_PATCHED" = "1" ] ||
       fail "cell $BENCH_CELL runs the PATCHED bridge
       (patches/python-bridge/0001-lidar-is-dense.patch, benchmarks/README.md's
-      named exception), and that image is built by Task 10 (Bridge viability
-      patch + E-family recipes + E gate). It does not exist yet. Running the
-      stock bridge-bench:latest here would measure E0 and file it as
-      $BENCH_CELL. Set BENCH_BRIDGE_IMAGE once Task 10 has built and pinned
-      the patched image."
-    fi
+      named exception), but $IMAGE does not carry it ($CARLA_UTILS has no
+      '$PATCH_MARKER'). Running it would measure E0 and file it as
+      $BENCH_CELL. Build pins.yaml bridge_bench_patched.tag:
+        docker build -f benchmarks/docker/bridge-bench-patched.Dockerfile \\
+          -t bridge-bench-patched:latest benchmarks/"
     ;;
   *) fail "cell $BENCH_CELL is not a python-bridge cell" ;;
 esac
-docker image inspect "$IMAGE" >/dev/null 2>&1 || fail "image not present locally: $IMAGE"
 
 cat >"$BENCH_LAUNCH_ENV" <<EOF
 # Written by benchmarks/cells/python-bridge.sh ($MODE).
@@ -151,26 +257,30 @@ AW_ENV='source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && 
 # separately precisely because e2e_simulator.launch.xml forwards NO arguments
 # to it and its own default is Town01 (README bug 1: the map silently
 # diverges from map_path:=).
+#
+# ego_vehicle_role_name:=ego is load-bearing for the MEASUREMENT, not for the
+# drive: the bridge's own default is `ego_vehicle`, while run.sh invokes
+# collect_gt.py with --role-name ego, and find_ego matches role_name EXACTLY.
+# Left at the default, the GT collector raises "no ego actor found" during
+# start-up and run.sh excludes the run crash:collect_gt -- i.e. no M5 ground
+# truth, from a stack that was otherwise healthy.
 cx "$AW_ENV
   nohup ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \
     carla_map:=$BENCH_MAP host:=localhost port:=$BENCH_RPC_PORT \
     sensor_kit_name:=carla_sensor_kit_description \
+    ego_vehicle_role_name:=ego spawn_point:=$SPAWN_POINT \
     >/tmp/bridge-stage1.log 2>&1 &
   echo \$! >/tmp/bridge-stage1.pid"
 
-# Stage 2 -- the rest of the stack. simulator_type:=awsim so it does not
-# include a SECOND bridge with the wrong default map; sensing:=true is
-# load-bearing (without it GNSS -> EKF -> /localization/kinematic_state never
-# comes up); perception left at its default ON, which the CUDA-pinned image
-# supports.
-cx "$AW_ENV
-  nohup ros2 launch autoware_launch e2e_simulator.launch.xml \
-    map_path:=$MAP_BUNDLE vehicle_model:=sample_vehicle \
-    sensor_model:=carla_sensor_kit simulator_type:=awsim \
-    sensing:=true rviz:=false \
-    >/tmp/bridge-stage2.log 2>&1 &
-  echo \$! >/tmp/bridge-stage2.pid"
-
+# FIRST readiness gate, and it is a BARRIER, not a nicety: stage 2 must not
+# start until the bridge's world exists. Launched back to back, the whole
+# Autoware stack came up against the world that the bridge's
+# `client.load_world()` then replaced underneath it, and
+# /localization/kinematic_state never published at all -- measured 2026-07-29
+# (Task 10): results/E/run-002, crash:cell-launch after the full 420 s stack
+# budget. Sequenced the way a hand bring-up naturally does -- wait for the map,
+# then launch the stack -- it localizes in ~110-130 s.
+#
 # Readiness = the map the bridge actually loaded, verified through the client
 # rather than trusted: README bug 1 is a SILENT wrong-map failure, and this
 # is the check that catches it before a window is recorded on Town01.
@@ -185,4 +295,118 @@ sys.exit(0 if name.endswith('$BENCH_MAP') else 1)\"" >/dev/null 2>&1; do
   (check: docker exec $AW_CONTAINER cat /tmp/bridge-stage1.log)"
   sleep 5
 done
-echo "OK: bridge stack up on $BENCH_MAP"
+echo "OK: bridge on $BENCH_MAP"
+
+# Stage 2 -- the rest of the stack, started only now (see the barrier above).
+# simulator_type:=awsim so it does not include a SECOND bridge with the wrong
+# default map; sensing:=true is load-bearing (without it GNSS -> EKF ->
+# /localization/kinematic_state never comes up); perception left at its default
+# ON, which the CUDA-pinned image supports and which benchmarks/README.md's
+# perception-load confound registers for this cell family.
+cx "$AW_ENV
+  nohup ros2 launch autoware_launch e2e_simulator.launch.xml \
+    map_path:=$MAP_BUNDLE vehicle_model:=sample_vehicle \
+    sensor_model:=carla_sensor_kit simulator_type:=awsim \
+    sensing:=true rviz:=false \
+    >/tmp/bridge-stage2.log 2>&1 &
+  echo \$! >/tmp/bridge-stage2.pid"
+
+# SECOND readiness gate: the STACK, not just the bridge. The map check above
+# passes within ~20 s (stage 1 loads the world almost immediately), while
+# stage 2 needs minutes -- the 110 MiB pointcloud map, the CUDA perception
+# weights, ~30 component containers. Returning after the map check alone put
+# run.sh at step 9 with the stack still coming up, and arm_and_goal.py's
+# 60 s budget expired before /localization/kinematic_state existed: the run
+# was excluded `gate:arm-failed`, which reads as "this approach cannot
+# localize" when the truth was "the launcher returned too early". Measured
+# 2026-07-29 (Task 10): results/E/run-001.
+#
+# Waiting for one /localization/kinematic_state message is the weakest signal
+# that means "the stack is up AND localizing"; the arm step still applies its
+# own sustained-rate criterion on top, so this does not subsume it. A timeout
+# here is a launcher readiness failure -> run.sh files it crash:cell-launch
+# (exclusions.md criterion 1, which covers exactly this), never as an arm
+# failure.
+#
+# NOTHING is retried here, deliberately. An earlier revision of this loop called
+# /api/localization/initialize every iteration, on the belief that the stack
+# tries GNSS+ndt_align only in its first ~75 s and then gives up. That belief is
+# REFUTED by the logs of the two runs it was written from: Autoware's own
+# `autoware_automatic_pose_initializer` calls the same API roughly every 2 s for
+# as long as localization is UNINITIALIZED (results/E/run-003, 442 s; and the
+# 2026-07-29 bring-up probe, where "Call align server" repeats at t+2 s
+# intervals until it succeeds). The launcher's call carried an EMPTY pose array
+# -- the AD API's "initialize from GNSS" form, i.e. exactly the request the
+# automatic initializer already makes -- so it added no information, and each
+# `ros2 service call` stood up and tore down a participant against a stack whose
+# composable-node loads are themselves sensitive to discovery churn (see
+# diagnose_localization_input below). Waiting is strictly better than nudging.
+#
+# What run-003 actually failed on is diagnosed, not retried: the localization
+# input chain never finished loading. `pointcloud_container` logged "failed to
+# send response to /pointcloud_container/_container/load_node (timeout): client
+# will not receive response" four times, and `/localization/util/
+# random_downsample_filter` -- the node that publishes NDT's only input,
+# /localization/util/downsample/pointcloud -- was never instantiated, so
+# `ndt_scan_matcher` reported "No InputSource" for the whole 442 s while
+# perception, fed off the SAME cloud, ran normally. That is a dropped
+# rclcpp/rmw service response under start-up load, not a bridge defect and not
+# an is_dense rejection; it did not reproduce on the next bring-up. Naming it is
+# the deliverable, so the timeout path reports which of the three nodes exist.
+diagnose_localization_input() {
+  cx "$AW_ENV
+    ros2 node list --no-daemon 2>/dev/null | grep '^/localization/util/' | sort" \
+    2>/dev/null || true
+}
+
+# The bridge is the sole ticking authority in sync mode, and when its tick loop
+# stops, EVERY node that runs on sim time stops with it -- so the symptom of
+# P1 Verdict 1 (exclusions.md criterion 4) during bring-up is indistinguishable
+# from "the stack is still coming up" unless the sim clock is checked directly.
+# Measured 2026-07-29 (Task 10): the tick froze ~70 s of sim time in, moments
+# after localization initialized, and the launcher then sat out its whole
+# remaining budget before reporting the wrong thing. Two consecutive samples
+# with no frame advance (>= 15 s apart, i.e. >= 300 frames at the 20 Hz tick)
+# is unambiguous, and two strikes rather than one keeps a transient RPC failure
+# from condemning a healthy run.
+carla_frame() {
+  cx "python3 -c \"
+import carla
+c = carla.Client('localhost', $BENCH_RPC_PORT); c.set_timeout(10.0)
+print(c.get_world().get_snapshot().frame)\"" 2>/dev/null | tr -cd '0-9'
+}
+
+echo "waiting up to ${STACK_TIMEOUT_S}s for the Autoware stack to localize"
+deadline=$((SECONDS + STACK_TIMEOUT_S))
+frame_prev="$(carla_frame)"
+freeze_strikes=0
+until cx "$AW_ENV
+  timeout 10 ros2 topic echo --once /localization/kinematic_state >/dev/null 2>&1" \
+  >/dev/null 2>&1; do
+  frame_now="$(carla_frame)"
+  if [ -n "$frame_now" ] && [ "$frame_now" = "$frame_prev" ]; then
+    freeze_strikes=$((freeze_strikes + 1))
+  else
+    freeze_strikes=0
+  fi
+  frame_prev="$frame_now"
+  [ "$freeze_strikes" -lt 2 ] ||
+    fail "the bridge stopped ticking CARLA during bring-up: the world stayed on
+  frame $frame_now across two samples >= 15 s apart, so the sim clock is frozen
+  and every node on sim time is stopped with it. This is the python-bridge
+  sync-tick stall (P1 Verdict 1, exclusions.md criterion 4), deliberately NOT
+  patched by this campaign; the run is filed crash:cell-launch because it never
+  reached an armed window. Localization input nodes present:
+$(diagnose_localization_input)"
+  [ "$SECONDS" -lt "$deadline" ] ||
+    fail "/localization/kinematic_state never published within ${STACK_TIMEOUT_S}s
+  while the sim clock kept advancing (so this is NOT the tick stall).
+  Localization input nodes present -- all three of
+  crop_box_filter_measurement_range, voxel_grid_downsample_filter and
+  random_downsample_filter must be listed, or the load_node race above ate the
+  rest of that group and NDT has no input:
+$(diagnose_localization_input)
+  (check: $BENCH_RUN_DIR/bridge-stage2.log, saved by this launcher)"
+  sleep 5
+done
+echo "OK: bridge stack up on $BENCH_MAP and localizing"
