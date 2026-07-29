@@ -640,6 +640,44 @@ have two publishers on `/perception/object_recognition/objects` and is not a
 configuration either approach ships. Task 22's confound table must state this
 alongside the numbers, not merely note the difference.
 
+### Sensing graph: `carla_sensor_kit` (E family) vs. `awsim_labs_sensor_kit` (A/B/C/D)
+
+The spec's harmonization target was `sensor_model:=awsim_labs_sensor_kit` for
+every cell, with a pre-committed fallback: "E keeps `carla_sensor_kit`; the
+different sensing graph becomes a controlled confound row and M1 is anchored at
+a topic common to both graphs". **Task 10 took that fallback**, and this is the
+row it owes. The two graphs between the as-emitted cloud and
+`/sensing/lidar/concatenated/pointcloud` are not the same length:
+
+| Cells      | Kit                     | Chain from the as-emitted cloud to `concatenated/pointcloud`                                                                                                                                                                                   |
+| ---------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A, B, C, D | `awsim_labs_sensor_kit` | the kit's own `common_awsim_labs_sensor_launch` container (crop-box self/mirror, distortion correction, ring outlier filter, concatenate-and-time-sync)                                                                                        |
+| E, E-opt   | `carla_sensor_kit`      | `crop_box_filter_self` → `crop_box_filter_mirror` → a `topic_tools` relay — three composable nodes, no distortion corrector, no ring-outlier filter, no time synchronizer (`carla_sensor_kit_launch/launch/pointcloud_preprocessor.launch.py`) |
+
+**This is a genuine confound, not a defect to fix.** Two consequences:
+
+- **The topic NAME is now common; the graph is not.** 0002 moves the bridge's
+  `topic_suffix` to `/pointcloud_raw_ex` and moves `crop_box_filter_self`'s
+  input with it, so `one_hop_wall_ms` and `achieved_rate_ratio` are computed on
+  the same-named topic in every cell — an as-emitted-cloud-to-observer hop in
+  both, which is what makes those two comparable. `lidar_to_ndt_sim_ms` is NOT
+  on that footing: it spans the preprocessing chain, and E's is shorter by two
+  filter stages and a synchronizer. A smaller E number there is partly a
+  shorter graph, not only a faster one.
+- **`/sensing/lidar/top/pointcloud` does not exist in E's graph at all.** The
+  `carla_sensor_kit` chain publishes `self_cropped/pointcloud`,
+  `mirror_cropped/pointcloud` and then relays to
+  `/sensing/lidar/concatenated/pointcloud`. The P1 finding's "0.00 Hz
+  `/sensing/lidar/top/pointcloud`" reading was therefore two facts at once (the
+  `is_dense` rejection AND a topic with no publisher in this kit); the live
+  downstream check for cell E is the chain above, not that name.
+
+Residual, recorded rather than patched: with cameras out of the kit, the bridge
+launch tree still starts seven `image_transport republish` nodes and two
+`topic_tools relay` nodes with no input. 0002 disables only
+`multi_camera_combiner`, which is the node the spec names. The idle nodes'
+process cost is inside E's `autoware` container M3 series.
+
 ### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
 
 CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
@@ -1146,6 +1184,28 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   Autoware at all (`cells/calibration.sh:7-12`). Recorded only in a task
   report before this entry, and the earlier task report framed it as an
   `observer_env` difference alone, which understates it.
+- **2026-07-29** — `config/cells.yaml`: cells **E** and **E-opt** got
+  `metrics.lidar_topic: /sensing/lidar/top/pointcloud_raw_ex`, replacing
+  `/pointcloud_before_sync`; `config/observer_topics/{E,E-opt}.yaml`
+  follow. Cell **E0 is unchanged** and keeps `/pointcloud_before_sync`.
+  Completeness, not accommodation: Task 10's
+  `patches/python-bridge/0002-sensor-config-harmonized.patch` sets the
+  bridge's `topic_suffix` to `/pointcloud_raw_ex` — the spec's stated
+  injection topic in _every_ cell — so that is where the patched bridge
+  now emits, and a binding naming the old topic would make E's M1/M2
+  metrics read a topic with no publisher. E0 runs the unpatched image and
+  therefore genuinely still emits the old name; the three E-family topic
+  lists are deliberately no longer identical. Recorded here because
+  `observer_topics/E.yaml`'s own comment delegated exactly this
+  re-grounding to Task 10.
+- **2026-07-29** — `## Known confounds` gained the E-family sensing-graph
+  entry (cell E keeps `carla_sensor_kit`, whose preprocessing chain is two
+  crop-box filters and a relay, against the natives'
+  `awsim_labs_sensor_kit`) plus the idle camera-republish nodes the
+  harmonized bridge kit leaves in its launch tree. No margin, threshold or
+  cell definition changes with this entry. Completeness: the spec
+  pre-registered the kit difference as a fallback with a confound row
+  owed, Task 10 took that fallback, and nothing in this file recorded it.
 
 ## How to run
 

@@ -4,12 +4,13 @@
 # natives' name: benchmarks/patches/python-bridge/README.md records
 # /sensing/lidar/top/pointcloud_before_sync at 8.59 Hz as the bridge's
 # own output, while /sensing/lidar/top/pointcloud (downstream of
-# crop_box_filter) received 0 messages. E and E-opt run WITH
-# patches/python-bridge/0001-lidar-is-dense.patch, which changes a flag
-# on the published cloud, NOT the topic it is published on -- so all
-# three E-family cells observe the same as-emitted name. Task 10/20
-# re-grounds this live before any E-family P3 run; if the patched
-# bridge emits elsewhere, it is corrected there.
+# crop_box_filter) received 0 messages.
+#
+# This cell runs the UNPATCHED image, so /pointcloud_before_sync is
+# still where it emits. Cells E and E-opt do NOT match it any more:
+# Task 10's 0002-sensor-config-harmonized.patch retargets the patched
+# bridge to /sensing/lidar/top/pointcloud_raw_ex, so their topic lists
+# differ from this one on purpose. Do not "resynchronize" the three.
 #
 # PublishedTime topics are NOT listed here yet. They are appended in
 # Tasks 13/20, after live discovery on the running stack

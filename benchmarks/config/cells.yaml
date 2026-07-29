@@ -139,7 +139,15 @@ cells:
     mandatory: true
     arms: [static, closed-loop]
     metrics:
-      lidar_topic: /sensing/lidar/top/pointcloud_before_sync
+      # AMENDED 2026-07-29 (Task 10). Cell E runs the PATCHED bridge image, and
+      # 0002-sensor-config-harmonized.patch sets the bridge's `topic_suffix` to
+      # /pointcloud_raw_ex -- the spec's injection topic in every cell -- so
+      # this is now where E emits. The patch has to move
+      # carla_sensor_kit_launch's crop_box_filter_self input with it (that
+      # launch file HARDCODES the old name), or the chain would be severed.
+      # Cell E0, on the unpatched image, still emits /pointcloud_before_sync
+      # and keeps that binding: the two are deliberately different.
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
@@ -165,6 +173,10 @@ cells:
     # reported result.
     arms: [static]
     metrics:
+      # STAYS /pointcloud_before_sync: this cell runs the UNPATCHED image, so
+      # the bridge's shipped `topic_suffix` applies. E/E-opt were amended to
+      # /pointcloud_raw_ex by Task 10's 0002; E0 must not follow, or it would
+      # read a topic its own image never publishes on.
       lidar_topic: /sensing/lidar/top/pointcloud_before_sync
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
@@ -180,7 +192,9 @@ cells:
     mandatory: false
     arms: [closed-loop] # local packer-optimized sensitivity
     metrics:
-      lidar_topic: /sensing/lidar/top/pointcloud_before_sync
+      # AMENDED 2026-07-29 (Task 10), as cell E: E-opt runs the same patched
+      # image, so 0002's /pointcloud_raw_ex applies here too.
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
