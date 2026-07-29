@@ -1388,10 +1388,27 @@ def test_reconcile_run_closed_loop_uses_the_resolved_spatial_window(tmp_path):
 def test_cell_reconciliation_row_none_binding_is_unavailable_without_touching_runs():
     row = _cell_reconciliation_row("B", "static", _metrics(lidar_expected_hz=None), records=[])
     assert row.n_measurable == 0 and row.n_not_measurable == 0
-    assert row.publisher_drop_rate is None and row.observer_loss_rate is None
+    assert row.publisher_drop_rate_median is None and row.publisher_drop_rate_max is None
+    assert row.observer_loss_rate_median is None and row.observer_loss_rate_max is None
     assert "UNAVAILABLE" in row.notes
     assert "lidar_expected_hz" in row.notes
     assert "cell B" in row.notes
+
+
+def test_cell_reconciliation_row_rejects_non_positive_lidar_expected_hz():
+    """Minor fix (review round 2): a registered-but-invalid
+    `lidar_expected_hz` (<= 0) must be UNAVAILABLE, exactly like a
+    `None` binding -- never a computed row. Without this,
+    `expected_count`'s `max(1, ...)` floor would make a nonsense binding
+    report a clean-looking ~0.000 publisher_drop_rate, right next to
+    `extract_achieved_rate_ratio` failing outright for the SAME cell
+    (its own `expected_hz <= 0` guard) -- a healthy-looking reconciliation
+    beside a failed metric."""
+    row = _cell_reconciliation_row("B", "static", _metrics(lidar_expected_hz=0.0), records=[])
+    assert row.n_measurable == 0 and row.n_not_measurable == 0
+    assert row.publisher_drop_rate_median is None and row.publisher_drop_rate_max is None
+    assert "UNAVAILABLE" in row.notes
+    assert "lidar_expected_hz" in row.notes
 
 
 def test_cell_reconciliation_row_notes_no_runs_found_when_records_empty():
@@ -1427,30 +1444,126 @@ def test_cell_reconciliation_row_distinguishes_not_measurable_from_zero_publishe
     assert row.n_not_measurable == 1  # run-001
     assert row.n_zero_published == 1  # run-002
     assert row.n_measurable == 2  # run-002 + run-003 both have a file
-    assert row.publisher_drop_rate == pytest.approx(0.5, abs=0.1)  # median([1.0, ~0.0])
-    assert row.observer_loss_rate == pytest.approx(0.0, abs=0.1)  # from run-003 only
+    # median([1.0, ~0.0]); with only 2 measurable runs median == mean
+    # here, so this alone does not pin median vs. mean -- see the
+    # dedicated 3-run pin below for that.
+    assert row.publisher_drop_rate_median == pytest.approx(0.5, abs=0.1)
+    assert row.publisher_drop_rate_max == pytest.approx(1.0, abs=0.05)  # run-002
+    assert row.observer_loss_rate_median == pytest.approx(0.0, abs=0.1)  # from run-003 only
+    assert row.observer_loss_rate_max == pytest.approx(0.0, abs=0.1)  # only 1 non-NaN run
     assert NOT_MEASURABLE in row.notes
     assert "published_count == 0" in row.notes
 
 
+def test_cell_reconciliation_row_publisher_drop_reports_median_and_max_not_mean(tmp_path):
+    """Owner ruling (2026-07-28, benchmarks/README.md achieved_rate_ratio):
+    publisher_drop_rate is reported as MEDIAN (continuity with the
+    campaign's per-run -> per-cell convention) AND MAX (so a lone
+    high-loss run is not buried the way a median alone would bury it --
+    the reviewer's objection this ruling settled: this output is an
+    instrument-artefact DETECTOR, not a central-tendency estimate, and
+    at the registered minimum n = 3 a median can report a clean 0.000
+    over a run that actually lost 90% of its frames).
+
+    Three runs share an identical resolved window and expected count
+    (`_make_run`'s fixed clock.csv construction makes the window
+    independent of `lidar_hz`), but published_counts are set to
+    DELIBERATELY ASYMMETRIC fractions of that expected count: 0.0, 0.0
+    and 0.9 drop. This pins THREE separately-wrong reductions at once:
+    a median->mean regression would report ~0.3, not 0.0; a max<->median
+    swap would report 0.0 for max (or 0.9 for median) instead of the
+    correct pairing.
+    """
+    lidar_expected_hz = 10.0
+    names = ("run-001", "run-002", "run-003")
+    drop_fracs = (0.0, 0.0, 0.9)
+    for name in names:
+        _make_run(tmp_path, name=name, lidar_hz=lidar_expected_hz, run_duration_s=40.0)
+    cell_dir = tmp_path / "A"
+    window = _window_of(cell_dir / "run-001")
+    window_s = (window.sim_hi - window.sim_lo) / 1e9
+    n_expected = expected_count(window_s, lidar_expected_hz)
+    for name, frac in zip(names, drop_fracs):
+        published = round(n_expected * (1.0 - frac))
+        (cell_dir / name / "publisher_counts.json").write_text(json.dumps({LIDAR_TOPIC: published}))
+
+    records, _, _ = _walk_cell_runs(cell_dir, arm="static")
+    row = _cell_reconciliation_row(
+        "A", "static", _metrics(lidar_expected_hz=lidar_expected_hz), records
+    )
+    assert row.n_measurable == 3
+    assert row.publisher_drop_rate_median == pytest.approx(0.0, abs=0.02)
+    assert row.publisher_drop_rate_max == pytest.approx(0.9, abs=0.02)
+    # A median->mean regression would land here instead of at 0.0 above.
+    assert row.publisher_drop_rate_median != pytest.approx(0.3, abs=0.05)
+    # A max<->median swap would land here instead of at 0.9 above.
+    assert row.publisher_drop_rate_max != pytest.approx(0.0, abs=0.05)
+
+
+def test_cell_reconciliation_row_observer_loss_reports_median_and_max_not_mean(tmp_path):
+    """Observer-axis counterpart of the publisher-axis pin above (same
+    owner ruling, same reasoning): observer_loss_rate must ALSO be
+    median AND max, not mean. Three runs share the IDENTICAL published_
+    count (the resolved window's own expected count, so publisher_
+    drop_rate stays ~0 everywhere and does not confound this test), but
+    differ in their own recorded rate via `lidar_hz`: two healthy runs
+    at the full 10 Hz (observer_loss_rate ~0.0) and one run recorded at
+    1 Hz (10x fewer in-window lidar rows, observer_loss_rate ~0.9) --
+    {0.0, 0.0, 0.9} again: median 0.0 != mean 0.3, max 0.9 != median 0.0.
+    """
+    lidar_expected_hz = 10.0
+    hz_per_run = {"run-001": 10.0, "run-002": 10.0, "run-003": 1.0}
+    for name, hz in hz_per_run.items():
+        _make_run(tmp_path, name=name, lidar_hz=hz, run_duration_s=40.0)
+    cell_dir = tmp_path / "A"
+    window = _window_of(cell_dir / "run-001")
+    window_s = (window.sim_hi - window.sim_lo) / 1e9
+    n_expected = expected_count(window_s, lidar_expected_hz)
+    for name in hz_per_run:
+        (cell_dir / name / "publisher_counts.json").write_text(
+            json.dumps({LIDAR_TOPIC: n_expected})
+        )
+
+    records, _, _ = _walk_cell_runs(cell_dir, arm="static")
+    row = _cell_reconciliation_row(
+        "A", "static", _metrics(lidar_expected_hz=lidar_expected_hz), records
+    )
+    assert row.n_measurable == 3
+    assert row.observer_loss_rate_median == pytest.approx(0.0, abs=0.05)
+    assert row.observer_loss_rate_max == pytest.approx(0.9, abs=0.05)
+    # A median->mean regression would land here instead of at 0.0 above.
+    assert row.observer_loss_rate_median != pytest.approx(0.3, abs=0.05)
+    # A max<->median swap would land here instead of at 0.9 above.
+    assert row.observer_loss_rate_max != pytest.approx(0.0, abs=0.05)
+
+
 def test_render_reconciliation_table_has_required_columns():
-    rows = [ReconciliationRow("A", "static", 3, 0, 0, 0.0, 0.0, "")]
+    rows = [ReconciliationRow("A", "static", 3, 0, 0, 0.0, 0.0, 0.0, 0.0, "")]
     md = render_reconciliation_table(rows)
     header = md.splitlines()[0].lower()
-    for col in ("cell", "arm", "measurable", "publisher_drop_rate", "observer_loss_rate"):
+    for col in (
+        "cell",
+        "arm",
+        "measurable",
+        "publisher_drop_rate (median)",
+        "publisher_drop_rate (max)",
+        "observer_loss_rate (median)",
+        "observer_loss_rate (max)",
+    ):
         assert col in header
 
 
 def test_render_reconciliation_table_renders_nan_and_dash_distinctly():
     rows = [
-        ReconciliationRow("A", "static", 2, 1, 1, 0.5, float("nan"), "n"),
-        ReconciliationRow("B", "static", 0, 0, 0, None, None, "UNAVAILABLE: x"),
+        ReconciliationRow("A", "static", 2, 1, 1, 0.5, 0.9, float("nan"), float("nan"), "n"),
+        ReconciliationRow("B", "static", 0, 0, 0, None, None, None, None, "UNAVAILABLE: x"),
     ]
     md = render_reconciliation_table(rows)
     a_line = next(line for line in md.splitlines() if line.startswith("| A |"))
     b_line = next(line for line in md.splitlines() if line.startswith("| B |"))
-    assert "NaN" in a_line
-    assert "| - | - |" in b_line  # both rates absent, not "0.000"/"NaN"
+    assert a_line.count("NaN") == 2  # both observer columns
+    assert "0.500" in a_line and "0.900" in a_line  # publisher median/max
+    assert "| - | - | - | - |" in b_line  # all four rates absent
 
 
 # ---------------------------------------------------------------------------

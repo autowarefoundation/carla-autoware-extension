@@ -781,7 +781,19 @@ def _reconcile_run(
     MetricUnavailableError (mirroring `extract_achieved_rate_ratio`'s
     own requirement for the same topic on the same run) rather than
     being read as a silent zero.
+
+    `lidar_expected_hz <= 0` raises `ValueError`, mirroring `extract_
+    achieved_rate_ratio`'s own guard exactly: `expected_count` floors
+    at 1 regardless of the (bad) rate, so an unguarded call would
+    report a clean-looking ~0.000 publisher_drop_rate right next to
+    that OTHER metric failing outright for the same cell -- a
+    registered-but-invalid binding must not look healthier here than it
+    does there. `_cell_reconciliation_row` already screens this cell-
+    wide before calling here (cheaper, and named once instead of once
+    per run); this is the defense-in-depth twin for any other caller.
     """
+    if lidar_expected_hz <= 0:
+        raise ValueError(f"lidar_expected_hz must be > 0, got {lidar_expected_hz}")
     run_dir = Path(run_dir)
     counts_path = run_dir / "publisher_counts.json"
     if not counts_path.is_file():
@@ -809,17 +821,19 @@ class ReconciliationRow:
     A-hf's and B-hf's lidar_expected_hz -- so a null binding on one side
     never withholds a computable diagnostic on the other.
 
-    `publisher_drop_rate`/`observer_loss_rate` are the MEDIAN over this
-    cell's measurable runs (mirroring the campaign's general per-run ->
-    per-cell reduction), excluding runs where `publisher_counts.json`
-    was absent (`n_not_measurable`) and, for `observer_loss_rate` only,
-    excluding runs where it was NaN (`n_zero_published`, a real
-    file-backed zero-throughput run) -- reported as counts rather than
-    folded silently into the median, per the brief's requirement that
-    both be visible and distinguishable. `benchmarks/README.md` registers
-    that this output exists and how it is computed per run; it does not
-    itself state a cross-run reduction rule, so this median choice is an
-    implementation judgment, not a re-derivation of the registration.
+    `publisher_drop_rate_median`/`_max` and `observer_loss_rate_median`/
+    `_max` are BOTH reported over this cell's measurable runs -- owner
+    ruling, 2026-07-28 (`benchmarks/README.md`, `achieved_rate_ratio`):
+    median for continuity with the campaign's per-run -> per-cell
+    convention, max alongside it because this output is an instrument-
+    artefact DETECTOR, not a central-tendency estimate -- at the
+    registered minimum of n = 3 measurable runs, a single run that lost
+    40% of its frames IS the finding, and median alone would report a
+    clean 0.000 over it. Both exclude runs where `publisher_counts.json`
+    was absent (`n_not_measurable`); `observer_loss_rate`'s pair
+    additionally excludes runs where it was NaN (`n_zero_published`, a
+    real file-backed zero-throughput run) -- reported as counts rather
+    than folded silently into either statistic.
     """
 
     cell: str
@@ -827,8 +841,10 @@ class ReconciliationRow:
     n_measurable: int
     n_not_measurable: int
     n_zero_published: int
-    publisher_drop_rate: float | None  # median over measurable runs
-    observer_loss_rate: float | None  # median over measurable, non-NaN runs
+    publisher_drop_rate_median: float | None
+    publisher_drop_rate_max: float | None
+    observer_loss_rate_median: float | None  # over measurable, non-NaN runs
+    observer_loss_rate_max: float | None  # over measurable, non-NaN runs
     notes: str = ""
 
 
@@ -841,10 +857,18 @@ def _cell_reconciliation_row(
     ["lidar_expected_hz"]`, never a second, independently-derived
     binding.
 
-    A `None` binding renders UNAVAILABLE without touching a single run
-    record, mirroring how `_bind_achieved_rate_ratio` reports the same
-    gap for the duel row itself: a registered null is a legitimate
-    "not pre-registered yet" state, never a value to guess.
+    A `None` binding, or a registered-but-invalid one (`lidar_expected_
+    hz <= 0`), renders UNAVAILABLE without touching a single run
+    record -- mirroring how `_bind_achieved_rate_ratio` reports a null
+    binding for the duel row itself, and `extract_achieved_rate_ratio`'s
+    own `expected_hz <= 0` guard for the invalid case. Screening the
+    invalid case here (once, cell-wide) rather than only inside
+    `_reconcile_run` (once per run) matters: without it, `expected_count`
+    floors at 1 regardless of the bad rate, so this row would report a
+    clean-looking ~0.000 drop rate right next to the achieved_rate_ratio
+    duel row failing outright for the very same cell -- precisely the
+    "plausible-looking healthy number" defect this campaign keeps
+    finding.
     """
     lidar_topic, lidar_expected_hz = metrics["lidar_topic"], metrics["lidar_expected_hz"]
     missing = [
@@ -861,7 +885,23 @@ def _cell_reconciliation_row(
             0,
             None,
             None,
+            None,
+            None,
             f"UNAVAILABLE: {', '.join(missing)} not registered for cell {cell_id}",
+        )
+    if lidar_expected_hz <= 0:
+        return ReconciliationRow(
+            cell_id,
+            arm,
+            0,
+            0,
+            0,
+            None,
+            None,
+            None,
+            None,
+            f"UNAVAILABLE: lidar_expected_hz must be > 0, got {lidar_expected_hz} "
+            f"for cell {cell_id}",
         )
     drops: list[DropStats] = []
     n_not_measurable = 0
@@ -881,14 +921,17 @@ def _cell_reconciliation_row(
             drops.append(drop)
 
     n_zero_published = sum(1 for d in drops if math.isnan(d.observer_loss_rate))
-    pub_median = float(np.median([d.publisher_drop_rate for d in drops])) if drops else None
+    pub_rates = [d.publisher_drop_rate for d in drops]
+    pub_median = float(np.median(pub_rates)) if pub_rates else None
+    pub_max = float(np.max(pub_rates)) if pub_rates else None
     non_nan_obs = [d.observer_loss_rate for d in drops if not math.isnan(d.observer_loss_rate)]
     if not drops:
-        obs_median = None
+        obs_median = obs_max = None
     elif non_nan_obs:
         obs_median = float(np.median(non_nan_obs))
+        obs_max = float(np.max(non_nan_obs))
     else:
-        obs_median = float("nan")  # every measurable run had published_count == 0
+        obs_median = obs_max = float("nan")  # every measurable run had published_count == 0
 
     notes: list[str] = []
     if not records:
@@ -906,7 +949,9 @@ def _cell_reconciliation_row(
         n_not_measurable,
         n_zero_published,
         pub_median,
+        pub_max,
         obs_median,
+        obs_max,
         "; ".join(notes),
     )
 
@@ -918,6 +963,8 @@ def _fmt_reconciliation_rate(value: float | None) -> str:
         # Deliberate: a bare "%.3f" turns NaN into the string "nan",
         # easy to misread as "0.00" at a glance -- reconcile_drops's own
         # NaN branch is a different, real condition (see its docstring).
+        # Used for EVERY rate column here, never a bare f-string, so no
+        # column in this table can silently turn NaN into "0.00".
         return "NaN"
     return f"{value:.3f}"
 
@@ -925,18 +972,25 @@ def _fmt_reconciliation_rate(value: float | None) -> str:
 def render_reconciliation_table(rows: list[ReconciliationRow]) -> str:
     """Markdown table for the M2 three-way reconciliation, one row PER
     CELL per arm (see `ReconciliationRow`'s docstring) -- companion to
-    `render_table`'s duel rows, never merged into them."""
+    `render_table`'s duel rows, never merged into them. Both rate axes
+    carry median AND max columns (owner ruling, 2026-07-28): median for
+    continuity with the campaign's per-run -> per-cell convention, max
+    so a lone high-loss run is never buried by it."""
     lines = [
         "| cell | arm | n measurable | n not measurable | n zero-published "
-        "| publisher_drop_rate (median) | observer_loss_rate (median) | notes |",
-        "|---|---|---|---|---|---|---|---|",
+        "| publisher_drop_rate (median) | publisher_drop_rate (max) "
+        "| observer_loss_rate (median) | observer_loss_rate (max) | notes |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
-        pub_s = f"{r.publisher_drop_rate:.3f}" if r.publisher_drop_rate is not None else "-"
-        obs_s = _fmt_reconciliation_rate(r.observer_loss_rate)
+        pub_med_s = _fmt_reconciliation_rate(r.publisher_drop_rate_median)
+        pub_max_s = _fmt_reconciliation_rate(r.publisher_drop_rate_max)
+        obs_med_s = _fmt_reconciliation_rate(r.observer_loss_rate_median)
+        obs_max_s = _fmt_reconciliation_rate(r.observer_loss_rate_max)
         lines.append(
             f"| {r.cell} | {r.arm} | {r.n_measurable} | {r.n_not_measurable} "
-            f"| {r.n_zero_published} | {pub_s} | {obs_s} | {r.notes} |"
+            f"| {r.n_zero_published} | {pub_med_s} | {pub_max_s} "
+            f"| {obs_med_s} | {obs_max_s} | {r.notes} |"
         )
     return "\n".join(lines)
 
