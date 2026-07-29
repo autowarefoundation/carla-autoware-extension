@@ -484,7 +484,17 @@ did not belong to.
 
 `lidar_expected_hz` is the cell's registered sensor target, filled by the
 relation P1 Verdict 4 measured live: effective rate = `min(1 / sensor_tick,
-tick_hz)`. It is registered only where committed code fixes it today (the
+tick_hz)`. It is a **sim-domain** rate — `sensor_tick` is a period of
+simulation time, and `tick_hz` is `1 / fixed_delta_seconds`, also
+simulation time — so every expected COUNT derived from it multiplies a SIM
+span. A wall span overstates the count by `1 / RTF` on any run that is not
+real-time, converting a rate expectation into a pacing measurement, which
+the M4 ceiling already makes separately with its own `rtf` and
+`tick_rate_ratio` disjuncts. Both consumers of `analysis/cadence.py`'s
+`expected_count` therefore pass a sim span: `duel_verdict.py` the resolved
+scoring window's `[sim_lo, sim_hi]`, `sweep_verdict.py` `clock.csv`'s
+whole-run `clock_ns` extent. It is registered only where committed code
+fixes it today (the
 extension cells, from `runner/spawn.py`'s `_SENSOR_TICK`; `CAL-rmw`, from
 `cells/calibration.sh`'s `PUB_RATE_HZ`). It is `null` on the tier4 and
 python-bridge families, so this row of the A/B duel table cannot be computed
@@ -994,6 +1004,24 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   never printed and a reader pairing the one printed n with an observer
   statistic would overstate that statistic's sample size — by all of it
   when every measurable run published nothing.
+- **2026-07-28** — the expected message count's **time domain is named
+  as SIM**, and the M4 sweep's `publisher_rate_ratio` now takes its span
+  from `clock.csv`'s `clock_ns` extent instead of the wall arrivals of
+  the same rows (`scripts/sweep_verdict.py`). This changes M4's
+  registered semantics and lands before Task 16, with no sweep run
+  collected. Completeness: `max(1, round(window_s * lidar_expected_hz))`
+  was registered with `window_s` "the window's own span in seconds" and
+  no domain named, while the two callers of the one shared
+  implementation passed spans from different domains — sim in
+  `duel_verdict.py`, wall in `sweep_verdict.py`. `lidar_expected_hz` is
+  sim-domain by its own registered relation (`min(1 / sensor_tick,
+  tick_hz)`, both simulation-time periods), so a wall span inflates the
+  expectation by `1 / RTF`, depresses `publisher_rate_ratio` by the same
+  factor and can fire the ceiling's publisher disjunct on a publisher
+  that dropped nothing — on exactly the sub-real-time arms where the
+  ceiling verdict is the point, and duplicating a signal
+  `evaluate_ceiling` already scores with its `rtf` and `tick_rate_ratio`
+  disjuncts. Margins are unchanged; the ceiling thresholds are unchanged.
 
 ## How to run
 
