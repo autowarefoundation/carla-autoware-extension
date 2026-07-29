@@ -177,6 +177,28 @@ if [ "${RUN_MODE:-}" = "shipping-headless" ]; then
   pkill -9 -f CarlaUE4-Linux-Shipping >/dev/null 2>&1
 fi
 
+# In-container launch logs, copied out BEFORE the container is removed.
+#
+# cells/python-bridge.sh already saves these on its OWN failure paths, but a run
+# can fail anywhere after the launcher returns -- run.sh's arm step, the
+# post-engage control check, the smoke -- and teardown then removes the only
+# copy. Measured 2026-07-29 (Task 10): results/E/run-007 was excluded
+# gate:arm-failed with `change_to_autonomous` reporting "The target mode is not
+# available. Please check the diagnostics", and the diagnostics naming WHICH
+# component was unavailable lived in the container's stage-2 log, which this
+# function had just deleted. An excluded run must carry its own diagnosis.
+#
+# Best-effort by design: no container, no log file, or a `docker cp` failure all
+# leave teardown otherwise unchanged.
+if [ -n "${AW_CONTAINER:-}" ] && docker inspect "${AW_CONTAINER}" >/dev/null 2>&1; then
+  for stage in 1 2; do
+    if docker cp "${AW_CONTAINER}:/tmp/bridge-stage${stage}.log" \
+      "$RUN_DIR/bridge-stage${stage}.log" >/dev/null 2>&1; then
+      say "saved bridge-stage${stage}.log"
+    fi
+  done
+fi
+
 # Containers. The Autoware container is REMOVED, not left running: cells
 # differ in the image they run under the same container name (B45's 0.45 pin
 # vs B's, the bridge image vs compose's), so leaving one up would silently

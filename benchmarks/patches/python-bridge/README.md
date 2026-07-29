@@ -264,19 +264,23 @@ cover only 180° of sweep.
 
 Both cells run through `benchmarks/run.sh`; `cells/python-bridge.sh` owns the split-launch recipe
 (stage 1 = the bridge alone so `carla_map` can be overridden, barrier on the loaded map, stage 2 =
-the rest of the stack with `simulator_type:=awsim`). `--dds-profile none` is **not optional** — see
-the observer transport matrix below.
+the rest of the stack with `simulator_type:=awsim`).
 
 ```bash
 # cell E: patched image, closed-loop arm
-bash benchmarks/run.sh E --arm closed-loop --dds-profile none --rpc-port 2100
+bash benchmarks/run.sh E --arm closed-loop --rpc-port 2100
 
 # cell E: patched image, static arm (the arm the D3 companion bias is measured on)
-bash benchmarks/run.sh E --arm static --dds-profile none --rpc-port 2100
+bash benchmarks/run.sh E --arm static --rpc-port 2100
 
 # cell E0: AS-SHIPPED image, static arm only (cells.yaml registers no other)
-bash benchmarks/run.sh E0 --arm static --dds-profile none --rpc-port 2100
+bash benchmarks/run.sh E0 --arm static --rpc-port 2100
 ```
+
+No `--dds-profile` is passed: `run.sh` resolves it to `none` for this family once the approach is
+known, which is the configuration `benchmarks/README.md`'s DDS confound table registers for it. An
+explicit `--dds-profile <path>` still wins, and the launcher then refuses the `lo`-pinned profile
+outright — the matrix below is why.
 
 `run.sh` resolves the image per cell (`E0` → `bridge_bench.tag`, everything else →
 `bridge_bench_patched.tag`) and records it in the manifest; the launcher reads that same string back
