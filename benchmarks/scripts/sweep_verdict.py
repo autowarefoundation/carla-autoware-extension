@@ -251,6 +251,42 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     )
 
 
+def _resolve_tick_hz(
+    registered: float | None, cli_value: float | None, override: float | None
+) -> float | None:
+    """Resolve the effective `tick_hz` for a `main()` invocation.
+
+    Replaces the deleted `_check_paced_hz_consistency` guard (Minor 15):
+    that guard stopped the old global `PACED_TICK_HZ` literal from
+    drifting from `cells.yaml`; `tick_hz` now comes from the registry
+    itself, but an operator can still type `--tick-hz` on the command
+    line, and nothing was stopping THAT from silently displacing a real
+    registered value -- the drift risk moved, it did not disappear.
+
+    `override` (`--override-tick-hz`) always wins, with no consistency
+    check at all -- its name says the override is deliberate. Otherwise
+    `cli_value` (`--tick-hz`) is accepted when the registry has nothing to
+    disagree with (`registered is None`, e.g. cell B pending Task 13, so
+    `--tick-hz` legitimately fills a real gap) or when it agrees with the
+    registry; a `cli_value` that DISAGREES with a real registered value
+    is refused loudly here rather than silently winning, because the
+    registry is what the campaign's reproducibility claim rests on.
+    """
+    if override is not None:
+        return override
+    if cli_value is not None:
+        if registered is not None and cli_value != registered:
+            raise ValueError(
+                f"--tick-hz {cli_value} disagrees with the registered "
+                f"metrics['tick_hz']={registered}; refusing to silently "
+                "override a registered value -- pass "
+                f"--override-tick-hz {cli_value} instead if this is a "
+                "deliberate what-if"
+            )
+        return cli_value
+    return registered
+
+
 def _peek_arm(run_dir: Path) -> str | None:
     """The run's `manifest.json` `arm`, or None if the manifest cannot be
     read at all. Used only by main's sweep-arm filter, so a run aborted
@@ -415,7 +451,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "defaults to the cell's registered metrics['lidar_topic']",
     )
     p.add_argument(
-        "--tick-hz", type=float, default=None, help="override metrics['tick_hz'] (tests)"
+        "--tick-hz",
+        type=float,
+        default=None,
+        help="tick_hz to use when metrics['tick_hz'] is unregistered (None); "
+        "if metrics['tick_hz'] IS registered and this disagrees, sweep_verdict "
+        "fails loudly instead of silently overriding it -- see --override-tick-hz",
+    )
+    p.add_argument(
+        "--override-tick-hz",
+        type=float,
+        default=None,
+        help="deliberately override a REGISTERED metrics['tick_hz'] with a "
+        "different value; unlike --tick-hz this is never checked against the "
+        "registry -- the flag name says the override is intentional",
     )
     p.add_argument(
         "--lidar-expected-hz",
@@ -441,10 +490,15 @@ def main(argv: list[str] | None = None) -> int:
 
     sweep_arms = set(merged.get("sweep_arms") or [])
     # `metrics_for` is the single registered source for all three bindings
-    # (cell_info.metrics_for docstring); a CLI override, when given, wins
-    # (used by tests, and by an operator overriding a still-null binding).
+    # (cell_info.metrics_for docstring). `tick_hz` goes through
+    # `_resolve_tick_hz` (Minor 15): a plain `--tick-hz` that disagrees with
+    # a REGISTERED value is refused rather than silently winning, so a
+    # hand-typed number can never quietly displace the registry the
+    # campaign's reproducibility claim rests on; `--override-tick-hz` is the
+    # explicit escape hatch. `topic`/`lidar_expected_hz` still use the
+    # simpler "override always wins" rule from earlier rounds.
     topic = args.topic if args.topic is not None else metrics["lidar_topic"]
-    tick_hz = args.tick_hz if args.tick_hz is not None else metrics["tick_hz"]
+    tick_hz = _resolve_tick_hz(metrics["tick_hz"], args.tick_hz, args.override_tick_hz)
     lidar_expected_hz = (
         args.lidar_expected_hz
         if args.lidar_expected_hz is not None

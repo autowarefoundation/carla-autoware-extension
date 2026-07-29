@@ -445,6 +445,39 @@ def test_a_hf_real_registered_metrics_diverge_5x_and_score_cleanly(tmp_path):
     assert not v.verdict.reached
 
 
+# --- Minor 15: --tick-hz must not silently override a registered value ----
+
+
+def test_resolve_tick_hz_no_cli_input_returns_the_registered_value():
+    assert sweep_verdict._resolve_tick_hz(20.0, None, None) == 20.0
+
+
+def test_resolve_tick_hz_plain_flag_agreeing_with_registry_is_fine():
+    assert sweep_verdict._resolve_tick_hz(20.0, 20.0, None) == 20.0
+
+
+def test_resolve_tick_hz_plain_flag_fills_in_an_unregistered_binding():
+    """registered=None (e.g. cell B pending Task 13): nothing to disagree
+    with, so --tick-hz legitimately supplies the missing value."""
+    assert sweep_verdict._resolve_tick_hz(None, 25.0, None) == 25.0
+
+
+def test_resolve_tick_hz_plain_flag_disagreeing_with_registry_fails_loudly():
+    """The Minor 15 fix itself: a hand-typed --tick-hz that disagrees with
+    a REAL registered value must not silently win."""
+    with pytest.raises(ValueError, match="tick_hz") as exc_info:
+        sweep_verdict._resolve_tick_hz(20.0, 25.0, None)
+    assert "--override-tick-hz" in str(exc_info.value)
+
+
+def test_resolve_tick_hz_override_flag_always_wins_with_no_check():
+    """--override-tick-hz is the deliberate-what-if escape hatch: it wins
+    even against a real, disagreeing registered value, with no error."""
+    assert sweep_verdict._resolve_tick_hz(20.0, None, 999.0) == 999.0
+    # Wins even when --tick-hz is ALSO given (and would itself disagree).
+    assert sweep_verdict._resolve_tick_hz(20.0, 25.0, 999.0) == 999.0
+
+
 # --- fail-clearly on an unbound metric (never substitute a plausible number)
 
 
@@ -601,3 +634,31 @@ def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):
     assert "run-002" in out
     assert "run-001" not in out
     assert "1 run(s) skipped" in out
+
+
+def test_main_tick_hz_flag_disagreeing_with_registry_fails_loudly(tmp_path):
+    """Minor 15, end-to-end: cell A's real registered tick_hz is 20.0; an
+    explicit --tick-hz 999 must fail loudly rather than silently win. This
+    is refused before any run directory is even read (results-root here
+    has no A/ subdirectory at all)."""
+    with pytest.raises(ValueError, match="tick_hz"):
+        sweep_verdict.main(
+            ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--tick-hz", "999"]
+        )
+
+
+def test_main_override_tick_hz_flag_bypasses_the_registry_check(tmp_path):
+    """--override-tick-hz's whole point: it must NOT raise even though 999
+    disagrees with cell A's registered tick_hz=20.0."""
+    rc = sweep_verdict.main(
+        [
+            "A",
+            "--class",
+            "vlp16",
+            "--results-root",
+            str(tmp_path),
+            "--override-tick-hz",
+            "999",
+        ]
+    )
+    assert rc == 0
