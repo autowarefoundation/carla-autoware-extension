@@ -16,13 +16,19 @@ from __future__ import annotations
 
 import json
 import math
+import re
+from pathlib import Path
 
 import pytest
 
 from benchmarks.analysis.publisher_counts import publisher_counts_doc, read_publisher_counts
 from benchmarks.scripts import collect_gt
+from benchmarks.scripts.cell_info import load_cells_doc, metrics_for
 from scripts.e2e.collect_gt import ego_map_xy
 from scripts.e2e.verify_mgrs_handedness import MAP_OFFSETS, offset_for_map
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CELLS_DIR = REPO_ROOT / "benchmarks" / "cells"
 
 NISHI = MAP_OFFSETS["NishishinjukuMap"]
 TOWN10 = MAP_OFFSETS["Town10HD_Opt"]
@@ -83,6 +89,58 @@ def test_sim_ns_rounds_rather_than_truncates():
     # stamp low, and quality.evaluate_quality joins gt to NDT on these.
     assert collect_gt.sim_ns_from_elapsed(0.05) == 50_000_000
     assert collect_gt.sim_ns_from_elapsed(1.15) == 1_150_000_000
+
+
+def _counting_approaches() -> set[str]:
+    """The approaches whose launcher turns `--count-lidar` on, read from
+    the committed launchers themselves (`run.sh`: "cells/<approach>.sh is
+    invoked as `plan` or `up`") rather than from a hand-kept list here."""
+    return {
+        path.stem
+        for path in CELLS_DIR.glob("*.sh")
+        if re.search(r'^GT_COUNT_LIDAR="1"', path.read_text(), re.M)
+    }
+
+
+def test_publisher_counts_key_matches_every_reconciled_cells_registered_topic():
+    """`publisher_counts.json`'s key and the key the reconciliation looks
+    it up by come from two different places, and they must agree.
+
+    `run.sh` invokes the collector without `--lidar-topic`, so the file is
+    keyed by `collect_gt.DEFAULT_LIDAR_TOPIC`; `duel_verdict.py` and
+    `sweep_verdict.py` look it up by `cells.yaml`'s registered
+    `lidar_topic` for the cell. They agree today for every cell that will
+    be reconciled -- a coincidence with nothing pinning it. A divergence
+    surfaces in `duel_verdict` as a per-run FAILED note, but
+    `sweep_verdict._publisher_rate_ratio` has no guard and aborts the
+    whole sweep, and both tools run ONCE, after all data is collected.
+    """
+    doc = load_cells_doc()
+    counting = _counting_approaches()
+    assert counting, "no cell launcher sets GT_COUNT_LIDAR=1 -- has the flag been renamed?"
+
+    checked = []
+    for entry in doc["cells"]:
+        if entry.get("approach") not in counting:
+            continue
+        topic = metrics_for(doc, entry["id"])["lidar_topic"]
+        if topic is None:  # not registered yet; nothing to reconcile against
+            continue
+        assert topic == collect_gt.DEFAULT_LIDAR_TOPIC, (
+            f"cell {entry['id']} registers lidar_topic {topic!r} but its "
+            f"launcher counts into {collect_gt.DEFAULT_LIDAR_TOPIC!r}"
+        )
+        checked.append(entry["id"])
+    assert checked, "no counting cell has a registered lidar_topic to check"
+
+
+def test_run_sh_does_not_override_the_publisher_counts_key():
+    """The premise of the test above: `run.sh` passes no `--lidar-topic`,
+    so `DEFAULT_LIDAR_TOPIC` is what lands in the file. If it ever starts
+    passing one, that value -- not the default -- is what must be checked
+    against the registry, and this pin is what says so out loud."""
+    run_sh = (REPO_ROOT / "benchmarks" / "run.sh").read_text()
+    assert "--lidar-topic" not in run_sh
 
 
 class _SensorData:
