@@ -1052,6 +1052,28 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   unshifted bundle `cells/python-bridge.sh` pins — failing E by ~0.475 m
   of map registration, under a reason that would be attributed to the
   bridge.
+- **2026-07-29 — owner ruling** — `scripts/sweep_verdict.py`'s
+  `_publisher_rate_ratio` gained a registered **third publisher-counts
+  outcome: refused, and the whole invocation aborts**. A present
+  `publisher_counts.json` that is malformed or carries an unrecognised
+  schema tag (`analysis/publisher_counts.py`'s `read_publisher_counts`
+  raises `PublisherCountsFormatError`), or one that does not carry the
+  cell's registered `lidar_topic` key (`PublisherCounts.whole_run_count`
+  raises the same `PublisherCountsFormatError`), is not caught anywhere
+  in this module: the exception propagates out of `verdict_for_run` and
+  out of `main`'s per-run loop, aborting the entire `sweep_verdict`
+  invocation for that cell/class — no point of that sweep is scored,
+  not only the offending run. The file-absent (`NOT_MEASURABLE`) and
+  file-backed zero-published (`NaN`) outcomes were already registered
+  above; this third one was not. Completeness: consistent with
+  `evaluate_ceiling`'s own refusal of `None` inputs — a silent skip
+  here would misreport the point as "ceiling not reached", i.e. claim
+  headroom that was never tested; degrading a refused file to a
+  per-point annotation instead would make it a fifth output state next
+  to the four already registered above, and an unmeasurable point must
+  never read as a clean measured pass; and it matches the repo's
+  fail-loudly convention, where precise failure localization is the
+  deliverable. No behaviour changes with this entry.
 
 ## How to run
 
