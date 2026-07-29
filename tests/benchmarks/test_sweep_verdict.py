@@ -81,10 +81,21 @@ def _write_resources_csv(run_dir, sample_ns, rtf, processes=("carla", "observer"
     (run_dir / "resources.csv").write_text("".join(lines))
 
 
-def _write_clock_csv(run_dir, wall_ns):
+def _write_clock_csv(run_dir, wall_ns, rtf=1.0):
+    """clock.csv for `wall_ns` arrivals, with sim time advancing at
+    `rtf` x wall time.
+
+    `clock_ns` is a real sim series, not a row index: `verdict_for_run`
+    takes the expected-count window off the SIM extent (`lidar_expected_
+    hz` is a sim-domain rate), so a fixture whose `clock_ns` column is
+    arbitrary cannot say anything about that count. The default rtf=1.0
+    makes the two spans coincide, which is what every fixture below that
+    is not ABOUT the domain wants; the domain test passes rtf != 1.
+    """
+    wall0 = int(wall_ns[0])
     lines = ["clock_ns,arrival_system_ns\n"]
-    for i, w in enumerate(wall_ns):
-        lines.append(f"{i},{int(w)}\n")
+    for w in wall_ns:
+        lines.append(f"{int(round((int(w) - wall0) * rtf))},{int(w)}\n")
     (run_dir / "clock.csv").write_text("".join(lines))
 
 
@@ -236,6 +247,54 @@ def test_publisher_rate_firing(tmp_path):
     assert len(v.verdict.reasons) == 1
     assert "publisher rate" in v.verdict.reasons[0]
     assert v.publisher_rate_ratio == pytest.approx(500 / 1200)
+
+
+def test_expected_lidar_count_uses_the_sim_span_not_the_wall_span(tmp_path):
+    """`lidar_expected_hz` is a SIM-domain rate (`min(1 / sensor_tick,
+    tick_hz)`; both periods are simulation time), so the expected count
+    is the SIM span times that rate.
+
+    This run's clock advances at 0.92x wall: 60 s of wall time is 55.2 s
+    of sim time, in which the sensor is due 1104 scans, not 1200. The
+    publisher delivers 1010 -- healthy against the sim-span expectation
+    (0.915), starved against the wall-span one (0.842). Taking the wall
+    span therefore reports "ceiling reached, publisher rate" for a
+    publisher that dropped nothing, and does so precisely on the arms
+    the sweep runs below real time, where the ceiling verdict is the
+    point. RTF has its own registered disjunct here (and the unpaced
+    arm's tick_rate_ratio substitute); it must not leak into this one
+    as well.
+    """
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm="paced")
+    sample_ns = BASE + np.arange(60) * 1_000_000_000
+    # Above evaluate_ceiling's 0.9 rtf threshold, and equal to the clock
+    # slope below: the fixture is one self-consistent 0.92x run.
+    _write_resources_csv(run_dir, sample_ns, np.full(60, 0.92))
+    wall = BASE + np.arange(1201) * 50_000_000  # 60.0 s of WALL time
+    _write_clock_csv(run_dir, wall, rtf=0.92)  # 55.2 s of SIM time
+    _write_observer_csv(run_dir)
+    _write_publisher_counts(run_dir, TOPIC, 1010)
+    _write_quality(run_dir, gate_pass=True)
+
+    v = verdict_for_run(
+        run_dir,
+        topic=TOPIC,
+        tick_hz=TICK_HZ,
+        lidar_expected_hz=LIDAR_EXPECTED_HZ,
+        expected_window_branch=EXPECTED_FITTABLE,
+    )
+
+    sim_expected = round(55.2 * LIDAR_EXPECTED_HZ)  # 1104
+    wall_expected = round(60.0 * LIDAR_EXPECTED_HZ)  # 1200
+    assert v.publisher_rate_ratio == pytest.approx(1010 / sim_expected)
+    assert v.publisher_rate_ratio != pytest.approx(1010 / wall_expected)
+    # The discriminating property: the two domains land on opposite
+    # sides of the pre-registered 0.9 disjunct for this run.
+    assert 1010 / wall_expected < 0.9 <= 1010 / sim_expected
+    assert not v.verdict.reached
+    assert not any("publisher rate" in r for r in v.verdict.reasons)
 
 
 def test_quality_firing(tmp_path):

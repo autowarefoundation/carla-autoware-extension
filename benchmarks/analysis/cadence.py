@@ -57,14 +57,26 @@ def expected_count(window_s: float, expected_hz: float) -> int:
     vanishingly short window never compares against a zero
     denominator.
 
+    TIME DOMAIN. `window_s` is the window's span in SIM seconds, in
+    every caller. The campaign's only expected-rate binding for this
+    term, `lidar_expected_hz`, is sim-domain -- `min(1 / sensor_tick,
+    tick_hz)`, and both a LiDAR's `sensor_tick` and `tick_hz = 1 /
+    fixed_delta_seconds` are periods of simulation time -- so a wall
+    span here would overestimate the count by 1/RTF on any run that is
+    not real-time, silently converting a rate expectation into a
+    pacing measurement. (`benchmarks/README.md`, `achieved_rate_ratio`.)
+
     Shared arithmetic for both consumers of the M2 three-way
     reconciliation: `sweep_verdict.py` (window = clock.csv's whole-run
-    wall extent) and `duel_verdict.py` (window = the run's registered
-    scoring window, `_resolve_window`'s resolved bounds). The two tools
-    differ in WHICH window they resolve and pass in -- not in this
-    arithmetic -- so only this one line is shared; each caller keeps
-    its own `expected_hz is None` handling; that state means "not
-    pre-registered yet" and must fail loudly on the caller's own terms,
-    so this function only ever receives a real float.
+    SIM extent) and `duel_verdict.py` (window = the run's registered
+    scoring window, `_resolve_window`'s resolved SIM bounds). The two
+    tools differ in WHICH window they resolve and pass in, and in
+    nothing else that reaches this function -- but "different window"
+    never licenses a different DOMAIN: only this one line is shared, so
+    the domain rule above is the caller's to honour and cannot be
+    checked here. Each caller also keeps its own `expected_hz is None`
+    handling; that state means "not pre-registered yet" and must fail
+    loudly on the caller's own terms, so this function only ever
+    receives a real float.
     """
     return max(1, round(window_s * expected_hz))

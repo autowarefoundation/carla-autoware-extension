@@ -18,12 +18,15 @@ each run directory under `benchmarks/results/<cell>/`:
     (`cells.yaml`'s per-cell `metrics:` block, read via
     `cell_info.metrics_for`; see `_tick_rate_ratio_series`).
   * every arm: `publisher_rate_ratio`, from the M2 three-way reconciliation
-    (`analysis/cadence.reconcile_drops`) between an expected count (window
-    duration x the cell's registered `lidar_expected_hz` -- a SEPARATE
-    binding from `tick_hz`: the sensor's own scan rate, not the simulator's
-    step rate; see `_expected_lidar_count`), the publisher-side count in
-    `publisher_counts.json` (absent for E-cells: see
+    (`analysis/cadence.reconcile_drops`) between an expected count
+    (clock.csv's whole-run SIM span x the cell's registered
+    `lidar_expected_hz` -- a SEPARATE binding from `tick_hz`: the sensor's
+    own scan rate, not the simulator's step rate, and sim-domain like the
+    span it multiplies; see `_expected_lidar_count`), the publisher-side
+    count in `publisher_counts.json` (absent for E-cells: see
     `_publisher_rate_ratio`), and the observer-side count in observer.csv.
+    All three terms are whole-run here, unlike `duel_verdict.py`'s, which
+    windows all three to the run's registered scoring window.
   * every arm: `quality_ok`, read from `quality.json`'s `gate_pass` -- the
     M5 gate's own already-computed verdict (see `_quality_ok`; schema
     registered in `benchmarks/README.md`'s "M5 gate result"). This module
@@ -241,6 +244,19 @@ def _tick_rate_ratio_series(
 
 def _expected_lidar_count(window_s: float, lidar_expected_hz: float | None) -> int:
     """Expected LiDAR message count for the M2 three-way reconciliation.
+
+    `window_s` must be the window's span in SIM seconds, not wall
+    seconds. `lidar_expected_hz` is a sim-domain rate -- `min(1 /
+    sensor_tick, tick_hz)`, and a LiDAR's `sensor_tick` fires in
+    simulation time, as does `tick_hz = 1 / fixed_delta_seconds` -- so
+    over a wall span `W` at real-time factor `r` the sim span is `W * r`
+    and the scan count is `W * r * hz`. Passing `W` instead inflates the
+    expectation by `1 / r`, which depresses `publisher_rate_ratio` by the
+    same factor and can fire the ceiling's publisher disjunct on a
+    publisher that dropped nothing -- turning this term into a second,
+    unregistered RTF signal beside `evaluate_ceiling`'s own `rtf` and
+    `tick_rate_ratio` disjuncts, on the very arms where those two are the
+    point.
 
     `lidar_expected_hz` is the sensor's own expected scan rate --
     `metrics["lidar_expected_hz"]`, a per-cell binding registered
@@ -503,12 +519,18 @@ def verdict_for_run(
             window_branch_note=None,
         )
 
-    _clock_ns, wall_ns = read_clock_csv(run_dir / "clock.csv")
+    clock_ns, wall_ns = read_clock_csv(run_dir / "clock.csv")
     # S5: computed first, from a plain size check that cannot itself
     # crash on a short or empty clock.csv (unlike window_s below) -- see
     # _actual_window_branch's own docstring.
     window_branch_note = _window_branch_note(expected_window_branch, _actual_window_branch(wall_ns))
-    window_s = (int(wall_ns.max()) - int(wall_ns.min())) / 1e9
+    # The run's whole-run span in SIM ns (clock.csv's `clock_ns` column,
+    # the /clock values themselves), NOT the wall span of the same rows:
+    # `lidar_expected_hz` is a sim-domain rate, so only a sim span makes
+    # the product a message count. See _expected_lidar_count. The two
+    # spans differ by the run's real-time factor, and both sweep arms are
+    # deliberately run where that is not 1.
+    window_s = (int(clock_ns.max()) - int(clock_ns.min())) / 1e9
     # Applied identically on every arm (ceiling.py: "applied identically to
     # every sweep point"): the publisher-side count is expected against
     # the sensor's own registered scan rate regardless of whether the

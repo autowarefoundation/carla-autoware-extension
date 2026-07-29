@@ -737,7 +737,7 @@ METRIC_BINDERS: dict[str, _Binder] = {
 # margin, no cross-cell equivalence verdict -- so it is reported PER CELL
 # (never as an A-B delta), alongside the arm-scoped achieved_rate_ratio
 # row it explains. `sweep_verdict.py` implements the same idea for the M4
-# sweep, over a DIFFERENT window (clock.csv's whole-run wall extent, no
+# sweep, over a DIFFERENT window (clock.csv's whole-run SIM extent, no
 # warm-up discard) -- the two tools share the expected-count arithmetic
 # itself (`cadence.expected_count`) but not the window it is applied to,
 # nor the file-reading wrapper around it: sweep_verdict's wrapper folds
