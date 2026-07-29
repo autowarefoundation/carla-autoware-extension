@@ -305,25 +305,28 @@ def _resolve_window(run_dir: Path, manifest: RunManifest) -> _RunWindow:
 # ---------------------------------------------------------------------------
 
 
-def cell_run_values(
-    cell_dir: Path,
-    extractor: Callable[[Path, RunManifest, _RunWindow], float],
-    *,
-    arm: str | None = None,
-) -> tuple[list[float], int, list[str]]:
-    """Run-level values for one cell directory, over every `run-*` it holds.
+@dataclass(frozen=True)
+class _RunRecord:
+    """One run's manifest plus its (possibly failed) resolved window,
+    produced by walking a cell's run-* tree exactly once."""
 
-    The scoring window is resolved HERE, once per run, and passed to
-    `extractor` rather than each extractor re-resolving it: README.md
-    says the window is "resolved once per run", and a caller walking
-    five metrics over the same run previously paid for `_resolve_window`
-    (a clock-fit least-squares pass and, on the closed-loop arm, a full
-    `odometry.csv` read plus `window._project`'s O(points x segments)
-    loop) five times over for identical results. `extractor` here
-    therefore takes `(run_dir, manifest, window)`, not `(run_dir,
-    manifest)`; window resolution failures are caught by the same
-    try/except as the extractor call, so they are reported exactly like
-    an extractor failure would be.
+    run_dir: Path
+    manifest: RunManifest
+    window: _RunWindow | None
+    window_error: str | None
+
+
+def _walk_cell_runs(
+    cell_dir: Path, *, arm: str | None = None
+) -> tuple[list[_RunRecord], int, list[str]]:
+    """Walk a cell directory's `run-*` trees EXACTLY ONCE, resolving each
+    surviving run's scoring window exactly once regardless of how many
+    of the five metrics are later computed from the result -- this is
+    the actual "resolved once per run" (README.md, "Scoring window")
+    this module implements: a caller (`build_verdict_table`) walks a
+    given (cell, arm) pair's runs ONCE per `build_verdict_table` call
+    and reuses the returned records across every metric, rather than
+    each metric re-walking and re-resolving.
 
     `arm`, when given, restricts to runs whose manifest `arm` matches
     exactly -- a cell's run-* tree holds every arm it registers (e.g.
@@ -335,19 +338,21 @@ def cell_run_values(
     exclusion or an error.
 
     Excluded runs (`RunManifest.excluded`) are skipped and counted, never
-    passed to `extractor` -- that is the whole point of the exclusion
+    turned into a record -- that is the whole point of the exclusion
     mechanism (benchmarks/config/exclusions.md: a run marked excluded
-    must not contribute to a verdict). A run whose manifest is missing,
-    invalid, whose window cannot be resolved, or whose extractor call
-    raises is DROPPED and reported by name in `errors`, not silently
-    skipped and not treated as excluded -- mirroring report.render_
-    cell's tolerance for one bad run not making a whole cell unreadable,
-    while still surfacing every failure.
+    must not contribute to a verdict). A run whose manifest is missing
+    or invalid is DROPPED and reported by name in `errors`. A run whose
+    WINDOW fails to resolve (e.g. no odometry sample inside the spatial
+    window) still gets a record -- with `window=None` and the failure
+    text in `window_error` -- so a metric that does not need a window
+    (`_extract_fit_residual_ns`) can still be computed for it; a metric
+    that DOES need the window reports the failure itself when applied
+    (see `_apply_extractor`).
 
-    Returns `(values, n_excluded, errors)`.
+    Returns `(records, n_excluded, errors)`.
     """
     cell_dir = Path(cell_dir)
-    values: list[float] = []
+    records: list[_RunRecord] = []
     n_excluded = 0
     errors: list[str] = []
     for run_dir in sorted(cell_dir.glob("run-*")):
@@ -365,12 +370,79 @@ def cell_run_values(
         if manifest.excluded:
             n_excluded += 1
             continue
+        window: _RunWindow | None
+        window_error: str | None
         try:
             window = _resolve_window(run_dir, manifest)
-            values.append(extractor(run_dir, manifest, window))
+            window_error = None
         except Exception as exc:  # noqa: BLE001 - reported, never swallowed
-            errors.append(f"{run_dir.name}: FAILED {type(exc).__name__}: {exc}")
-    return values, n_excluded, errors
+            window = None
+            window_error = f"{type(exc).__name__}: {exc}"
+        records.append(_RunRecord(run_dir, manifest, window, window_error))
+    return records, n_excluded, errors
+
+
+def _apply_extractor(
+    records: list[_RunRecord], extractor: Callable[[Path, RunManifest, _RunWindow], float]
+) -> tuple[list[float], list[str]]:
+    """Apply a windowed `extractor(run_dir, manifest, window)` to every
+    record whose window resolved; a record whose window FAILED is
+    reported in `errors` (never passed to `extractor`, since it has no
+    window to give it) rather than silently skipped."""
+    values: list[float] = []
+    errors: list[str] = []
+    for rec in records:
+        if rec.window is None:
+            errors.append(f"{rec.run_dir.name}: FAILED window: {rec.window_error}")
+            continue
+        try:
+            values.append(extractor(rec.run_dir, rec.manifest, rec.window))
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            errors.append(f"{rec.run_dir.name}: FAILED {type(exc).__name__}: {exc}")
+    return values, errors
+
+
+def _apply_fit_residual(records: list[_RunRecord]) -> tuple[list[float], list[str]]:
+    """Apply `_extract_fit_residual_ns` to every record REGARDLESS of
+    whether its window resolved: the fit residual is a property of the
+    whole run's /clock series, independent of any metric's scoring
+    window (see `_extract_fit_residual_ns`), so a run whose spatial
+    window failed (e.g. the ego never reached stations.start_m) must
+    not lose this diagnostic -- that is exactly the run where knowing
+    whether the clock fit itself was sane matters most."""
+    values: list[float] = []
+    errors: list[str] = []
+    for rec in records:
+        try:
+            values.append(_extract_fit_residual_ns(rec.run_dir, rec.manifest))
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            errors.append(f"{rec.run_dir.name}: FAILED {type(exc).__name__}: {exc}")
+    return values, errors
+
+
+def cell_run_values(
+    cell_dir: Path,
+    extractor: Callable[[Path, RunManifest, _RunWindow], float],
+    *,
+    arm: str | None = None,
+) -> tuple[list[float], int, list[str]]:
+    """Run-level values for ONE metric over one cell directory: a thin
+    convenience wrapper over `_walk_cell_runs` + `_apply_extractor` for
+    callers (tests, or a one-off script) that only need a single
+    metric. `build_verdict_table` does NOT use this function -- it calls
+    `_walk_cell_runs` once per (cell, arm) and reuses the same records
+    across all five metrics via `_apply_extractor`/`_apply_fit_residual`,
+    which is what actually achieves "resolved once per run"; a caller
+    that invokes `cell_run_values` once per metric (as this function's
+    own single call always does internally) still pays for one window
+    resolution per run for THAT metric specifically, same as calling
+    `_walk_cell_runs` directly would.
+
+    Returns `(values, n_excluded, errors)`.
+    """
+    records, n_excluded, walk_errors = _walk_cell_runs(cell_dir, arm=arm)
+    values, apply_errors = _apply_extractor(records, extractor)
+    return values, n_excluded, walk_errors + apply_errors
 
 
 # ---------------------------------------------------------------------------
@@ -540,15 +612,17 @@ def extract_achieved_rate_ratio(
     return float(inter_arrival_stats(in_w).hz / expected_hz)
 
 
-def _extract_fit_residual_ns(run_dir: Path, manifest: RunManifest, window: _RunWindow) -> float:
+def _extract_fit_residual_ns(run_dir: Path, manifest: RunManifest) -> float:
     """The run's own sim<->wall clock-fit residual (ns), reported
     alongside one_hop_wall_ms per its registered definition: the duel
     term carries this fit's error on top of the transport it measures.
-    Not itself windowed -- the fit is over the whole run's /clock
-    series, independent of any metric's scoring window; `window` is
-    accepted (and ignored) only so this extractor matches
-    `cell_run_values`'s uniform `(run_dir, manifest, window)` contract."""
-    del window
+    Deliberately takes NO `window` and is applied via `_apply_fit_
+    residual`, not `_apply_extractor`/`cell_run_values`: the fit is over
+    the whole run's /clock series, independent of any metric's scoring
+    window, so gating it on window resolution would lose this
+    diagnostic on exactly the runs (a broken spatial window) where it is
+    most wanted."""
+    del manifest  # part of the uniform extractor shape; unused here
     clock_ns, clock_wall = read_clock_csv(Path(run_dir) / "clock.csv")
     fit = fit_sim_wall_affine(clock_ns, clock_wall)
     return float(fit.max_abs_residual_ns)
@@ -639,16 +713,19 @@ METRIC_BINDERS: dict[str, _Binder] = {
 
 
 def _attach_fit_residual_note(
-    row: VerdictRow, cell_a_dir: Path, cell_b_dir: Path, *, arm: str
+    row: VerdictRow, records_a: list[_RunRecord], records_b: list[_RunRecord]
 ) -> VerdictRow:
-    """Attach one_hop_wall_ms's registered fit_residual_ns context. Any
-    per-run failure from either `cell_run_values` call (e.g. a run whose
-    clock fit itself could not be computed) is folded into the row's
-    notes rather than discarded -- a note that is simply MISSING gives
-    no reason a reader could act on, whereas a run-level error mirrors
-    exactly how the metric's own extractor failures are surfaced above."""
-    fit_a, _, errors_a = cell_run_values(cell_a_dir, _extract_fit_residual_ns, arm=arm)
-    fit_b, _, errors_b = cell_run_values(cell_b_dir, _extract_fit_residual_ns, arm=arm)
+    """Attach one_hop_wall_ms's registered fit_residual_ns context, from
+    the SAME per-arm records `build_verdict_table` already walked for
+    this row's metrics -- no extra directory walk, and (via `_apply_fit_
+    residual`) no window resolution at all, since the fit residual does
+    not need one. Any per-run failure (e.g. a run whose clock fit itself
+    could not be computed) is folded into the row's notes rather than
+    discarded -- a note that is simply MISSING gives no reason a reader
+    could act on, whereas a run-level error mirrors exactly how the
+    metric's own extractor failures are surfaced above."""
+    fit_a, errors_a = _apply_fit_residual(records_a)
+    fit_b, errors_b = _apply_fit_residual(records_b)
     notes = row.notes
     fit_errors = errors_a + errors_b
     if fit_errors:
@@ -707,8 +784,12 @@ def build_verdict_table(
     if arms is None:
         arms = _registered_arms(cells_doc, cell_a_id, cell_b_id)
     if not arms:
-        raise ValueError(f"cells {cell_a_id!r} and {cell_b_id!r} share no registered arm")
-    rows: list[VerdictRow] = []
+        raise UnknownIdError(f"cells {cell_a_id!r} and {cell_b_id!r} share no registered arm")
+
+    # Bound ONCE, before the arm loop: a metric's binding is a fact
+    # about the cell's registered config (cells.yaml's `metrics:`
+    # block), not something that varies by arm.
+    bound: dict[str, tuple] = {}
     unbindable: list[str] = []
     for metric, spec in margins.items():
         binder = METRIC_BINDERS.get(metric)
@@ -717,7 +798,21 @@ def build_verdict_table(
             continue
         extractor_a, reason_a = binder(metrics_a)
         extractor_b, reason_b = binder(metrics_b)
-        for arm in arms:
+        bound[metric] = (extractor_a, reason_a, extractor_b, reason_b, spec)
+
+    rows: list[VerdictRow] = []
+    for arm in arms:
+        # Each cell's run-* tree for THIS arm is walked exactly once
+        # here (window resolved once per run), and the resulting
+        # records are reused for every metric below -- this is what
+        # actually achieves README.md's "resolved once per run", unlike
+        # calling cell_run_values (which re-walks) once per metric.
+        records_a, excluded_a, walk_errors_a = _walk_cell_runs(Path(cell_a_dir), arm=arm)
+        records_b, excluded_b, walk_errors_b = _walk_cell_runs(Path(cell_b_dir), arm=arm)
+        for metric, spec in margins.items():
+            if metric not in bound:
+                continue  # already recorded in `unbindable`, once, above
+            extractor_a, reason_a, extractor_b, reason_b, spec = bound[metric]
             if extractor_a is None or extractor_b is None:
                 reasons = [
                     r
@@ -741,8 +836,8 @@ def build_verdict_table(
                     )
                 )
                 continue
-            values_a, excluded_a, errors_a = cell_run_values(Path(cell_a_dir), extractor_a, arm=arm)
-            values_b, excluded_b, errors_b = cell_run_values(Path(cell_b_dir), extractor_b, arm=arm)
+            values_a, apply_errors_a = _apply_extractor(records_a, extractor_a)
+            values_b, apply_errors_b = _apply_extractor(records_b, extractor_b)
             row = verdict_row(
                 metric,
                 values_a,
@@ -753,11 +848,11 @@ def build_verdict_table(
                 excluded_b=excluded_b,
                 arm=arm,
             )
-            run_errors = errors_a + errors_b
+            run_errors = walk_errors_a + apply_errors_a + walk_errors_b + apply_errors_b
             if run_errors:
                 row = dataclasses.replace(row, notes=_append_note(row.notes, "; ".join(run_errors)))
             if metric == "one_hop_wall_ms":
-                row = _attach_fit_residual_note(row, Path(cell_a_dir), Path(cell_b_dir), arm=arm)
+                row = _attach_fit_residual_note(row, records_a, records_b)
             rows.append(row)
     out = [
         'Metric definitions: benchmarks/README.md, "Primary-duel metric definitions".',

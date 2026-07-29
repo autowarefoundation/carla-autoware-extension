@@ -30,6 +30,7 @@ import pytest
 import yaml
 from benchmarks.analysis.clockfit import fit_sim_wall_affine, sim_to_wall
 from benchmarks.analysis.manifest import RunManifest, load_manifest
+from benchmarks.scripts.cell_info import UnknownIdError
 from benchmarks.scripts.duel_verdict import (
     METRIC_BINDERS,
     ODOM_TOPIC,
@@ -406,7 +407,7 @@ def _make_run(
         for s in clock_sim.tolist():
             wall = wall_t0 + s
             pct = cpu_pct
-            if cpu_pct_before_window is not None and s < WARMUP_NS:
+            if cpu_pct_before_window is not None and s < outlier_until_ns:
                 pct = cpu_pct_before_window
             f.write(f"{wall},{process_label},{pct},1000,-1,-1,1.0\n")
 
@@ -530,7 +531,9 @@ def test_extract_lidar_to_ndt_sim_ms(tmp_path):
     val = extract_lidar_to_ndt_sim_ms(
         run_dir, _manifest_of(run_dir), _window_of(run_dir), LIDAR_TOPIC, NDT_TOPIC
     )
-    assert val == pytest.approx(15.0, abs=0.5)
+    # Exact (identity clock fit, integer-ns fixture): no reason to admit
+    # more slack than the static-arm construction actually has.
+    assert val == pytest.approx(15.0, abs=0.05)
 
 
 def test_extract_lidar_to_ndt_sim_ms_raises_when_ndt_topic_missing(tmp_path):
@@ -592,7 +595,7 @@ def test_extract_lidar_to_ndt_sim_ms_excludes_pre_window_outlier(tmp_path):
     val = extract_lidar_to_ndt_sim_ms(
         run_dir, _manifest_of(run_dir), _window_of(run_dir), LIDAR_TOPIC, NDT_TOPIC
     )
-    assert val == pytest.approx(15.0, abs=0.5)
+    assert val == pytest.approx(15.0, abs=0.05)
 
 
 def test_extract_control_staleness_ms_raises_when_topic_none(tmp_path):
@@ -741,6 +744,33 @@ def test_extract_carla_process_cpu_pct_excludes_pre_window_samples(tmp_path):
     val = extract_carla_process_cpu_pct(
         run_dir, _manifest_of(run_dir), _window_of(run_dir), "carla-server"
     )
+    assert val == pytest.approx(50.0, abs=0.5)
+
+
+def test_extract_carla_process_cpu_pct_closed_loop_uses_route_spatial_window(tmp_path):
+    """The arm x domain combination the one_hop closed-loop test above
+    does NOT cover: carla_process_cpu_pct is the only metric that reads
+    window.wall_lo/wall_hi, and on the closed-loop arm those bounds are
+    derived from the SPATIAL gate via sim_to_wall -- NOT from clock.csv's
+    whole-run wall extent (clock_wall.min()/.max()). A regression to the
+    latter would readmit a map-load-era CPU spike straight into a
+    10-point margin. Same stationary-then-moving fixture as the one_hop
+    closed-loop test (station 20 reached only after 55 s of a 70 s
+    run), with the outlier on cpu_pct instead of one_hop latency."""
+    cell = _make_run(
+        tmp_path,
+        arm="closed-loop",
+        cpu_pct=50.0,
+        cpu_pct_before_window=999.0,
+        outlier_until_ns=55_000_000_000,
+        stationary_until_s=55.0,
+        run_duration_s=70.0,
+    )
+    run_dir = cell / "run-001"
+    window = _window_of(run_dir)
+    # Fixture's premise.
+    assert window.wall_lo > 1_000_000_000_000 + 55_000_000_000
+    val = extract_carla_process_cpu_pct(run_dir, _manifest_of(run_dir), window, "carla-server")
     assert val == pytest.approx(50.0, abs=0.5)
 
 
@@ -1097,12 +1127,65 @@ def test_build_verdict_table_attaches_fit_residual_note(tmp_path):
     assert "fit_residual_ns median" in table
 
 
+def test_fit_residual_note_survives_a_broken_spatial_window(tmp_path):
+    """fit_residual_ns is NOT windowed (it is a property of the whole
+    run's /clock series) and must not be gated on window resolvability.
+    Cell A's closed-loop runs never move (stationary_until_s far beyond
+    run_duration_s), so their spatial window is UNRESOLVABLE (no
+    odometry sample ever reaches stations.start_m) -- exactly the run
+    where knowing the clock fit was sane matters most. The fit_residual_
+    ns note must still be computed for A's runs from clock.csv alone,
+    not silently dropped because the metric's OWN window failed."""
+    for i in range(1, 4):
+        _make_run(
+            tmp_path,
+            cell="A",
+            name=f"run-{i:03d}",
+            arm="closed-loop",
+            one_hop_extra_ms=7.0,
+            stationary_until_s=1000.0,  # never reaches stations.start_m
+            run_duration_s=40.0,
+        )
+        _make_run(tmp_path, cell="B", name=f"run-{i:03d}", arm="closed-loop", one_hop_extra_ms=8.0)
+    doc = _cells_doc(arms=("closed-loop",))
+    margins = {"one_hop_wall_ms": {"margin": 2.0}}
+    table = build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=3)
+    # one_hop_wall_ms itself is unmeasurable for A (its window never
+    # resolves), but the fit_residual_ns note must still appear.
+    assert "fit_residual_ns median" in table
+    assert "insufficient-data" in table  # confirms A's window really failed
+
+
+def test_attach_fit_residual_note_reports_its_own_extraction_failures(tmp_path):
+    """Minor 2: cell_run_values-style errors from computing
+    fit_residual_ns itself (as opposed to the metric's own errors) must
+    be folded into the row's notes under the `fit_residual_ns:` prefix,
+    not discarded. Cell A's run-001 gets a clock.csv with a single row
+    (fit_sim_wall_affine needs >= 2), so _extract_fit_residual_ns fails
+    for it specifically."""
+    for i in range(1, 4):
+        _make_run(tmp_path, cell="A", name=f"run-{i:03d}", arm="static", one_hop_extra_ms=7.0)
+        _make_run(tmp_path, cell="B", name=f"run-{i:03d}", arm="static", one_hop_extra_ms=8.0)
+    (tmp_path / "A" / "run-001" / "clock.csv").write_text(
+        "clock_ns,arrival_system_ns\n0,1000000000000\n"
+    )
+    doc = _cells_doc(arms=("static",))
+    margins = {"one_hop_wall_ms": {"margin": 2.0}}
+    table = build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=3)
+    assert "fit_residual_ns:" in table
+    assert "run-001" in table
+
+
 def test_build_verdict_table_raises_when_cells_share_no_arm(tmp_path):
+    """Raises UnknownIdError specifically (not a bare ValueError) so
+    main() -- which only catches UnknownIdError -- reports this as a
+    clean CELL FAIL instead of an uncaught traceback; see
+    test_main_reports_no_common_arm_cleanly for the CLI-level proof."""
     doc = _cells_doc()
     doc["cells"][0]["arms"] = ["static"]
     doc["cells"][1]["arms"] = ["closed-loop"]
     margins = {"one_hop_wall_ms": {"margin": 2.0}}
-    with pytest.raises(ValueError):
+    with pytest.raises(UnknownIdError):
         build_verdict_table(tmp_path / "A", tmp_path / "B", "A", "B", margins, doc, min_n=10)
 
 
@@ -1115,5 +1198,20 @@ def test_main_reports_unknown_cell_id_cleanly(tmp_path, capsys):
     (tmp_path / "results" / "Q").mkdir(parents=True)
     (tmp_path / "results" / "B").mkdir(parents=True)
     rc = main(["Q", "B", "--results", str(tmp_path / "results")])
+    assert rc == EXIT_UNKNOWN_ID
+    assert "CELL FAIL" in capsys.readouterr().err
+
+
+def test_main_reports_no_common_arm_cleanly(tmp_path, capsys):
+    """The other path into UnknownIdError: two REGISTERED cells that
+    share no arm (E0: [static], E-opt: [closed-loop] in the real,
+    committed cells.yaml -- no --cells-yaml override here) must report
+    the same clean CELL FAIL, not an uncaught traceback. This is the
+    exact repro the reviewer ran against the real config."""
+    from benchmarks.scripts.duel_verdict import EXIT_UNKNOWN_ID, main
+
+    (tmp_path / "results" / "E0").mkdir(parents=True)
+    (tmp_path / "results" / "E-opt").mkdir(parents=True)
+    rc = main(["E0", "E-opt", "--results", str(tmp_path / "results")])
     assert rc == EXIT_UNKNOWN_ID
     assert "CELL FAIL" in capsys.readouterr().err
