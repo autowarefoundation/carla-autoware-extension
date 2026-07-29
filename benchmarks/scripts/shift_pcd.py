@@ -135,28 +135,48 @@ def lzf_decompress(data: bytes) -> bytes:
     repeated by referencing back into bytes the same copy is still
     writing), and a slice taken up front would freeze stale bytes
     instead of picking up ones just written.
+
+    A corrupt or truncated stream is refused with ``PcdFormatError``
+    rather than left to Python's own errors or silent misbehaviour: a
+    back-reference offset reaching past everything decompressed so far
+    would otherwise wrap via negative indexing and silently produce
+    plausible-looking (but wrong) bytes of the expected length, and a
+    stream that runs out mid-token would otherwise raise a bare
+    ``IndexError`` that callers catching only ``PcdFormatError`` (e.g.
+    ``main``) do not expect.
     """
     out = bytearray()
     i = 0
     n = len(data)
-    while i < n:
-        ctrl = data[i]
-        i += 1
-        if ctrl < 32:
-            length = ctrl + 1
-            out.extend(data[i : i + length])
-            i += length
-        else:
-            length = ctrl >> 5
-            if length == 7:
-                length += data[i]
-                i += 1
-            offset = ((ctrl & 0x1F) << 8) | data[i]
+    try:
+        while i < n:
+            ctrl = data[i]
             i += 1
-            ref = len(out) - offset - 1
-            for _ in range(length + 2):
-                out.append(out[ref])
-                ref += 1
+            if ctrl < 32:
+                length = ctrl + 1
+                out.extend(data[i : i + length])
+                i += length
+            else:
+                length = ctrl >> 5
+                if length == 7:
+                    length += data[i]
+                    i += 1
+                offset = ((ctrl & 0x1F) << 8) | data[i]
+                i += 1
+                ref = len(out) - offset - 1
+                if ref < 0:
+                    raise PcdFormatError(
+                        f"corrupt binary_compressed stream: back-reference "
+                        f"offset {offset} reaches past the "
+                        f"{len(out)} byte(s) decompressed so far"
+                    )
+                for _ in range(length + 2):
+                    out.append(out[ref])
+                    ref += 1
+    except IndexError as e:
+        raise PcdFormatError(
+            "corrupt or truncated binary_compressed stream: ran out of compressed bytes mid-token"
+        ) from e
     return bytes(out)
 
 

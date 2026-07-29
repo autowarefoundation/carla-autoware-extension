@@ -300,6 +300,87 @@ def test_lzf_decompress_handles_an_overlapping_back_reference():
     assert shift_pcd.lzf_decompress(compressed) == b"ABABABABAB"  # "AB" x 5
 
 
+def test_lzf_decompress_handles_the_length_extension_byte():
+    """Hand-built LZF stream exercising ``ctrl >> 5 == 7``, the case
+    where an extra byte extends ``length`` before the offset byte is
+    even read. Every round-trip fixture in this file goes through
+    ``_lzf_literal_compress`` (literal runs only) or the plain overlap
+    test above (``length field=6``, deliberately avoiding 7), so this
+    branch had no coverage even though real PCL output over a
+    multi-megabyte cloud hits it constantly.
+
+    Layout: a 2-byte literal run (``"AB"``), then a back-reference with
+    ``length_field=7`` (extended by the next byte, ``3``, to 10) and
+    ``offset=1``. Verified by hand, not just by trusting the numbers:
+    ``ctrl = 7 << 5 = 224``; ``224 >> 5 = 7`` so the extension byte
+    (``3``) applies, giving ``length = 10``; ``offset = ((224 & 0x1f)
+    << 8) | 1 = (0 << 8) | 1 = 1``; ``ref = len(out) - offset - 1 = 2 -
+    1 - 1 = 0``, so the back-reference copies ``length + 2 = 12`` bytes
+    starting at index 0 while ``out`` is still only 2 bytes long -- the
+    same overlapping self-reference as the other back-reference test,
+    just long enough to require the length-extension byte. Result:
+    ``"AB"`` (2 bytes) + ``"AB"`` repeated 6 more times (12 bytes) =
+    ``"AB"`` x 7 (14 bytes)."""
+    literal = bytes([1]) + b"AB"  # ctrl=1 -> 2 literal bytes "AB"
+    back_ref = bytes([7 << 5, 3, 1])  # length field=7, +3 -> 10; offset=1
+    compressed = literal + back_ref
+
+    assert shift_pcd.lzf_decompress(compressed) == b"AB" * 7
+
+
+def test_lzf_decompress_rejects_a_back_reference_that_points_before_the_start():
+    """A back-reference whose offset reaches past everything
+    decompressed so far must not silently wrap via Python's negative
+    indexing (``out[-1]`` is the *last* byte, not "out of bounds") --
+    that would produce plausible-looking bytes of the right length
+    that sail straight through the length check in ``read_points``,
+    exactly the "parses fine, geometrically nonsense" failure mode the
+    module docstring says this tool refuses."""
+    compressed = bytes([32, 0])  # ctrl=32 -> back-ref, length=1, offset=0
+    with pytest.raises(shift_pcd.PcdFormatError, match="offset"):
+        shift_pcd.lzf_decompress(compressed)
+
+
+@pytest.mark.parametrize(
+    "compressed",
+    [
+        bytes([32]),  # ctrl -> back-ref, but no offset byte follows
+        bytes([7 << 5]),  # ctrl -> length==7, but no extension byte follows
+    ],
+    ids=["missing_offset_byte", "missing_length_extension_byte"],
+)
+def test_lzf_decompress_rejects_a_stream_truncated_mid_token(compressed):
+    """A stream that runs out of bytes partway through a back-reference
+    token must raise ``PcdFormatError`` -- this tool's loud-refusal
+    contract -- rather than leak a bare ``IndexError`` past callers
+    that only catch ``PcdFormatError`` (see
+    ``test_main_refuses_a_corrupt_binary_compressed_stream_without_a_traceback``
+    for that at the ``main()`` level)."""
+    with pytest.raises(shift_pcd.PcdFormatError, match="truncated"):
+        shift_pcd.lzf_decompress(compressed)
+
+
+def test_main_refuses_a_corrupt_binary_compressed_stream_without_a_traceback(tmp_path, capsys):
+    """Regression: a truncated ``binary_compressed`` payload used to
+    escape ``main()``'s ``except PcdFormatError`` as a bare
+    ``IndexError``, printing a traceback instead of the usual
+    ``shift_pcd: refusing ...`` message."""
+    src, dst = tmp_path / "in.pcd", tmp_path / "out.pcd"
+    header = BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")
+    truncated = bytes([32])  # a back-reference ctrl byte, then nothing
+    with open(src, "wb") as f:
+        f.write(header.encode("ascii"))
+        f.write(len(truncated).to_bytes(4, "little"))
+        f.write((999).to_bytes(4, "little"))  # uncompressed_len, irrelevant here
+        f.write(truncated)
+
+    rc = shift_pcd.main(["--in", str(src), "--out", str(dst)])
+
+    assert rc != 0
+    assert "shift_pcd: refusing" in capsys.readouterr().err
+    assert not dst.exists()
+
+
 # --- shift_pcd: provenance ---------------------------------------------------
 
 
@@ -328,21 +409,21 @@ def test_rejects_a_fields_combination_outside_the_two_supported_layouts(tmp_path
         .replace("COUNT 1 1 1 1\n", "COUNT 1 1\n")
     )
     _write_binary_pcd(src, header=header, points=POINTS5[:, :2])
-    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="FIELDS"):
+    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="FIELDS 'x y'"):
         shift_pcd.read_header(f)
 
 
 def test_rejects_wrong_size(tmp_path):
     src = tmp_path / "in.pcd"
     _write_binary_pcd(src, header=BINARY_HEADER.replace("SIZE 4 4 4 4\n", "SIZE 8 8 8 8\n"))
-    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="SIZE"):
+    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="SIZE '8 8 8 8'"):
         shift_pcd.read_header(f)
 
 
 def test_rejects_wrong_type(tmp_path):
     src = tmp_path / "in.pcd"
     _write_binary_pcd(src, header=BINARY_HEADER.replace("TYPE F F F F\n", "TYPE U U U U\n"))
-    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="TYPE"):
+    with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="TYPE 'U U U U'"):
         shift_pcd.read_header(f)
 
 
