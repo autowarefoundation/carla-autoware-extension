@@ -19,10 +19,14 @@ services:
       - ../reports:/work/reports
       # One read-only mount per Autoware map bundle. Which one the launch uses is
       # selected by MAP_DIR (scripts/e2e/launch_autoware.sh), derived from MAP in
-      # scripts/e2e/run_e2e.sh. Mounting both costs nothing and keeps a map
+      # scripts/e2e/run_e2e.sh. Mounting them all costs nothing and keeps a map
       # switch down to a single environment variable.
+      # town10 (unshifted) stays mounted: it is still the provenance source
+      # for town10-shifted (benchmarks/pins.yaml town10_pcd_shifted) and
+      # Task 10 Step 5 compares against it.
       - ~/autoware_map/nishishinjuku:/autoware_map/nishishinjuku:ro
       - ~/autoware_map/town10:/autoware_map/town10:ro
+      - ~/autoware_map/town10-shifted:/autoware_map/town10-shifted:ro
       - ../extension/build:/work/extension:ro
       # Host X11 socket so scripts/e2e/launch_rviz.sh can show RViz on the host
       # display (grant access once per session with `xhost +local:`).

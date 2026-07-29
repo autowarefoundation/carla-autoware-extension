@@ -63,7 +63,7 @@ carla_autoware_map_defaults() {
       MAP_DEFAULT_GOAL="81571.616 50019.827 42.07 0.090888 0.995861"
       ;;
     Town10HD_Opt)
-      MAP_DEFAULT_DIR=/autoware_map/town10
+      MAP_DEFAULT_DIR=/autoware_map/town10-shifted
       MAP_DEFAULT_GRID_CENTRE=""
       MAP_DEFAULT_GOAL="-101.021 55.014 0.0 -0.910299 0.413952"
       ;;
