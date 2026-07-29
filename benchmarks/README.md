@@ -534,6 +534,34 @@ have two publishers on `/perception/object_recognition/objects` and is not a
 configuration either approach ships. Task 22's confound table must state this
 alongside the numbers, not merely note the difference.
 
+### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
+
+CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
+CARLA fork process — through the extension's C-ABI seam (`/bench/seam_cloud`) and by an in-core
+publisher (`/bench/incore_cloud`, spec in `benchmarks/patches/extension/README.md`) — so that the
+paired one-hop wall-latency delta between the two topics is attributable to the seam alone. Both
+publishers were built to be symmetric on every field that spec controls (topic shape, env gate,
+message shape, decimation clock, QoS, `frame_id`, and preallocation of the zero payload buffer).
+
+One asymmetry is outside that spec's control: the fork's shared
+`CarlaPointCloudPublisher::WritePointCloud` (`CarlaPointCloudPublisher.cpp:118`,
+`~/src/carla-autoware-integration`) rebuilds `message->fields = BuildPointFields(...)` — a fresh
+`std::vector<msg::PointField>` of the 10-field table — on **every** publish, for every subclass,
+including the new `CarlaBenchIncoreCloudPublisher`. This is pre-existing base-class behaviour
+(also present today in `CarlaLidarPublisher` and every other `CarlaPointCloudPublisher`
+subclass), not something introduced by or fixable from Task 14's spec. The extension side has no
+equivalent: `BenchCloudPublisher`'s `msg_.fields` is built once, in `MakeCloudTemplate()`
+(`extension/src/publishers/BenchCloudPublisher.cpp:65-76`), and `OnTick()` never touches it again.
+
+**This is a genuine confound, not a defect to fix.** It burdens the fork (in-core) side only, in
+the direction that makes the in-core publisher look relatively _more_ expensive per publish than
+the extension seam — the opposite direction from what "seam overhead" would predict. CAL-seam's
+measured one-hop latency delta therefore bounds the seam's cost **plus** this base-class
+per-publish allocation asymmetry, not the seam's cost alone: a small measured delta (or one with
+an unexpected sign) cannot be attributed to the seam without accounting for it, and a report that
+attributes the whole delta to the seam would be biased in the seam's favour. Task 22's confound
+table must state this alongside the CAL-seam numbers, not merely note the difference.
+
 ## Pre-registration
 
 The git history of this directory is the pre-registration record: metric
@@ -616,6 +644,14 @@ Amendments made so far:
   family). Completeness: Task 8's cell launchers fixed that split
   (`INJECTOR_ENABLED`), and it is a first-order M3 and M5 comparability
   difference that was recorded only in a task report.
+- **2026-07-28** — `## Known confounds` gained the CAL-seam per-publish
+  allocation entry (the fork's shared `CarlaPointCloudPublisher::
+WritePointCloud` rebuilds `message->fields` from scratch on every
+  publish, a cost the extension side's preallocated `msg_` does not
+  carry). Completeness: Task 14 round-2 review found this base-class
+  asymmetry burdens the in-core publisher only, biasing the paired
+  seam-overhead delta, and nothing recorded it before any P3 CAL-seam
+  run.
 - **2026-07-28** — `config/exclusions.md` criterion 1 widened to also
   cover the cell launcher itself failing to come up (`crash:cell-launch`
   for a readiness-probe timeout or a launcher prerequisite refusal), not
