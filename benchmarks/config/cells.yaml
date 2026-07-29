@@ -248,21 +248,29 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      # REGISTERED TARGET, not yet a setting. The mechanism is committed --
-      # runner/__main__.py's --fixed-delta (Task 12, landed) -- but no
-      # committed launcher passes 0.01 for this cell: cells/extension.sh sends
-      # no fixed-delta argument, so today an A-hf run would tick at the
-      # runner's 0.05 default and this binding would describe an intent the
-      # run did not honour. That is weaker than cell A's 20.0 (a committed
-      # default that applies with no wiring) and stronger than B-hf's, where
-      # no launcher exists at all -- which is why B-hf is null and this is
-      # not. Owed before any A-hf run counts: the launcher must pass
-      # --fixed-delta 0.01, AND the applied value must be recorded per run
-      # (launch env or manifest) so the target is checked, not trusted.
-      tick_hz: 100.0
-      # UNCHANGED at 20.0: --fixed-delta moves the world tick, not the rig's
-      # sensor_tick, and min(1/0.05, 100.0) is still 20. This is the pair the
-      # tick_hz/lidar_expected_hz split exists for.
+      # NOT REGISTERED: owed by the task that wires this cell's launch
+      # arguments (the Task 8 / Task 12 follow-on that gives
+      # cells/extension.sh a per-cell fixed-delta, the way
+      # BENCH_RUNNER_SWEEP_ARGS is the hook for sweep parameters).
+      # An earlier revision registered 100.0, reasoning that the MECHANISM is
+      # committed -- runner/__main__.py's --fixed-delta, Task 12, landed --
+      # unlike B-hf, where no launcher exists at all. But a committed
+      # mechanism nothing invokes is not a setting: cells/extension.sh passes
+      # no fixed-delta argument, so an A-hf run today ticks at the runner's
+      # 0.05 default while this binding claimed 100.0 -- a registered number
+      # no run is obliged to honour and nothing checks, which is the
+      # silent-wrong-number class this campaign exists to avoid. The
+      # justification is B-hf's exactly: the wiring to apply it is not
+      # written. Same justification, same answer.
+      # `arms: [closed-loop] # fixed_delta 0.01` above still records the
+      # cell's INTENT; this key records what a run will actually tick at, and
+      # today nothing does.
+      tick_hz:
+      # 20.0 REGARDLESS of what tick_hz becomes: --fixed-delta moves the world
+      # tick, not the rig's sensor_tick, and min(1/0.05, tick) is 20 for any
+      # tick >= 20. That independence is why nulling tick_hz above costs these
+      # two nothing -- the split is exactly what lets one be unknown while the
+      # others stay registered.
       lidar_expected_hz: 20.0
       ndt_expected_hz: 20.0 # follows the sensor rate, not the tick rate
   - id: B-hf

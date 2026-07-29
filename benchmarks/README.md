@@ -107,10 +107,13 @@ direction.
 
 `tick_hz` (paced world tick, `1 / fixed_delta_seconds`), `lidar_expected_hz`
 (sensor publish target) and `ndt_expected_hz` (NDT pose-output target) are
-three different numbers. They coincide at 20.0 on the extension cells and
-`tick_hz` diverges on the high-frequency ones (`A-hf`: `tick_hz: 100.0`,
-`lidar_expected_hz: 20.0`, because `--fixed-delta` moves the world tick and
-not the rig's `sensor_tick`). An expected message COUNT must be derived from
+three different numbers. They coincide at 20.0 on the extension cells and are
+independent everywhere: `--fixed-delta` moves the world tick and not the rig's
+`sensor_tick`, so on the high-frequency cells (`A-hf`, `B-hf`) `tick_hz` is a
+different number from the other two — which is why both of those cells can
+carry `tick_hz: null` while `A-hf` keeps `lidar_expected_hz`/`ndt_expected_hz`
+at 20.0. Substituting one for another is never correct, even where they
+happen to agree. An expected message COUNT must be derived from
 `lidar_expected_hz`; only the M4 ceiling's unpaced `tick_rate_ratio` disjunct
 divides by `tick_hz`; and the M5 gate's "NDT rate ≥ 90% of expected" criterion
 (`analysis/quality.py`'s `expected_ndt_hz`) divides by `ndt_expected_hz`, which
@@ -169,6 +172,19 @@ takes the branch its cell was not expected to take is a **loud finding to be
 reported, not a silent fallback** — it means the cell did not run the way it
 is registered to.
 
+**Who builds that check.** Nothing enforces the paragraph above today, and it
+is the half of this rule that makes the discriminator safe rather than merely
+correct — so it is an obligation with a named owner, not an aspiration. The
+check belongs in the window-resolution step, beside the branch selection
+itself: **Task 22** implements it for `scripts/duel_verdict.py` (which owes
+windowing at all — see the same task's D7), and **Task 23** mirrors it in
+`scripts/sweep_verdict.py`. Required behaviour: resolve the branch from the
+run's `clock.csv`, compare it against the cell's expected branch (derived from
+`cells.yaml` `approach`), and when they differ, surface the run in the rendered
+table's notes naming both branches. It must be visible in the artifact a reader
+sees, not only in a log. If the two tools grow a shared window resolver, the
+check lives there once rather than twice.
+
 > **Open contradiction in committed code, owed to Task 14 before any CAL-seam
 > run.** `cells.yaml` gives `CAL-seam` `carla: 0.10-fork`, so
 > `cell_info.merge`'s `has_sim_clock` is true, so `run.sh` starts the clock
@@ -225,13 +241,22 @@ every topic, over the whole run, unwindowed. The duel metric is one topic, in
 window, reduced to a median. The two names describe the same arithmetic and
 must not be assumed to be the same number.
 
-Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code
-path, deliberately. CAL cells publish wall-`now()` header stamps and have no
-`/clock` at all, so `cal_report._one_hop_ms` takes the direct
-`arrival_system_ns - header_stamp_ns` and no fit is possible; a simulated
-cell's stamps are sim-domain, so the fit is required. The duel term therefore
-carries the fit's error on top of the transport it measures, and a duel row
-must be read next to that run's `fit_residual_ns` (`report.summarize_run`).
+Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code path,
+deliberately. On **`CAL-rmw`** the publisher stamps `header.stamp` with wall
+`now()` and nothing publishes `/clock`, so `cal_report._one_hop_ms` takes the
+direct `arrival_system_ns - header_stamp_ns` and no fit is possible. Both
+halves are evidenced for that cell and only that cell:
+`benchmarks/observer/src/bench_pub.cpp`'s own first line scopes itself to
+CAL-rmw and states "stamp is system now() so the CAL analysis
+(`cal_report.py`) is a same-host wall-clock difference", and
+`cells/calibration.sh` launches `bench_pub` plus the observer and nothing else.
+**`CAL-seam` is not covered by this sentence**: its publisher pair is Task 14
+and does not exist, so neither its stamp domain nor its `/clock` status is
+known — see the open contradiction recorded under "Scoring window" above. A
+simulated cell's stamps are sim-domain, so the fit is required there. The duel
+term therefore carries the fit's error on top of the transport it measures, and
+a duel row must be read next to that run's `fit_residual_ns`
+(`report.summarize_run`).
 Task 16 freezes this margin from CAL-rmw, i.e. from the `cal_report` path:
 the transfer is legitimate because the measurand is identical, not because the
 arithmetic or the window basis is — see "Recorded consequence for Task 16"
@@ -737,6 +762,18 @@ Amendments made so far:
   class this campaign guards against. It is kept rather than nulled
   because the mechanism exists here, unlike `B-hf`'s, where no launcher
   exists at all.
+- **2026-07-28** (supersedes the entry above, same amendment window) —
+  `A-hf`'s `tick_hz` set to `null`, naming the task that wires this
+  cell's launch arguments. Completeness: the "registered target" above
+  left a number nothing was obliged to apply and nothing could check —
+  `RunManifest` has no field to record an applied fixed-delta and the
+  requirement named no owning task, so the target's own verification
+  was itself unregistered. The justification is `B-hf`'s exactly (the
+  wiring to apply it is not written); a committed mechanism nobody
+  invokes is not a setting, so the same justification now gets the same
+  answer. `cells.yaml`'s `arms: [closed-loop] # fixed_delta 0.01` still
+  records the cell's intent; `tick_hz` records what a run will actually
+  tick at.
 - **2026-07-28** — the clock-domain taxonomy for `control_staleness_ms`
   gained its **fourth** combination (source WALL, published SIM) as an
   explicit fail-loud with no formula. Completeness: the text asserted
@@ -749,6 +786,24 @@ Amendments made so far:
   registered under "Arm scoping" but not restated where a tool author
   writing the aggregation step would look, next to the exclusion and
   no-pooling clauses it belongs with.
+- **2026-07-28** — `one_hop_wall_ms`'s `cal_report.py` paragraph
+  narrowed from "CAL cells" to **`CAL-rmw`**, citing
+  `observer/src/bench_pub.cpp`'s own CAL-rmw-scoped first line for the
+  wall-`now()` stamp and `cells/calibration.sh` for the absence of a
+  `/clock` publisher, and stating that `CAL-seam` is not covered.
+  Completeness: that sentence still asserted unconditionally the exact
+  fact — CAL-seam's `/clock` status — that the scoring-window section
+  had just registered as an OPEN contradiction owed to Task 14. One
+  document answering one question two ways, with the metric entry being
+  the likelier landing spot of the two.
+- **2026-07-28** — the expected-branch rule gained a named owner and a
+  required behaviour: Task 22 implements the branch-mismatch check in
+  `scripts/duel_verdict.py`'s window resolution and Task 23 mirrors it
+  in `scripts/sweep_verdict.py`, surfacing a mismatched run in the
+  rendered table's notes. Completeness: "a loud finding, not a silent
+  fallback" is the half of the discriminator rule that makes it safe
+  rather than merely correct, and it was prose with no owner and no
+  code — unlike every other obligation registered here.
 
 ## How to run
 

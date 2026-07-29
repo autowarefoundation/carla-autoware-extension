@@ -160,14 +160,25 @@ def test_registered_rates_are_positive_or_explicitly_unregistered(doc, cell):
         assert metrics[key] is None or metrics[key] > 0
 
 
-def test_high_frequency_cell_separates_tick_rate_from_sensor_rate(doc):
-    """The regression the tick_hz/lidar_expected_hz/ndt_expected_hz split
-    exists for: --fixed-delta moves the WORLD tick and not the rig's
-    sensor_tick, so on A-hf the tick target is five times the sensor target. A
-    tool deriving an expected message count -- or the M5 gate's expected NDT
-    rate -- from the tick target is wrong by exactly that factor."""
+@pytest.mark.parametrize("cell", ["A-hf", "B-hf"])
+def test_high_frequency_cells_do_not_register_an_unwired_tick_rate(doc, cell):
+    """Neither high-frequency cell has a committed launcher that applies a
+    fixed-delta -- cells/extension.sh passes no such argument and the tier4
+    launcher does not exist -- so both carry `tick_hz: null`. A number here
+    would be an intent no run is obliged to honour and nothing checks, which
+    is the silent-wrong-number class this campaign exists to avoid."""
+    assert cell_info.metrics_for(doc, cell)["tick_hz"] is None
+
+
+def test_a_hf_sensor_rates_survive_its_unregistered_tick_rate(doc):
+    """A-hf is the discriminating case for the tick/sensor/NDT split: its world
+    tick is unregistered, but the sensor rates are pinned by the rig either way
+    -- min(1/sensor_tick, tick) is 20 for any tick >= 20 -- so nulling tick_hz
+    costs these two nothing. That is only expressible BECAUSE the three are
+    separate bindings; a tool that read the cell as "rates unknown" because ONE
+    rate is null would drop a cell it can perfectly well score."""
     metrics = cell_info.metrics_for(doc, "A-hf")
-    assert metrics["tick_hz"] == 100.0
+    assert metrics["tick_hz"] is None
     assert metrics["lidar_expected_hz"] == 20.0
     assert metrics["ndt_expected_hz"] == 20.0
 
