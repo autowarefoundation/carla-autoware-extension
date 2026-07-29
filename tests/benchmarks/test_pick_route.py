@@ -153,9 +153,16 @@ def test_select_goal_rejects_a_straight_line_no_real_turn():
     straight/approach all still pass."""
     straight_positions = {k: (x, y, 0.0) for k, (x, y, _yaw) in _ELBOW_POSITIONS.items()}
     picked = select_goal(
-        straight_positions, _ELBOW_ADJ, set(), 0,
-        min_length_m=100.0, step_m=10.0, min_turn_deg=60.0,
-        min_straight_m=100.0, min_approach_m=10.0, approach_skip_nodes=3,
+        straight_positions,
+        _ELBOW_ADJ,
+        set(),
+        0,
+        min_length_m=100.0,
+        step_m=10.0,
+        min_turn_deg=60.0,
+        min_straight_m=100.0,
+        min_approach_m=10.0,
+        approach_skip_nodes=3,
     )
     assert picked is None
 
@@ -179,9 +186,16 @@ def test_select_goal_rejects_a_route_that_passes_close_to_the_goal_early():
     near_positions = dict(_ELBOW_POSITIONS)
     near_positions[2] = (19.0, 99.0, 0.0)
     picked = select_goal(
-        near_positions, _ELBOW_ADJ, set(), 0,
-        min_length_m=100.0, step_m=10.0, min_turn_deg=60.0,
-        min_straight_m=100.0, min_approach_m=10.0, approach_skip_nodes=3,
+        near_positions,
+        _ELBOW_ADJ,
+        set(),
+        0,
+        min_length_m=100.0,
+        step_m=10.0,
+        min_turn_deg=60.0,
+        min_straight_m=100.0,
+        min_approach_m=10.0,
+        approach_skip_nodes=3,
     )
     assert picked is None
 
@@ -214,9 +228,16 @@ def test_select_goal_prefers_larger_closest_approach_over_larger_straight():
         "2b": [],
     }
     picked = select_goal(
-        positions, adj, set(), 0,
-        min_length_m=15.0, step_m=10.0, min_turn_deg=60.0,
-        min_straight_m=100.0, min_approach_m=1.0, approach_skip_nodes=1,
+        positions,
+        adj,
+        set(),
+        0,
+        min_length_m=15.0,
+        step_m=10.0,
+        min_turn_deg=60.0,
+        min_straight_m=100.0,
+        min_approach_m=1.0,
+        approach_skip_nodes=1,
     )
     assert picked is not None
     goal, _prev = picked
@@ -264,9 +285,16 @@ def _elbow_dist_prev(**dijkstra_kwargs):
 def test_verify_route_passes_a_route_clearing_all_four_gates():
     dist, prev = _elbow_dist_prev(step_m=10.0)
     failures = verify_route(
-        _ELBOW_POSITIONS, dist, prev, 0, 12,
-        min_length_m=100.0, min_turn_deg=60.0, min_straight_m=100.0,
-        min_approach_m=10.0, approach_skip_nodes=3,
+        _ELBOW_POSITIONS,
+        dist,
+        prev,
+        0,
+        12,
+        min_length_m=100.0,
+        min_turn_deg=60.0,
+        min_straight_m=100.0,
+        min_approach_m=10.0,
+        approach_skip_nodes=3,
     )
     assert failures == []
 
@@ -274,9 +302,16 @@ def test_verify_route_passes_a_route_clearing_all_four_gates():
 def test_verify_route_names_the_length_property_on_failure():
     dist, prev = _elbow_dist_prev(step_m=10.0)
     failures = verify_route(
-        _ELBOW_POSITIONS, dist, prev, 0, 12,
-        min_length_m=200.0, min_turn_deg=60.0, min_straight_m=100.0,
-        min_approach_m=10.0, approach_skip_nodes=3,
+        _ELBOW_POSITIONS,
+        dist,
+        prev,
+        0,
+        12,
+        min_length_m=200.0,
+        min_turn_deg=60.0,
+        min_straight_m=100.0,
+        min_approach_m=10.0,
+        approach_skip_nodes=3,
     )
     assert len(failures) == 1
     assert "shortest road path" in failures[0]
@@ -286,9 +321,16 @@ def test_verify_route_names_the_length_property_on_failure():
 def test_verify_route_names_the_straight_line_property_on_failure():
     dist, prev = _elbow_dist_prev(step_m=10.0)
     failures = verify_route(
-        _ELBOW_POSITIONS, dist, prev, 0, 12,
-        min_length_m=100.0, min_turn_deg=60.0, min_straight_m=200.0,
-        min_approach_m=10.0, approach_skip_nodes=3,
+        _ELBOW_POSITIONS,
+        dist,
+        prev,
+        0,
+        12,
+        min_length_m=100.0,
+        min_turn_deg=60.0,
+        min_straight_m=200.0,
+        min_approach_m=10.0,
+        approach_skip_nodes=3,
     )
     assert len(failures) == 1
     assert "straight-line separation" in failures[0]
@@ -297,9 +339,16 @@ def test_verify_route_names_the_straight_line_property_on_failure():
 def test_verify_route_names_the_heading_change_property_on_failure():
     dist, prev = _elbow_dist_prev(step_m=10.0)
     failures = verify_route(
-        _ELBOW_POSITIONS, dist, prev, 0, 12,
-        min_length_m=100.0, min_turn_deg=100.0, min_straight_m=100.0,
-        min_approach_m=10.0, approach_skip_nodes=3,
+        _ELBOW_POSITIONS,
+        dist,
+        prev,
+        0,
+        12,
+        min_length_m=100.0,
+        min_turn_deg=100.0,
+        min_straight_m=100.0,
+        min_approach_m=10.0,
+        approach_skip_nodes=3,
     )
     assert len(failures) == 1
     assert "heading change" in failures[0]
@@ -308,9 +357,16 @@ def test_verify_route_names_the_heading_change_property_on_failure():
 def test_verify_route_names_the_early_approach_property_on_failure():
     dist, prev = _elbow_dist_prev(step_m=10.0)
     failures = verify_route(
-        _ELBOW_POSITIONS, dist, prev, 0, 12,
-        min_length_m=100.0, min_turn_deg=60.0, min_straight_m=100.0,
-        min_approach_m=50.0, approach_skip_nodes=3,
+        _ELBOW_POSITIONS,
+        dist,
+        prev,
+        0,
+        12,
+        min_length_m=100.0,
+        min_turn_deg=60.0,
+        min_straight_m=100.0,
+        min_approach_m=50.0,
+        approach_skip_nodes=3,
     )
     assert len(failures) == 1
     assert "passes within" in failures[0]
@@ -319,7 +375,11 @@ def test_verify_route_names_the_early_approach_property_on_failure():
 def test_verify_route_reports_unreachable_goal():
     dist, prev = _elbow_dist_prev(step_m=10.0)
     failures = verify_route(
-        _ELBOW_POSITIONS, dist, prev, 0, "not-in-the-graph",
+        _ELBOW_POSITIONS,
+        dist,
+        prev,
+        0,
+        "not-in-the-graph",
         min_length_m=100.0,
     )
     assert failures == ["goal is not reachable from start"]
@@ -332,12 +392,21 @@ def test_verify_route_reports_unreachable_goal():
 
 def test_spawn_index_and_spawn_pose_are_mutually_exclusive():
     with pytest.raises(SystemExit) as exc_info:
-        build_arg_parser().parse_args([
-            "--xodr", "dummy.xodr",
-            "--spawn-index", "5",
-            "--spawn-pose", "1", "2", "3", "4",
-            "--min-length", "100",
-        ])
+        build_arg_parser().parse_args(
+            [
+                "--xodr",
+                "dummy.xodr",
+                "--spawn-index",
+                "5",
+                "--spawn-pose",
+                "1",
+                "2",
+                "3",
+                "4",
+                "--min-length",
+                "100",
+            ]
+        )
     assert exc_info.value.code == 2
 
 
@@ -348,12 +417,22 @@ def test_one_of_spawn_index_or_spawn_pose_is_required():
 
 
 def test_spawn_pose_alone_parses_with_four_floats():
-    args = build_arg_parser().parse_args([
-        "--xodr", "dummy.xodr",
-        "--spawn-pose", "55.330", "141.161", "0.5", "0.320",
-        "--goal", "-101.021", "55.014",
-        "--min-length", "400",
-    ])
+    args = build_arg_parser().parse_args(
+        [
+            "--xodr",
+            "dummy.xodr",
+            "--spawn-pose",
+            "55.330",
+            "141.161",
+            "0.5",
+            "0.320",
+            "--goal",
+            "-101.021",
+            "55.014",
+            "--min-length",
+            "400",
+        ]
+    )
     assert args.spawn_index is None
     assert args.spawn_pose == pytest.approx([55.330, 141.161, 0.5, 0.320])
     assert args.goal == pytest.approx([-101.021, 55.014])

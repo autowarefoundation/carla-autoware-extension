@@ -133,8 +133,7 @@ def main() -> None:
         # tagged is a run that should have rendered and did not, which must
         # fail loud rather than exit 0 alongside a table full of failures.
         unexplained_failure |= any(
-            "RENDER FAILED" in line and "(EXCLUDED)" not in line
-            for line in text.splitlines()
+            "RENDER FAILED" in line and "(EXCLUDED)" not in line for line in text.splitlines()
         )
     if unexplained_failure:
         sys.exit(

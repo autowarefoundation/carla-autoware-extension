@@ -33,27 +33,29 @@ UE_APPROACHES = ("extension", "tier4-native")
 # `stall:unpaced-window-cap` under the frozen-clock criterion it does not
 # describe. That laundering is the bug being fixed here, so it must not be
 # reintroduced through the back door of a permissive validator.
-EXCLUSION_REASONS: frozenset[str] = frozenset({
-    "crash:cell-launch",         # criterion 1
-    "crash:observer",            # criterion 1
-    "gate:arm-failed",           # criterion 2
-    "gate:control_cmd-silent",   # criterion 2
-    "gate:injector-failed",      # criterion 2
-    "stall:clock",               # criterion 4
-    "warmup:nishi",              # criterion 5
-    "crash:sampler",             # criterion 9
-    "crash:collect_gt",          # criterion 9
-    "crash:clock_watchdog",      # criterion 9
-    "stall:unpaced-window-cap",  # criterion 10
-})
+EXCLUSION_REASONS: frozenset[str] = frozenset(
+    {
+        "crash:cell-launch",  # criterion 1
+        "crash:observer",  # criterion 1
+        "gate:arm-failed",  # criterion 2
+        "gate:control_cmd-silent",  # criterion 2
+        "gate:injector-failed",  # criterion 2
+        "stall:clock",  # criterion 4
+        "warmup:nishi",  # criterion 5
+        "crash:sampler",  # criterion 9
+        "crash:collect_gt",  # criterion 9
+        "crash:clock_watchdog",  # criterion 9
+        "stall:unpaced-window-cap",  # criterion 10
+    }
+)
 # Reasons that legitimately carry a variable, per-run detail after the
 # prefix (a git sha, a loadavg reading, a port number, a tree path) -- the
 # prefix alone is what exclusions.md registers for these.
 EXCLUSION_REASON_PREFIXES: tuple[str, ...] = (
-    "harness:",   # criterion 3
+    "harness:",  # criterion 3
     "hostload:",  # criterion 6
-    "port:",      # criterion 7
-    "buildid:",   # criterion 8
+    "port:",  # criterion 7
+    "buildid:",  # criterion 8
 )
 
 

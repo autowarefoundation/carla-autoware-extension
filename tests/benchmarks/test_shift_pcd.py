@@ -163,7 +163,9 @@ def test_rejects_binary_compressed_data_even_with_matching_fields(tmp_path):
     float32 and silently corrupt the map, so it must fail loudly even when
     FIELDS/SIZE/TYPE already match x/y/z/intensity."""
     src = tmp_path / "in.pcd"
-    _write_binary_pcd(src, header=BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n"))
+    _write_binary_pcd(
+        src, header=BINARY_HEADER.replace("DATA binary\n", "DATA binary_compressed\n")
+    )
     with open(src, "rb") as f, pytest.raises(shift_pcd.PcdFormatError, match="binary_compressed"):
         shift_pcd.read_header(f)
 
@@ -202,7 +204,9 @@ def test_sensor_pose_matrix_rotates_local_x_to_world_y_at_yaw_90():
     np.testing.assert_allclose(world, [0.0, 1.0, 0.0], atol=1e-9)
 
 
-def _rotation_from_elementary_matrices(roll_deg: float, pitch_deg: float, yaw_deg: float) -> np.ndarray:
+def _rotation_from_elementary_matrices(
+    roll_deg: float, pitch_deg: float, yaw_deg: float
+) -> np.ndarray:
     """Independent reference rotation, built from first principles.
 
     Composes the standard right-handed elementary rotation matrices about
@@ -243,11 +247,15 @@ def test_sensor_pose_matrix_matches_independent_rotation_at_nonzero_pitch():
         (90.0, 45.0, -30.0),
     ],
 )
-def test_sensor_pose_matrix_matches_independent_rotation_combined_roll_pitch_yaw(roll_deg, pitch_deg, yaw_deg):
+def test_sensor_pose_matrix_matches_independent_rotation_combined_roll_pitch_yaw(
+    roll_deg, pitch_deg, yaw_deg
+):
     m = build_pcd_from_gt.sensor_pose_matrix(1.0, -2.0, 3.5, roll_deg, pitch_deg, yaw_deg)
     expected = _rotation_from_elementary_matrices(roll_deg, pitch_deg, yaw_deg)
     np.testing.assert_allclose(m[:3, :3], expected, atol=1e-9)
-    np.testing.assert_allclose(m[:3, 3], [1.0, -2.0, 3.5], atol=1e-9)  # translation untouched by the fix
+    np.testing.assert_allclose(
+        m[:3, 3], [1.0, -2.0, 3.5], atol=1e-9
+    )  # translation untouched by the fix
 
 
 def test_transform_cloud_to_map_reuses_the_pinned_converter_not_a_local_copy():

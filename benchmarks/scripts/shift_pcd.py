@@ -148,7 +148,9 @@ def sha256_file(path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--in", dest="in_path", required=True, help="input .pcd path")
     p.add_argument("--out", dest="out_path", required=True, help="output .pcd path")
     p.add_argument("--dx", type=float, default=0.0, help="shift along x, metres")

@@ -8,9 +8,12 @@ from benchmarks.analysis.manifest import (
 
 
 def _placement(**over):
-    p = {"run_mode": "editor-game", "container_image": "img@sha256:x",
-         "observer_env": "bench-observer:universe-devel",
-         "engine_build_id": "b4c93e55-fc8f-42fc-b377-358910364e1c"}
+    p = {
+        "run_mode": "editor-game",
+        "container_image": "img@sha256:x",
+        "observer_env": "bench-observer:universe-devel",
+        "engine_build_id": "b4c93e55-fc8f-42fc-b377-358910364e1c",
+    }
     p.update(over)
     return p
 
@@ -184,6 +187,5 @@ def test_placement_engine_build_id_required_for_ue_approaches(valid_kwargs):
 def test_placement_engine_build_id_not_required_for_bridge(valid_kwargs):
     p = _placement()
     del p["engine_build_id"]
-    m = RunManifest(**{**valid_kwargs, "approach": "python-bridge",
-                       "cell": "E", "placement": p})
+    m = RunManifest(**{**valid_kwargs, "approach": "python-bridge", "cell": "E", "placement": p})
     assert m.validate() == []

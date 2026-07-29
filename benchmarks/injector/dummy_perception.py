@@ -237,9 +237,7 @@ def main():
         ids = tl_group_ids(args.map)
         source = args.map
     rclpy.init()
-    node = DummyPerception(
-        ids, (args.grid_center[0], args.grid_center[1]), args.grid_size
-    )
+    node = DummyPerception(ids, (args.grid_center[0], args.grid_center[1]), args.grid_size)
     node.get_logger().info(
         f"publishing clear-road perception; {len(ids)} TL groups GREEN "
         f"(source {source}, grid centred on {args.grid_center[0]:.1f},"

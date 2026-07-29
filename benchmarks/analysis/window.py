@@ -49,13 +49,13 @@ def project_station_m(route_xy, xy) -> np.ndarray:
     return _project(route_xy, xy)[0]
 
 
-def spatial_window(odom_stamp_ns, odom_xy, route_xy, start_station_m: float,
-                   end_station_m: float, warmup_ns: int) -> tuple[int, int]:
+def spatial_window(
+    odom_stamp_ns, odom_xy, route_xy, start_station_m: float, end_station_m: float, warmup_ns: int
+) -> tuple[int, int]:
     """[start, end] stamps of the scoring window, or ValueError if empty."""
     stamps = np.asarray(odom_stamp_ns, dtype=np.int64)
     st = project_station_m(route_xy, odom_xy)
-    ok = (st >= start_station_m) & (st <= end_station_m) & (
-        stamps >= stamps[0] + warmup_ns)
+    ok = (st >= start_station_m) & (st <= end_station_m) & (stamps >= stamps[0] + warmup_ns)
     idx = np.nonzero(ok)[0]
     if idx.size == 0:
         raise ValueError("no odometry sample inside the spatial window")

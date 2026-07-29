@@ -32,7 +32,9 @@ XY = tuple[float, float]
 DEFAULT_MARGIN_M = 100.0
 
 
-def grid_from_polyline(polyline: list[XY], margin_m: float = DEFAULT_MARGIN_M) -> tuple[float, float, float]:
+def grid_from_polyline(
+    polyline: list[XY], margin_m: float = DEFAULT_MARGIN_M
+) -> tuple[float, float, float]:
     """(centre_x, centre_y, size) covering a route polyline's bounding box.
 
     centre is the bbox midpoint; size is the bbox diagonal plus margin_m, so

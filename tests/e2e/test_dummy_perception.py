@@ -114,9 +114,7 @@ def test_grid_size_flag_defaults_to_todays_200m_span():
 
 
 def test_grid_center_and_size_flags_are_parsed():
-    args = build_arg_parser().parse_args(
-        ["--grid-center", "10.5", "-20.25", "--grid-size", "50"]
-    )
+    args = build_arg_parser().parse_args(["--grid-center", "10.5", "-20.25", "--grid-size", "50"])
     assert tuple(args.grid_center) == pytest.approx((10.5, -20.25))
     assert args.grid_size == 50.0
 

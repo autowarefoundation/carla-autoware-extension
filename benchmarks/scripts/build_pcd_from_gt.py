@@ -49,7 +49,9 @@ Pose6 = tuple[float, float, float, float, float, float]  # x, y, z, roll, pitch,
 Sweep = tuple[np.ndarray, Pose6]  # (Nx4 x/y/z/intensity in sensor frame, pose at capture)
 
 
-def sensor_pose_matrix(x: float, y: float, z: float, roll_deg: float, pitch_deg: float, yaw_deg: float) -> np.ndarray:
+def sensor_pose_matrix(
+    x: float, y: float, z: float, roll_deg: float, pitch_deg: float, yaw_deg: float
+) -> np.ndarray:
     """4x4 rigid transform: sensor-local frame -> CARLA world frame (metres).
 
     Mirrors ``carla.Transform.get_matrix()`` (LibCarla
@@ -71,7 +73,9 @@ def sensor_pose_matrix(x: float, y: float, z: float, roll_deg: float, pitch_deg:
     )
 
 
-def transform_cloud_to_map(points_xyzi: np.ndarray, pose: Pose6, offset: tuple[float, float, float]) -> np.ndarray:
+def transform_cloud_to_map(
+    points_xyzi: np.ndarray, pose: Pose6, offset: tuple[float, float, float]
+) -> np.ndarray:
     """Sensor-local points (Nx4: x, y, z, intensity) -> map-frame Nx4.
 
     ``pose`` is the ego/sensor's ground-truth CARLA pose (PythonAPI
@@ -100,7 +104,9 @@ def voxel_downsample(points_xyzi: np.ndarray, voxel_m: float) -> np.ndarray:
     return points_xyzi[np.sort(first_idx)]
 
 
-def accumulate_and_downsample(sweeps: list[Sweep], offset: tuple[float, float, float], voxel_m: float) -> np.ndarray:
+def accumulate_and_downsample(
+    sweeps: list[Sweep], offset: tuple[float, float, float], voxel_m: float
+) -> np.ndarray:
     """Map every sweep, concatenate, then downsample once over the whole
     route -- so a point seen in two sweeps collapses to one regardless of
     which sweep it came from."""
@@ -136,7 +142,14 @@ def collect_sweeps(host: str, port: int, window_s: float, role_name: str = "ego"
     def _on_measurement(measurement) -> None:
         raw = np.frombuffer(bytes(measurement.raw_data), dtype=np.float32).reshape(-1, 4).copy()
         t = measurement.transform  # the LiDAR's own GT pose at capture, mount offset included
-        pose = (t.location.x, t.location.y, t.location.z, t.rotation.roll, t.rotation.pitch, t.rotation.yaw)
+        pose = (
+            t.location.x,
+            t.location.y,
+            t.location.z,
+            t.rotation.roll,
+            t.rotation.pitch,
+            t.rotation.yaw,
+        )
         sweeps.append((raw, pose))
 
     lidar.listen(_on_measurement)
@@ -151,7 +164,9 @@ def collect_sweeps(host: str, port: int, window_s: float, role_name: str = "ego"
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--out", required=True, help="output .pcd path")
     p.add_argument("--map", default=None, help="target map name (see offset_for_map)")
     p.add_argument("--window", type=float, default=120.0, help="capture window, seconds")

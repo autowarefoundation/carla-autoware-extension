@@ -42,10 +42,20 @@ def _nearest_join(a_ns: np.ndarray, b_ns: np.ndarray, tol_ns: int):
     return np.nonzero(ok)[0], j[ok]
 
 
-def evaluate_quality(*, ndt_stamp_ns, ndt_xy, gt_sim_ns, gt_xy,
-                     odom_stamp_ns, odom_xy, route_xy, goal_xy,
-                     window: tuple[int, int], expected_ndt_hz: float,
-                     abs_pose_gate_m: float | None) -> QualityStats:
+def evaluate_quality(
+    *,
+    ndt_stamp_ns,
+    ndt_xy,
+    gt_sim_ns,
+    gt_xy,
+    odom_stamp_ns,
+    odom_xy,
+    route_xy,
+    goal_xy,
+    window: tuple[int, int],
+    expected_ndt_hz: float,
+    abs_pose_gate_m: float | None,
+) -> QualityStats:
     lo, hi = window
     reasons: list[str] = []
 
@@ -70,8 +80,7 @@ def evaluate_quality(*, ndt_stamp_ns, ndt_xy, gt_sim_ns, gt_xy,
 
     if abs_pose_gate_m is not None:
         if float(err.max()) >= abs_pose_gate_m:
-            reasons.append(
-                f"pose_error max {err.max():.3f} >= {abs_pose_gate_m}")
+            reasons.append(f"pose_error max {err.max():.3f} >= {abs_pose_gate_m}")
     else:
         if drift >= 0.2:
             reasons.append(f"pose_error drift {drift:.3f} >= 0.2")

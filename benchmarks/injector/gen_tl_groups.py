@@ -63,7 +63,9 @@ def tl_group_ids(osm_path: str) -> list[int]:
 def build_arg_parser() -> argparse.ArgumentParser:
     """Split out from main() so the CLI surface is unit-testable without
     touching the filesystem (tests/benchmarks/test_tl_groups.py)."""
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--lanelet2", required=True, help="path to the map's lanelet2_map.osm")
     p.add_argument(
         "--out",

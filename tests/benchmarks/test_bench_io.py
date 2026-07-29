@@ -109,9 +109,7 @@ def test_read_observer_preserves_row_order(tmp_path):
 
 def test_read_observer_header_only_returns_empty_dict(tmp_path):
     p = tmp_path / "observer.csv"
-    p.write_text(
-        "topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,"
-        "clock_ns,size_bytes\n")
+    p.write_text("topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes\n")
     assert read_observer_csv(p) == {}
 
 

@@ -142,7 +142,9 @@ class ArmAndGoal(Node):
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             future = client.call_async(request)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=max(0.1, deadline - time.monotonic()))
+            rclpy.spin_until_future_complete(
+                self, future, timeout_sec=max(0.1, deadline - time.monotonic())
+            )
             resp = future.result()
             if resp is not None and resp.status.success:
                 return resp
@@ -174,15 +176,20 @@ class ArmAndGoal(Node):
 
     def engage(self, timeout_s: float) -> bool:
         client = self.create_client(ChangeOperationMode, "/api/operation_mode/change_to_autonomous")
-        return self._call_with_retries(
-            client, ChangeOperationMode.Request(), "change_to_autonomous", timeout_s
-        ) is not None
+        return (
+            self._call_with_retries(
+                client, ChangeOperationMode.Request(), "change_to_autonomous", timeout_s
+            )
+            is not None
+        )
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     """Split out from main() so the CLI surface is unit-testable without
     rclpy/AD-API message stubs."""
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument(
         "--goal",
         nargs=3,

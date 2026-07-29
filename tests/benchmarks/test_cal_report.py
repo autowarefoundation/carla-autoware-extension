@@ -67,9 +67,7 @@ def test_summarize_run_achieved_hz_from_steady_arrivals(tmp_path):
     stamp_ns is held constant per row so one_hop_ms is not exercised here."""
     d = tmp_path / "run-002"
     d.mkdir()
-    rows = [
-        ("/bench/incore_cloud", 0, 1_000_000_000 + k * 100_000_000) for k in range(20)
-    ]
+    rows = [("/bench/incore_cloud", 0, 1_000_000_000 + k * 100_000_000) for k in range(20)]
     _write_observer(d, rows)
     _write_resources(d, [(1_000_000_000, "carla-server", 5.0)])
     s = summarize_run(d)

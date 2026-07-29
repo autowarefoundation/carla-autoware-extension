@@ -127,7 +127,9 @@ def route_stations(polyline: list[XY], margin_m: float = STATION_MARGIN_M) -> tu
     total = cumulative_arc_length(polyline)[-1]
     start_m, end_m = margin_m, total - margin_m
     if end_m <= start_m:
-        raise ValueError(f"route too short ({total:.1f} m) for a {margin_m:.1f} m margin on each end")
+        raise ValueError(
+            f"route too short ({total:.1f} m) for a {margin_m:.1f} m margin on each end"
+        )
     return start_m, end_m
 
 
@@ -149,7 +151,9 @@ def carla_to_map_yaw(yaw_deg: float) -> float:
     return math.radians(-yaw_deg)
 
 
-def dijkstra(adj: dict[Key, list[Key]], src: Key, step_m: float = STEP_M) -> tuple[dict[Key, float], dict[Key, Key]]:
+def dijkstra(
+    adj: dict[Key, list[Key]], src: Key, step_m: float = STEP_M
+) -> tuple[dict[Key, float], dict[Key, Key]]:
     """Shortest-path distances/predecessors from src over a graph whose edges
     all cost step_m (the uniform waypoint-sampling step)."""
     dist: dict[Key, float] = {src: 0.0}
@@ -251,7 +255,9 @@ def select_goal(
     return best_goal, prev
 
 
-def nearest_node(positions: dict[Key, tuple[float, float, float]], x: float, y: float) -> tuple[Key, float]:
+def nearest_node(
+    positions: dict[Key, tuple[float, float, float]], x: float, y: float
+) -> tuple[Key, float]:
     """(key, distance) of the graph node nearest to (x, y).
 
     Backs --spawn-pose/--goal: a hand-recorded pose (e.g. the Task-15 poses
@@ -375,7 +381,9 @@ def build_graph(xodr_path: str, map_name: str, step_m: float = STEP_M):
 def build_arg_parser() -> argparse.ArgumentParser:
     """Split out from main() so the CLI surface (flags, mutual exclusivity)
     is unit-testable without carla/build_graph() (tests/benchmarks/test_pick_route.py)."""
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--xodr", required=True, help="path to the map's .xodr file")
     start_group = ap.add_mutually_exclusive_group(required=True)
     start_group.add_argument(
@@ -478,7 +486,9 @@ def main(argv: list[str] | None = None) -> int:
     swp, gwp = waypoints[start], waypoints[goal]
     st, gt = swp.transform, gwp.transform
 
-    carla_polyline = [(waypoints[k].transform.location.x, waypoints[k].transform.location.y) for k in chain]
+    carla_polyline = [
+        (waypoints[k].transform.location.x, waypoints[k].transform.location.y) for k in chain
+    ]
     map_polyline_raw = [carla_to_map_xy(x, y) for x, y in carla_polyline]
     polyline = resample_polyline(map_polyline_raw)
     start_m, end_m = route_stations(polyline)
@@ -493,7 +503,10 @@ def main(argv: list[str] | None = None) -> int:
         spawn_x, spawn_y, spawn_z, spawn_yaw_deg = reported_spawn_pose
     else:
         spawn_x, spawn_y, spawn_z, spawn_yaw_deg = (
-            st.location.x, st.location.y, st.location.z, st.rotation.yaw,
+            st.location.x,
+            st.location.y,
+            st.location.z,
+            st.rotation.yaw,
         )
     gyaw = carla_to_map_yaw(gt.rotation.yaw)
     if reported_goal_xy is not None:

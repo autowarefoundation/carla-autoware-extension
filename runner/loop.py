@@ -163,9 +163,7 @@ def load_physics_config(path: str) -> dict[str, float | int]:
         try:
             config[key] = cast(value)
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{path!r} has a malformed {key!r} value {value!r}: {exc}"
-            ) from exc
+            raise ValueError(f"{path!r} has a malformed {key!r} value {value!r}: {exc}") from exc
     return config
 
 
