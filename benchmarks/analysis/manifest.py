@@ -16,6 +16,52 @@ TRANSPORT_KEYS = ("rmw", "shm_enabled", "dds_profile_sha256")
 PLACEMENT_KEYS = ("run_mode", "container_image", "observer_env")
 UE_APPROACHES = ("extension", "tier4-native")
 
+# The pre-registered exclusion vocabulary (benchmarks/config/exclusions.md),
+# kept in sync BY HAND: every reason `write_manifest.py --exclude` is asked
+# to record must appear here, mapped to the criterion that documents it. This
+# closes the gap that let run.sh emit reasons exclusions.md never actually
+# registered (`crash:cell-launch`, `gate:injector-failed`, the harness
+# recorder crashes, `stall:unpaced-window-cap`) while validate() only checked
+# that SOME string was present. A reason missing from this set is exactly
+# the drift exclusions.md's own closing sentence calls out: "Any exclusion
+# not matching [the criteria] invalidates the campaign for that cell."
+#
+# Reasons that are a single fixed string -- no free-form detail after the
+# prefix -- are matched exactly, not by a "crash:"/"gate:"/"stall:" prefix:
+# a prefix would silently admit any future `crash:<anything>` the way the
+# `stall:<detail>` wildcard in exclusions.md's old text silently admitted
+# `stall:unpaced-window-cap` under the frozen-clock criterion it does not
+# describe. That laundering is the bug being fixed here, so it must not be
+# reintroduced through the back door of a permissive validator.
+EXCLUSION_REASONS: frozenset[str] = frozenset({
+    "crash:cell-launch",         # criterion 1
+    "crash:observer",            # criterion 1
+    "gate:arm-failed",           # criterion 2
+    "gate:control_cmd-silent",   # criterion 2
+    "gate:injector-failed",      # criterion 2
+    "stall:clock",               # criterion 4
+    "warmup:nishi",              # criterion 5
+    "crash:sampler",             # criterion 9
+    "crash:collect_gt",          # criterion 9
+    "crash:clock_watchdog",      # criterion 9
+    "stall:unpaced-window-cap",  # criterion 10
+})
+# Reasons that legitimately carry a variable, per-run detail after the
+# prefix (a git sha, a loadavg reading, a port number, a tree path) -- the
+# prefix alone is what exclusions.md registers for these.
+EXCLUSION_REASON_PREFIXES: tuple[str, ...] = (
+    "harness:",   # criterion 3
+    "hostload:",  # criterion 6
+    "port:",      # criterion 7
+    "buildid:",   # criterion 8
+)
+
+
+def known_exclusion_reason(reason: str) -> bool:
+    """True if `reason` matches a criterion in config/exclusions.md."""
+    return reason in EXCLUSION_REASONS or reason.startswith(EXCLUSION_REASON_PREFIXES)
+
+
 # The pre-registered cell registry. `cell` is validated against it because a
 # typo'd id is otherwise SILENT: it files the run under its own
 # results/<typo>/, and report.main() walks every directory, so the typo renders
@@ -61,6 +107,11 @@ class RunManifest:
             errs.append(f"transport missing keys: {missing}")
         if self.excluded and not self.exclusion_reason:
             errs.append("excluded runs require exclusion_reason")
+        elif self.excluded and not known_exclusion_reason(self.exclusion_reason):
+            errs.append(
+                f"exclusion_reason {self.exclusion_reason!r} does not match any "
+                "criterion in config/exclusions.md"
+            )
         missing_p = [k for k in PLACEMENT_KEYS if k not in self.placement]
         if missing_p:
             errs.append(f"placement missing keys: {missing_p}")

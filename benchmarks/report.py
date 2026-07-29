@@ -49,6 +49,20 @@ def summarize_run(run_dir: Path) -> dict:
     }
 
 
+def _best_effort_excluded(run_dir: Path) -> bool:
+    """Read `excluded` off a run's manifest without raising.
+
+    Used only to label a row that ALREADY failed to render for some other
+    reason (see render_cell below): a manifest that cannot even be read
+    (missing, unparsable, pre-P0 schema) is reported as not-known-excluded
+    rather than raising a second exception on top of the first.
+    """
+    try:
+        return bool(load_manifest(run_dir / "manifest.json").excluded)
+    except Exception:  # noqa: BLE001 - diagnostic best-effort, see docstring
+        return False
+
+
 def render_cell(cell_dir: Path) -> str:
     """Markdown table for one cell, over every run directory it holds.
 
@@ -79,10 +93,19 @@ def render_cell(cell_dir: Path) -> str:
             # CSV), ValueError (invalid manifest, degenerate clock fit),
             # TypeError (older manifest schema) and more. The failure is
             # REPORTED IN THE TABLE, naming the exception -- never swallowed.
-            lines.append(
-                f"| {run_dir.name} | RENDER FAILED: {type(exc).__name__}: {exc} "
-                "| - | - | - | - | - |"
-            )
+            label = run_dir.name
+            if _best_effort_excluded(run_dir):
+                # Tagged the same way a successfully-summarized excluded run
+                # is below, so a reader (and main()'s exit code) can tell an
+                # EXPECTED excluded-run failure from an unexplained one,
+                # without re-deriving it from the exception text.
+                label = f"{label} (EXCLUDED)"
+            # The exception message would otherwise be interpolated straight
+            # into the cell: a "|" in it (a path, a validation error list)
+            # would be read as extra column separators and break the table,
+            # and an embedded newline would break it into extra rows.
+            msg = f"{type(exc).__name__}: {exc}".replace("|", "\\|").replace("\n", " ")
+            lines.append(f"| {label} | RENDER FAILED: {msg} | - | - | - | - | - |")
             continue
         run_label = run_dir.name
         if s["manifest"]["excluded"]:
@@ -99,9 +122,25 @@ def render_cell(cell_dir: Path) -> str:
 
 def main() -> None:
     results = Path(sys.argv[1] if len(sys.argv) > 1 else "benchmarks/results")
+    unexplained_failure = False
     for cell_dir in sorted(p for p in results.iterdir() if p.is_dir()):
-        print(render_cell(cell_dir))
+        text = render_cell(cell_dir)
+        print(text)
         print()
+        # A RENDER FAILED row tagged (EXCLUDED) is the expected shape of a
+        # pre-registered excluded run (exclusions.md: "Excluded runs remain
+        # in benchmarks/results/ ... nothing is deleted"); one that is NOT
+        # tagged is a run that should have rendered and did not, which must
+        # fail loud rather than exit 0 alongside a table full of failures.
+        unexplained_failure |= any(
+            "RENDER FAILED" in line and "(EXCLUDED)" not in line
+            for line in text.splitlines()
+        )
+    if unexplained_failure:
+        sys.exit(
+            "one or more runs RENDER FAILED without an (EXCLUDED) manifest "
+            "to explain it -- see the rows above"
+        )
 
 
 if __name__ == "__main__":

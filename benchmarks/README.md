@@ -234,6 +234,44 @@ Amendments made so far:
   family). Completeness: Task 8's cell launchers fixed that split
   (`INJECTOR_ENABLED`), and it is a first-order M3 and M5 comparability
   difference that was recorded only in a task report.
+- **2026-07-28** — `config/exclusions.md` criterion 1 widened to also
+  cover the cell launcher itself failing to come up (`crash:cell-launch`
+  for a readiness-probe timeout or a launcher prerequisite refusal), not
+  only a process exiting abnormally. Completeness: a Task 8 re-review
+  found `run.sh` filing that case under criterion 1 while its text
+  described only a process crash — a materially different claim about
+  the approach under test, and Task 22 tabulates by reason.
+- **2026-07-28** — `config/exclusions.md` criterion 2 widened from "M5
+  validation-gate failure" to "bring-up gate failure", explicitly naming
+  the clear-road perception injector failing to start
+  (`gate:injector-failed`) and the gated control command never flowing
+  after a successful engage (`gate:control_cmd-silent`) alongside the M5
+  localization/goal sanity check (`gate:arm-failed`). Completeness: the
+  same re-review found `run.sh` already filing both under criterion 2
+  without its text describing either.
+- **2026-07-28** — `config/exclusions.md` criterion 4's reason narrowed
+  from the wildcard `stall:<detail>` to the literal `stall:clock`, and
+  new criterion 10 added for `stall:unpaced-window-cap`. Completeness:
+  the wildcard read as if criterion 4 also registered a short-but-still-
+  advancing unpaced window, which is the opposite of the frozen-clock
+  condition the watchdog actually detects (by design, per `run.sh`'s own
+  comment, the watchdog never fires on this case) — two distinct failure
+  classes need two criteria, not one wildcard covering both.
+- **2026-07-28** — `config/exclusions.md` gained criterion 9 for a
+  harness recorder (the resource sampler, GT collector, or clock
+  watchdog) exiting during start-up (`crash:sampler`, `crash:collect_gt`,
+  `crash:clock_watchdog`). Completeness: criterion 1's process list names
+  the simulator and stack under test, not the harness's own recorders — a
+  recorder dying says nothing about whether the approach under test
+  crashed, so it needed its own criterion rather than borrowing theirs.
+- **2026-07-28** — `analysis/manifest.py`: `validate()` now checks
+  `exclusion_reason` against the pre-registered vocabulary above (a fixed
+  set of exact reasons plus a small set of prefixes for reasons that
+  legitimately carry a variable per-run detail), rejecting anything else.
+  Completeness: `validate()` previously only checked that
+  `exclusion_reason` was non-empty, which is exactly why the five
+  amendments above were invisible until a manual re-review instead of
+  failing at manifest-write time.
 
 ## How to run
 

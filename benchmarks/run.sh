@@ -402,6 +402,14 @@ PY
     # a way that skips the || branch.
     ABORT_REASON="crash:cell-launch"
     bash "$launcher" up || die "cells/$approach.sh could not bring the cell up"
+    # The cell IS up now, so ABORT_REASON must not stay "crash:cell-launch":
+    # left as-is, an unhandled abort anywhere in steps 6-10 that no specific
+    # site catches (route_grid failing, the goal-args YAML read, an operator
+    # Ctrl-C during the window) would be filed as a launch crash for a cell
+    # that demonstrably came up. From here a failure with no specific
+    # handler is a harness orchestration defect (criterion 3), the same
+    # reason finalization failures get after the window closes below.
+    ABORT_REASON="harness:$(cd "$REPO" && git rev-parse --short HEAD)"
   fi
   # shellcheck disable=SC1090 # written by the launcher just above
   [ -f "$launch_env" ] && . "$launch_env"
@@ -626,8 +634,12 @@ PY
     if [ "$DRY_RUN" = "0" ]; then sleep "$window_s"; fi
   fi
   # Past this point a failure is a FINALIZATION failure: the data is on disk,
-  # so the abort reason changes from "the run never happened" to "the harness
-  # could not finish it" (exclusions.md criterion 3).
+  # so an unhandled abort is "the harness could not finish it" (exclusions.md
+  # criterion 3) -- the same reason ABORT_REASON was already reset to right
+  # after step 5's launcher succeeded. Reaffirmed here rather than relied on
+  # from further back, so this stays correct even if a future change adds an
+  # intermediate step that sets ABORT_REASON to something else and forgets
+  # to reset it before the window.
   ABORT_REASON="harness:$(cd "$REPO" && git rev-parse --short HEAD)"
 
   # ---- 11 ----------------------------------------------------------------
@@ -845,6 +857,19 @@ except (OSError, KeyError, ValueError):
 print(f"{(rows[-1] - rows[0]) / 1e9:.3f}" if len(rows) >= 2 else "0.000")
 PY
     )"
+    # If the heredoc python did not start or printed nothing, SPAN_S is
+    # empty here -- and an empty value in the printf below writes
+    # `{"sim_span_s": , ...}`, invalid JSON in window.json, which is the
+    # very artifact the unpaced-cap exclusion (exclusions.md criterion 10)
+    # relies on for disambiguation. Fall back to the same "0.000" sentinel
+    # the python side already uses for "no usable rows" so a read failure
+    # here degrades the same way a read failure inside python does, rather
+    # than corrupting the file.
+    if ! [[ "$SPAN_S" =~ ^[0-9]+\.[0-9]+$ ]]; then
+      echo "WARN: wait_sim_window could not read a sim span from" \
+        "$clock_csv (got '$SPAN_S'); treating as 0.000s" >&2
+      SPAN_S="0.000"
+    fi
     local elapsed=$((SECONDS - started))
     if awk -v s="$SPAN_S" -v w="$want_s" 'BEGIN { exit !(s >= w) }'; then
       printf '{"sim_span_s": %s, "wall_s": %s, "requested_sim_s": %s, "capped": false}\n' \

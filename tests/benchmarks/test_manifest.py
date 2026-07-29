@@ -1,5 +1,10 @@
 import pytest
-from benchmarks.analysis.manifest import RunManifest, known_cell_ids, load_manifest
+from benchmarks.analysis.manifest import (
+    RunManifest,
+    known_cell_ids,
+    known_exclusion_reason,
+    load_manifest,
+)
 
 
 def _placement(**over):
@@ -79,8 +84,62 @@ def test_validate_requires_exclusion_reason_when_excluded():
 def test_validate_excluded_with_reason_is_clean():
     m = _valid()
     object.__setattr__(m, "excluded", True)
-    object.__setattr__(m, "exclusion_reason", "sensor dropout mid-run")
+    object.__setattr__(m, "exclusion_reason", "crash:observer")
     assert m.validate() == []
+
+
+def test_validate_excluded_with_prefixed_reason_is_clean():
+    """`harness:<commit>` (criterion 3) carries a variable detail after the
+    prefix, unlike the fixed-string reasons above."""
+    m = _valid()
+    object.__setattr__(m, "excluded", True)
+    object.__setattr__(m, "exclusion_reason", "harness:abc1234")
+    assert m.validate() == []
+
+
+def test_validate_rejects_an_unregistered_exclusion_reason():
+    """The fix for the drift where run.sh emitted exclusion reasons
+    config/exclusions.md never registered: validate() used to only check
+    that exclusion_reason was non-empty, so an unregistered reason (a typo,
+    or a criterion that was dropped from exclusions.md) reached the results
+    tree silently. Free text -- not a known prefix or literal -- must be
+    rejected the same way an empty reason already is."""
+    m = _valid()
+    object.__setattr__(m, "excluded", True)
+    object.__setattr__(m, "exclusion_reason", "sensor dropout mid-run")
+    errs = m.validate()
+    assert any("exclusion_reason" in e and "does not match" in e for e in errs)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "crash:cell-launch",
+        "crash:observer",
+        "crash:sampler",
+        "crash:collect_gt",
+        "crash:clock_watchdog",
+        "gate:arm-failed",
+        "gate:control_cmd-silent",
+        "gate:injector-failed",
+        "stall:clock",
+        "stall:unpaced-window-cap",
+        "warmup:nishi",
+        "harness:0123abcd",
+        "hostload:9.5",
+        "port:2000",
+        "buildid:/home/x/carla-extension",
+    ],
+)
+def test_known_exclusion_reason_accepts_every_reason_run_sh_can_emit(reason):
+    """One entry per emit site in run.sh (and preflight.sh's mid-run cases),
+    so a future reason string added there without a matching registration
+    here fails this test instead of Task 22's tabulation."""
+    assert known_exclusion_reason(reason)
+
+
+def test_known_exclusion_reason_rejects_free_text():
+    assert not known_exclusion_reason("something went wrong")
 
 
 def test_known_cell_ids_comes_from_the_pre_registered_registry():
