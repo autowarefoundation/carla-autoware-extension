@@ -423,6 +423,30 @@ echo "OK: the fork's LiDAR is readable inside the stack (Task 9 rung 1 holds)"
 # so the single per-LiDAR cloud is relayed straight onto the topic the
 # localization chain consumes. Frame-correct without a transform: RELAY_IN is
 # already in base_link, the concat node's own output frame.
+#
+# *** THAT PREMISE IS REFUTED. MEASURED 2026-07-30 (results/B/run-012). ***
+# The concatenate node DOES load and DOES publish. Probed from inside the
+# container while this relay was running:
+#
+#   /sensing/lidar/concatenated/pointcloud  publishers=2 subscribers=1
+#     PUB node=/sensing/lidar/concatenate_data
+#     PUB node=//relay
+#
+# So RELAY_OUT -- which is NDT's input -- carries TWO publishers, this relay
+# and the node this comment says cannot exist. That is the measured
+# explanation for a rate on that topic (4.89 Hz) which is neither the fork's
+# 10 Hz nor a clean fraction of the 2.77 Hz stage feeding the relay: it is the
+# sum of two sources. If concatenate_data emits empty or single-frame clouds,
+# NDT is fed an alternating mix of usable and unusable inputs, which would
+# depress its output rate independently of any CPU effect.
+#
+# DELIBERATELY NOT FIXED HERE. Removing or gating either publisher changes
+# what this cell measures, so it needs its own decision rather than a
+# mid-round edit; benchmarks/README.md's "Sensing-chain rate deficits"
+# section carries the finding and its evidence. The refuted premise is left
+# above rather than deleted, per the campaign's convention that refuted
+# hypotheses stay in the record WITH what refuted them -- annotated here
+# because this is where a reader acts on it.
 cx "$AW_ENV
   nohup ros2 run topic_tools relay $RELAY_IN $RELAY_OUT \
     >/tmp/tier4-concat-relay.log 2>&1 &
@@ -483,7 +507,7 @@ x, y = ego_map_xy(tf.location.x, tf.location.y, offset)
 z = offset[2] + tf.location.z
 yaw = math.radians(-tf.rotation.yaw)
 # pose_initializer's contract is a BASE_LINK pose, and this family's demo puts
-# base_link BEHIND the actor origin, so the raw actor pose names the wrong point.
+# base_link BEHIND the actor origin, so the raw actor pose is the wrong point.
 # Same registry gt.csv uses (benchmarks.analysis.gt_anchor), so the seed and
 # pose_error cannot drift apart. MEASURED consequence of omitting it
 # (results/B/run-006): the service SUCCEEDED and NDT locked, then the seed's own

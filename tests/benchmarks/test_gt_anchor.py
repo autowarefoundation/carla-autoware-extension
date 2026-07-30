@@ -30,14 +30,25 @@ def test_extension_anchor_is_exactly_zero_because_base_link_is_the_actor_origin(
 def test_extension_transform_is_bit_identical_not_merely_close():
     """The promoted G1/G2 numbers depend on this being an EXACT identity.
 
-    A `+ 0.0 * cos(yaw)` would be value-equal but still a float round-trip; the
-    implementation short-circuits instead, so the returned objects are the very
-    inputs. Asserted at an awkward yaw and awkward coordinates on purpose.
+    `==` alone CANNOT pin this, and fix round 1 (I-5) caught that: for finite
+    x, `x + 0.0 * cos(yaw) == x` holds exactly in IEEE-754, so deleting the
+    `offset_m == 0.0` short-circuit left the previous assertion green. Two
+    assertions a mutation cannot satisfy:
+
+    1. IDENTITY -- the short-circuit returns the very input objects, while any
+       arithmetic produces new float objects (CPython does not intern floats).
+    2. SIGNED ZERO -- the one finite case where `+ 0.0` is not the identity:
+       `-0.0 + 0.0` is `+0.0`, which still compares `== -0.0`. The sign bit is
+       therefore a VALUE-level detector, not merely an object-level one.
     """
     x, y, yaw = 81571.61600000001, 50019.827499999995, 2.9261740000000003
     out_x, out_y = base_link_from_actor_origin(x, y, yaw, 0.0)
-    assert out_x == x
-    assert out_y == y
+    assert out_x is x
+    assert out_y is y
+
+    zx, zy = base_link_from_actor_origin(-0.0, -0.0, yaw, 0.0)
+    assert math.copysign(1.0, zx) == -1.0
+    assert math.copysign(1.0, zy) == -1.0
 
 
 def test_tier4_offset_is_the_demos_literal_not_the_vehicle_wheelbase():

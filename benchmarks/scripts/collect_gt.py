@@ -203,7 +203,7 @@ def lidar_stamp_recorder(series: list[int]):
 
 
 # How far up the attach chain to look for the ego. The deepest real chain is the
-# tier4 demo's ego -> base_link -> sensor_kit -> sensor (3); 8 leaves slack for a
+# tier4 demo's ego -> base_link -> sensor_kit -> sensor (3); 8 leaves slack
 # deeper rig while still BOUNDING the walk, so a cyclic parent cannot hang the
 # collector during start-up.
 MAX_ATTACH_DEPTH = 8

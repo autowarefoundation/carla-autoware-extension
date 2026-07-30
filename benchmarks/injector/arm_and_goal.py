@@ -707,6 +707,25 @@ class ArmAndGoal(Node):
         self._control_cmd_times.clear()
         self._autonomous_mode = False
         self._control_enabled = False
+        # The OBSERVABILITY state resets in the SAME block, and that is a
+        # correctness requirement, not tidiness. Task 13 fix round 1 (I-1)
+        # found these three added without a reset -- a REGRESSION of a
+        # property R4 fix round 2 verified explicitly ("all three state
+        # variables reset in one block at engage"). Left unreset,
+        # arm_observations("post-engage") pools PRE-engage commands, so a run
+        # where zero commands flowed after engage still reports a
+        # nonzero_longitudinal denominator from before it: it collapses "no
+        # commands seen" into "commands seen, all zero" in the one field
+        # reserved as the authority discriminator -- exactly what
+        # nonzero_longitudinal()'s NaN convention exists to prevent.
+        # results/B/run-012/arm.log carries that defect, reporting
+        # post-engage nonzero_longitudinal=0/10 at control_cmd_hz~0.00.
+        self._cmd_longitudinal.clear()
+        self._speeds.clear()
+        # Re-seeded rather than zeroed: post-engage displacement must be
+        # measured FROM the engage moment, so the next kinematic_state
+        # callback establishes a fresh origin.
+        self._first_xy = None
         remaining = max(0.0, timeout_s - (time.monotonic() - start))
         armed = self.verify_control_flowing(remaining)
         # is_autoware_control_enabled is RECORDED here, not gating (NEW-1):
@@ -795,6 +814,15 @@ def main(argv: list[str] | None = None) -> int:
             f"{LOCALIZED_WINDOW_S:.0f} s (timeout {args.timeout:.0f} s)"
         )
         if not node.wait_localized(args.timeout):
+            # Observed here too (fix round 1, I-4): this is the FIRST arm exit
+            # path, and it was the one path "observe before ANY arm failure"
+            # missed. Every signal arm_observations reports except the ego pose
+            # is OperationModeState- or control_cmd-derived, so it is available
+            # even when localization never came up -- and knowing whether the
+            # mode/control flags were already set on an unlocalized stack is
+            # exactly the kind of thing a filed failure should not have to be
+            # re-run to learn.
+            node.get_logger().info(node.arm_observations("not-localized"))
             print(
                 f"ARM FAIL: not localized within {args.timeout:.0f} s "
                 f"({LOCALIZED_TOPIC} never sustained {LOCALIZED_MIN_HZ:.0f} Hz)"
@@ -804,7 +832,7 @@ def main(argv: list[str] | None = None) -> int:
         # FIRST observation, taken as soon as localization is confirmed and
         # BEFORE the route is set. MEASURED 2026-07-30 (results/B/run-011,
         # excluded gate:arm-failed): the arm can fail at set_route_points, which
-        # is upstream of engage(), and an observation placed only inside engage()
+        # is upstream of engage(), and an observation only inside engage()
         # is then never taken -- that run recorded none of the authority signals
         # it was launched to collect. The requirement is "before failing", not
         # "before engaging", so every exit path below is now preceded by one.

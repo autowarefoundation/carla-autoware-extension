@@ -1013,9 +1013,14 @@ literal would be the same defect class as the one this fixes, so each launcher
 re-reads the approach's own source at bring-up and aborts on mismatch:
 `cells/tier4_autoware.sh` parses `pivot_to_base_link_transform` out of the demo and
 compares it against the registry; `cells/extension.sh` asserts the three issue-#6
-symbols are still absent from `runner/`. If patch 0003 ever parameterizes that
-spawn offset, or the fork's literal changes, the run **fails loudly** instead of
-being measured on a stale value.
+symbols are still absent from `runner/`; and `cells/python-bridge.sh` reads
+`DEFAULT_WHEELBASE` out of the bridge's own `sensor_kit_loader.py` **inside the
+image** and compares it (added 2026-07-30 by fix round 1 — this guard was
+initially wired for two of the three families while this paragraph claimed all
+three, and the claim was the part that was wrong). All three are verified to pass
+against their live sources. If patch 0003 ever parameterizes that spawn offset, or
+the fork's or the bridge's value changes, the run **fails loudly** instead of being
+measured on a stale value.
 
 **The promoted cell-A evidence survives, and it is checked rather than asserted.**
 Cell A's offset is 0.0, so the transform short-circuits to an exact identity —
@@ -1503,6 +1508,12 @@ machine — not a footnote about this harness.**
 > from there. On this workstation that premise may be **false at the starting
 > point**: the baseline configuration already consumes **91% of 24 cores**, with
 > `perception:=false`.
+>
+> **Measured under `intel_pstate` + `powersave`** (range 0.8–5.4 GHz, idle sample
+> 2.39 GHz) — the campaign's registered governor. That is a **dynamic** governor,
+> **not** a pin to minimum, so this figure is not taken on frequency-crippled
+> cores; falsifier 3 below turns the governor into a measured bound rather than
+> an argument.
 
 **Evidence** (all measured, all retained):
 
@@ -1523,10 +1534,16 @@ machine — not a footnote about this harness.**
    control and the question is open.
 2. **Whether the M4 ceiling criterion actually fires at vlp16.** The sweep's own
    ceiling test has never been evaluated at the baseline class.
+3. **One paired baseline run under `powersave` vs `performance`** (registered
+   2026-07-30 by owner ruling; **not yet run**). Neither falsifier above separates
+   the governor confound, and `powersave` ramps more slowly than `performance` on
+   bursty latency-sensitive paths — which is exactly where the AD-API spin
+   timeouts sit. This pair turns the governor from an argument into a measured
+   bound. It is a live measurement, so the owner schedules it.
 
 **Not acted on here.** No sweep class, margin or analysis is changed; this registers
 the claim and its evidence so the sweep is not designed on an assumption its own
-baseline data contradicts. The owner schedules any change.
+baseline data contradicts. The owner schedules any change, **including falsifier 3.**
 
 **What that does and does not explain.** `RTF` stayed **1.0000** on both runs that
 recorded a clock series, so the _simulator_ keeps up and the deficits are in the
@@ -1603,10 +1620,17 @@ Both are now answered, on three independent lines of retained evidence:
 
 **The same matrix supplies the discriminator for what the deficit IS.** Rows 2, 4
 and 9 measured **10.006 / 10.071 / 10.070 Hz** on this exact
-`fastrtps + udp_only.xml` transport. So it delivers ~10 Hz when measured in
-isolation, and ~8.5 Hz is not a property of it. What differs is load: Task 9's
-rows were a wire-visibility diagnostic on a quiet host, while these runs put the
-box at **91% of 24 cores** with the Autoware container alone at **1832%**.
+`fastrtps + udp_only.xml` transport, and that file states rows 8–11 run in "the
+exact pinned `autoware_universe_devel.digest` image cell B launches Autoware
+from". **Two corroborations in the same file are stronger still, and they are what
+make CPU starvation the live explanation:** its acceptance check recorded the
+**stock `bench_observer`, invoked exactly as `run.sh` invokes it, at 243 rows in
+24 s = 10.1 Hz** on this transport, with the CARLA-API-side cadence over that same
+run at **10.002 Hz**. So the instrument this campaign actually uses has already
+achieved ~10.1 Hz here — and that probe ran **without** the full Autoware stack,
+hence without the ~91% load. What differs is load: those rows were a
+wire-visibility diagnostic on a quiet host, while these runs put the box at **91%
+of 24 cores** with the Autoware container alone at **1832%**.
 **Deficit 1 is therefore attributed to CPU starvation, not UDP fragmentation** —
 a change from this section's first reading, made because those matrix rows refute
 the fragmentation story.
@@ -1734,11 +1758,15 @@ generalization from cell B's single observation, which is the hazard this
 document already names: a correct general rule applied to a case it does not
 govern reads exactly like a correct specific claim.
 
-**RESOLVED by measurement, and a SECOND claim of mine is retracted with it
-(`results/B/run-012`).** After `run-008` (MRM active, `mode_autonomous=False`) I
-called this a per-approach difference on the strength of `run-009`. **That was also
-wrong**, and it was the same over-generalization from a single confounded
-observation. With MRM cleared and the arm fully observed, cell B reads:
+**RESOLVED by measurement, and a SECOND claim of mine is retracted with it.**
+After `run-008` (MRM active, `mode_autonomous=False`) I called this a per-approach
+difference on the strength of `run-009`. **That was also wrong**, and it was the
+same over-generalization from a single confounded observation. **The earliest
+refuting artifact is `results/B/run-010/arm.log`**, which already records
+`post-engage state: mode_autonomous=True is_autoware_control_enabled=True` — and
+it was committed in `d2d3715`, two commits _before_ the claim was corrected, so
+the refutation was sitting in the tree while the claim stood. `run-012`'s fully
+observed arm below is the corroborating reading, not the first one. With MRM cleared and the arm fully observed, cell B reads:
 
 ```text
 arm observations [pre-engage]:  mode=1 autonomous=False is_autoware_control_enabled=True
@@ -2318,8 +2346,14 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   entry: `collect_gt.py` records the CARLA actor origin (car centre) while
   every Autoware pose it is compared against is `base_link` (rear axle),
   so a constant longitudinal offset — measured at −1.4045 m on
-  `results/E/run-006` — sits in every cell's M5 `pose_error`. Task 16 owes
-  either the correction or the offset stated beside every number.
+  `results/E/run-006` — sits in every cell's M5 `pose_error`. ~~Task 16 owes
+  either the correction or the offset stated beside every number.~~
+  **CLOSED 2026-07-30 — superseded by the per-approach GT-anchor amendment
+  below, which landed the correction in Task 13. Task 16 no longer owes it.**
+  The remedy chosen was the transform, not the stated offset: the term is
+  body-frame longitudinal, so in the map frame it rotates with yaw, and a stated
+  constant would be wrong by up to 2.77 m over the committed route's 169.4°
+  turn.
   Completeness, not accommodation: the M5 definitions pre-register
   `pose_error` against `gt.csv` and never said which frame `gt.csv` is in,
   and the first live measurement of it made the gap visible. The entry also
@@ -2631,6 +2665,78 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   artifacts did not survive: the rigid halt distances, the 8-seed sweep's
   per-seed figures, the withdrawn NDT-score breach distribution, and parts of
   step 11.6. No threshold, margin or route bound changes with this entry.
+- **2026-07-30** — `pose_initializer`'s **`stop_check_enabled` is `false` for
+  every cell**, via a committed verbatim copy of the pinned image's own
+  `pose_initializer.param.yaml` (source sha256
+  `a7ed49a2fabad3e46d023969f16b63d3d1ab3d66a555d88f5914f3ef48baeee2`, one line
+  changed) bind-mounted read-only in all three cell families. Reason: cell B's
+  localization could not initialize at all — `autoware_pose_initializer` refused
+  every request with 'The vehicle is not stopped.' because the fork's parked ego
+  reports 2.17–2.41 mm/s of lateral velocity and the checker compares the whole
+  linear norm. Not a relaxation: Autoware itself ships this value for
+  simulation (`simulator.launch.xml:193`/`:211`;
+  `pose_twist_estimator.launch.xml:5-6` derives it `false` for
+  `logging_simulation`), and the `e2e_simulator` path simply never forwards
+  `system_run_mode`. Uniform across cells so it configures the shared
+  environment rather than one approach; the 0.0-vs-2.17 mm/s per-approach
+  difference it works around STAYS recorded. Verified effective: 221 refusals in
+  `results/B/run-004` against **0** in runs 005/008/012. No margin, threshold or
+  cell definition changes.
+- **2026-07-30** — **`pose_error`'s GT anchor is per-approach**, which is a
+  metric-definition amendment and the reason this landed in Task 13 rather than
+  its originally-assigned Task 16: it became a blocker on half the primary duel.
+  `benchmarks/analysis/gt_anchor.py` registers a body-frame longitudinal offset
+  from the CARLA actor origin to where each approach puts `base_link` —
+  `extension` **0.0**, `tier4-native` **−1.39706787**, `python-bridge`
+  **−1.425**, `calibration` 0.0 — applied rotated by ego yaw at both consuming
+  sites (`collect_gt.py`'s `map_pose`, and the tier4 launcher's localization
+  seed). Reason: there is no campaign-wide actor-origin→`base_link` transform,
+  because each approach DEFINES where `base_link` sits by where it attaches
+  sensors; a uniform correction would have broken the approach that is already
+  correct (measured: cell A's own G1 series goes 0.089 m → **1.415 m** under the
+  tier4 anchor). Not derived from the vehicle model, deliberately — neither
+  non-zero offset equals `sample_vehicle`'s 2.79/2. **Strict no-op for cell A,
+  proven not asserted:** exact identity over all 399 retained G1 samples, and
+  both promoted gates re-derive unchanged (G1 `max_err=0.089 m`, G2
+  `closest_approach=0.244 m`). This entry **supersedes and closes the 2026-07-29
+  ground-truth frame entry above** — Task 16 no longer owes that correction. The
+  E-family 0.03 m `DEFAULT_WHEELBASE` inconsistency it recorded is unchanged and
+  still open as a confound. No margin or threshold changes.
+- **2026-07-30** — the shared arm sets **`use_emergency_handling=false` on
+  `/control/vehicle_cmd_gate`** before engaging, for every cell (`run.sh` step 9
+  runs `arm_and_goal.py` on all of them, so it is uniform by construction).
+  Reason: with `perception:=false` the diagnostics graph holds
+  `/autoware/modes/autonomous` in ERROR and `mrm_handler` operates an
+  EMERGENCY_STOP, so the gate MRM-overrides the drive command and nothing arms
+  (`results/B/run-008`: 231 × "no mrm operation available", 35 ×
+  `modes/autonomous ERROR`). Not a new relaxation: **every promoted gate number
+  in this repo already came from MRM off** — `CLAUDE.md`'s "reseed → dummy
+  perception → route → MRM off", and `arm_closed_loop.sh` step 5 sets this exact
+  parameter — so this makes every bench cell's arm identical to the
+  configuration cell A's evidence came from, and the alternative would put an
+  asymmetry between the two duel arms. It is also a false positive of the
+  already-registered `perception:=false`. The more faithful alternative
+  (supplying the availability input perception would have supplied) is recorded
+  as rejected-with-reason, to be reconsidered if cell A is ever re-gated. The
+  MRM configuration is now recorded per run in `<run>/arm.log`. No margin or
+  threshold changes.
+- **2026-07-30** — the campaign's **CPU governor is registered as an explicit
+  environment parameter**: driver `intel_pstate`, governor **`powersave`**,
+  range **0.8–5.4 GHz**, idle sample **2.39 GHz**. Every filed manifest already
+  recorded `placement.cpu_governor` (12/12 cell-B runs, 8/8 cell-E) and this
+  document never named it. **Owner ruling: keep `powersave` and measure its
+  effect rather than argue about it** — it is the distribution default, so it is
+  representative of a real deployment, and it is common to all three
+  approaches, so it **cannot bias the duel**; it bites only absolute claims such
+  as M4's ceiling. Stated precisely because the opposite error is easy:
+  `intel_pstate` + `powersave` is a **dynamic** governor, **not** a pin to
+  minimum, so the 91% / 18.3-core attribution is **not** measured on
+  frequency-crippled cores. The residual concern is narrower and real —
+  `powersave` ramps more slowly than `performance` on bursty latency-sensitive
+  paths, which is exactly where the AD-API spin timeouts sit — so the M4 ceiling
+  claim gains a **third falsifier** (one paired baseline run, `powersave` vs
+  `performance`). That run is registered, **not performed**; the owner schedules
+  live measurements. No margin, threshold or cell definition changes.
 
 ## How to run
 

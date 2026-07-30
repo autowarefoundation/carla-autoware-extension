@@ -478,3 +478,46 @@ def test_armed_ok_is_unchanged_by_the_observability_work():
     assert not armed_ok(False, live, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ)
     # Both satisfied -> armed.
     assert armed_ok(True, live, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ)
+
+
+# --- I-1 regression guard (fix round 1) --------------------------------------
+# R4 fix round 2 verified "all three state variables reset in one block at
+# engage". Task 13 added three OBSERVABILITY variables without extending that
+# reset, so post-engage observations pooled pre-engage commands. This pins the
+# whole reset block by SOURCE, because the behaviour needs a live executor:
+# a unit test cannot call engage() without rclpy, but it can assert that every
+# piece of per-engage state is cleared in the same block.
+
+
+def _engage_reset_block() -> str:
+    """The text of engage()'s reset block, from `legacy_engage()` to `remaining`."""
+    src = (Path(__file__).resolve().parents[2] / "benchmarks/injector/arm_and_goal.py").read_text()
+    start = src.index("self.legacy_engage()")
+    end = src.index("remaining = max(", start)
+    return src[start:end]
+
+
+def test_every_per_engage_variable_is_reset_at_engage():
+    """Fails if ANY of the six survives an engage -- the I-1 regression."""
+    block = _engage_reset_block()
+    for expected in (
+        "self._control_cmd_times.clear()",
+        "self._autonomous_mode = False",
+        "self._control_enabled = False",
+        "self._cmd_longitudinal.clear()",
+        "self._speeds.clear()",
+        "self._first_xy = None",
+    ):
+        assert expected in block, f"engage() no longer resets: {expected}"
+
+
+def test_the_reset_covers_every_observability_field_arm_observations_reads():
+    """A new per-engage field must be added to the reset block, not just to
+    __init__ -- which is precisely how I-1 happened."""
+    src = (Path(__file__).resolve().parents[2] / "benchmarks/injector/arm_and_goal.py").read_text()
+    block = _engage_reset_block()
+    # Fields arm_observations() derives its numbers from, excluding the raw
+    # mode/available flags which are refreshed by every incoming message.
+    for field in ("_cmd_longitudinal", "_speeds", "_first_xy", "_control_cmd_times"):
+        assert f"self.{field}" in src, f"{field} disappeared from the module"
+        assert field in block, f"{field} is read by arm_observations but not reset at engage"

@@ -52,13 +52,13 @@ fail() { echo "LAUNCH FAIL (extension/$BENCH_CELL): $*" >&2; exit 2; }
   fail "route file missing: $BENCH_ROUTE_FILE"
 [ -f "$COMPOSE" ] || fail "compose file missing: $COMPOSE"
 
-# The base_link anchor. This family's registered offset is 0.0 -- so gt.csv is an
+# The base_link anchor. This family's registered offset is 0.0 -- gt.csv is an
 # exact identity -- and that is true ONLY because runner/ applies no
 # vehicle-frame shift. It once did: an uncompensated +wheelbase/2 biased NDT's
 # base_link and cost a 1.44 m G1 near-miss (docs/e2e-report.md issue #6), fixed
 # by DELETING base_link_to_vehicle_center / SAMPLE_VEHICLE_WHEELBASE /
-# ego_wheelbase(). Checked here because their return would silently re-bias every
-# cell-A pose_error by ~1.4 m while the registry still claimed 0.0 -- and G1/G2's
+# ego_wheelbase(). Checked here because their return would silently rebias
+# every cell-A pose_error by ~1.4 m while the registry still said 0.0 -- and
 # promoted numbers were measured under that 0.0 assumption.
 PYTHONPATH="$BENCH_REPO" python3 - "$BENCH_REPO/runner/kit.py" \
   "$BENCH_REPO/runner/spawn.py" <<'ANCHORPY' || fail "the extension's base_link

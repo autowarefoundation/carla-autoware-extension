@@ -89,6 +89,31 @@ fail() {
   fail "CARLA 0.9.15 not installed at $CARLA_0915_SH
   (run benchmarks/scripts/fetch_bridge_deps.sh, or set BENCH_CARLA_0915_ROOT)"
 [ -d "$MAP_BUNDLE_HOST" ] || fail "Autoware map bundle missing: $MAP_BUNDLE_HOST"
+
+# The base_link anchor, checked against the BRIDGE'S OWN SOURCE inside the
+# image rather than trusted from the harness registry. This family's bridge
+# subtracts DEFAULT_WHEELBASE/2 when it places sensors, so gt.csv corrects for
+# it (benchmarks/analysis/gt_anchor.py registers -1.425 m). A stale registered
+# value biases every E-family pose_error by the difference and would read as a
+# localization result rather than a harness bug. Added by fix round 1 (I-2):
+# the other two families already had this guard while the record claimed "each
+# launcher re-reads that source" -- true for two of three.
+BRIDGE_KIT_LOADER=/opt/autoware/lib/python3.10/site-packages/autoware_carla_interface/modules/sensor_kit_loader.py
+docker run --rm --entrypoint cat "$IMAGE" "$BRIDGE_KIT_LOADER" 2>/dev/null |
+  PYTHONPATH="$BENCH_REPO" python3 -c '
+import sys
+
+from benchmarks.analysis.gt_anchor import offset_for_approach, verify_registered_offset
+
+verify_registered_offset("python-bridge", sys.stdin.read())
+print("OK: base_link anchor {:+.8f} m matches the image".format(
+    offset_for_approach("python-bridge")))
+' || fail "the bridge's base_link anchor no longer matches
+  benchmarks/analysis/gt_anchor.py's registered value for approach
+  python-bridge (message above), or $BRIDGE_KIT_LOADER could not be read from
+  $IMAGE. Do NOT edit the registry to silence this without quoting the new
+  source line: it anchors every E-family pose_error."
+
 # Checked as a FILE before the mount, not trusted: `docker run -v` on a missing
 # host path silently creates a DIRECTORY at the container target, so the stack
 # would read the image's own copy (or fail on a directory) while the mount
