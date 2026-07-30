@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from benchmarks.analysis import quality
 from benchmarks.analysis.quality import QualityStats, evaluate_quality
 
 ROUTE = np.array([[0.0, 0.0], [200.0, 0.0]])
@@ -188,6 +189,45 @@ def test_goal_criteria_do_not_apply_without_a_goal_window():
     assert q.goal_terminal_distance_m is None
     assert q.gate_pass, q.reasons
     assert not any("goal" in r for r in q.reasons)
+
+
+@pytest.mark.parametrize(("threshold", "refuses"), [(10, True), (5, True), (3, False)])
+def test_the_join_pair_refusal_reports_the_threshold_it_used(monkeypatch, threshold, refuses):
+    """The refusal message is FORMATTED FROM `MIN_JOIN_PAIRS`, not repeated.
+
+    Four pairs are offered while the threshold is moved around them. At the
+    registered 10 and at 5 the run is refused and the message must name the
+    threshold IN FORCE -- a hardcoded "fewer than 10" claims 10 while
+    refusing at 5, which is a gate misreporting itself in the one string an
+    operator reads. At 3 the same four pairs are scored, which is what shows
+    the constant drives the behaviour and not just the wording.
+
+    A test that only ever runs at the default value cannot see either
+    property: the hardcoded and the formatted string are then identical.
+    """
+    monkeypatch.setattr(quality, "MIN_JOIN_PAIRS", threshold)
+    t, ndt, gt_t, gt = _mk()
+    kwargs = dict(
+        ndt_stamp_ns=t,
+        ndt_xy=ndt,
+        gt_sim_ns=gt_t,
+        gt_xy=gt,
+        odom_stamp_ns=t,
+        odom_xy=gt,
+        route_xy=ROUTE,
+        goal_xy=np.array([150.0, 0.0]),
+        window=(0, int(t[3])),  # four in-window NDT samples
+        goal_window=(0, int(t[-1])),
+        expected_ndt_hz=20.0,
+        abs_pose_gate_m=0.5,
+    )
+    if not refuses:
+        assert evaluate_quality(**kwargs).gate_pass
+        return
+    with pytest.raises(ValueError) as exc:
+        evaluate_quality(**kwargs)
+    assert f"fewer than {threshold} NDT" in str(exc.value)
+    assert "found 4" in str(exc.value)
 
 
 def test_ndt_rate_gate():

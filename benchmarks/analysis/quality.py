@@ -34,6 +34,13 @@ from .window import _project
 
 JOIN_TOL_NS = 25_000_000  # nearest-stamp join tolerance (half a 20 Hz tick)
 
+# Fewest NDT<->GT pairs a window may contain and still be scored. The refusal
+# message below is FORMATTED FROM this constant rather than repeating it: a
+# hardcoded "fewer than 10" would keep claiming 10 after the threshold moved,
+# so a relaxed gate would misreport itself in the very message an operator
+# reads to understand the refusal.
+MIN_JOIN_PAIRS = 10
+
 
 @dataclass(frozen=True)
 class QualityStats:
@@ -88,8 +95,10 @@ def evaluate_quality(
     gt_p = np.asarray(gt_xy, dtype=np.float64)
 
     i, j = _nearest_join(ndt_t, gt_t, JOIN_TOL_NS)
-    if i.size < 10:
-        raise ValueError("fewer than 10 NDT<->GT stamp pairs in the window")
+    if i.size < MIN_JOIN_PAIRS:
+        raise ValueError(
+            f"fewer than {MIN_JOIN_PAIRS} NDT<->GT stamp pairs in the window (found {i.size})"
+        )
     err = np.linalg.norm(ndt_p[i] - gt_p[j], axis=1)
     k = max(1, err.size // 5)
     drift = abs(float(err[-k:].mean() - err[:k].mean()))

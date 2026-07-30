@@ -23,7 +23,7 @@ import pytest
 import yaml
 
 from benchmarks.analysis.manifest import RunManifest
-from benchmarks.analysis.quality import QualityStats
+from benchmarks.analysis.quality import MIN_JOIN_PAIRS, QualityStats
 from benchmarks.scripts import sweep_verdict, write_quality
 from benchmarks.scripts.cell_info import METRIC_KEYS, load_cells_doc, metrics_for
 from benchmarks.scripts.write_quality import GateRefused, build_quality, main, write_quality as _wq
@@ -195,26 +195,68 @@ def _run(
     ndt_stamp_offset_ns=0,
     hold_n=0,
     rtf=1.0,
-    odom_bias=0.0,
     gt_stride=1,
+    track_len_m=ROUTE_LEN_M,
+    ndt_bias_before=None,
+    ndt_stride_before=None,
+    ndt_pairs_in_window=None,
+    odom_lat=0.0,
+    odom_lat_top=None,
+    odom_lat_before=None,
     route_kwargs=None,
     **cells_kwargs,
 ):
-    """A synthetic run directory plus the cells.yaml path that describes it."""
+    """A synthetic run directory plus the cells.yaml path that describes it.
+
+    The `*_before` knobs and `odom_lat*` exist to make a value VARY along the
+    axis a window trims, so that dropping the window changes the number. A
+    fixture that is uniform along that axis pins the criterion's existence and
+    nothing else -- which is how the NDT series' window binding and
+    `lateral_dev_p95_m`'s value both stayed unpinned through two rounds. The
+    boundary they split on is the 20 s warm-up, which is where the default
+    fixture's scoring window opens (see
+    test_the_spatial_window_applies_the_warm_up_discard).
+    """
     monkeypatch.setattr(write_quality, "ROUTES_DIR", tmp_path / "routes")
     _write_route(tmp_path / "routes", **(route_kwargs or {}))
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
     _write_manifest(run_dir, arm=arm)
-    t, xy = _track(hold_n=hold_n)
+    t, xy = _track(hold_n=hold_n, length_m=track_len_m)
+    cut = write_quality.WARMUP_NS
     _write_gt_csv(run_dir / "gt.csv", t[::gt_stride], xy[::gt_stride])
-    _write_xy_csv(run_dir / "odometry.csv", ODOM_TOPIC, t, xy + [0.0, odom_bias])
+
+    # Ego odometry: a lateral profile, not a constant. `odom_lat_top` is
+    # applied to the last 10% of the in-window samples so p95 and p50 differ,
+    # and `odom_lat_before` only to the pre-window samples so scoring the
+    # whole series differs from scoring the window.
+    lat = np.full(len(t), float(odom_lat))
+    before = t < cut
+    if odom_lat_before is not None:
+        lat[before] = odom_lat_before
+    if odom_lat_top is not None:
+        inside = np.nonzero(~before)[0]
+        lat[inside[-max(1, inside.size // 10) :]] = odom_lat_top
     _write_xy_csv(
-        run_dir / "pose.csv",
-        NDT_TOPIC,
-        t[::ndt_stride] + ndt_stamp_offset_ns,
-        xy[::ndt_stride] + [0.0, ndt_bias],
+        run_dir / "odometry.csv", ODOM_TOPIC, t, xy + np.column_stack([np.zeros(len(t)), lat])
     )
+
+    pose_t = t[::ndt_stride] + ndt_stamp_offset_ns
+    pose_xy = xy[::ndt_stride] + [0.0, ndt_bias]
+    if ndt_bias_before is not None or ndt_stride_before is not None or ndt_pairs_in_window:
+        pre = pose_t < cut
+        pre_t, pre_xy = pose_t[pre], pose_xy[pre]
+        in_t, in_xy = pose_t[~pre], pose_xy[~pre]
+        if ndt_stride_before is not None:
+            pre_t, pre_xy = pre_t[::ndt_stride_before], pre_xy[::ndt_stride_before]
+        if ndt_bias_before is not None:
+            pre_xy = pre_xy - [0.0, ndt_bias] + [0.0, ndt_bias_before]
+        if ndt_pairs_in_window:
+            in_t, in_xy = in_t[:ndt_pairs_in_window], in_xy[:ndt_pairs_in_window]
+        pose_t = np.concatenate([pre_t, in_t])
+        pose_xy = np.concatenate([pre_xy, in_xy])
+    _write_xy_csv(run_dir / "pose.csv", NDT_TOPIC, pose_t, pose_xy)
+
     _write_clock_csv(run_dir / "clock.csv", t, rtf=rtf)
     return run_dir, _cells_yaml(tmp_path, **cells_kwargs)
 
@@ -364,6 +406,150 @@ def test_expected_ndt_hz_comes_from_the_registry_not_the_tick(tmp_path, monkeypa
     doc = build_quality(run_dir, cells_yaml=cells)
     assert doc["expected_ndt_hz"] == 10.0
     assert doc["ndt_rate_ratio"] == pytest.approx(2.0, abs=1e-3)
+
+
+# --- the scoring window's binding on the NDT series ----------------------
+#
+# N1/N2/N3: every fixture above is UNIFORM along the axis the window trims --
+# a constant pose bias, a constant 20 Hz rate, a zero lateral offset, an ego
+# that stops exactly at the goal -- so windowing cannot change the answer and
+# dropping it entirely leaves the suite green. The fixtures below vary the
+# quantity across the window boundary, and each failing case sits just past
+# the threshold rather than orders of magnitude beyond it.
+
+
+def test_pose_error_is_scored_only_inside_the_scoring_window(tmp_path, monkeypatch):
+    """Ruling item 1, pinned: `pose_error` is the SPATIAL window's.
+
+    The NDT pose is 0.6 m off before the window opens and 0.4 m off inside it,
+    against a 0.5 m absolute gate -- so the window decides the verdict, in both
+    directions and from within 0.1 m of the threshold on each side. Dropping
+    the window (or widening it to the whole series) reports 0.6 m and FAILS;
+    the same fixture with a uniform bias cannot tell the two apart, which is
+    exactly how this binding survived two rounds unpinned.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.4,
+        ndt_bias_before=0.6,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["window_sim_ns"][0] == write_quality.WARMUP_NS
+    assert doc["pose_err_max_m"] == pytest.approx(0.4, abs=1e-3)
+    assert doc["pose_err_p50_m"] == pytest.approx(0.4, abs=1e-3)
+    assert doc["gate_pass"] is True, doc["reasons"]
+
+
+def test_the_ndt_rate_is_computed_only_inside_the_scoring_window(tmp_path, monkeypatch):
+    """The other half of ruling item 1: `ndt_rate_ratio` is the window's too.
+
+    The NDT series runs at 20 Hz inside the window and at 1 Hz before it. In
+    window that is a healthy 1.00 ratio; over the whole series it is 0.874 --
+    just past the registered 0.9 -- so a missing window flips the rate
+    criterion. The 1 Hz prefix is also what makes the un-windowed number land
+    NEAR the threshold instead of far below it.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_stride_before=20,  # 20 Hz -> 1 Hz before the window opens
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["ndt_rate_ratio"] == pytest.approx(1.0, abs=1e-3)
+    assert doc["gate_pass"] is True, doc["reasons"]
+    # The un-windowed ratio this fixture would produce, computed here so the
+    # assertion above is known to be discriminating rather than assumed to be.
+    n_before = int(write_quality.WARMUP_NS / DT_NS / 20)
+    n_total = n_before + (N_SAMPLES - int(write_quality.WARMUP_NS / DT_NS))
+    unwindowed = (n_total - 1) / ((N_SAMPLES - 1) * DT_NS / 1e9) / 20.0
+    assert unwindowed < 0.9, unwindowed
+
+
+def test_lateral_deviation_is_the_p95_of_the_in_window_series(tmp_path, monkeypatch):
+    """`lateral_dev_p95_m` by VALUE, which nothing asserted before.
+
+    The lateral profile is 0.1 m for most of the window, 0.5 m over its last
+    10%, and 3.0 m before the window opens. So p95 in window is 0.5, and the
+    three plausible wrong answers are all different numbers: 0.1 (p50 instead
+    of p95), 3.0 (the whole series instead of the window) and 0.0 (not
+    computed). A constant offset -- what `odom_bias` was, unused -- makes all
+    four coincide.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        odom_lat=0.1,
+        odom_lat_top=0.5,
+        odom_lat_before=3.0,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["lateral_dev_p95_m"] == pytest.approx(0.5, abs=1e-3)
+
+
+def test_goal_terminal_distance_is_the_last_sample_not_the_closest(tmp_path, monkeypatch):
+    """The overshoot case `goal_terminal_distance_m` exists for.
+
+    Every other fixture stops AT the goal, so last == min and replacing one
+    with the other is invisible. Here the goal sits at station 195 m of a 200 m
+    track the ego drives to the end of: it passes within a sample of the goal
+    (closest ~0, so the 1.0 m criterion still passes) and ends 5.0 m beyond it.
+    That is precisely the "distinguishes precise arrival from overshoot"
+    property the field is registered for.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        route_kwargs={"goal": (ROUTE_LEN_M - 5.0, 0.0)},
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["goal_closest_approach_m"] < 1.0
+    assert doc["goal_terminal_distance_m"] == pytest.approx(5.0, abs=0.1)
+    assert doc["goal_terminal_distance_m"] > doc["goal_closest_approach_m"]
+    assert doc["gate_pass"] is True, doc["reasons"]
+
+
+@pytest.mark.parametrize(("pairs", "refuses"), [(9, True), (10, False)])
+def test_the_minimum_join_pair_count_is_bracketed(tmp_path, monkeypatch, pairs, refuses):
+    """The registered minimum of 10 NDT<->GT pairs, from both sides.
+
+    The counts are LITERALS and the constant is asserted separately, not used
+    to build the parametrization. A parametrization written as
+    `[MIN_JOIN_PAIRS - 1, MIN_JOIN_PAIRS]` moves WITH the constant, so it
+    passes at any threshold and pins nothing -- measured: tightening 10 to 11
+    survived that form. The only other test reaching this check produces ZERO
+    pairs, so a threshold relaxed to 1 survived that too.
+
+    The pre-window NDT samples are kept on purpose: they would pair with the
+    ground truth if the window were dropped, so this fixture ALSO fails under
+    an unwindowed NDT series.
+    """
+    assert MIN_JOIN_PAIRS == 10, "the registered minimum; update these literals with it"
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_pairs_in_window=pairs,
+    )
+    if not refuses:
+        assert build_quality(run_dir, cells_yaml=cells)["gate_pass"] is True
+        return
+    with pytest.raises(GateRefused, match="fewer than 10 NDT") as exc:
+        build_quality(run_dir, cells_yaml=cells)
+    assert f"found {pairs}" in str(exc.value)
 
 
 # --- the NDT source ------------------------------------------------------
