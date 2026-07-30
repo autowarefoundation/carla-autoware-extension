@@ -178,7 +178,7 @@ do_run() {
   # ---- 1 -----------------------------------------------------------------
   step 1 "cell_info: resolve cell + class, check the arm"
   local cell_json approach map_name carla_kind has_sim_clock arms sweep_arms
-  local effective_arm window_arm
+  local effective_arm window_arm dropped
   cell_json="$(cd "$REPO" && python3 -m benchmarks.scripts.cell_info "$CELL" \
     ${CLASS_ID:+--class "$CLASS_ID"})" || die "cell_info rejected $CELL"
   approach="$(json_field "$cell_json" approach)"
@@ -194,6 +194,34 @@ do_run() {
   arms="$(printf '%s' "$cell_json" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['arms']))")"
   sweep_arms="$(printf '%s' "$cell_json" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['sweep_arms']))")"
   echo "      cell=$CELL approach=$approach map=$map_name carla=$carla_kind arms=[$arms]"
+
+  # SCOPE WARNING -- deliberately a WARN and NOT a refusal.
+  #
+  # `dropped:` marks a cell the owner's 2026-07-30 core-duel scope cut removed
+  # from what this campaign MEASURES (config/cells.yaml's header registers the
+  # key; README's amendment of that date carries the per-item reasons).
+  # Dropping is SCOPE, not prohibition: un-dropping a cell is a legitimate
+  # later decision, and the struck entries stay fully runnable on purpose.
+  #
+  # Shaped as a warning because of a pattern this campaign has now recorded
+  # SIX times -- a check written to protect correctness instead BLOCKING
+  # measurement on a false positive: preflight criterion 6 on every Nishi run,
+  # carla_ticking() counting a probe error as a freeze strike, `ros2 topic hz
+  # --no-daemon`'s false silence, `ros2 node list` under cell B's transport,
+  # pose_initializer's stop check refusing on 2.17 mm/s, and the LiDAR-count
+  # test on the demo's attach tree. A hard refusal here would be a candidate
+  # seventh, and its false positive would be exactly the un-drop we might
+  # want. So the operator gets the fact and keeps the decision.
+  dropped="$(json_field "$cell_json" dropped)"
+  if [ -n "$dropped" ]; then
+    echo "      WARN: cell $CELL is DROPPED from this campaign's measurement" \
+      "scope ($dropped)." >&2
+    echo "      WARN: struck by the owner's core-duel scope cut (2026-07-30);" \
+      "see the 'dropped:' key in benchmarks/config/cells.yaml and" \
+      "benchmarks/README.md's amendment of that date." >&2
+    echo "      WARN: this run is ALLOWED and nothing here refuses it, but no" \
+      "campaign result is expected to consume it." >&2
+  fi
 
   # Observer profile, corrected per FAMILY now that the approach is known. The
   # blanket Cyclone default above ($REPO/docker/cyclonedds.xml, interfaces pinned

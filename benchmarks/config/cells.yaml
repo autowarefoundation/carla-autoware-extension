@@ -650,7 +650,7 @@ cells:
       abs_pose_gate_m: 0.5
 # `32ch` and `128ch` STRUCK 2026-07-30 by the owner's core-duel scope cut: the
 # M4 LiDAR-load sweep is reduced to a ceiling CONFIRMATION at the duel size,
-# so `vlp16` is the only class this campaign measures. Owner time-budget, on
+# so `vlp16` is the class this campaign measures FIRST. Owner time-budget, on
 # the two measurements README's 2026-07-30 amendment states -- the duel size
 # already consumes 91% of 24 cores with perception off, so the sweep's premise
 # (baseline below the ceiling, heavier classes probing upward) is likely false
@@ -659,11 +659,34 @@ cells:
 # NOT infeasibility: both classes are ordinary sensor configurations and
 # either would have run.
 #
+# BOTH BRANCHES ARE PRE-REGISTERED HERE, because which one applies is decided
+# MECHANICALLY BY THE DATA -- the campaign's standing rule, the same one the
+# `ladder_branch` / `abs_pose_gate_m` pair above follows, and the reason the
+# `-hf` cells' rate bindings stay null rather than guessing. The M4 claim's
+# second registered falsifier is "Whether the M4 ceiling criterion actually
+# fires at vlp16" (README, "Registered claim (Task 13)"), so:
+#
+#   ceiling criterion FIRES at vlp16   -> `vlp16` alone is SUFFICIENT. The
+#     spec's M4 success criterion is a fired ceiling criterion OR the 128-ch
+#     class, and the first disjunct is met, so no step-up is needed and both
+#     struck classes stay struck. This is the branch the strike assumes.
+#   ceiling criterion DOES NOT FIRE at vlp16 -> the claim is FALSIFIED and the
+#     ceiling has not been located, so a STEP-UP class is needed to find where
+#     it is. `32ch` is that step-up, pre-registered as such HERE and now.
+#     Reinstating it in that case is an ANTICIPATED amendment, not a novel
+#     one: the branch and its trigger are registered before any P3 run, so
+#     acting on it is not a definition settled after seeing data.
+#
+# `128ch` stays struck on EITHER branch: once the criterion fires at a lower
+# class nothing needs it, and if it does not fire at `vlp16` the informative
+# next probe is the adjacent class, not the extreme one.
+#
 # Recorded as a COMMENT rather than a per-entry `dropped:` field, unlike the
 # cells above: `cell_info.merge` copies every non-meta class key into the
 # merged cell JSON at TOP level, so a class-level `dropped:` would read there
 # as if the CELL were dropped. Both entries stay REGISTERED -- struck is not
-# deleted, and `cell_info --class 32ch` still resolves.
+# deleted, and `cell_info --class 32ch` still resolves, which is also what
+# makes the step-up branch reachable without a config change.
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }

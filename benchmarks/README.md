@@ -802,6 +802,18 @@ so `sweep_classes`' `32ch` and `128ch` are struck too, and the M4 **camera-load
 arm is struck in full** (`camera_classes` cam1/cam3/cam6). CAL-rmw runs at the
 duel size only.
 
+**`32ch` is the pre-registered step-up, on a branch the data decides.** If the
+M4 ceiling criterion **fires** at `vlp16`, the spec's success criterion is met
+by its first disjunct and `vlp16` alone suffices — the branch the strike
+assumes. If it **does not fire**, the M4 claim's second falsifier has falsified
+the claim and the ceiling is unlocated, so `32ch` is reinstated as the step-up
+class; doing so is an **anticipated** amendment, registered here before any P3
+run, not a novel one. `128ch` stays struck on either branch. Both branches are
+written into `cells.yaml` beside `sweep_classes` for the same reason
+`ladder_branch` / `abs_pose_gate_m` are two keys: a choice a run's own data
+makes mechanically must be pre-registered on both sides, never settled after
+seeing the number.
+
 **Read the reason precisely.** Every strike is an owner **time-budget**
 decision, taken on two measurements (recorded in the amendment). **None of
 these cells was technically infeasible, blocked, or unmeasurable**, and no
@@ -2995,14 +3007,29 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   (comment-marked rather than given a `dropped:` field, because
   `cell_info.merge` copies every non-meta class key into the merged CELL JSON at
   top level, where a class-level `dropped:` would read as if the cell were
-  dropped); `vlp16` is the only class this campaign measures, and `CAL-rmw` runs
+  dropped); `vlp16` is the class this campaign measures FIRST, and `CAL-rmw` runs
   at that one size. Reason: ground (1) of the scope cut above — the duel size
   already saturates the host, so the heavier classes would largely re-confirm
   saturation — plus ground (2), that Task 16's margin formula consumes only the
   duel size. Both classes stay registered and `cell_info --class 32ch` still
-  resolves. **The registered M4 ceiling claim above is unchanged**, including
-  its three falsifiers: what is reduced is how many runs probe it, not the claim
-  or any threshold. No margin, threshold or `sweep_arms` change.
+  resolves, which is what keeps the step-up branch reachable without a config
+  change. **BOTH BRANCHES ARE PRE-REGISTERED**, because which applies is decided
+  mechanically by the data — the same standing rule that makes `ladder_branch`
+  and `abs_pose_gate_m` two keys, and that leaves the `-hf` rate bindings `null`
+  rather than guessed. The M4 claim's second registered falsifier is "whether the
+  M4 ceiling criterion actually fires at `vlp16`", so: if it **fires**, the
+  spec's M4 success criterion (a fired ceiling criterion **or** the 128-ch class)
+  is met by its first disjunct, no step-up is needed, and both struck classes stay
+  struck — the branch this strike assumes; if it **does not fire**, the claim is
+  falsified and the ceiling is unlocated, so **`32ch` is the pre-registered
+  step-up** and reinstating it is an **anticipated** amendment rather than a
+  novel one, because the branch and its trigger are registered here before any
+  P3 run. `128ch` stays struck either way: once the criterion fires at a lower
+  class nothing needs it, and if it does not fire at `vlp16` the informative next
+  probe is the adjacent class, not the extreme one. **The registered M4 ceiling
+  claim above is unchanged**, including its three falsifiers: what is reduced is
+  how many runs probe it, not the claim or any threshold. No margin, threshold or
+  `sweep_arms` change.
 - **2026-07-30** — the `resources.csv` contract above gained **`loadavg_1m`**,
   the host-wide 1-minute load average per M3 sample, with
   `sampler/sample_resources.py` `read_loadavg_1m` writing it and
