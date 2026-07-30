@@ -1,5 +1,13 @@
 """Tests for cal_report.py: the CAL-seam report tool (C1(a) table).
 
+CAMPAIGN STATUS -- these tests cover DEAD CODE, deliberately kept
+(2026-07-30). Cell CAL-seam was STRUCK by the owner's core-duel scope cut
+(benchmarks/config/cells.yaml `dropped:`; benchmarks/README.md's 2026-07-30
+amendment), so cal_report.py will never run against a measurement and C1(a)
+seam overhead is UNMEASURED -- these passing tests are NOT evidence that the
+seam was measured. Kept because a later campaign reviving C1(a) inherits a
+verified tool. See cal_report.py's own module docstring.
+
 A CAL run has NO clock.csv (nothing publishes /clock -- see
 benchmarks/scripts/cal_report.py's module docstring), so, unlike
 benchmarks/report.py, one-hop wall latency here is the DIRECT difference
@@ -14,6 +22,11 @@ import pytest
 from benchmarks.scripts.cal_report import main, render_report, summarize_run
 
 OBSERVER_HEADER = "topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes\n"
+# The pre-2026-07-30 resources.csv header, deliberately left as-is: it is
+# exactly the format every already-filed run carries, so these fixtures double
+# as backward-compatibility coverage for `loadavg_1m` being an OPTIONAL column
+# (analysis/bench_io.py RESOURCE_OPTIONAL_FLOAT_COLS). Do not "fix" it by
+# appending the column -- that would remove the old-format path from the suite.
 RESOURCES_HEADER = "sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf\n"
 
 
