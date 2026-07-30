@@ -708,18 +708,28 @@ not as a filter:
 
 | Route                   | Cells | Total length | Straight-line separation  | Accumulated turn       | Closest prior approach |
 | ----------------------- | ----- | ------------ | ------------------------- | ---------------------- | ---------------------- |
-| `Town10HD_Opt.yaml`     | A, B  | 258.9 m      | 209.0 m (80.7% of length) | 169.4° — PASS ≥ 60°    | 11.3 m — PASS ≥ 10 m   |
+| `Town10HD_Opt.yaml`     | A, B  | 258.9 m      | 209.0 m (80.7% of length) | 169.4° — PASS ≥ 60°    | 33.2 m — PASS ≥ 10 m   |
 | `NishishinjukuMap.yaml` | C, D  | 230.5 m      | 227.3 m (98.6% of length) | 35.8° — **FAIL** ≥ 60° | 29.4 m — PASS ≥ 10 m   |
+
+Every row's closest-prior-approach is computed the way `pick_route.py` itself
+computes it — excluding the last `APPROACH_SKIP_NODES = 15` polyline nodes
+(~30 m), the genuine final approach. An earlier revision of the Town10 row
+excluded only 5 nodes (~9 m) and so reported 11.3 m, which was **not**
+comparable to the Nishi row beside it and understated the route's own margin.
+Recomputed consistently: 33.468 m on the pre-re-pick Town10 route (matching the
+33.5 m in `reports/task-15-town10/pick_route.log`) and 33.181 m on the
+re-picked one.
 
 The Town10 row moved with the 2026-07-29 route re-pick; it previously read
 438.9 m / 250.9 m (57.2%) / 233.0° / 33.5 m. The re-picked route still clears
-all four properties, but two moved toward their bounds and the comparison below
-must be read against the new numbers: separation is now 80.7% of length rather
-than 57.2%, so the two routes are LESS different in straightness than they
-were, and the closest prior approach is 11.3 m against a 10 m bound where the
-original had 33.5 m of margin. Accumulated turn stays clear at 169.4°, so the
-Town10 route is still a genuinely turning drive and the paragraph below still
-holds directionally — but by a smaller margin than the original 233.0° vs 35.8°.
+all four properties. **Closest prior approach is essentially unchanged**
+(33.5 → 33.2 m); an earlier claim that it "moved toward its bound" was an
+artifact of the inconsistent method above and is withdrawn. What did move is
+straightness: separation is now 80.7% of length rather than 57.2%, so the two
+routes are LESS different in that respect than they were. Accumulated turn
+stays clear at 169.4°, so the Town10 route is still a genuinely turning drive
+and the paragraph below still holds directionally — though by a smaller margin
+than the original 233.0° vs 35.8°.
 
 The Nishi-Shinjuku route does not clear the accumulated-turn property: it is
 98.6% a straight line, with 35.8° of total heading change against Town10's
@@ -758,6 +768,31 @@ and the comparison must say so:
 
 Any P3 report comparing M5 localization numbers across map families must state
 this alongside the numbers, exactly as it must for route difficulty above.
+
+**Scope: whether this stays a cross-map caveat or becomes a DUEL-level confound
+is not yet decided, and Task 13 decides it.** As written above, C4 bears on
+comparisons across map families (A vs C) and on reading 0.089 m as an absolute
+localization result. It leaves the A/B primary duel intact **only if cells A and
+B localize against the same bundle** — which is precisely what is not yet
+established: cell B's ladder binding is deliberately `null` pending Task 13,
+because that task owns what the tier4 launcher mounts and it does not inherit
+`map_defaults.sh`. So:
+
+- **If Task 13 mounts `town10-regen` for the B family**, A and B share the
+  self-built bundle, C4 remains a cross-map caveat, and the duel's M5
+  localization terms stay comparable.
+- **If Task 13 mounts a rigid or unshifted Town10 variant**, A localizes against
+  a bundle built from its own sweeps while B does not, and **C4 escalates to a
+  duel-level confound**: A's localization advantage would then be an artifact of
+  map provenance rather than a property of the approach, contaminating the
+  headline A/B equivalence verdict. The two cells' ladder branches would also
+  differ (absolute vs relative), which is the visible symptom of the same
+  problem.
+
+Task 13 must therefore state which bundle it mounts and, if it is not
+`town10-regen`, record C4 as a duel-level confound rather than assuming parity.
+No margin or threshold changes either way: this fixes what must be checked, not
+what counts as equivalent.
 
 ### Perception load: clear-road stand-in (A/B/C/D) vs. real CUDA perception (E family)
 
@@ -1607,14 +1642,20 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   **before** measurement, not re-tuning of a result: on the rigid bundles the
   ego halted ~292 m along the route at the SAME place on both registrations,
   and on the regenerated bundle it drove the full route but closed only to
-  **1.929 m** against the 1.0 m criterion, stopped by MRM before Autoware ever
-  reported ARRIVED, with 108 of 311 NDT score breaches falling in the final
-  quarter — the stretch the regenerated bundle covers most thinly, its
-  collection drive having ended at ~292 m. On the re-picked route G2 measures
-  **0.244 m — PASS**. The route was produced by `benchmarks/scripts/pick_route.py`
-  and its four gate-honesty properties were verified independently: length
-  258.9 m, accumulated turn **169.4°** (≥ 60), straight-line separation
-  **209.0 m** (≥ 100), closest prior approach **11.3 m** (≥ 10). The new goal
+  **1.929 m** against the 1.0 m criterion, stopped before Autoware ever
+  reported ARRIVED — the final stretch being the one the regenerated bundle
+  covers most thinly, its collection drive having ended at ~292 m. On the
+  re-picked route G2 measures **0.244 m — PASS**. Both figures are recomputable
+  from retained distance series (`benchmarks/evidence/g2-regen-committed-route/`
+  and `benchmarks/evidence/g2-regen-repicked-route/`); an earlier revision of
+  this entry also cited an NDT-score breach distribution over that drive, which
+  was observed live but whose source log lived inside a since-removed container,
+  so it is NOT retained and is no longer offered in support. The route was
+  produced by `benchmarks/scripts/pick_route.py` and its four gate-honesty
+  properties were verified independently: length 258.9 m, accumulated turn
+  **169.4°** (≥ 60), straight-line separation **209.0 m** (≥ 100), closest
+  prior approach **33.2 m** (≥ 10, computed with the tool's own
+  `APPROACH_SKIP_NODES = 15`). The new goal
   sits 1.750 m from the nearest lanelet2 boundary way, matching the old goal's
   1.819 m and the spawn's 1.750 m, i.e. on a centreline. Two knock-on effects
   are recorded rather than absorbed: the station-to-goal gap moves from
@@ -1627,13 +1668,57 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
 - **2026-07-29** — campaign-level finding, recorded here and not only in a task
   report: **G2 completes on NEITHER rigid Town10 registration.** On both
   `town10_pcd_shifted` (142.599 m closest approach) and `town10_pcd_refit`
-  (142.398 m) the ego halts ~292 m into the 438.9 m route at the same place,
-  because `ndt_scan_matcher` scores 2.05–2.30 against its 2.3 acceptance
-  threshold, the EKF then rejects the pose, and MRM stops the vehicle. Only
-  the regenerated bundle drives a closed-loop route at all. This is why the
+  (142.398 m) the ego halts ~292 m into the 438.9 m route at the same place —
+  two different registrations stopping within 0.2 m of each other, which is the
+  retained, recomputable part of this finding (see the two distance series under
+  `benchmarks/evidence/`). The mechanism observed live was `ndt_scan_matcher`
+  scoring below its 2.3 acceptance threshold, the EKF then rejecting the pose
+  and MRM stopping the vehicle; that chain came from container logs which were
+  not retained, so it is recorded as the observed explanation rather than as
+  evidence. Only the regenerated bundle drives a closed-loop route at all. This
+  is why the
   Town10 closed-loop arm depends on `town10_pcd_regen` specifically, and why a
   future full-route Town10 bundle needs a second collection pass over the
   stretch beyond station ~292 m.
+- **2026-07-29** — gate evidence for **decision runs** now has a TRACKED home,
+  `benchmarks/evidence/<gate>-<slug>/`, written by pointing the gates' existing
+  `G1_RUN_DIR` / `G2_RUN_DIR` at it. Unset, both still default to the
+  `.gitignore`d `reports/`, so routine runs are unaffected and only deliberate
+  promotions are tracked. Completeness: durability was fixed earlier in the day
+  (per-run directories instead of overwritten `/tmp` paths) but the _home_ was
+  not — `g1_summary.txt`, carrying the `max_err = 0.089 m … PASS` that selects
+  `abs_pose_gate_m: 0.5` for every Town10 cell plus the bundle digest it is
+  attributable to, existed on one workstation in a path `git clean -fdx` removes
+  and no fresh clone has. Promoted: the rung-2 G1 run and both G2 runs (the
+  1.929 m committed-route FAIL that justified the route re-pick, and the 0.244 m
+  re-picked-route PASS), ~92 KB. `reports/` plus a `.gitignore` negation was
+  rejected because that tree is bind-mounted into a root-running container, and
+  `benchmarks/results/<cell>/run-<NNN>/` was rejected because those carry
+  manifests and are enumerated by `duel_verdict.py`/`sweep_verdict.py` while
+  ladder runs have no cell id.
+- **2026-07-29** — the map-bundle provenance check (`preflight.sh` check 6) is
+  **scoped per bundle directory**, and an unregistered directory SKIPS instead of
+  failing. `benchmarks/pins.yaml` gains `nishishinjuku_bundle` so cells C/D have
+  registered provenance, and the bundle a cell is checked against is resolved
+  from **that cell's own launcher**. Completeness — this fixes two defects in the
+  check as first added, one of them blocking:
+  - It compared one flat candidate list (the three `town10_pcd_*` blocks)
+    against every cell with a map, so cells C/D's `nishishinjuku` bundle matched
+    **zero** blocks and preflight FAILED, which would have blocked Task 15 and
+    the entire C/D half of the campaign. A provenance check must not stop
+    measurement: absence of a registration is a gap in the record, not a
+    corrupted bundle. The four outcomes are now distinct — matched (reported),
+    unregistered (skip, named), matches-none (FAIL: changed without re-pinning),
+    matches-several (FAIL: duplicated registration).
+  - It resolved every cell through `scripts/e2e/map_defaults.sh`, which is the
+    **extension** path's table, and so recorded `town10_pcd_regen` as cell E's
+    bundle while `cells/python-bridge.sh` actually mounts the unshifted
+    `~/autoware_map/town10` — a wrong provenance record written into the
+    manifest as authoritative, which the B family would have inherited.
+    `APPROACH_BUNDLE_DIR` now carries the non-extension mappings, kept in step
+    with the launcher by a test that reads its literal.
+    No threshold or margin changes; the tier4 cells resolve to nothing and skip,
+    because Task 13 owns what they mount.
 
 ## How to run
 
