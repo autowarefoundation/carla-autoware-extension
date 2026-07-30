@@ -30,6 +30,41 @@
 #                                   the M5 gate's "NDT rate >= 90% of expected"
 #                                   criterion (analysis/quality.py) and the
 #                                   `expected_ndt_hz` key of quality.json.
+#   ladder_branch                   which branch of the pre-registered G1
+#                                   localization ladder applies to this cell:
+#                                   `absolute` or `relative`. quality.json's
+#                                   `ladder_branch` key is written from here.
+#   abs_pose_gate_m                 the absolute branch's max-pose_error
+#                                   threshold in metres (evaluate_quality's
+#                                   `abs_pose_gate_m`). Non-null iff
+#                                   ladder_branch is `absolute`.
+#
+# The two ladder keys are ONE binding in two fields, and they are two fields
+# rather than one on purpose. `evaluate_quality(abs_pose_gate_m=None)` means
+# "apply the RELATIVE branch", so a single nullable threshold could not
+# distinguish "the relative branch was selected" from "nothing has selected a
+# branch yet" -- and defaulting an unselected cell into the relative branch
+# would silently report an UNGATED cell as gated, the worst outcome available
+# to this gate. So `ladder_branch` carries the selection and `abs_pose_gate_m`
+# carries only the absolute branch's number, giving three states the M5 gate
+# step discriminates mechanically:
+#
+#   ladder_branch: absolute  + abs_pose_gate_m: <float>  -> absolute branch
+#   ladder_branch: relative  + abs_pose_gate_m: null     -> relative branch
+#   ladder_branch: null                                  -> REFUSE to gate
+#
+# Any other combination (absolute with a null threshold, relative with a
+# non-null one, an unrecognised branch name) is an inconsistent registration
+# and is refused by name, not repaired.
+#
+# WHICH branch a cell gets is a property of THE MAP BUNDLE THAT CELL
+# LOCALIZED AGAINST, not of whether a registration fix landed somewhere in
+# the campaign (benchmarks/README.md, "M5 definitions", and the 2026-07-28
+# amendment that keyed it on the bundle). That is why this is a per-cell
+# binding and not one campaign-wide constant: gating cell E at 0.5 m against
+# the deliberately unshifted bundle cells/python-bridge.sh pins would fail it
+# by ~0.475 m of map registration, under a reason a reader would attribute to
+# the bridge.
 #
 # tick_hz, lidar_expected_hz and ndt_expected_hz are DIFFERENT numbers that
 # happen to coincide at 20.0 on the extension cells; tick_hz diverges on the
@@ -73,6 +108,8 @@ cells:
       # explains the number but is an assertion about Autoware, not evidence
       # from this repo, so it is not what this binding rests on.)
       ndt_expected_hz: 20.0
+      ladder_branch: # Task 11 (live G1 re-gate on the shifted Town10 bundle)
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: B
     approach: tier4-native
     carla: 0.10-tier4
@@ -100,6 +137,8 @@ cells:
       tick_hz:
       lidar_expected_hz:
       ndt_expected_hz:
+      ladder_branch: # Task 11, for whichever bundle Task 13 wires this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: C
     approach: extension
     carla: 0.10-fork
@@ -117,6 +156,8 @@ cells:
       # docs/e2e-report.md's ~20 Hz NDT measurement is from the Nishi-Shinjuku
       # e2e gate, i.e. THIS cell's map, and cell A inherits it as the same rig.
       ndt_expected_hz: 20.0
+      ladder_branch: # NOT Task 11's: that re-gate is Town10; this cell's Nishi bundle is unselected
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: D
     approach: tier4-native
     carla: 0.10-tier4
@@ -132,6 +173,8 @@ cells:
       tick_hz: # Task 13, as cell B
       lidar_expected_hz: # Task 13, as cell B
       ndt_expected_hz: # Task 13, as cell B
+      ladder_branch: # unselected: the Nishi bundle, plus Task 13's map wiring
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E
     approach: python-bridge
     carla: 0.9.15
@@ -160,6 +203,8 @@ cells:
       # on an unpatched run, which is a MEASUREMENT, not a target.
       lidar_expected_hz:
       ndt_expected_hz: # Task 10/20, with lidar_expected_hz
+      ladder_branch: # cell E's re-gate: which pcd variant E localizes against is MEASURED first
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E0
     approach: python-bridge
     carla: 0.9.15
@@ -185,6 +230,8 @@ cells:
       tick_hz: 20.0
       lidar_expected_hz: # Task 10/20, as cell E
       ndt_expected_hz: # Task 10/20, as cell E
+      ladder_branch: # cell E's re-gate: which pcd variant E localizes against is MEASURED first
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E-opt
     approach: python-bridge
     carla: 0.9.15
@@ -202,6 +249,8 @@ cells:
       tick_hz: 20.0
       lidar_expected_hz: # Task 10/20, as cell E
       ndt_expected_hz: # Task 10/20, as cell E
+      ladder_branch: # cell E's re-gate: which pcd variant E localizes against is MEASURED first
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: CAL-rmw
     approach: calibration
     carla: none
@@ -228,6 +277,8 @@ cells:
       # cell that published at something else.
       lidar_expected_hz: 10.0
       ndt_expected_hz: # no localization stack in this cell
+      ladder_branch: # no localization stack in this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: CAL-seam
     approach: calibration
     carla: 0.10-fork
@@ -250,6 +301,8 @@ cells:
       tick_hz:
       lidar_expected_hz: # Task 14
       ndt_expected_hz: # no localization stack in this cell
+      ladder_branch: # no localization stack in this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: A-hf
     approach: extension
     carla: 0.10-fork
@@ -307,6 +360,8 @@ cells:
       tick_hz:
       lidar_expected_hz:
       ndt_expected_hz:
+      ladder_branch: # Task 11 (live G1 re-gate on the shifted Town10 bundle)
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: B-hf
     approach: tier4-native
     carla: 0.10-tier4
@@ -330,6 +385,8 @@ cells:
       tick_hz:
       lidar_expected_hz:
       ndt_expected_hz:
+      ladder_branch: # Task 11, for whichever bundle Task 13 wires this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: B45
     approach: tier4-native
     carla: 0.10-tier4
@@ -345,6 +402,8 @@ cells:
       tick_hz: # Task 13, as cell B (identical CARLA-side recipe)
       lidar_expected_hz: # Task 13, as cell B
       ndt_expected_hz: # Task 13, as cell B
+      ladder_branch: # Task 11, for whichever bundle Task 13 wires this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }

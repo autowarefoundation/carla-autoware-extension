@@ -97,6 +97,13 @@ METRIC_KEYS = (
     "tick_hz",
     "lidar_expected_hz",
     "ndt_expected_hz",
+    # The M5 gate's per-cell G1 ladder binding. Two keys, not one: a lone
+    # nullable `abs_pose_gate_m` cannot distinguish "the relative branch was
+    # selected" (evaluate_quality's own None) from "no branch is selected
+    # yet", and the second must refuse rather than gate. See cells.yaml's
+    # header block for the three registered states.
+    "ladder_branch",
+    "abs_pose_gate_m",
 )
 
 

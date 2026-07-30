@@ -14,7 +14,8 @@
 # No PublishedTime entry is coming for this cell: PublishedTime is an
 # Autoware publisher-side stamp and nothing here is an Autoware node.
 #
-# Format: "<topic>|<type>|<kind>", kind in generic|odometry|published_time
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
 # (benchmarks/observer/src/bench_observer.cpp). out_dir is supplied by run.sh
 # as -p out_dir:=/out, not from this file.
 /**:

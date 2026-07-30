@@ -16,14 +16,23 @@
 # image; NOT autoware_internal_debug_msgs), so an appended line reads:
 #   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
 #
-# Format: "<topic>|<type>|<kind>", kind in generic|odometry|published_time
-# (benchmarks/observer/src/bench_observer.cpp). `generic` records
-# serialized size; `odometry` also writes odometry.csv (size 0 sentinel).
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
+# (benchmarks/observer/src/bench_observer.cpp). `generic` records serialized
+# size. The typed kinds record the 0 size sentinel in observer.csv and also
+# write their own file: `odometry` -> odometry.csv, `pose` -> pose.csv, `tf` ->
+# tf.csv (whose fourth field is the child_frame_id it filters on).
 # out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+#
+# AMENDED 2026-07-29 (R3, before any P3 run), extending the history above: the
+# NDT pose line's kind is the typed `pose` kind, not `generic`. A generic
+# subscription records stamp + serialized size only, so no NDT x/y was
+# recorded anywhere in the campaign and M5's registered `pose_error_m` -- NDT
+# pose minus CARLA ground truth -- had no data source at all.
 /**:
   ros__parameters:
     topics:
       - /sensing/lidar/top/pointcloud_raw_ex|sensor_msgs/msg/PointCloud2|generic
-      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|generic
+      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|pose
       - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
       - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic

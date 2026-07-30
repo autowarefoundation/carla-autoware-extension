@@ -16,7 +16,8 @@
 # reason, naming Task 14 -- so this file cannot be reached with an empty list
 # by an actual measurement run.
 #
-# Format: "<topic>|<type>|<kind>", kind in generic|odometry|published_time
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
 # (benchmarks/observer/src/bench_observer.cpp). out_dir is supplied by run.sh
 # as -p out_dir:=/out, not from this file.
 /**:

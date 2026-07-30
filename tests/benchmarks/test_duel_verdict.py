@@ -921,6 +921,12 @@ def _metrics(**overrides) -> dict:
         "tick_hz": 20.0,
         "lidar_expected_hz": 20.0,
         "ndt_expected_hz": 20.0,
+        # The M5 gate's ladder binding, unset exactly as cells.yaml registers
+        # it today (pending Task 11). Present because `metrics_for` requires
+        # every METRIC_KEYS entry; none of this module's five duel metrics
+        # reads either key.
+        "ladder_branch": None,
+        "abs_pose_gate_m": None,
     }
     m.update(overrides)
     return m

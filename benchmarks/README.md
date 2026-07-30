@@ -19,15 +19,17 @@ A future `bench_observer` must emit the following files for every run:
 | `published_time.csv`    | `topic,source_header_ns,published_ns`                                                                               |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `resources.csv`         | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                            | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                                                                                     |
 | `odometry.csv`          | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size.                                                         |
+| `pose.csv`              | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per NDT pose receipt (the cell's registered `ndt_topic`), written by bench_observer's typed `pose` subscription, with the same `size_bytes = 0` sentinel row in `observer.csv` as `odometry.csv`. A SEPARATE file from `odometry.csv` even though the schema is identical: that one carries the EKF-fused `/localization/kinematic_state`, a different quantity, and M5's `pose_error_m` is defined on the NDT pose alone. Read with `analysis/bench_io.py` `read_pose_csv`.            |
+| `tf.csv`                | `topic,frame_id,child_frame_id,header_stamp_ns`                                                                     | One row per `/tf` transform whose `child_frame_id` matches the one registered in that cell's topic list (kind `tf`, whose fourth spec field is that frame), written by bench_observer's typed `tf` subscription with the same `size_bytes = 0` sentinel row in `observer.csv`. The parent `frame_id` is recorded but NOT filtered on, so a map→base_link claim is verified rather than assumed. Read with `read_tf_csv`.                                                                        |
 | `gt.csv`                | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                      | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                       | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below. |
 | `manifest.json`         | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. NO WRITER EXISTS YET — the task that lands the M5 gate step writes it.                                                                                                                                                                                                                                                           |
+| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. Written by `benchmarks/scripts/write_quality.py`, run as `run.sh` step 13. ABSENT when the gate REFUSED to score the run (an unselected G1 ladder branch, a null `ndt_expected_hz`, a missing input): absence means not scored, never a pass.                                                                                    |
 
 Results are laid out on disk as:
 
 ```text
-benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,gt.csv,publisher_counts.json,quality.json}
+benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,pose.csv,tf.csv,gt.csv,publisher_counts.json,quality.json}
 ```
 
 ## Patch policy
@@ -83,8 +85,12 @@ after a number is known.
   to closest approach; distinguishes precise arrival from overshoot).
 - `lateral_deviation_m`: distance from ego odometry to the committed
   route polyline (`config/routes/<map>.yaml`) — p95 over the window.
-- `pose_error_m`: NDT pose minus CARLA ground truth (`gt.csv`), joined
-  at nearest sim-time stamp within 25 ms.
+- `pose_error_m`: NDT pose minus CARLA ground truth, joined at nearest
+  sim-time stamp within 25 ms. The NDT pose comes from `pose.csv`'s rows
+  for the cell's registered `ndt_topic` (bench_observer's typed `pose`
+  kind) and the ground truth from `gt.csv`. NOT `odometry.csv`'s
+  `/localization/kinematic_state`, which is the EKF-fused pose: scoring
+  this metric on that would mask NDT error behind IMU/odometry fusion.
 - Per-cell validation gate (must pass before a cell's numbers count):
   NDT output rate ≥ 90% of expected AND goal_closest_approach < 1.0 m
   AND the localization criterion of the pre-registered G1 ladder, whose
@@ -138,7 +144,8 @@ closed-loop arm; its static row is absent, never zero.
 rate. Each cell's entry in `benchmarks/config/cells.yaml` carries a `metrics:`
 block (`lidar_topic`, `ndt_topic`, `control_topic`,
 `control_published_time_topic`, `cpu_process_label`, `tick_hz`,
-`lidar_expected_hz`, `ndt_expected_hz`), read with
+`lidar_expected_hz`, `ndt_expected_hz`, `ladder_branch`,
+`abs_pose_gate_m`), read with
 `benchmarks.scripts.cell_info.metrics_for(load_cells_doc(), <cell>)`. A `null`
 binding is not a default to fill in at analysis time: the value is not
 pre-registered yet, so the metric is UNAVAILABLE for that cell and the tool
@@ -234,7 +241,7 @@ check lives there once rather than twice.
 > run.** `cells.yaml` gives `CAL-seam` `carla: 0.10-fork`, so
 > `cell_info.merge`'s `has_sim_clock` is true, so `run.sh` starts the clock
 > watchdog for it (step 7), waits for a sim span off `clock.csv` on the unpaced
-> path (step 10), and routes step 14 to `report.py`'s fit-strict renderer. But
+> path (step 10), and routes step 15 to `report.py`'s fit-strict renderer. But
 > `scripts/cal_report.py` — which is the **CAL-seam** tool specifically, not a
 > generic calibration one; its own first line says so — asserts that this cell
 > has no `/clock` and that no fit is "needed, or even possible". Both cannot
@@ -573,12 +580,46 @@ by a factor of five while looking like a localization result. A cell whose
 `ndt_expected_hz` is `null` cannot be gated: the M5 gate must refuse to write
 a verdict for it rather than assume a rate.
 
+`ladder_branch` is written from the cell's `metrics.ladder_branch` binding and
+nothing else — never inferred from whether `abs_pose_gate_m` happens to be
+null. The two are separate keys precisely so that inference is impossible:
+`evaluate_quality(abs_pose_gate_m=None)` IS the relative branch, so one
+nullable threshold could not distinguish a cell whose relative branch was
+selected from a cell for which nothing has selected a branch at all — and the
+second must refuse, not gate. The three registered states are
+
+| `ladder_branch` | `abs_pose_gate_m` | effect                                                   |
+| --------------- | ----------------- | -------------------------------------------------------- |
+| `absolute`      | float             | absolute branch: `max pose_error < abs_pose_gate_m`      |
+| `relative`      | `null`            | relative branch: no drift, bounded spread, bias reported |
+| `null`          | `null`            | REFUSE: no verdict is written for this cell              |
+
+and every other combination (`absolute` with a null threshold, `relative` with
+a non-null one, an unrecognised branch name) is an inconsistent registration,
+refused by name rather than repaired. WHICH branch a cell gets is a property of
+the map bundle THAT CELL localized against, per the M5 definitions above; both
+branches' thresholds are registered there and are unchanged here.
+
 `gate_pass` is the single field a consumer may treat as the verdict.
 
-No writer exists yet: `run.sh`'s `gate:arm-failed` is the bring-up arm check
-(`injector/arm_and_goal.py`), not this gate. The task that lands the M5 gate
-step writes exactly this file. Until then a consumer must fail loudly on its
-absence for any arm that closes the loop, rather than defaulting it to a pass.
+The writer is `benchmarks/scripts/write_quality.py`, run as `run.sh` step 13
+(after `finalize_rtf`, before the exclusion and smoke steps). It is NOT
+`run.sh`'s `gate:arm-failed`, which is the bring-up arm check
+(`injector/arm_and_goal.py`) and a different thing entirely.
+
+That step REFUSES — writing nothing, exiting non-zero, naming the input —
+rather than writing a defaulted verdict, whenever `ladder_branch` is
+unselected, `ndt_expected_hz` or `ndt_topic` is `null`, an input file is
+missing or unreadable, the run's `clock.csv` puts a non-closed-loop arm on the
+unfittable window branch (there is no sim domain, so there is no sim window to
+convert to), the manifest is already excluded, or the run's own data does not
+support the measurement. `run.sh` treats that refusal as a WARNING, not an
+abort: the run's data is already on disk and the exclusion step still owes the
+directory a label, so aborting would leave it unlabelled and wedge every later
+run of the cell. The ABSENCE of the file is what carries the refusal — a
+consumer must fail loudly on it for any arm that closes the loop and never
+default it to a pass, which is what `sweep_verdict._quality_ok` does, with
+`ablation` as the one registered exception.
 
 ## Cell matrix
 
@@ -1286,6 +1327,87 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   records the E-family-only 0.03 m sensor-placement inconsistency between
   the bridge's `DEFAULT_WHEELBASE` 2.850 and `sample_vehicle`'s 2.79. No
   margin, threshold or cell definition changes with this entry.
+- **2026-07-29** — the data contract above gained `pose.csv`, with a typed
+  `pose` observer kind (`geometry_msgs/msg/PoseWithCovarianceStamped`) in
+  `observer/src/bench_observer.cpp` and `analysis/bench_io.py`
+  `read_pose_csv` to read it; every `config/observer_topics/*.yaml` entry for
+  the NDT topic moved from kind `generic` to kind `pose`. Completeness, not
+  accommodation: M5's `pose_error_m` was pre-registered as "NDT pose minus
+  CARLA ground truth" while the NDT topic was recorded by a GENERIC
+  subscription, which writes only stamp and serialized size — so no NDT x/y
+  existed anywhere in the campaign, `evaluate_quality`'s `ndt_xy` argument had
+  no data source, and the mandatory M5 metric was not computable. The one
+  file that did carry an x/y pose, `odometry.csv`, is the EKF-fused
+  `/localization/kinematic_state`: redefining `pose_error` onto it would have
+  masked NDT error behind IMU/odometry fusion, so it is deliberately a second
+  file rather than a second topic in the first.
+- **2026-07-29** — the data contract above gained `tf.csv`, with a typed `tf`
+  observer kind (`tf2_msgs/msg/TFMessage`) that records only the transforms
+  matching a configured `child_frame_id` — the topic spec's new optional
+  fourth field — plus `read_tf_csv`; `config/observer_topics/E.yaml` now
+  registers `/tf` filtered to `base_link`, superseding (and citing) that
+  file's own prior instruction not to add the topic. Completeness: cell E's
+  re-gate needs the map→base_link TF rate as its H1 discriminator, and the
+  `generic` kind cannot record it in two independent ways — `stamp_from_cdr`
+  reads `stamp.sec` at CDR byte 4 while `TFMessage` is a `TransformStamped[]`,
+  so byte 4 is the sequence LENGTH and every row would carry a valid arrival
+  stamp beside a silently nonsense header stamp; and with no frame filter the
+  recorded rate is the aggregate across every broadcaster, which stays healthy
+  while the one pair under test is dead. The parent `frame_id` is recorded
+  rather than filtered on, so map→base_link is verified instead of assumed.
+- **2026-07-29** — `pose_error_m`'s definition above now names the file it is
+  computed from (`pose.csv`, the cell's registered `ndt_topic`) and states
+  explicitly that `odometry.csv`'s `/localization/kinematic_state` is not a
+  permitted substitute. Completeness: the definition named the quantity and
+  the join rule but no source column, which is exactly the gap that let the
+  metric be registered as mandatory with nothing recording its input.
+- **2026-07-29** — `config/cells.yaml`'s `metrics:` block gained
+  `ladder_branch` and `abs_pose_gate_m`, both `null` on every cell and naming
+  their filler, and `scripts/cell_info.py` `METRIC_KEYS` gained both.
+  Completeness: `abs_pose_gate_m` existed only as an `evaluate_quality`
+  parameter, so no config could select the G1 ladder branch and the M5 gate
+  had no way to know which localization criterion applied to a cell. Plan
+  Task 11's live G1 re-gate on the shifted Town10 bundle selects it. They are
+  TWO keys rather than one because `evaluate_quality(abs_pose_gate_m=None)` is
+  itself the relative branch: with one nullable threshold, "the relative
+  branch was selected" and "no branch is selected yet" would be the same
+  registered value, and the gate would silently report an UNGATED cell as
+  gated. No threshold is registered here; both branches' thresholds stay as
+  the M5 definitions above already fixed them.
+- **2026-07-29** — the "M5 gate result" section above gained its writer
+  (`scripts/write_quality.py`, `run.sh` step 13), the registered set of
+  conditions under which that step REFUSES rather than writing a verdict, and
+  the three-state table for the ladder binding. Completeness: the section
+  registered the file's schema and said outright that no writer existed, so
+  the M5 gate — a mandatory per-cell validation gate — was pre-registered and
+  unexecutable, and its only consumer (`sweep_verdict`) was reading a file
+  nothing produced.
+- **2026-07-29** — `run.sh` gained the M5 gate as step 13, between
+  `finalize_rtf` (12) and the exclusion step, renumbering exclusions to 14 and
+  the render smoke to 15; `--dry-run` lists it. It is deliberately NON-FATAL:
+  a refusal is a warning, because the run's data is already on disk and the
+  exclusion step still owes the directory a pre-registered label. Completeness:
+  without a numbered step nothing produced `quality.json`, and a hard failure
+  here would make every legitimately un-gateable cell (a null
+  `ndt_expected_hz`, an unselected ladder branch, no localization stack at all)
+  unfileable.
+- **2026-07-29** — `bench_observer` now writes `odometry.csv`'s and
+  `pose.csv`'s `x_m`/`y_m` in FIXED notation at 4 decimals, matching
+  `collect_gt.py`'s own `f"{x:.4f}"`, instead of `std::ostream`'s default of 6
+  SIGNIFICANT digits. Completeness: 6 significant digits is ~1 mm on Town10's
+  ±150 m coordinates but only ~0.1 m on Nishi-Shinjuku's
+  (`config/routes/NishishinjukuMap.yaml`'s polyline starts at 81371.133,
+  49912.721) — half the ladder's 0.2 m no-drift threshold and a third of its
+  0.3 m spread threshold, on the cells (C/D) whose map has the large
+  coordinates. A metric may not be quantized by its own recorder, and the two
+  sides of `pose_error` must carry the same resolution.
+- **2026-07-29** — `bench_observer`'s topic-spec format gained an OPTIONAL
+  fourth field (`"<topic>|<type>|<kind>|<arg>"`), used by the `tf` kind for
+  its `child_frame_id`; a fifth field and a present-but-empty fourth are both
+  refused at startup. Completeness: the three-field parser already accepted
+  and silently DISCARDED any tail, so a typo'd or misplaced filter would have
+  produced an unfiltered recording that looks like a filtered one — the same
+  silent-wrong-number class the strict three-field check was added for.
 
 ## How to run
 
@@ -1294,7 +1416,7 @@ produces one `benchmarks/results/<cell>/run-<NNN>/`:
 
 ```bash
 bash benchmarks/run.sh A --arm closed-loop            # one run of cell A
-bash benchmarks/run.sh A --arm closed-loop --dry-run  # print the 14 steps
+bash benchmarks/run.sh A --arm closed-loop --dry-run  # print the 15 steps
 bash benchmarks/scripts/duel.sh A B --arm closed-loop --pairs 10
 ```
 
