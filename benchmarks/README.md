@@ -3123,6 +3123,59 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   work — the sampler that writes this column included — sits inside the
   perturbation it measures. No margin, threshold, metric definition or cell
   definition changes; `config/margins.yaml` is byte-identical.
+- **2026-07-30** — `analysis/manifest.py`: `RunManifest` gained
+  **`duel_admissible`** (bool, default `false`, type-checked in `validate()`),
+  `scripts/duel_verdict.py` now **drops** runs that are not duel-admissible and
+  reports the count on its own term, `scripts/write_manifest.py` gained
+  `--duel`, `run.sh` gained `--duel`, and `scripts/duel.sh` passes `--duel` on
+  **every** run it orders. **Completeness, and the gap is exact:**
+  `duel_verdict.py`'s aggregation reduced _every non-excluded run in a cell_ to
+  one run-level scalar and fed it to the equivalence test, so a **successful**
+  bring-up or gate run filed under `results/A/` would silently have become
+  primary duel data. Task 18's design requires **interleaved** A,B,A,B pairs
+  precisely to control for within-session drift (`scripts/duel.sh`'s own
+  rationale), so a standalone gate run is not part of an interleaved pair and
+  cannot legitimately contribute to the verdict — and nothing in the manifest
+  let the tool tell the two apart. Task 15b is the first task to file a cell-A
+  `run.sh` run at all, which is why the gap surfaces now.
+  **Why a manifest field and not an exclusion reason.** An exclusion asserts the
+  run's data is _invalid_; a cell-A gate run's data is valid and is the
+  campaign's missing control. Filing it as excluded would (a) misstate it,
+  (b) make `report.py` tag good evidence `(EXCLUDED)`, (c) require an
+  eleventh criterion in `config/exclusions.md`, whose own closing sentence
+  freezes that list, and (d) suppress the M5 gate on it — `write_quality`
+  refuses an already-excluded manifest, so the very verdict Steps 1–2 of that
+  task exist to obtain would not be written. So `config/exclusions.md` is
+  **byte-identical**, and `excluded` / `duel_admissible` stay two fields
+  answering two questions — the same shape of argument `cells.yaml` already
+  makes for `ladder_branch` / `abs_pose_gate_m` and for `mandatory:` /
+  `dropped:`. `_walk_cell_runs` tests `excluded` **first**, so a run that is
+  both keeps the actionable pre-registered reason.
+  **Why the default is `false` (fail-closed).** The two directions fail very
+  differently: defaulting `true` makes a forgotten declaration _silently_
+  contaminate the headline verdict — the defect being closed — while defaulting
+  `false` surfaces as the already-implemented **UNDER-N / insufficient-data**
+  row with the drop count in its notes. The duel path cannot forget it, because
+  `duel.sh` — the only caller that _knows_ a run is part of an interleaved pair,
+  interleaving being its entire job — declares it unconditionally, so **Task 18
+  needs no new operator step**. `sweep_verdict.py` is deliberately untouched: it
+  filters on `arm ∈ sweep_arms`, so a `static` / `closed-loop` gate run is
+  already out of its scope (skipped and counted), and making the M4 sweep
+  require duel admissibility would wrongly drop every legitimate sweep run.
+  `report.py` is untouched too: it renders per-run descriptions with no
+  aggregation and no verdict, so a gate run appearing there is the intended
+  evidence, not contamination.
+  **Backward compatibility is part of the change.** Every manifest already in
+  `benchmarks/results/` predates the field, loads via the dataclass default, and
+  reads as **not** duel data — which is both true of them and the safe
+  direction — so **no filed run is modified** and `results/E/` and
+  `results/B/run-001…012` stay byte-identical. The bool is type-checked because
+  the string `"false"` is truthy, so a hand-edited manifest must not be able to
+  declare itself duel data by accident. Pinned by tests that fail when the
+  filter, the type check, or `duel.sh`'s `--duel` is neutralised — each of the
+  three neutralised in turn against the whole suite, failing only its own pins.
+  No margin, threshold, tolerance, metric definition or cell definition
+  changes; `config/margins.yaml` and `config/exclusions.md` are byte-identical.
 
 ## How to run
 
@@ -3142,7 +3195,13 @@ would run — without touching `benchmarks/results/` or booting anything.
 
 Flags: `--class <sweep-or-camera-class>`, `--unpaced`, `--runs N`,
 `--no-observer` (records `/clock` only), `--rpc-port N`, `--rmw`, `--shm`,
-`--dds-profile`.
+`--dds-profile`, `--duel`.
+
+`--duel` declares the run **primary-duel data** (`manifest.json`'s
+`duel_admissible`). `duel.sh` passes it on every run it orders, so the duel
+needs no extra flag; a bring-up or gate run made with a bare `run.sh` is
+**not** duel data and `duel_verdict.py` drops it and says so — see the
+`duel_admissible` amendment above for why the default points that way.
 
 The analysis modules live in `benchmarks/analysis/` (manifest schema,
 clock fit, CSV loading, cadence, latency, stats/margins, ceiling

@@ -36,6 +36,13 @@ Two layers, per the design note in the Task 22 brief:
 Excluded runs (`RunManifest.excluded`) never contribute to a verdict --
 `cell_run_values` drops them and reports how many, so a duel table never
 looks like it counted a run the exclusion mechanism was built to drop.
+Runs that are not DUEL-ADMISSIBLE (`RunManifest.duel_admissible` false --
+the pre-registration amendment of 2026-07-30, Task 15b) are dropped the
+same way and counted SEPARATELY, because they are a different thing: an
+excluded run's data is invalid, whereas an inadmissible run's data is
+perfectly valid and merely not part of the primary duel's interleaved
+design (a cell-A bring-up/gate run is the case that motivated the
+field). Conflating the two counts would report good evidence as broken.
 
 A cell with fewer than the pre-registered n >= 10 runs per side still
 gets a verdict (the underlying statistics are valid from n >= 3): the
@@ -166,6 +173,8 @@ def verdict_row(
     min_n: int = MIN_RUNS,
     excluded_a: int = 0,
     excluded_b: int = 0,
+    inadmissible_a: int = 0,
+    inadmissible_b: int = 0,
     arm: str = "",
 ) -> VerdictRow:
     """One metric's verdict row.
@@ -190,6 +199,13 @@ def verdict_row(
         notes.append(f"{excluded_a} run(s) excluded from A")
     if excluded_b:
         notes.append(f"{excluded_b} run(s) excluded from B")
+    # Reported with its own wording, never merged into the exclusion counts:
+    # "excluded" means the data is invalid, "not duel-admissible" means valid
+    # data outside the duel's interleaved design (see the module docstring).
+    if inadmissible_a:
+        notes.append(f"{inadmissible_a} run(s) not duel-admissible in A")
+    if inadmissible_b:
+        notes.append(f"{inadmissible_b} run(s) not duel-admissible in B")
     if a.size < min_n:
         notes.append(f"UNDER-N: a has {a.size} run(s) (< {min_n})")
     if b.size < min_n:
@@ -334,7 +350,7 @@ class _RunRecord:
 
 def _walk_cell_runs(
     cell_dir: Path, *, arm: str | None = None
-) -> tuple[list[_RunRecord], int, list[str]]:
+) -> tuple[list[_RunRecord], int, int, list[str]]:
     """Walk a cell directory's `run-*` trees EXACTLY ONCE, resolving each
     surviving run's scoring window exactly once regardless of how many
     of the five metrics are later computed from the result -- this is
@@ -356,7 +372,18 @@ def _walk_cell_runs(
     Excluded runs (`RunManifest.excluded`) are skipped and counted, never
     turned into a record -- that is the whole point of the exclusion
     mechanism (benchmarks/config/exclusions.md: a run marked excluded
-    must not contribute to a verdict). A run whose manifest is missing
+    must not contribute to a verdict).
+
+    Runs that are not DUEL-ADMISSIBLE are skipped and counted too, on
+    their OWN counter (amendment 2026-07-30, Task 15b -- see the module
+    docstring). Order matters and is deliberate: `excluded` is tested
+    FIRST, so an excluded run keeps being reported as excluded rather
+    than being relabelled by whichever of the two it also happens to be.
+    Two counters, not one, because "the data is invalid" and "valid data
+    outside the duel's interleaved design" are different facts and a
+    reader acts differently on each.
+
+    A run whose manifest is missing
     or invalid is DROPPED and reported by name in `errors`. A run whose
     WINDOW fails to resolve (e.g. no odometry sample inside the spatial
     window) still gets a record -- with `window=None` and the failure
@@ -365,11 +392,12 @@ def _walk_cell_runs(
     that DOES need the window reports the failure itself when applied
     (see `_apply_extractor`).
 
-    Returns `(records, n_excluded, errors)`.
+    Returns `(records, n_excluded, n_inadmissible, errors)`.
     """
     cell_dir = Path(cell_dir)
     records: list[_RunRecord] = []
     n_excluded = 0
+    n_inadmissible = 0
     errors: list[str] = []
     for run_dir in sorted(cell_dir.glob("run-*")):
         manifest_path = run_dir / "manifest.json"
@@ -386,6 +414,9 @@ def _walk_cell_runs(
         if manifest.excluded:
             n_excluded += 1
             continue
+        if not manifest.duel_admissible:
+            n_inadmissible += 1
+            continue
         window: _RunWindow | None
         window_error: str | None
         try:
@@ -395,7 +426,7 @@ def _walk_cell_runs(
             window = None
             window_error = f"{type(exc).__name__}: {exc}"
         records.append(_RunRecord(run_dir, manifest, window, window_error))
-    return records, n_excluded, errors
+    return records, n_excluded, n_inadmissible, errors
 
 
 def _apply_extractor(
@@ -454,11 +485,14 @@ def cell_run_values(
     resolution per run for THAT metric specifically, same as calling
     `_walk_cell_runs` directly would.
 
-    Returns `(values, n_excluded, errors)`.
+    Returns `(values, n_excluded, n_inadmissible, errors)` -- the
+    inadmissible count is its own term for the same reason `_walk_cell_
+    runs` keeps it separate from `n_excluded`: a caller that folded the
+    two together would report valid non-duel evidence as invalid data.
     """
-    records, n_excluded, walk_errors = _walk_cell_runs(cell_dir, arm=arm)
+    records, n_excluded, n_inadmissible, walk_errors = _walk_cell_runs(cell_dir, arm=arm)
     values, apply_errors = _apply_extractor(records, extractor)
-    return values, n_excluded, walk_errors + apply_errors
+    return values, n_excluded, n_inadmissible, walk_errors + apply_errors
 
 
 # ---------------------------------------------------------------------------
@@ -883,7 +917,12 @@ class ReconciliationRow:
 
 
 def _cell_reconciliation_row(
-    cell_id: str, arm: str, metrics: dict, records: list[_RunRecord]
+    cell_id: str,
+    arm: str,
+    metrics: dict,
+    records: list[_RunRecord],
+    *,
+    n_inadmissible: int = 0,
 ) -> ReconciliationRow:
     """`ReconciliationRow` for one (cell, arm), from the SAME per-arm
     `records` `build_verdict_table` already walked for this cell (no
@@ -903,6 +942,12 @@ def _cell_reconciliation_row(
     duel row failing outright for the very same cell -- precisely the
     "plausible-looking healthy number" defect this campaign keeps
     finding.
+
+    `n_inadmissible` is passed in (not derivable from `records`, which the
+    caller already filtered) purely so this row can SAY why it has no runs.
+    Without it, a cell whose only runs were bring-up/gate runs renders
+    "no runs found for this arm" -- true of the filtered list but false of
+    the tree, and the reader would go looking for missing directories.
     """
     lidar_topic, lidar_expected_hz = metrics["lidar_topic"], metrics["lidar_expected_hz"]
     missing = [
@@ -971,6 +1016,8 @@ def _cell_reconciliation_row(
     notes: list[str] = []
     if not records:
         notes.append("no runs found for this arm")
+    if n_inadmissible:
+        notes.append(f"{n_inadmissible} run(s) not duel-admissible")
     if errors:
         notes.append("; ".join(errors))
     if n_not_measurable:
@@ -1131,18 +1178,26 @@ def build_verdict_table(
         # records are reused for every metric below -- this is what
         # actually achieves README.md's "resolved once per run", unlike
         # calling cell_run_values (which re-walks) once per metric.
-        records_a, excluded_a, walk_errors_a = _walk_cell_runs(Path(cell_a_dir), arm=arm)
-        records_b, excluded_b, walk_errors_b = _walk_cell_runs(Path(cell_b_dir), arm=arm)
+        records_a, excluded_a, inadmissible_a, walk_errors_a = _walk_cell_runs(
+            Path(cell_a_dir), arm=arm
+        )
+        records_b, excluded_b, inadmissible_b, walk_errors_b = _walk_cell_runs(
+            Path(cell_b_dir), arm=arm
+        )
         if "achieved_rate_ratio" in margins:
             # The M2 reconciliation is achieved_rate_ratio's registered
             # companion (README.md), so it is only computed when that
             # metric is actually registered for this invocation -- reusing
             # the SAME per-arm records walked above, never a second walk.
             reconciliation_rows.append(
-                _cell_reconciliation_row(cell_a_id, arm, metrics_a, records_a)
+                _cell_reconciliation_row(
+                    cell_a_id, arm, metrics_a, records_a, n_inadmissible=inadmissible_a
+                )
             )
             reconciliation_rows.append(
-                _cell_reconciliation_row(cell_b_id, arm, metrics_b, records_b)
+                _cell_reconciliation_row(
+                    cell_b_id, arm, metrics_b, records_b, n_inadmissible=inadmissible_b
+                )
             )
         for metric, spec in margins.items():
             if metric not in bound:
@@ -1181,6 +1236,8 @@ def build_verdict_table(
                 min_n=min_n,
                 excluded_a=excluded_a,
                 excluded_b=excluded_b,
+                inadmissible_a=inadmissible_a,
+                inadmissible_b=inadmissible_b,
                 arm=arm,
             )
             run_errors = walk_errors_a + apply_errors_a + walk_errors_b + apply_errors_b

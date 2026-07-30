@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from benchmarks.analysis.manifest import (
     RunManifest,
@@ -182,6 +184,50 @@ def test_placement_engine_build_id_required_for_ue_approaches(valid_kwargs):
     del p["engine_build_id"]
     m = RunManifest(**{**valid_kwargs, "approach": "extension", "placement": p})
     assert any("engine_build_id" in e for e in m.validate())
+
+
+def test_duel_admissible_defaults_false(valid_kwargs):
+    """Fail-closed default (amendment 2026-07-30, Task 15b). Defaulting
+    TRUE would make a forgotten declaration silently contaminate the
+    primary duel's equivalence verdict; defaulting FALSE makes it show up
+    as an already-implemented UNDER-N / insufficient-data row. The duel
+    path declares it explicitly (scripts/duel.sh -> run.sh --duel), so
+    this default costs the duel nothing."""
+    assert RunManifest(**valid_kwargs).duel_admissible is False
+
+
+def test_validate_rejects_a_non_bool_duel_admissible(valid_kwargs):
+    """The string "false" is TRUTHY. A truthiness test at the consumer
+    would read a hand-edited or externally-generated `"duel_admissible":
+    "false"` as ADMISSIBLE -- silent contamination through the one path
+    this field exists to close -- so the type is checked at the manifest,
+    the single place the value is written."""
+    m = RunManifest(**{**valid_kwargs, "duel_admissible": "false"})
+    errs = m.validate()
+    assert any("duel_admissible must be a bool" in e for e in errs)
+
+
+def test_duel_admissible_survives_a_roundtrip(tmp_path, valid_kwargs):
+    m = RunManifest(**{**valid_kwargs, "duel_admissible": True})
+    m.save(tmp_path / "manifest.json")
+    assert load_manifest(tmp_path / "manifest.json").duel_admissible is True
+
+
+def test_a_manifest_written_before_the_amendment_reads_as_not_duel_data(tmp_path):
+    """Every manifest already in benchmarks/results/ predates the field,
+    so its JSON has no such key. Those runs must load (the dataclass
+    default supplies it) and must read as NOT duel data -- which is both
+    true of them and the safe direction. Byte-identical retention of the
+    existing results tree depends on this: nothing has to be rewritten."""
+    m = _valid()
+    path = tmp_path / "manifest.json"
+    m.save(path)
+    doc = json.loads(path.read_text())
+    del doc["duel_admissible"]
+    path.write_text(json.dumps(doc))
+    loaded = load_manifest(path)
+    assert loaded.duel_admissible is False
+    assert loaded.validate() == []
 
 
 def test_placement_engine_build_id_not_required_for_bridge(valid_kwargs):

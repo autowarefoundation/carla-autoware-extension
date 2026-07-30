@@ -3,7 +3,7 @@
 #
 #   bash benchmarks/run.sh <cell> --arm static|closed-loop [--class <id>]
 #        [--unpaced] [--runs N] [--no-observer] [--rpc-port N] [--rmw NAME]
-#        [--shm on|off] [--dds-profile PATH|none] [--dry-run]
+#        [--shm on|off] [--dds-profile PATH|none] [--duel] [--dry-run]
 #
 # Every measurement in P3 and P4 comes from here. Each invocation produces
 # either a complete, contract-valid benchmarks/results/<cell>/run-<NNN>/ or a
@@ -50,6 +50,14 @@ RUNS=1
 NO_OBSERVER=0
 DRY_RUN=0
 RPC_PORT=2000
+# Whether this run is PRIMARY-DUEL data (amendment 2026-07-30, Task 15b).
+# Default OFF and never inferred: run.sh cannot tell an interleaved duel run
+# from a standalone bring-up or gate run, so the declaration comes from the
+# caller that ordered the interleaving -- scripts/duel.sh, which passes --duel
+# on every run.sh invocation it makes. See RunManifest.duel_admissible for why
+# the default points this way (a forgotten flag must under-count loudly, not
+# contaminate silently).
+DUEL=0
 RMW="rmw_cyclonedds_cpp"
 SHM=""
 DDS_PROFILE=""
@@ -86,6 +94,7 @@ while [ $# -gt 0 ]; do
     --rmw) RMW="$2"; RMW_EXPLICIT=1; shift 2 ;;
     --shm) SHM="$2"; shift 2 ;;
     --dds-profile) DDS_PROFILE="$2"; DDS_PROFILE_EXPLICIT=1; shift 2 ;;
+    --duel) DUEL=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h | --help) usage ;;
     *) die "unknown argument $1" ;;
@@ -439,9 +448,21 @@ for line in os.environ.get("PF_KV", "").splitlines():
 print(json.dumps(placement, sort_keys=True))
 PY
   )"
+  # --duel is appended as an ARRAY element rather than interpolated into the
+  # command string, so an empty value cannot become a stray argument.
+  local duel_args=()
+  [ "$DUEL" = "1" ] && duel_args+=(--duel)
   show "python3 -m benchmarks.scripts.write_manifest --run-dir $run_dir --cell $CELL" \
     "--arm $effective_arm --rmw $RMW --shm $SHM --dds-profile $DDS_PROFILE" \
-    "--carla-version $carla_kind --autoware-image $autoware_image --placement-json '<json>'"
+    "--carla-version $carla_kind --autoware-image $autoware_image --placement-json '<json>'" \
+    "${duel_args[*]}"
+  if [ "$DUEL" = "1" ]; then
+    echo "      duel_admissible=true (--duel): this run WILL feed the primary" \
+      "duel's equivalence verdict"
+  else
+    echo "      duel_admissible=false (no --duel): bring-up/gate run, dropped" \
+      "by duel_verdict.py and counted in its notes"
+  fi
   # In a dry run the manifest goes to the SCRATCH directory, never to
   # results/. It is still a real write through RunManifest.save(), so a dry
   # run PROVES the manifest this cell would file is valid (placement keys,
@@ -460,7 +481,7 @@ PY
     --run-dir "$manifest_dir" --cell "$CELL" --arm "$effective_arm" \
     --rmw "$RMW" --shm "$SHM" --dds-profile "$DDS_PROFILE" \
     --carla-version "$carla_kind" --autoware-image "$autoware_image" \
-    --placement-json "$placement_json") >/dev/null ||
+    --placement-json "$placement_json" "${duel_args[@]+"${duel_args[@]}"}") >/dev/null ||
     die "manifest refused; nothing measured"
   if [ "$DRY_RUN" = "1" ]; then
     echo "      manifest VALIDATED (written to $manifest_dir, not results/)"

@@ -34,6 +34,13 @@ stale value:
   records the empty string, which is what "no XML profile in play" means --
   distinguishable from a profile whose content happened to hash to zeros).
 
+`--duel` is the ONE declaration this tool cannot compute: whether the run
+belongs to the primary duel's interleaved A,B,A,B design. Only the caller that
+ordered the interleaving knows (scripts/duel.sh), so it opts in explicitly and
+everything else defaults to false -- see `RunManifest.duel_admissible`. Rewrite
+mode preserves it along with everything else, so excluding a duel run does not
+silently reclassify it.
+
 `approach` and `map_name` are NOT arguments: they are looked up from the
 pre-registered cells.yaml via `cell_info`, so a run cannot be filed under
 cell A while claiming a different approach or map.
@@ -172,6 +179,13 @@ def build_manifest(args: argparse.Namespace) -> RunManifest:
         autoware_image=args.autoware_image,
         started_at_ns=time.time_ns(),
         placement=placement,
+        # Opt IN, never inferred (amendment 2026-07-30, Task 15b): this tool
+        # cannot know whether a run is part of the primary duel's interleaved
+        # A,B,A,B design -- only the caller that ORDERED the interleaving can,
+        # which is scripts/duel.sh. So the default is false and --duel is the
+        # single explicit declaration; see RunManifest.duel_admissible for why
+        # the default points this way.
+        duel_admissible=bool(args.duel),
     )
 
 
@@ -199,6 +213,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--carla-version", help="cells.yaml's registered CARLA identity")
     p.add_argument("--autoware-image", help="image reference (digest-pinned)")
     p.add_argument("--placement-json", help="JSON object for the placement block")
+    p.add_argument(
+        "--duel",
+        action="store_true",
+        help="declare this run PRIMARY-DUEL data (RunManifest.duel_admissible). "
+        "Passed by scripts/duel.sh on every run it orders; omitted by every "
+        "other invocation, so a bring-up or gate run cannot reach the "
+        "equivalence verdict in benchmarks/scripts/duel_verdict.py",
+    )
     p.add_argument(
         "--exclude",
         metavar="REASON",

@@ -95,6 +95,37 @@ class RunManifest:
     excluded: bool = False
     exclusion_reason: str = ""
     placement: dict = dataclasses.field(default_factory=dict)
+    # Is this run PRIMARY-DUEL data? (Amendment 2026-07-30, Task 15b.)
+    #
+    # `excluded` answers "was this run's data valid?"; this answers the
+    # separate question "is this run part of the primary duel's design?".
+    # They are two fields because they are two questions, and one flag
+    # cannot carry both -- the same argument cells.yaml's `ladder_branch`
+    # / `abs_pose_gate_m` pair and its `dropped:` / `mandatory:` pair
+    # already make. A cell-A bring-up/gate run is perfectly valid data
+    # (it renders in report.py, write_quality scores it, it is evidence)
+    # and yet is NOT duel data: Task 18's design requires INTERLEAVED
+    # A,B,A,B pairs specifically to control for within-session drift, and
+    # a standalone gate run is not part of an interleaved pair. Before
+    # this field existed, duel_verdict.py's "every non-excluded run in a
+    # cell" reduction would have silently promoted such a run to primary
+    # duel data.
+    #
+    # DEFAULT false -- FAIL-CLOSED, deliberately. The two directions have
+    # very different failure modes: defaulting true makes a forgotten flag
+    # SILENTLY contaminate the equivalence verdict (the exact defect this
+    # field exists to prevent), while defaulting false makes a forgotten
+    # flag show up as a LOUD, already-implemented UNDER-N / insufficient-
+    # data verdict row with the drop count in its notes. The duel path
+    # cannot forget it in any case: scripts/duel.sh passes run.sh --duel
+    # on every invocation, because a duel.sh run IS by definition duel
+    # data, so no operator has to remember anything.
+    #
+    # Validated as a real bool below, not merely truthy: a hand-edited
+    # `"duel_admissible": "false"` is a non-empty string, and a plain
+    # truthiness test would read it as ADMISSIBLE -- silent contamination
+    # through the one path this field exists to close.
+    duel_admissible: bool = False
 
     def validate(self) -> list[str]:
         errs = []
@@ -119,6 +150,17 @@ class RunManifest:
             errs.append(f"placement missing keys: {missing_p}")
         if self.approach in UE_APPROACHES and "engine_build_id" not in self.placement:
             errs.append("placement.engine_build_id required for UE-based approaches")
+        # A REAL bool, not merely truthy (see the field's own comment): the
+        # string "false" is truthy, so a hand-edited or externally-generated
+        # manifest could otherwise declare itself duel data by accident and
+        # reach the equivalence verdict. Checked here rather than only at the
+        # consumer so it fails at the manifest -- the single place the value is
+        # written -- exactly as the `cell` typo guard does.
+        if not isinstance(self.duel_admissible, bool):
+            errs.append(
+                f"duel_admissible must be a bool, got {type(self.duel_admissible).__name__} "
+                f"({self.duel_admissible!r})"
+            )
         return errs
 
     def save(self, path: Path) -> None:

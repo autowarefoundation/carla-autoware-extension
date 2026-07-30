@@ -242,3 +242,27 @@ def test_create_mode_names_every_missing_argument(tmp_path, capsys):
 @pytest.mark.parametrize("name,expected", [("run-000", 0), ("run-012", 12), ("run-105", 105)])
 def test_run_index_from_dir(tmp_path, name, expected):
     assert write_manifest.run_index_from_dir(tmp_path / name) == expected
+
+
+def test_duel_flag_is_opt_in(tmp_path):
+    """`--duel` is the ONE thing this tool cannot compute (amendment
+    2026-07-30, Task 15b): whether the run belongs to the primary duel's
+    interleaved A,B,A,B design. Absent, the run is not duel data."""
+    plain = tmp_path / "A" / "run-020"
+    assert write_manifest.main(_argv(plain)) == 0
+    assert load_manifest(plain / "manifest.json").duel_admissible is False
+
+    declared = tmp_path / "A" / "run-021"
+    assert write_manifest.main([*_argv(declared), "--duel"]) == 0
+    assert load_manifest(declared / "manifest.json").duel_admissible is True
+
+
+def test_exclude_preserves_the_duel_declaration(tmp_path):
+    """Excluding a duel run must not silently reclassify it: `excluded`
+    and `duel_admissible` answer different questions, and a run that was
+    duel data and then crashed is still duel data that crashed."""
+    run_dir = tmp_path / "A" / "run-022"
+    assert write_manifest.main([*_argv(run_dir), "--duel"]) == 0
+    assert write_manifest.main(["--run-dir", str(run_dir), "--exclude", "stall:clock"]) == 0
+    after = load_manifest(run_dir / "manifest.json")
+    assert (after.excluded, after.duel_admissible) == (True, True)

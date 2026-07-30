@@ -73,6 +73,9 @@ from benchmarks.scripts.duel_verdict import (
 LIDAR_TOPIC = "/sensing/lidar/top/pointcloud_raw_ex"
 NDT_TOPIC = "/localization/pose_estimator/pose_with_covariance"
 ROUTES_DIR = Path(__file__).resolve().parents[2] / "benchmarks" / "config" / "routes"
+# For the two pins that read the harness scripts' own text (the --duel
+# dependency between duel.sh, run.sh and duel_admissible).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # observer.csv's clock_ns is "the latest /clock value seen at arrival"
 # (README) -- it advances once per WORLD TICK (50 ms at the registered
@@ -241,7 +244,13 @@ def _write_manifest(
     excluded=False,
     exclusion_reason="",
     run_index=1,
+    duel_admissible=True,
 ):
+    # duel_admissible DEFAULTS TRUE here, opposite to RunManifest's own
+    # fail-closed default: every fixture in this module exists to exercise the
+    # DUEL path, so "a run" means a duel run throughout. The amendment's own
+    # behaviour -- an inadmissible run cannot reach a verdict -- is pinned by
+    # the tests that pass duel_admissible=False explicitly.
     RunManifest(
         cell=cell,
         approach=approach,
@@ -260,6 +269,7 @@ def _write_manifest(
         started_at_ns=0,
         excluded=excluded,
         exclusion_reason=exclusion_reason,
+        duel_admissible=duel_admissible,
         placement={
             "run_mode": "editor-game",
             "container_image": "img@sha256:x",
@@ -323,6 +333,7 @@ def _make_run(
     ndt_topic=NDT_TOPIC,
     pre_window_decimate=None,
     stationary_until_s=0.0,
+    duel_admissible=True,
 ):
     """Build one minimal, self-consistent run-<NNN>/ directory.
 
@@ -370,6 +381,7 @@ def _make_run(
         excluded=excluded,
         exclusion_reason=exclusion_reason,
         run_index=run_index,
+        duel_admissible=duel_admissible,
     )
 
     duration_ns = int(run_duration_s * 1e9)
@@ -867,7 +879,7 @@ def test_cell_run_values_skips_excluded_and_counts_them(tmp_path):
         excluded=True,
         exclusion_reason="gate:arm-failed",
     )
-    values, n_excluded, errors = cell_run_values(cell, _one_hop_extractor)
+    values, n_excluded, _, errors = cell_run_values(cell, _one_hop_extractor)
     assert n_excluded == 1
     assert len(values) == 3
     assert all(v == pytest.approx(7.0, abs=0.05) for v in values)
@@ -877,7 +889,7 @@ def test_cell_run_values_skips_excluded_and_counts_them(tmp_path):
 def test_cell_run_values_reports_a_run_whose_extractor_fails_without_aborting(tmp_path):
     cell = _make_run(tmp_path, name="run-001", include_ndt_topic=True)
     _make_run(tmp_path, name="run-002", include_ndt_topic=False)
-    values, n_excluded, errors = cell_run_values(cell, _lidar_to_ndt_extractor)
+    values, n_excluded, _, errors = cell_run_values(cell, _lidar_to_ndt_extractor)
     assert len(values) == 1
     assert len(errors) == 1
     assert "run-002" in errors[0]
@@ -886,7 +898,7 @@ def test_cell_run_values_reports_a_run_whose_extractor_fails_without_aborting(tm
 def test_cell_run_values_reports_missing_manifest(tmp_path):
     cell = _make_run(tmp_path, name="run-001")
     (cell / "run-002").mkdir(parents=True)
-    values, n_excluded, errors = cell_run_values(cell, _one_hop_extractor)
+    values, n_excluded, _, errors = cell_run_values(cell, _one_hop_extractor)
     assert len(values) == 1
     assert any("run-002" in e for e in errors)
 
@@ -899,11 +911,145 @@ def test_cell_run_values_filters_by_arm(tmp_path):
     for i in range(1, 4):
         cell = _make_run(tmp_path, name=f"run-{i:03d}", arm="static", one_hop_extra_ms=7.0)
     _make_run(tmp_path, name="run-004", arm="closed-loop", one_hop_extra_ms=999.0)
-    values, n_excluded, errors = cell_run_values(cell, _one_hop_extractor, arm="static")
+    values, n_excluded, _, errors = cell_run_values(cell, _one_hop_extractor, arm="static")
     assert len(values) == 3
     assert n_excluded == 0
     assert errors == []
     assert all(v == pytest.approx(7.0, abs=0.5) for v in values)
+
+
+# ---------------------------------------------------------------------------
+# duel_admissible: the pre-registration amendment of 2026-07-30 (Task 15b).
+#
+# A bring-up or gate run is VALID data that is NOT part of the primary duel's
+# interleaved A,B,A,B design, so it must be dropped from a verdict WITHOUT
+# being called excluded. Before the amendment, `_walk_cell_runs` reduced
+# "every non-excluded run in a cell" into the equivalence test, so a
+# SUCCESSFUL cell-A bring-up run filed under results/A/ silently became
+# primary duel data.
+# ---------------------------------------------------------------------------
+
+
+def test_cell_run_values_skips_a_gate_run_and_counts_it_apart_from_exclusions(tmp_path):
+    """A non-duel-admissible run contributes no value, is counted on its
+    OWN term, and is NOT counted as excluded -- two different facts
+    (invalid data vs. valid data outside the duel's design), and folding
+    them together would report good evidence as broken."""
+    cell = None
+    for i in range(1, 4):
+        cell = _make_run(tmp_path, name=f"run-{i:03d}", one_hop_extra_ms=7.0)
+    _make_run(tmp_path, name="run-004", one_hop_extra_ms=999.0, duel_admissible=False)
+    values, n_excluded, n_inadmissible, errors = cell_run_values(cell, _one_hop_extractor)
+    assert (n_excluded, n_inadmissible) == (0, 1)
+    assert len(values) == 3
+    assert all(v == pytest.approx(7.0, abs=0.05) for v in values)
+    assert errors == []
+
+
+def test_an_excluded_gate_run_is_reported_as_excluded_not_as_inadmissible(tmp_path):
+    """Ordering pin: `excluded` is tested BEFORE admissibility, so a run
+    that is BOTH keeps the pre-registered exclusion reason a reader can
+    act on. With the tests in the other order, every failed bring-up run
+    would be relabelled "not duel-admissible" and its criterion would
+    disappear from the duel table's notes."""
+    cell = _make_run(tmp_path, name="run-001")
+    _make_run(
+        tmp_path,
+        name="run-002",
+        excluded=True,
+        exclusion_reason="gate:arm-failed",
+        duel_admissible=False,
+    )
+    _, n_excluded, n_inadmissible, _ = cell_run_values(cell, _one_hop_extractor)
+    assert (n_excluded, n_inadmissible) == (1, 0)
+
+
+def test_a_gate_run_cannot_reach_a_duel_verdict(tmp_path):
+    """THE pin this amendment exists for.
+
+    Three ordinary duel runs per side, then one FILED cell-A gate run
+    whose one_hop is 100x everything else. The verdict must be identical
+    to the table built before that run existed, and the table must SAY
+    the run was dropped.
+
+    The gate run's value is extreme on purpose: with the filter
+    neutralised, cell A's median moves from ~7 ms to ~350 ms, which
+    changes both the delta and the verdict -- so this test cannot pass on
+    a broken filter for some incidental reason.
+    """
+    for i in range(1, 4):
+        _make_run(tmp_path, cell="A", name=f"run-{i:03d}", one_hop_extra_ms=7.0)
+        _make_run(
+            tmp_path,
+            cell="B",
+            name=f"run-{i:03d}",
+            approach="tier4-native",
+            one_hop_extra_ms=7.0,
+        )
+    doc = _cells_doc(arms=("static",))
+    margins = {"one_hop_wall_ms": {"margin": 2.0}}
+    args = (tmp_path / "A", tmp_path / "B", "A", "B", margins, doc)
+    clean = build_verdict_table(*args, min_n=3)
+
+    _make_run(tmp_path, cell="A", name="run-004", one_hop_extra_ms=700.0, duel_admissible=False)
+    with_gate = build_verdict_table(*args, min_n=3)
+
+    def row(table):
+        return next(line for line in table.splitlines() if "one_hop_wall_ms" in line)
+
+    clean_row, gate_row = row(clean), row(with_gate)
+    # Columns: metric | arm | n (a/b) | delta_median | 95% ci | margin |
+    # verdict | notes -- n, delta and verdict all untouched by the gate run.
+    assert clean_row.split("|")[3].strip() == gate_row.split("|")[3].strip() == "3/3"
+    assert clean_row.split("|")[4].strip() == gate_row.split("|")[4].strip()
+    assert clean_row.split("|")[7].strip() == gate_row.split("|")[7].strip() == "parity"
+    # ... and the drop is DISCLOSED, not silent, and not called an exclusion.
+    assert "1 run(s) not duel-admissible in A" in gate_row
+    assert "excluded from A" not in gate_row
+
+
+def test_verdict_row_reports_inadmissible_counts_separately_from_exclusions():
+    a = [10.0, 10.1, 9.9, 10.05, 9.95, 10.02, 9.98, 10.03, 9.97, 10.01]
+    b = [10.2, 10.3, 10.1, 10.25, 10.15, 10.22, 10.18, 10.23, 10.17, 10.21]
+    row = verdict_row(
+        "m", a, b, margin=2.0, excluded_a=2, excluded_b=1, inadmissible_a=4, inadmissible_b=3
+    )
+    assert "2 run(s) excluded from A" in row.notes
+    assert "1 run(s) excluded from B" in row.notes
+    assert "4 run(s) not duel-admissible in A" in row.notes
+    assert "3 run(s) not duel-admissible in B" in row.notes
+
+
+def test_reconciliation_row_says_why_it_has_no_runs_when_all_were_gate_runs(tmp_path):
+    """A cell whose only runs are gate runs must not render as "no runs
+    found for this arm" alone -- true of the filtered list, false of the
+    tree, and it sends a reader hunting for directories that are there."""
+    _make_run(tmp_path, cell="A", name="run-001", duel_admissible=False)
+    records, _, n_inadmissible, _ = _walk_cell_runs(tmp_path / "A", arm="static")
+    assert (records, n_inadmissible) == ([], 1)
+    row = _cell_reconciliation_row("A", "static", _metrics(), records, n_inadmissible=1)
+    assert "1 run(s) not duel-admissible" in row.notes
+
+
+def test_duel_sh_declares_every_run_it_orders_as_duel_data():
+    """`duel.sh` is the only caller that KNOWS a run is part of an
+    interleaved pair, and `duel_admissible` defaults false, so the duel
+    path depends on this script passing --duel. An edit that dropped it
+    would silently take the primary duel's n to zero -- a table of
+    insufficient-data rows with no defect visible anywhere else -- so the
+    dependency is pinned here rather than discovered three hours into a
+    duel session."""
+    duel_sh = (_REPO_ROOT / "benchmarks" / "scripts" / "duel.sh").read_text()
+    assert 'run.sh" "$cell" --duel' in duel_sh
+
+
+def test_run_sh_has_a_duel_flag_and_does_not_set_it_by_default():
+    """The other half of the same dependency: run.sh must expose --duel
+    AND must default it off, or every bring-up run made through the
+    campaign's single measurement entry point becomes duel data again."""
+    run_sh = (_REPO_ROOT / "benchmarks" / "run.sh").read_text()
+    assert "--duel) DUEL=1; shift ;;" in run_sh
+    assert "\nDUEL=0\n" in run_sh
 
 
 # ---------------------------------------------------------------------------
@@ -1555,7 +1701,7 @@ def test_cell_reconciliation_row_distinguishes_not_measurable_from_zero_publishe
         cell_dir / "run-003", LIDAR_TOPIC, _observed_stamps(cell_dir / "run-003")
     )
 
-    records, _, _ = _walk_cell_runs(cell_dir, arm="static")
+    records, _, _, _ = _walk_cell_runs(cell_dir, arm="static")
     row = _cell_reconciliation_row(
         "A", "static", _metrics(lidar_expected_hz=lidar_expected_hz), records
     )
@@ -1610,7 +1756,7 @@ def test_cell_reconciliation_row_publisher_drop_reports_median_and_max_not_mean(
         in_window = round(n_expected * (1.0 - frac))
         _write_publisher_counts(cell_dir / name, LIDAR_TOPIC, _whole_run_stamps(window, in_window))
 
-    records, _, _ = _walk_cell_runs(cell_dir, arm="static")
+    records, _, _, _ = _walk_cell_runs(cell_dir, arm="static")
     row = _cell_reconciliation_row(
         "A", "static", _metrics(lidar_expected_hz=lidar_expected_hz), records
     )
@@ -1647,7 +1793,7 @@ def test_cell_reconciliation_row_observer_loss_reports_median_and_max_not_mean(t
     for name in hz_per_run:
         _write_publisher_counts(cell_dir / name, LIDAR_TOPIC, _whole_run_stamps(window, n_expected))
 
-    records, _, _ = _walk_cell_runs(cell_dir, arm="static")
+    records, _, _, _ = _walk_cell_runs(cell_dir, arm="static")
     row = _cell_reconciliation_row(
         "A", "static", _metrics(lidar_expected_hz=lidar_expected_hz), records
     )

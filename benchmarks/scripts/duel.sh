@@ -20,6 +20,16 @@
 # Each run is a full `run.sh` invocation, so every run gets its own preflight,
 # its own manifest and its own teardown; the duel adds ordering and nothing
 # else. Extra flags after --pairs are passed through to run.sh unchanged.
+#
+# WHY THIS SCRIPT PASSES --duel ITSELF (amendment 2026-07-30, Task 15b).
+# `RunManifest.duel_admissible` decides whether a run reaches the primary
+# duel's equivalence verdict, and it defaults to FALSE so that a standalone
+# bring-up or gate run -- a cell-A/cell-B launcher shake-out, an M5 gate
+# check -- cannot silently become duel data. Only the caller that ORDERED the
+# interleaving knows a run is part of an interleaved pair, and that caller is
+# this script: interleaving IS its entire job. So it declares it on every run
+# it makes, unconditionally, rather than leaving an operator to remember a
+# flag whose omission would quietly shrink the duel's n.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,7 +67,11 @@ one_run() {
   local cell="$1" pair="$2"
   echo
   echo "################ duel pair $pair/$PAIRS -> $cell ################"
-  if bash "$BENCH/run.sh" "$cell" "${PASSTHROUGH[@]}"; then
+  # --duel goes FIRST, before the passthrough, so it is present even when
+  # PASSTHROUGH is empty (an unquoted empty array expansion would otherwise
+  # be the only argument slot) and so a reader of the printed command sees
+  # the declaration next to the cell it applies to.
+  if bash "$BENCH/run.sh" "$cell" --duel "${PASSTHROUGH[@]}"; then
     COMPLETED[$cell]=$((COMPLETED[$cell] + 1))
     consecutive=0
   else
