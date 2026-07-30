@@ -196,6 +196,23 @@ fi
 #    which would have blocked Task 15 and the whole C/D half of the campaign.
 #    A provenance check must not stop measurement.
 #
+#    EVERY OUTCOME IS REPORTED, including the skips: `map_bundle_pin` is always
+#    emitted, either as the matched pin key or as `skipped:<reason>:<detail>`.
+#    An earlier revision emitted nothing on a skip, so a skipped cell was
+#    indistinguishable from one where the check never ran -- and with the
+#    scoping fix the skipping population grew from one cell to half the matrix,
+#    which is exactly how an unverified bundle comes to read as a checked one
+#    later. The reasons are closed and named:
+#      no-map            the cell declares no map (CAL-rmw)
+#      unknown-map       extension cell, map_defaults.sh has no entry for it
+#      unmapped-approach approach has no bundle mapping (tier4-native pending
+#                        Task 13, calibration having no localization stack)
+#      no-host-copy      bundle directory resolved, but no readable pcd there
+#      unregistered-dir  helper exit 3: no pin block registered for that dir
+#    Each also emits a stderr WARN, because run.sh captures stdout into the
+#    manifest while an operator watches stderr; the KEY=VALUE is the durable
+#    half and the WARN is the visible half.
+#
 #    The bundle is resolved from what THE CELL'S OWN LAUNCHER mounts, not from
 #    map_defaults.sh unconditionally: that table is the EXTENSION path's, while
 #    cells/python-bridge.sh pins the unshifted ~/autoware_map/town10 for the E
@@ -208,27 +225,42 @@ fi
 MAP_BUNDLE_PIN=""
 CELL_MAP="$(cell_field map)"
 BUNDLE_DIR_NAME=""
-if [ "$CELL_MAP" != "none" ]; then
-  if [ "$APPROACH" = "extension" ]; then
-    # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
-    . "$REPO/scripts/e2e/map_defaults.sh"
-    carla_autoware_map_defaults "$CELL_MAP"
-    if [ -n "$MAP_DEFAULT_DIR" ]; then
-      BUNDLE_DIR_NAME="$(basename "$MAP_DEFAULT_DIR")"
-    fi
+bundle_skip() {
+  # $1 reason, $2 detail. Sets the reported value AND warns, so the skip is
+  # both durable (manifest) and visible (operator).
+  MAP_BUNDLE_PIN="skipped:$1:$2"
+  echo "WARN: map-bundle provenance not verified ($1: $2)" >&2
+}
+if [ "$CELL_MAP" = "none" ]; then
+  bundle_skip no-map "-"
+elif [ "$APPROACH" = "extension" ]; then
+  # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
+  . "$REPO/scripts/e2e/map_defaults.sh"
+  carla_autoware_map_defaults "$CELL_MAP"
+  if [ -n "$MAP_DEFAULT_DIR" ]; then
+    BUNDLE_DIR_NAME="$(basename "$MAP_DEFAULT_DIR")"
   else
-    BUNDLE_DIR_NAME="$(cd "$REPO" && APPROACH="$APPROACH" python3 -c '
+    bundle_skip unknown-map "$CELL_MAP"
+  fi
+else
+  BUNDLE_DIR_NAME="$(cd "$REPO" && APPROACH="$APPROACH" python3 -c '
 import os
 
 from benchmarks.scripts.bundle_pin import APPROACH_BUNDLE_DIR
 
 print(APPROACH_BUNDLE_DIR.get(os.environ["APPROACH"]) or "")
 ')"
+  if [ -z "$BUNDLE_DIR_NAME" ]; then
+    bundle_skip unmapped-approach "$APPROACH"
   fi
 fi
 if [ -n "$BUNDLE_DIR_NAME" ]; then
   BUNDLE_PCD="$HOME/autoware_map/$BUNDLE_DIR_NAME/pointcloud_map.pcd"
-  if [ -r "$BUNDLE_PCD" ]; then
+  if [ ! -r "$BUNDLE_PCD" ]; then
+    # A relocated, absent or misnamed bundle directory. Named rather than
+    # silent: this is the shape a typo takes, and it must not look verified.
+    bundle_skip no-host-copy "$BUNDLE_DIR_NAME"
+  else
     set +e
     BUNDLE_OUT="$(cd "$REPO" && python3 -m benchmarks.scripts.bundle_pin \
       --bundle-dir "$BUNDLE_DIR_NAME" "$BUNDLE_PCD" 2>&1)"
@@ -236,7 +268,12 @@ if [ -n "$BUNDLE_DIR_NAME" ]; then
     set -e
     case "$BUNDLE_RC" in
       0) MAP_BUNDLE_PIN="$BUNDLE_OUT" ;;
-      3) echo "WARN: $BUNDLE_OUT" >&2 ;;
+      3)
+        echo "WARN: $BUNDLE_OUT" >&2
+        bundle_skip unregistered-dir "$BUNDLE_DIR_NAME"
+        ;;
+      # Fails closed: any other status, including one this script does not
+      # know about, is a refusal rather than a skip.
       *) fail "$BUNDLE_OUT" ;;
     esac
   fi
@@ -261,7 +298,8 @@ if [ -n "$ENGINE_BUILD_ID" ]; then
   echo "engine_build_id=$ENGINE_BUILD_ID"
   echo "carla_tree=$CARLA_TREE"
 fi
-if [ -n "$MAP_BUNDLE_PIN" ]; then
-  echo "map_bundle_pin=$MAP_BUNDLE_PIN"
-fi
+# ALWAYS emitted, never conditional: an omitted key made "skipped" and "the
+# check never ran" the same observation in the manifest. Every path above sets
+# this to either a pin key or skipped:<reason>:<detail>.
+echo "map_bundle_pin=$MAP_BUNDLE_PIN"
 exit 0
