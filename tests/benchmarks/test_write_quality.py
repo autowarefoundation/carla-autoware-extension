@@ -1095,15 +1095,34 @@ def test_run_sh_warns_when_the_gate_refuses():
 # --- the committed registry ----------------------------------------------
 
 
-def test_committed_cells_yaml_leaves_every_ladder_slot_unset():
-    """R3.3's registration, pinned: the slot is registered UNSET on every
-    cell, naming Task 11, so no cell can be gated on a guessed branch. When
-    Task 11 fills a cell in, this test is the reminder that the fill is a
-    deliberate pre-registration amendment."""
+def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
+    """R3.3's registration, now partly FILLED -- pinned either way.
+
+    Task 11's live G1 re-gate (2026-07-29) selected the RELATIVE branch for
+    the Town10 cells: the absolute gate was measured and MISSED on two
+    successive registrations of the Town10 bundle (max NDT error 0.824 m on
+    `dy = -0.475`, 0.570 m on the `dy = -0.607` rung-1 refit, against the
+    0.5 m threshold), while every window passed the relative criteria. See
+    benchmarks/README.md's 2026-07-29 ladder amendment for the rung-by-rung
+    record.
+
+    The cells NOT listed below still owe a selection and must stay UNSET, so
+    the M5 gate keeps refusing them instead of gating on a guessed branch --
+    the property R3.3 added this test for. Nishi-Shinjuku (C, D) is Task
+    15's; the E family measures its own bundle first; the CAL cells have no
+    localization stack at all.
+    """
+    selected_relative = {"A", "A-hf", "B", "B-hf", "B45"}
     doc = load_cells_doc()
     for cell in (c["id"] for c in doc["cells"]):
         metrics = metrics_for(doc, cell)
-        assert metrics["ladder_branch"] is None, cell
+        if cell in selected_relative:
+            assert metrics["ladder_branch"] == "relative", cell
+        else:
+            assert metrics["ladder_branch"] is None, cell
+        # Null on EVERY cell either way: the relative branch carries no
+        # threshold, and an unselected cell carries nothing at all. A
+        # non-null value on any cell would be an inconsistent registration.
         assert metrics["abs_pose_gate_m"] is None, cell
 
 

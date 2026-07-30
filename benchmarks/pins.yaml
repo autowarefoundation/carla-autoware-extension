@@ -21,6 +21,44 @@ town10_pcd_shifted:
   tool: benchmarks/scripts/shift_pcd.py
   tool_commit: 5dd60d1
   sha256: bed9c2cd7045d12891b1da892939565d73a4b733e6e24e3475d1027f3fa9dab2
+# The G1 ladder's rung-1 REFIT of the block above, measured live on
+# 2026-07-29 (Task 11). The dy = -0.475 bundle left a clean constant
+# cross-track residual of +0.132 m -- read, as the pre-shift sweep read it,
+# on the cleanly-converged seeds (4/8 with |err_dx| < 0.5: err_dy mean
+# +0.1318, std 0.0123, against +0.005 across all 8) -- so rung 1's
+# precondition fired and this is the re-shift by that new mean.
+#
+# dy_m is the TOTAL offset from the SOURCE, not an increment on the block
+# above: -0.475 + (-0.132) = -0.607, applied single-hop to the file
+# matching `source_sha256`, so this block reproduces on its own exactly
+# like its predecessor and the provenance chain stays one hop deep.
+#
+# tool_commit deliberately DIFFERS from the block above: shift_pcd.py was
+# modified after 5dd60d1 (eda5f4f length-check, b2e1223, 67cd3c4), so the
+# tool that produced THIS output is the one at the commit below, and
+# reusing 5dd60d1 here would name a tool revision that did not run.
+#
+# WHY A SECOND BLOCK RATHER THAN AN EDIT: both blocks describe candidate
+# contents of the ONE path map_defaults.sh resolves and docker/compose.yaml
+# mounts (~/autoware_map/town10-shifted/pointcloud_map.pcd), and exactly
+# one can be installed there at a time. Overwriting the block above would
+# have destroyed the only record of the bundle both recorded G1 windows and
+# the recorded G2 run were measured against. So the invariant a reader and
+# a preflight can both rely on is: the file at that path hashes to the
+# `sha256` of EXACTLY ONE block here, and that block is the bundle the run
+# used. It is not "whichever block is listed last".
+#
+# The dy = -0.475 bytes are retained on disk as
+# ~/autoware_map/town10-shifted/.pointcloud_map.dy-0.475.bak (kept, not
+# deleted: it is the byte-exact artifact the block above pins, it makes
+# reverting the ladder a move rather than a re-derivation, and 114 MiB is
+# free on a filesystem with 420 GB spare).
+town10_pcd_refit:
+  source_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
+  dy_m: -0.607
+  tool: benchmarks/scripts/shift_pcd.py
+  tool_commit: 13a3719
+  sha256: 38b10c3a8f4e50f4b828222562d4d9ff04de71f8e1711a21d4b2c0b3145c0401
 carla_0915:
   url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
   sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7

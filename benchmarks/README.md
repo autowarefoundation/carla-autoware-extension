@@ -1488,6 +1488,60 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   body and a test — this file is where the contradiction and its resolution
   belong, following the precedent of the CAL-seam "open contradiction recorded"
   block above.
+- **2026-07-29** — the **G1 ladder branch is SELECTED for the Town10 cells:
+  `relative`** (`cells.yaml` `ladder_branch: relative`, `abs_pose_gate_m: null`
+  on `A`, `A-hf`, `B`, `B-hf`, `B45`). Registered here because branch selection
+  is a pre-registration item, and legitimate now only because no P3 measurement
+  run has happened. **Neither threshold changes**: both branches' criteria are
+  exactly as the M5 definitions above already fixed them, and no gate was
+  relaxed to reach this outcome — the absolute branch was measured and missed.
+  Which ladder rung fired, on Task 11's live re-gate:
+  - **Step 3 (the pinned `dy = -0.475` bundle): FAIL.** Max NDT error
+    **0.824 m** against the 0.5 m absolute gate over 400 static samples, and
+    0.749 m on a second window. The registered shift did work — the
+    cross-track constant fell from the pre-shift +0.477 m to +0.123 m, and an
+    8-seed sweep put it at +0.005 m across all seeds — but a residual
+    `(dx, dy) = (-0.32, +0.12)` m and, decisively, along-track excursions
+    remained.
+  - **Rung 1 (Refit): FIRED, and FAILED.** The sweep's cleanly-converged
+    subset showed a clean constant y-residual of +0.132 m (std 0.012), so the
+    precondition was met; re-shifting from source by the new mean
+    (`dy = -0.607`, pinned as `town10_pcd_refit`) drove the bias to
+    `(-0.075, -0.029)` m yet still measured max **0.570 m**. Rung 1's single
+    permitted repeat of Step 3 is spent.
+  - **Rung 2 (Regenerate): BLOCKED, not skipped.** It requires driving the
+    committed route once to accumulate GT-registered sweeps, and the ego halts
+    ~68% along that route — at the SAME place on both registrations —
+    because `ndt_scan_matcher`'s match score sits at 2.05–2.30 against its
+    2.3
+    acceptance threshold, so the EKF rejects the pose and MRM stops the
+    vehicle. The precondition is therefore unmet by measurement, not by
+    choice.
+  - **Rung 3 (relative branch): TAKEN**, autonomously, as Task 1 pre-registered
+    it. The duel stays on Town10; moving it to Nishi-Shinjuku was neither
+    considered nor proposed, being reserved to the plan owner.
+    Why no further re-registration could have reached 0.5 m: the residual max is
+    not a frame offset. Subtracting the best possible rigid 2-D offset from the
+    `dy = -0.475` window's own samples still leaves max 0.635 m, and the refit's
+    own max stayed at 0.570 m with the bias essentially removed, because the
+    error is dominated by along-track jitter (dx std 0.229 m) — the
+    shallow-basin effect of Town10 carrying 0.50 vertical points/m² in the
+    0.8–3.0 m band
+    against Nishi-Shinjuku's 4.25. A rigid transform cannot add structure. All
+    three measured windows PASS the relative criteria (drift ≤ 0.018 m,
+    p95 − p50 ≤ 0.244 m), so the selected branch is satisfied on its own
+    terms.
+- **2026-07-29** — `pins.yaml` gained **`town10_pcd_refit`** (`dy_m: -0.607`,
+  its own `sha256` and `tool_commit`) beside the existing
+  `town10_pcd_shifted`, rather than editing that block. Both describe
+  candidate contents of the ONE path `map_defaults.sh` resolves and
+  `docker/compose.yaml` mounts, and exactly one is installed at a time, so the
+  invariant is: **the file at that path hashes to the `sha256` of exactly one
+  block, and that block is the bundle the run used** — never "whichever block
+  is listed last". Completeness: the refit was written in place, so editing
+  the original block would have destroyed the only record of the bundle the
+  recorded Step-3 and G2 measurements were taken against, and leaving it alone
+  would have left the pin describing bytes that no longer exist.
 
 ## How to run
 
