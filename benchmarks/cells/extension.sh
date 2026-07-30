@@ -51,6 +51,20 @@ fail() { echo "LAUNCH FAIL (extension/$BENCH_CELL): $*" >&2; exit 2; }
 [ -f "$BENCH_ROUTE_FILE" ] ||
   fail "route file missing: $BENCH_ROUTE_FILE"
 [ -f "$COMPOSE" ] || fail "compose file missing: $COMPOSE"
+# The campaign-wide pose_initializer override this family mounts through
+# $COMPOSE. Checked as a FILE here rather than trusted, because `docker
+# compose` on a missing host path silently creates a DIRECTORY at the
+# container target: the stack would then read the image's own copy (or fail on
+# a directory) while the mount appears to be in place. Same check, same
+# reason, in cells/tier4_autoware.sh and cells/python-bridge.sh -- the two
+# families that build their own `docker run` -v list.
+[ -f "$BENCH_REPO/benchmarks/config/autoware/pose_initializer.param.yaml" ] ||
+  fail "the campaign-wide pose_initializer override is missing:
+  $BENCH_REPO/benchmarks/config/autoware/pose_initializer.param.yaml
+  It is a committed file, mounted identically by docker/compose.yaml (this
+  family), cells/tier4_autoware.sh and cells/python-bridge.sh; restore it
+  rather than dropping the mount, which would put this family on a different
+  Autoware configuration than the cells it is compared against."
 
 # The GT client must be the interpreter whose `carla` module matches the
 # server this cell boots -- the extension fork's own 0.10 build. Checked by

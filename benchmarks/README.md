@@ -1027,9 +1027,12 @@ under two middlewares, which the campaign does not have.
 
 ### Localization initialization (Task 13): the stop check blocks every path on cell B
 
-**Added 2026-07-30 (Task 13), before any P3 run. This is a FAIL, not a caveat:
-cell B does not close the loop, and the duel's B half does not exist yet.**
-Evidence, with retention stated per figure:
+**Added 2026-07-30 (Task 13), before any P3 run.** As first measured this was a
+FAIL and not a caveat: cell B did not close the loop, on four filed runs. The
+cause is below, the per-approach measurement it produced is below and stays, and
+the campaign-wide amendment that removes the block — plus the re-gate outcome —
+is in "Amendment: `stop_check_enabled: false` for every cell" at the end of this
+section. Evidence for the FAIL, with retention stated per figure:
 `benchmarks/evidence/b-closed-loop-stopcheck/`.
 
 `autoware_pose_initializer` refuses **every** initialization request with
@@ -1091,15 +1094,89 @@ fails in the launcher before `run.sh` reaches its arm step.
   the direct explanation for why cell A initialized and drove in Task 11 (G1
   0.089 m, G2 0.244 m) while cell B cannot initialize at all.
 
-**Not fixed, and deliberately escalated rather than worked around.** The three
-available remedies all cross a line this campaign drew: patching the fork's
-velocity report (or the extension's) changes a DUT and erases the interop
-difference, exactly as the `control_mode` section argues; overriding
-`pose_initializer`'s `stop_check_enabled`/`stop_check_duration` means
-bind-mounting a modified Autoware param file, i.e. a new patch-policy exception
-for the B family only, which also disables a safety precondition inside the
-measured system; and accepting the FAIL costs the duel its B half. Task 13
-reports the choice to the plan owner instead of taking it.
+**Escalated rather than worked around, then AMENDED.** The three available
+remedies all cross a line this campaign drew: patching the fork's velocity
+report (or the extension's) changes a DUT and erases the interop difference,
+exactly as the `control_mode` section argues; overriding `pose_initializer`'s
+`stop_check_enabled`/`stop_check_duration` means bind-mounting a modified
+Autoware param file; and accepting the FAIL costs the duel its B half. Task 13
+reported the choice to the plan owner instead of taking it. **The owner chose
+the param override, scoped campaign-wide**, and it is disclosed below.
+
+#### Amendment: `stop_check_enabled: false` for every cell (2026-07-30)
+
+**Pre-registration status: amended 2026-07-30 (Task 13), still before any P3
+run.** Recorded here with its reason, in the same disclosure section and the
+same spirit as the campaign-wide `perception:=false` above — a configuration of
+the shared measurement environment, decided and written down before any number
+it could affect exists.
+
+1. **What.** `stop_check_enabled: false` for `autoware_pose_initializer`,
+   applied uniformly to **every** cell.
+   `benchmarks/config/autoware/pose_initializer.param.yaml` is a verbatim copy
+   of the pinned image's own
+   `/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml`
+   (sha256 `a7ed49a2fabad3e46d023969f16b63d3d1ab3d66a555d88f5914f3ef48baeee2`,
+   read from `ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f…`, i.e.
+   `pins.yaml`'s `autoware_universe_devel.digest`) with **exactly one line
+   changed**: `stop_check_enabled`, from that file's launch substitution to a
+   literal `false`. It is bind-mounted read-only over that same path
+   **identically in all three cell families** — `docker/compose.yaml`
+   (A/A-hf/C), `benchmarks/cells/tier4_autoware.sh` (B/B-hf/B45/D) and
+   `benchmarks/cells/python-bridge.sh` (E/E0/E-opt). Identical in all three IS
+   the justification, not a convenience: a mount present for B but absent for A
+   would make it an approach-side change to one half of the primary duel. The
+   source file was verified **byte-identical, same sha256**, in all four
+   locally present images a mounting family runs (`universe-devel-cuda`,
+   `universe-devel`, `bridge-bench:latest`, `bridge-bench-patched:latest`), so
+   it is a one-line change in each and not a cross-version file swap. **Cell
+   B45's pinned `universe-devel-0.45.1` is NOT verified** — that image is not on
+   this workstation — so Task 21 owes the same comparison before it files a B45
+   run.
+2. **Why it is not "relaxing a safety check": Autoware itself ships this value
+   for simulation.** `tier4_simulator_launch/launch/simulator.launch.xml:193`
+   and `:211` both pass `stop_check_enabled` with value `false`, and
+   `tier4_localization_launch/launch/pose_twist_estimator/pose_twist_estimator.launch.xml:5-6`
+   derives it `true` for `system_run_mode == 'online'` and **`false` for
+   `'logging_simulation'`**, under Autoware's own comment on the line above
+   them: _"only when running with a real vehicle, the pose_initializer judges
+   the stop"_. The `e2e_simulator` path this campaign uses simply defaults
+   `system_run_mode` to `online`
+   (`autoware_launch/launch/autoware.launch.xml:37`) and never forwards an
+   override, so it lands on the real-vehicle branch by default. This applies
+   upstream's own simulator configuration; it does not invent a relaxation.
+3. **Why not `system_run_mode:=logging_simulation` instead.**
+   `e2e_simulator.launch.xml` does not forward that argument, so it is
+   unreachable from the launch command line; and it has a **second** consumer —
+   `autoware_launch/launch/components/tier4_system_component.launch.xml:10`
+   passes it on as `run_mode` — so flipping it would change a second thing
+   inside the measured system. The threshold itself is not a parameter at all:
+   the comparison is against a `constexpr` inside
+   `autoware::motion_utils::VehicleStopCheckerBase`, and `stop_check_duration`
+   cannot help because the value is persistently over threshold, not
+   transiently.
+4. **Why it changes no measured quantity.** The stop check gates only
+   `pose_initializer::on_initialize` — an initialization **precondition**, not
+   an acceptance threshold. No registered metric reads it (`metrics.md`/
+   `cells.yaml` register none; `write_quality` scores NDT rate, pose error and
+   goal approach). And it already **passes** where it is exercised: cell A
+   measures 0.0 m/s on all three `VelocityReport` components, 0/400 samples over
+   the 1e-3 m/s threshold (the table above), and the E family localizes today.
+   So the override removes a **false positive on cell B** and changes nothing
+   observable elsewhere.
+5. **The finding is preserved, not laundered.** The per-approach table above —
+   cell A's exact 0.0 against cell B's 2.17–2.41 mm/s parked lateral velocity —
+   **stays, and still reads as a real difference between the two approaches**,
+   the same treatment the `control_mode` gap below gets. The override is the
+   **harness working around** that difference so the duel has a B half; it is
+   not a claim that the difference does not exist, and Task 22's confound table
+   must carry both.
+
+**What it does NOT change.** No DUT is patched: the tier4 fork's
+`VelocityReport` still reports its lateral term, the extension still reports
+zero, and neither approach's data-path, conversion or transport code is
+touched. No new file appears under `benchmarks/patches/`, so no approach's patch
+set grows and the patch policy's two named exceptions are unaffected.
 
 ### `control_mode` reporting (R4): a per-approach interop gap, recorded not patched
 

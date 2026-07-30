@@ -44,6 +44,19 @@ RELAY_IN=/sensing/lidar/top/pointcloud_before_sync
 RELAY_OUT=/sensing/lidar/concatenated/pointcloud
 LIDAR_TOPIC=/sensing/lidar/top/pointcloud_raw_ex
 
+# Autoware's OWN simulation value for pose_initializer's stop check, mounted
+# read-only over the image's own copy of the same path below. A campaign-wide
+# MEASUREMENT-ENVIRONMENT configuration, mounted IDENTICALLY in all three cell
+# families: docker/compose.yaml (A/A-hf/C), here (B/B-hf/B45/D) and
+# cells/python-bridge.sh (E/E0/E-opt). Identical in all three IS the
+# justification -- a mount present for B but absent for A would make it an
+# approach-side change to one half of the primary duel. The override file
+# carries its source digest, its single changed line and the upstream
+# citations; benchmarks/README.md's "Localization initialization (Task 13)"
+# section carries the amendment disclosure.
+POSE_INIT_OVERRIDE="$BENCH_REPO/benchmarks/config/autoware/pose_initializer.param.yaml"
+POSE_INIT_TARGET=/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml
+
 # Harmonisation, and the ONE place the numbers cells.yaml registers for this
 # family are actually applied (benchmarks/config/cells.yaml metrics.tick_hz /
 # lidar_expected_hz / ndt_expected_hz for B/B45/D). Changing either of these
@@ -88,6 +101,18 @@ fail() {
 [ -f "$PHYSICS" ] || fail "substep parity config missing: $PHYSICS"
 [ -f "$UDP_ONLY" ] || fail "DDS profile missing: $UDP_ONLY"
 [ -f "$BENCH_ROUTE_FILE" ] || fail "route file missing: $BENCH_ROUTE_FILE"
+# Checked as a FILE before the mount, not trusted: `docker run -v` on a
+# missing host path silently creates a DIRECTORY at the container target, so
+# pose_initializer would read the image's own copy (or fail to read a
+# directory) and this cell would reproduce the exact refusal the override
+# exists to remove -- with the fix apparently in place.
+[ -f "$POSE_INIT_OVERRIDE" ] ||
+  fail "the campaign-wide pose_initializer override is missing:
+  $POSE_INIT_OVERRIDE
+  It is a committed file (benchmarks/config/autoware/), mounted identically by
+  docker/compose.yaml and cells/python-bridge.sh; restore it rather than
+  dropping the mount, which would put this family on a different Autoware
+  configuration than the cells it is compared against."
 docker image inspect "$BENCH_AUTOWARE_IMAGE" >/dev/null 2>&1 ||
   fail "Autoware image not present locally: $BENCH_AUTOWARE_IMAGE"
 
@@ -274,6 +299,7 @@ docker run -d --name "$BENCH_AW_CONTAINER" --gpus all --net=host --ipc=host \
   -e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml \
   -v "$UDP_ONLY:/dds-profile.xml:ro" \
   -v "$MAP_HOST:$MAP_DIR:ro" \
+  -v "$POSE_INIT_OVERRIDE:$POSE_INIT_TARGET:ro" \
   -v "$BENCH_REPO:/work:ro" \
   -v "$BENCH_RUN_DIR:/out" \
   "${DATA_MOUNT[@]}" \

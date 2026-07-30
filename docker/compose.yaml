@@ -17,6 +17,22 @@ services:
       # written to from inside the container.
       - ../benchmarks:/work/benchmarks:ro
       - ../reports:/work/reports
+      # Autoware's OWN simulation value for pose_initializer's stop check,
+      # read-only over the image's own copy of the same path. This is a
+      # campaign-wide MEASUREMENT-ENVIRONMENT configuration and it is mounted
+      # IDENTICALLY in all three cell families -- here for cells A/A-hf/C,
+      # benchmarks/cells/tier4_autoware.sh for B/B-hf/B45/D,
+      # benchmarks/cells/python-bridge.sh for E/E0/E-opt. Identical in all
+      # three is the JUSTIFICATION, not a convenience: a mount present for B
+      # but absent for A would make it an approach-side change to one half of
+      # the primary duel. The file itself carries its source digest, the
+      # single changed line and the upstream citations;
+      # benchmarks/README.md's "Localization initialization (Task 13)"
+      # section carries the amendment disclosure.
+      # benchmarks/cells/extension.sh refuses to launch if the file is
+      # missing, because a bind mount of a missing host path creates a
+      # DIRECTORY at the target and the stack would then fail somewhere else.
+      - ../benchmarks/config/autoware/pose_initializer.param.yaml:/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml:ro
       # One read-only mount per Autoware map bundle. Which one the launch uses is
       # selected by MAP_DIR (scripts/e2e/launch_autoware.sh), derived from MAP in
       # scripts/e2e/run_e2e.sh. Mounting them all costs nothing and keeps a map

@@ -51,18 +51,35 @@ repos:
         args: [--no-error-on-unmatched-pattern]
         # Verbatim copies of the lab repo's G0 interop contract; must stay
         # byte-identical to their source, not reformatted to house style.
+        # benchmarks/config/autoware/** is the same class: each file there
+        # is a verbatim copy of an Autoware image's own param file with a
+        # named single-line change, and its whole reviewability is that
+        # `diff` against the image's copy shows exactly that one line.
+        # Measured 2026-07-30: prettier rewrote pose_initializer.param.yaml's
+        # two 6x6 covariance blocks from 6 rows of 6 to 36 one-value lines --
+        # semantically identical, and it turns a one-line diff into a
+        # 120-line one, so the copy can no longer be checked against its
+        # source by eye.
         # benchmarks/patches/** are byte-exact, verified `git apply`
         # artifacts: a unified diff's blank context line is one
         # significant space, and a mutating formatter can strip it,
         # breaking `git apply` even though the diff still "looks" the
         # same.
-        exclude: ^(scripts/(expected_topics\.yaml|spike_stack\.json)|benchmarks/(patches|results)/)
+        exclude: ^(scripts/(expected_topics\.yaml|spike_stack\.json)|benchmarks/(config/autoware|patches|results)/)
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
     hooks:
       - id: yamllint
-        exclude: ^scripts/expected_topics\.yaml$
+        # Same reasoning as the prettier exclude above, and the same two
+        # kinds of file: verbatim copies whose value is that they are
+        # byte-identical to a named source. Upstream's covariance blocks
+        # column-align their values, which yamllint's `commas` rule reports
+        # as "too many spaces after comma" 48 times per file; silencing it
+        # inline would mean editing the copy, which is the one thing the copy
+        # may not do. `check-yaml` still parses these files, so they are
+        # validated as YAML -- only the house-style rules are waived.
+        exclude: ^(scripts/expected_topics\.yaml$|benchmarks/config/autoware/)
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
@@ -72,6 +89,25 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.22
     hooks:
+      # benchmarks/evidence/** is excluded for the SAME reason
+      # benchmarks/results/** is excluded from the mutating hooks above, and
+      # the evidence's own text is what establishes it: PROVENANCE.md calls
+      # `probe_twist_components.py` "the script that produced it" and
+      # `probe_chain_liveness.py`/`probe_velocity_status.py` "the exact
+      # scripts, kept so the measurement is repeatable". A formatter that
+      # rewrites them means the script in the tree is no longer the script
+      # that produced the recorded figure -- the retention claim these
+      # documents make would become false. Measured 2026-07-30 (Task 13
+      # final): at acec485, BEFORE any change in this commit, `pre-commit run
+      # --all-files` reformatted all three and left 2 unfixable E702s, so
+      # this exclude records a pre-existing condition rather than creating a
+      # new allowance.
+      # The cost is stated plainly: Python under benchmarks/evidence/ is no
+      # longer linted or formatted. Anything meant to be maintained as code
+      # belongs under benchmarks/scripts/ or benchmarks/injector/, which are
+      # both still covered.
       - id: ruff
         args: [--fix]
+        exclude: ^benchmarks/evidence/
       - id: ruff-format
+        exclude: ^benchmarks/evidence/

@@ -43,6 +43,25 @@ STACK_TIMEOUT_S=420
 MAP_BUNDLE_HOST="$HOME/autoware_map/town10"
 MAP_BUNDLE="/autoware_map/town10"
 
+# Autoware's OWN simulation value for pose_initializer's stop check, mounted
+# read-only over the image's own copy of the same path below. A campaign-wide
+# MEASUREMENT-ENVIRONMENT configuration, mounted IDENTICALLY in all three cell
+# families: docker/compose.yaml (A/A-hf/C), cells/tier4_autoware.sh
+# (B/B-hf/B45/D) and here (E/E0/E-opt). Identical in all three IS the
+# justification -- a mount present for B but absent for A or E would make it an
+# approach-side change rather than an environment one. It changes nothing
+# observable for this family, which localizes today (so its stop check already
+# passes); it is mounted here so every cell runs ONE Autoware configuration.
+# The override file carries its source digest, its single changed line and the
+# upstream citations; benchmarks/README.md's "Localization initialization
+# (Task 13)" section carries the amendment disclosure.
+#
+# This is NOT a python-bridge patch and does not touch the patch policy's
+# per-approach patch set: nothing under benchmarks/patches/python-bridge/
+# changes, and the image itself is untouched.
+POSE_INIT_OVERRIDE="$BENCH_REPO/benchmarks/config/autoware/pose_initializer.param.yaml"
+POSE_INIT_TARGET=/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml
+
 # Both bridge launch logs live inside the container, and teardown REMOVES the
 # container (the image differs per cell, so it may not be left up for the next
 # one). A readiness failure would therefore destroy the only record of why, as
@@ -70,6 +89,18 @@ fail() {
   fail "CARLA 0.9.15 not installed at $CARLA_0915_SH
   (run benchmarks/scripts/fetch_bridge_deps.sh, or set BENCH_CARLA_0915_ROOT)"
 [ -d "$MAP_BUNDLE_HOST" ] || fail "Autoware map bundle missing: $MAP_BUNDLE_HOST"
+# Checked as a FILE before the mount, not trusted: `docker run -v` on a missing
+# host path silently creates a DIRECTORY at the container target, so the stack
+# would read the image's own copy (or fail on a directory) while the mount
+# appears to be in place. Same check, same reason, in cells/tier4_autoware.sh
+# and cells/extension.sh.
+[ -f "$POSE_INIT_OVERRIDE" ] ||
+  fail "the campaign-wide pose_initializer override is missing:
+  $POSE_INIT_OVERRIDE
+  It is a committed file (benchmarks/config/autoware/), mounted identically by
+  docker/compose.yaml and cells/tier4_autoware.sh; restore it rather than
+  dropping the mount, which would put this family on a different Autoware
+  configuration than the cells it is compared against."
 [ -d "$HOME/autoware_data" ] ||
   fail "perception model/weights directory missing: $HOME/autoware_data
   (fetch with ansible-playbook autoware.dev_env.download_artifacts; without it
@@ -245,6 +276,7 @@ docker rm -f "$AW_CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$AW_CONTAINER" --gpus all --net=host --ipc=host \
   -e ROS_DOMAIN_ID=0 \
   -v "$MAP_BUNDLE_HOST:$MAP_BUNDLE:ro" \
+  -v "$POSE_INIT_OVERRIDE:$POSE_INIT_TARGET:ro" \
   -v "$HOME/autoware_data:/root/autoware_data" \
   -v "$BENCH_REPO:/work:ro" \
   -v "$BENCH_RUN_DIR:/out" \
