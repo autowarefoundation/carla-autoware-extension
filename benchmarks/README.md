@@ -12,25 +12,78 @@ pre-registered, regenerable evidence rather than one-off numbers.
 
 A future `bench_observer` must emit the following files for every run:
 
-| File                    | Columns / schema                                                                                                                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `observer.csv`          | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                                           | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                                                                               |
-| `clock.csv`             | `clock_ns,arrival_system_ns`                                                                                                              | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `published_time.csv`    | `topic,source_header_ns,published_ns`                                                                                                     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `resources.csv`         | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                                                  | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                                                                                     |
-| `odometry.csv`          | `topic,header_stamp_ns,x_m,y_m`                                                                                                           | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size.                                                         |
-| `pose.csv`              | `topic,header_stamp_ns,x_m,y_m`                                                                                                           | One row per NDT pose receipt (the cell's registered `ndt_topic`), written by bench_observer's typed `pose` subscription, with the same `size_bytes = 0` sentinel row in `observer.csv` as `odometry.csv`. A SEPARATE file from `odometry.csv` even though the schema is identical: that one carries the EKF-fused `/localization/kinematic_state`, a different quantity, and M5's `pose_error_m` is defined on the NDT pose alone. Read with `analysis/bench_io.py` `read_pose_csv`.            |
-| `tf.csv`                | `topic,frame_id,child_frame_id,header_stamp_ns`                                                                                           | One row per `/tf` transform whose `child_frame_id` matches the one registered in that cell's topic list (kind `tf`, whose fourth spec field is that frame), written by bench_observer's typed `tf` subscription with the same `size_bytes = 0` sentinel row in `observer.csv`. The parent `frame_id` is recorded but NOT filtered on, so a map→base_link claim is verified rather than assumed. Read with `read_tf_csv`.                                                                        |
-| `gt.csv`                | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                                            | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                                                                        |
-| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                                             | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below. |
-| `manifest.json`         | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                                                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `goal_window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. Written by `benchmarks/scripts/write_quality.py`, run as `run.sh` step 13. ABSENT when the gate REFUSED to score the run (an unselected G1 ladder branch, a null `ndt_expected_hz`, a missing input): absence means not scored, never a pass.                                                                                    |
+| File                    | Columns / schema                                                                                                                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `observer.csv`          | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                                           | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `clock.csv`             | `clock_ns,arrival_system_ns`                                                                                                              | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `published_time.csv`    | `topic,source_header_ns,published_ns`                                                                                                     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `resources.csv`         | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf,loadavg_1m`                                                       | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes. `loadavg_1m` is the **host-wide** 1-min load average at that instant and repeats the same way — see "`loadavg_1m` — in-run host load" below for what it does and does not mean, and for the NaN convention on runs filed before the column existed. |
+| `odometry.csv`          | `topic,header_stamp_ns,x_m,y_m`                                                                                                           | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size.                                                                                                                         |
+| `pose.csv`              | `topic,header_stamp_ns,x_m,y_m`                                                                                                           | One row per NDT pose receipt (the cell's registered `ndt_topic`), written by bench_observer's typed `pose` subscription, with the same `size_bytes = 0` sentinel row in `observer.csv` as `odometry.csv`. A SEPARATE file from `odometry.csv` even though the schema is identical: that one carries the EKF-fused `/localization/kinematic_state`, a different quantity, and M5's `pose_error_m` is defined on the NDT pose alone. Read with `analysis/bench_io.py` `read_pose_csv`.                                                                            |
+| `tf.csv`                | `topic,frame_id,child_frame_id,header_stamp_ns`                                                                                           | One row per `/tf` transform whose `child_frame_id` matches the one registered in that cell's topic list (kind `tf`, whose fourth spec field is that frame), written by bench_observer's typed `tf` subscription with the same `size_bytes = 0` sentinel row in `observer.csv`. The parent `frame_id` is recorded but NOT filtered on, so a map→base_link claim is verified rather than assumed. Read with `read_tf_csv`.                                                                                                                                        |
+| `gt.csv`                | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                                            | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                                             | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below.                                                                 |
+| `manifest.json`         | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                                                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `goal_window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. Written by `benchmarks/scripts/write_quality.py`, run as `run.sh` step 13. ABSENT when the gate REFUSED to score the run (an unselected G1 ladder branch, a null `ndt_expected_hz`, a missing input): absence means not scored, never a pass.                                                                                                                                                    |
 
 Results are laid out on disk as:
 
 ```text
 benchmarks/results/<cell>/run-<NNN>/{manifest.json,observer.csv,clock.csv,published_time.csv,resources.csv,odometry.csv,pose.csv,tf.csv,gt.csv,publisher_counts.json,quality.json}
 ```
+
+### `loadavg_1m` — in-run host load (added 2026-07-30, before any P3 run)
+
+`resources.csv`'s eighth column. **Source:** `/proc/loadavg` **field 1** (the
+1-minute average), read by `benchmarks/sampler/sample_resources.py`
+`read_loadavg_1m` once per sample cycle and stamped onto every process row of
+that cycle. **Why field 1 and not the 5- or 15-minute averages:**
+`scripts/preflight.sh` gates on exactly this field (`awk '{print $1}'
+/proc/loadavg`, abort at ≥ 8), so the in-run series is on the same basis as the
+pre-run gate; and Task 13's ad hoc sampling recorded the same field (mean 25.80,
+peak 50.05 on `results/B/run-009`), so this series is comparable with the
+figures already in this record. Over a scoring window of this length the
+smoother averages are dominated by load from **before** the run started.
+
+**What it means.** "Was this run contended, and how much?" — answerable per
+run, from the run's own filed data, after the fact. That is what the M3
+comparability consequence below needed and did not have.
+
+**What it does NOT mean**, stated because each of these is an easy misreading:
+
+- **It is not attributable to any one process.** It is a whole-host figure, so
+  it repeats across the rows sharing a `sample_system_ns` (exactly as `rtf`
+  does) and the process on a row is not the cause of the number on it.
+- **It is not a substitute for the per-process `cpu_pct` series.** Load average
+  counts runnable-or-blocked tasks, not CPU time; the attribution table below
+  (`autoware` 1832.5% mean, `carla-server` 280.5%, …) comes from `cpu_pct` and
+  cannot be derived from this column.
+- **It does not resolve a spike.** The 1-minute figure is itself a ~60 s
+  exponential average, so it records the SUSTAINED level. `run-005` lost three
+  rmw service responses inside one **0.4 s** window; this column would not have
+  shown that window, only the elevated level around it.
+- **It bounds nothing.** Recording is not capping — see "Host load during a run
+  is unbounded" below, which stays open as a session-discipline matter.
+
+**Three values, three distinct facts**, and none of them is interchangeable
+(`analysis/bench_io.py` `RESOURCE_OPTIONAL_FLOAT_COLS`):
+
+| value | meaning                                                                                                                                                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NaN` | **not recorded** — the run predates the column, or the field is empty because the sampler was SIGTERMed mid-write. `loadavg_1m` is an OPTIONAL column and reads as NaN when absent, never as `0.0` and never as a missing key. |
+| `-1`  | the column exists, the sampler tried, and `/proc/loadavg` was unreadable at that instant (`sample_resources.NOT_APPLICABLE`, as for `gpu_util_pct`). Preserved verbatim, so a caller masks it deliberately.                    |
+| `0.0` | a real measurement: the host was idle at that instant.                                                                                                                                                                         |
+
+**Backward compatibility is part of the contract, not a courtesy.** Every run
+already filed — `results/B/run-007…012` and all of `results/E/`, which may not
+be modified — carries the seven-column header. The column is **appended last**
+so the old header stays a strict prefix: `sampler/finalize_rtf.py` locates
+columns with `header.index()` and writes back whatever header it read, so
+re-finalizing an old run fills its `rtf` and **does not** add a `loadavg_1m` it
+never sampled. `read_resources_csv` returns an all-NaN column of the right
+length for such a run. Both halves are pinned against old-format fixtures and
+against the real filed runs (`tests/benchmarks/test_bench_io.py`,
+`test_finalize_rtf.py`).
 
 ## Patch policy
 
@@ -1494,26 +1547,47 @@ measured loadavg.
 
 **Two consequences, separated because they need different fixes.**
 
-- **Comparability (M3).** Any cross-run `carla_process_cpu_pct` or `rtf`
-  comparison assumes the runs saw similar host contention, and nothing in the
-  record establishes that. **`resources.csv` carries no loadavg column** — its
-  contract is `sample_system_ns, process, cpu_pct, rss_bytes, gpu_util_pct,
-vram_bytes, rtf` (`benchmarks/sampler/sample_resources.py`), and
-  `grep -rniE 'loadavg|getloadavg|/proc/loadavg' benchmarks/sampler/` returns
-  nothing. So a filed run cannot answer "was this run contended?" after the
-  fact. Adding a loadavg series is a **sampler-contract change**, not session
-  discipline, and it would have to land before Task 16 to be usable by the P3
-  analysis.
+- **Comparability (M3). CLOSED 2026-07-30 for runs filed from now on.** Any
+  cross-run `carla_process_cpu_pct` or `rtf` comparison assumes the runs saw
+  similar host contention. As first written, nothing in the record established
+  that: `resources.csv` carried no loadavg column — its contract was
+  `sample_system_ns, process, cpu_pct, rss_bytes, gpu_util_pct, vram_bytes,
+rtf` — and `grep -rniE 'loadavg|getloadavg|/proc/loadavg' benchmarks/sampler/`
+  returned nothing, so a filed run could not answer "was this run contended?"
+  after the fact. **That column now exists**: `resources.csv` gained
+  `loadavg_1m` (see "`loadavg_1m` — in-run host load" in the data contract
+  above), landed before Task 16 as this entry required, so it is usable by the
+  P3 analysis. Two limits stay: the already-filed runs
+  (`results/B/run-007…012`, all of `results/E/`) predate it and read as NaN —
+  **not** as an uncontended host — so no cross-run contention comparison
+  involving them is available; and the column **records** contention without
+  bounding it, which is the next bullet's problem and not this one's.
 - **Validity (bring-up).** A contended host does not merely make a run slow; it
   can make one **fail in a way that reads as an approach defect**. Run-005's
   wedge would look like "cell B cannot initialize localization" to anyone who did
   not grep for `client will not receive response`.
   `cells/tier4_autoware.sh`'s seed-timeout message now names that signature.
 
-**Until a loadavg series exists: one cell at a time, nothing else on the box, and
-do not probe a live stack during bring-up.** Task 13's own in-container
-diagnostics contributed to run-005's 64 — recorded because it is the specific
-mistake to avoid, not as an excuse.
+**Session discipline: one cell at a time, nothing else on the box, and do not
+probe a live stack during bring-up.** Task 13's own in-container diagnostics
+contributed to run-005's 64 — recorded because it is the specific mistake to
+avoid, not as an excuse. **The `loadavg_1m` column does not retire this rule.**
+It was originally written as "until a loadavg series exists"; that was wrong, and
+the series existing changes nothing about it. Recording load is not bounding
+load: nothing caps it during a run, so a contended run still fails in ways that
+read as an approach defect — the column only makes the contention visible
+afterwards. The rule stands for every P3 session, and it stays a
+session-discipline matter rather than a harness one.
+
+**The reflexive hazard, stated because it is easy to forget while building the
+instrument.** An agent's own probing contributed to run-005's loadavg of 64, so
+observer-side work sits **inside** the perturbation it measures: the sampler
+that now records `loadavg_1m` is itself one of the processes contributing to it,
+and so is any diagnostic run alongside a live stack. The harness's own share is
+measured and small (injector + observer = 60% of 2400%, i.e. 2.5%, in the
+attribution table below), which bounds the effect without eliminating it — and
+that measurement is exactly why the saturation cannot be blamed on
+instrumentation.
 
 **DIRECTLY SAMPLED, and it is not only about external interference (Task 13,
 `results/B/run-009`).** A 2 s-interval `/proc/loadavg` sample across a whole
@@ -1529,8 +1603,14 @@ on **24 cores**, from 75 samples. So the cell's **own** stack — the CARLA UE5
 editor, the demo's tick loop, ~163 Autoware nodes, the observer and the sampler —
 oversubscribes this host by more than 2x unaided. This is not contention from
 other work; it is the configuration the campaign measures under. (Sampled
-ad hoc, because `resources.csv` has no loadavg column; the series itself is not
-retained, and re-deriving it costs one run plus a 2 s-interval sampler.)
+ad hoc, because `resources.csv` had no loadavg column **at the time**; the
+series itself is not retained, and re-deriving it costs one run plus a
+2 s-interval sampler. It has one now — `loadavg_1m`, 2026-07-30 — so a run
+filed from here on retains its own series and these two figures are the last
+that will be ad hoc. The 2026-07-30 column does **not** retrofit runs 009/010:
+their `resources.csv` predates it, so the peak/mean above stay
+non-recomputable, which is why they are labelled here rather than promoted to
+`benchmarks/evidence/`.)
 
 **ATTRIBUTED, from the M3 sampler's own retained per-process CPU
 (`results/B/run-010/resources.csv`, 78 samples). It is NOT harness overhead.**
@@ -2923,6 +3003,44 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   resolves. **The registered M4 ceiling claim above is unchanged**, including
   its three falsifiers: what is reduced is how many runs probe it, not the claim
   or any threshold. No margin, threshold or `sweep_arms` change.
+- **2026-07-30** — the `resources.csv` contract above gained **`loadavg_1m`**,
+  the host-wide 1-minute load average per M3 sample, with
+  `sampler/sample_resources.py` `read_loadavg_1m` writing it and
+  `analysis/bench_io.py` `RESOURCE_OPTIONAL_FLOAT_COLS` reading it; its full
+  registration, including what it does **not** mean, is the data-contract
+  subsection "`loadavg_1m` — in-run host load" above. **Completeness, and the
+  gap was named in this document by the entry it closes**: "Host load during a
+  run is unbounded, and it changes outcomes" (Task 13) recorded that
+  `preflight.sh` gates loadavg only BEFORE a run (abort at ≥ 8) while nothing
+  recorded it DURING one, so the confound that plausibly explains cell B's rate
+  deficits and its AD-API spin timeouts could not be recorded per run — and it
+  stated that adding the series is a sampler-contract change that "would have to
+  land before Task 16 to be usable by the P3 analysis". The evidence for
+  needing it is measured: `results/B/run-005` peaked at **loadavg 64 on 24
+  cores** and lost **three** rclcpp/rmw service responses inside one **0.4 s**
+  window, wedging `pose_initializer` for the whole run, while `run-009` stayed
+  near 15 and it did not recur; deficits varied between runs of one unchanged
+  configuration. **Field 1 (1-minute) is the registered basis**, because
+  `preflight.sh` gates on exactly that field — so the in-run series and the
+  pre-run gate are directly comparable — and because Task 13's ad hoc sampling
+  recorded the same field, so the new series is comparable with the figures
+  already in this record. **Backward compatibility is part of the change, not a
+  courtesy:** the column is appended LAST so an old header stays a strict
+  prefix, `finalize_rtf.py` therefore keeps working on both formats and does not
+  "upgrade" a filed run, and absence reads as **NaN** — the campaign's
+  convention for undefined, as in `cadence.reconcile_drops`'s
+  `observer_loss_rate` and `arm_and_goal.nonzero_longitudinal` — explicitly
+  distinguishable from a recorded `0.0` (idle host) and from `-1` (the column
+  exists and `/proc/loadavg` was unreadable). Pinned against old-format
+  fixtures AND against all ten already-filed `resources.csv` files; **no filed
+  run is modified**, so `results/E/` and `results/B/run-007…012` stay
+  byte-identical. **This RECORDS the confound; it does not bound it.** Nothing
+  here caps load during a run, so the session-discipline rule in that entry
+  stands unchanged for every P3 task, and the reflexive hazard is registered
+  with it: an agent's own probing contributed to run-005's 64, so observer-side
+  work — the sampler that writes this column included — sits inside the
+  perturbation it measures. No margin, threshold, metric definition or cell
+  definition changes; `config/margins.yaml` is byte-identical.
 
 ## How to run
 

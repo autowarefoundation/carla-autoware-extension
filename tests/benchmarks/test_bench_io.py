@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import numpy as np
+import pytest
 from benchmarks.analysis.bench_io import (
     read_clock_csv,
     read_gt_csv,
@@ -90,6 +93,131 @@ def test_read_resources_rtf_series_feeds_the_ceiling_evaluator(tmp_path):
     d = read_resources_csv(p)
     np.testing.assert_allclose(d["carla"]["rtf"], d["observer"]["rtf"])
     np.testing.assert_allclose(d["carla"]["rtf"], [0.98, 0.94])
+
+
+# ---------------------------------------------------------------------------
+# loadavg_1m -- the host-wide load series added to the resources.csv contract
+# on 2026-07-30. It is an OPTIONAL column: every run filed before that date
+# (results/B/run-007..012, all of results/E/) has a resources.csv without it,
+# and results/E/ may not be modified. So absence must read as NaN -- explicitly
+# "not recorded", distinguishable from a recorded 0.0 -- and never as a
+# KeyError, a zero, or a missing key the caller has to .get() around.
+#
+# `RES` above is itself an old-format fixture (it is the pre-2026-07-30 header
+# verbatim), which is why the tests above keep passing unchanged: that is the
+# backward compatibility, exercised rather than asserted.
+# ---------------------------------------------------------------------------
+
+RES_WITH_LOADAVG = """sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf,loadavg_1m
+1000,carla,140.5,2048,73.0,4096,0.98,25.80
+1000,observer,3.25,512,-1,-1,0.98,25.80
+2000,carla,150.0,4096,81.5,8192,0.94,50.05
+2000,observer,3.50,512,-1,-1,0.94,50.05
+"""
+
+
+def test_read_resources_reads_the_loadavg_series(tmp_path):
+    p = tmp_path / "resources.csv"
+    p.write_text(RES_WITH_LOADAVG)
+    d = read_resources_csv(p)
+    np.testing.assert_allclose(d["carla"]["loadavg_1m"], [25.80, 50.05])
+    assert d["carla"]["loadavg_1m"].dtype == np.float64
+
+
+def test_loadavg_is_host_wide_so_it_repeats_across_processes_like_rtf(tmp_path):
+    """loadavg is a property of the sample INSTANT and of the whole host, not
+    of a process, so -- exactly like rtf -- it repeats across the rows sharing
+    a sample_system_ns and any one process's column is the run's series. It is
+    therefore NOT attributable to the process whose row carries it."""
+    p = tmp_path / "resources.csv"
+    p.write_text(RES_WITH_LOADAVG)
+    d = read_resources_csv(p)
+    np.testing.assert_allclose(d["carla"]["loadavg_1m"], d["observer"]["loadavg_1m"])
+
+
+def test_a_run_filed_before_the_column_existed_reads_as_NaN_not_zero(tmp_path):
+    """THE BACKWARD-COMPATIBILITY REQUIREMENT. `RES` is the pre-2026-07-30
+    header verbatim -- the format every already-filed run carries. The key must
+    be PRESENT (so no consumer needs a .get() and none can KeyError deep in an
+    analysis run) and all-NaN, never 0.0: a real 0.0 would say the host was
+    idle, and Task 13's whole finding is that it never is during a run."""
+    p = tmp_path / "resources.csv"
+    p.write_text(RES)
+    d = read_resources_csv(p)
+    assert "loadavg_1m" in d["carla"], "the key must exist even on an old file"
+    load = d["carla"]["loadavg_1m"]
+    assert load.shape == d["carla"]["cpu_pct"].shape, "one NaN per sample, not an empty array"
+    assert np.all(np.isnan(load))
+    assert not np.any(load == 0.0)
+
+
+def test_NaN_absence_is_distinguishable_from_a_recorded_zero(tmp_path):
+    """The two states must not collapse. A sampler that recorded a genuine 0.00
+    (an idle host) and a run that predates the column are different facts, and
+    only the first is a measurement."""
+    old = tmp_path / "old.csv"
+    old.write_text(RES)
+    zeroed = tmp_path / "zeroed.csv"
+    zeroed.write_text(RES_WITH_LOADAVG.replace("25.80", "0.00").replace("50.05", "0.00"))
+
+    absent = read_resources_csv(old)["carla"]["loadavg_1m"]
+    recorded = read_resources_csv(zeroed)["carla"]["loadavg_1m"]
+
+    assert np.all(np.isnan(absent))
+    assert not np.any(np.isnan(recorded))
+    np.testing.assert_allclose(recorded, [0.0, 0.0])
+
+
+def test_a_blank_loadavg_cell_reads_as_NaN_too(tmp_path):
+    """A truncated final row (the sampler is SIGTERMed mid-write) leaves the
+    field empty. That is "not recorded" for that sample, the same state as the
+    whole column being absent -- not a parse error that would take down the
+    analysis of an otherwise complete run."""
+    p = tmp_path / "resources.csv"
+    p.write_text(
+        RES_WITH_LOADAVG.replace(
+            "2000,carla,150.0,4096,81.5,8192,0.94,50.05", "2000,carla,150.0,4096,81.5,8192,0.94,"
+        )
+    )
+    load = read_resources_csv(p)["carla"]["loadavg_1m"]
+    assert not np.isnan(load[0])
+    assert np.isnan(load[1])
+
+
+def test_the_loadavg_not_applicable_sentinel_is_preserved_verbatim(tmp_path):
+    """-1 is the contract's "the column exists, the sampler tried, /proc/loadavg
+    was unreadable at that instant" marker -- a THIRD state, distinct from NaN
+    (never recorded) and from 0.0 (an idle host). Averaging it in would
+    understate load, so the reader must not massage it, exactly as for
+    gpu_util_pct."""
+    p = tmp_path / "resources.csv"
+    p.write_text(RES_WITH_LOADAVG.replace(",25.80", ",-1"))
+    load = read_resources_csv(p)["carla"]["loadavg_1m"]
+    assert load[0] == -1.0
+    assert not np.isnan(load[0])
+
+
+_FILED_RESOURCES = sorted(
+    (Path(__file__).resolve().parents[2] / "benchmarks" / "results").glob("*/run-*/resources.csv")
+)
+
+
+@pytest.mark.parametrize("filed", _FILED_RESOURCES, ids=lambda p: f"{p.parts[-3]}/{p.parts[-2]}")
+def test_every_already_filed_run_still_reads(filed):
+    """Not a fixture -- the REAL committed runs. Every one of them predates the
+    column, `results/E/` may not be modified at all, and none of them is
+    rewritten by this change: a reader that now REQUIRED loadavg_1m would break
+    on all of them, which is the failure this parametrization exists to catch.
+    Self-adjusting: a future run filed WITH the column passes here too, on the
+    non-NaN branch."""
+    d = read_resources_csv(filed)
+    assert d, f"{filed} has no process rows"
+    for process, cols in d.items():
+        load = cols["loadavg_1m"]
+        assert load.shape == cols["cpu_pct"].shape, f"{filed}:{process}"
+        assert np.all(np.isnan(load)) or not np.any(np.isnan(load)), (
+            f"{filed}:{process} mixes recorded and unrecorded loadavg samples"
+        )
 
 
 UNSORTED_OBS = """topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes

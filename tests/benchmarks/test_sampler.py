@@ -23,6 +23,7 @@ from benchmarks.sampler.sample_resources import (
     read_cgroup_cpu_usec,
     read_cgroup_memory_current,
     read_cgroup_pids,
+    read_loadavg_1m,
     read_pid_cpu_ticks,
     read_pid_rss_bytes,
     sample_pids_cpu_rss,
@@ -239,14 +240,76 @@ def test_gpu_totals_for_pids_empty_pid_list_is_sentinel():
 
 
 # ---------------------------------------------------------------------------
+# /proc/loadavg: the host-wide in-run load series (added to the resources.csv
+# contract 2026-07-30). Read through --proc-root, like the CPU math above, so
+# these drive real files rather than a mock.
+# ---------------------------------------------------------------------------
+
+
+def test_read_loadavg_1m_reads_the_first_field(tmp_path):
+    (tmp_path / "loadavg").write_text("25.80 18.42 12.03 3/1892 40771\n")
+    assert read_loadavg_1m(str(tmp_path)) == pytest.approx(25.80)
+
+
+def test_read_loadavg_1m_takes_the_one_minute_figure_not_a_smoother_one(tmp_path):
+    """Field 1, deliberately. `preflight.sh` gates on exactly this field
+    (`awk '{print $1}' /proc/loadavg`), so the in-run series is on the same
+    basis as the pre-run gate; and Task 13's ad hoc 2 s sampling recorded the
+    same field (mean 25.80, peak 50.05 on results/B/run-009), so the new series
+    is comparable with the figures already in the record. Fields 2 and 3 are
+    the 5- and 15-minute averages: over a run of this length they are dominated
+    by load from BEFORE the run started, which is the opposite of the question.
+    """
+    (tmp_path / "loadavg").write_text("64.00 1.00 1.00 3/1892 40771\n")
+    assert read_loadavg_1m(str(tmp_path)) == pytest.approx(64.00)
+
+
+def test_read_loadavg_1m_missing_file_is_the_not_applicable_sentinel(tmp_path):
+    """-1, NOT 0.0. A real 0.0 would state that the host was idle at that
+    instant, and the finding this series exists to record is that it never is
+    during a run -- so an unreadable sample must not be able to drag a mean
+    downward while looking like data."""
+    assert read_loadavg_1m(str(tmp_path)) == -1.0
+
+
+def test_read_loadavg_1m_unparsable_content_is_the_sentinel(tmp_path):
+    """An empty or malformed /proc/loadavg must not end the sampling run: the
+    sampler is a background recorder, and killing it loses the whole M3 series
+    for a live run over one bad read."""
+    (tmp_path / "loadavg").write_text("\n")
+    assert read_loadavg_1m(str(tmp_path)) == -1.0
+    (tmp_path / "loadavg").write_text("not-a-number 1.0 1.0\n")
+    assert read_loadavg_1m(str(tmp_path)) == -1.0
+
+
+# ---------------------------------------------------------------------------
 # Row formatter: column order must match the resources.csv contract exactly
 # (benchmarks/README.md: sample_system_ns,process,cpu_pct,rss_bytes,
-#  gpu_util_pct,vram_bytes,rtf)
+#  gpu_util_pct,vram_bytes,rtf,loadavg_1m)
 # ---------------------------------------------------------------------------
 
 
 def test_resource_columns_matches_the_registered_contract():
     assert RESOURCE_COLUMNS == (
+        "sample_system_ns",
+        "process",
+        "cpu_pct",
+        "rss_bytes",
+        "gpu_util_pct",
+        "vram_bytes",
+        "rtf",
+        "loadavg_1m",
+    )
+
+
+def test_loadavg_is_appended_last_so_the_old_header_stays_a_prefix():
+    """Position is load-bearing, not cosmetic. `finalize_rtf.py` locates
+    columns with `header.index(...)` and rewrites whatever header it read, so
+    appending keeps it working unchanged on BOTH formats -- and it means a
+    diff of an old run against a new one shows one added column rather than a
+    shifted table."""
+    assert RESOURCE_COLUMNS[-1] == "loadavg_1m"
+    assert RESOURCE_COLUMNS[:-1] == (
         "sample_system_ns",
         "process",
         "cpu_pct",
@@ -266,8 +329,9 @@ def test_format_row_matches_contract_column_order():
         gpu_util_pct=12.3,
         vram_bytes=456,
         rtf=-1,
+        loadavg_1m=25.8,
     )
-    assert row == [123, "carla-server", 45.6, 789, 12.3, 456, -1]
+    assert row == [123, "carla-server", 45.6, 789, 12.3, 456, -1, 25.8]
 
 
 def test_format_row_written_by_csv_writer_round_trips_in_order(tmp_path):
@@ -278,7 +342,7 @@ def test_format_row_written_by_csv_writer_round_trips_in_order(tmp_path):
     with open(out, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(RESOURCE_COLUMNS)
-        w.writerow(format_row(1_000, "carla-server", 10.0, 2000, -1, -1, -1))
+        w.writerow(format_row(1_000, "carla-server", 10.0, 2000, -1, -1, -1, 25.8))
 
     with open(out, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -291,5 +355,52 @@ def test_format_row_written_by_csv_writer_round_trips_in_order(tmp_path):
             "gpu_util_pct": "-1",
             "vram_bytes": "-1",
             "rtf": "-1",
+            "loadavg_1m": "25.8",
         }
     ]
+
+
+def test_one_loadavg_read_per_cycle_repeats_across_every_process_row(tmp_path, monkeypatch):
+    """loadavg is host-wide, so it is sampled ONCE per cycle and stamped onto
+    every process row of that cycle -- the same shape as rtf. Sampling it
+    per-process would put N reads of a shared quantity in one sample instant
+    and invite a reader to attribute it to a process.
+    """
+    from benchmarks.sampler import sample_resources as sr
+
+    proc_root = tmp_path / "proc"
+    proc_root.mkdir()
+    (proc_root / "loadavg").write_text("31.50 20.0 10.0 3/1892 1\n")
+    processes = tmp_path / "processes.yaml"
+    processes.write_text(
+        "processes:\n  - {label: carla-server, pattern: nothing-matches-this}\n"
+        "  - {label: observer, pattern: nothing-matches-this-either}\n"
+    )
+    out = tmp_path / "resources.csv"
+
+    reads = {"n": 0}
+    real = sr.read_loadavg_1m
+
+    def counting(root):
+        reads["n"] += 1
+        return real(root)
+
+    monkeypatch.setattr(sr, "read_loadavg_1m", counting)
+    # Exactly one cycle, then stop. run() loops on the SIGTERM flag, which
+    # _sleep_until is the only place a test can reach -- so set it there.
+    #
+    # `interval_s` must be LONG enough that the cycle finishes inside it: when
+    # a cycle overruns its interval run() takes the resync branch and never
+    # calls _sleep_until at all, which is an infinite loop here. 60 s never
+    # elapses, because the patched _sleep_until returns immediately.
+    monkeypatch.setattr(
+        sr, "_sleep_until", lambda target, stop_flag, chunk_s=0.1: stop_flag.update(stop=True)
+    )
+    sr.run(processes, out, interval_s=60.0, proc_root=str(proc_root))
+
+    with open(out, newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert reads["n"] == 1, "one host-wide read per cycle, not one per process"
+    assert len(rows) == 2
+    assert {r["loadavg_1m"] for r in rows} == {"31.5"}
+    assert len({r["sample_system_ns"] for r in rows}) == 1

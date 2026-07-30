@@ -5,7 +5,14 @@ restarted PIDs are picked up. GPU per-process utilization comes from
 `nvidia-smi pmon` when available, else -1; VRAM from
 --query-compute-apps. Container entries sample cgroup v2 files.
 The rtf column is written as -1 and filled post-run by finalize_rtf.py
-(keeps the sampler free of any ROS dependency)."""
+(keeps the sampler free of any ROS dependency).
+
+loadavg_1m is the one HOST-WIDE column: read once per sample cycle from
+/proc/loadavg and stamped onto every process row of that cycle, so it
+repeats across a sample_system_ns exactly as rtf does and is not
+attributable to any process. It RECORDS in-run host contention; it does
+not bound it (benchmarks/README.md, "Host load during a run is
+unbounded")."""
 
 from __future__ import annotations
 
@@ -20,7 +27,16 @@ from pathlib import Path
 import yaml
 
 # resources.csv contract (benchmarks/README.md), also mirrored in
-# benchmarks/analysis/bench_io.py's RESOURCE_INT_COLS/RESOURCE_FLOAT_COLS.
+# benchmarks/analysis/bench_io.py's RESOURCE_INT_COLS/RESOURCE_FLOAT_COLS
+# (+ RESOURCE_OPTIONAL_FLOAT_COLS for loadavg_1m).
+#
+# loadavg_1m was APPENDED (2026-07-30), and last on purpose. Every run filed
+# before that date carries the seven-column header, so keeping the old header
+# a strict PREFIX of this one means finalize_rtf.py -- which locates columns
+# with header.index() and writes back whatever header it read -- keeps working
+# unchanged on both formats without upgrading an old file, and a diff of an
+# old run against a new one shows one added column rather than a shifted
+# table.
 RESOURCE_COLUMNS = (
     "sample_system_ns",
     "process",
@@ -29,10 +45,12 @@ RESOURCE_COLUMNS = (
     "gpu_util_pct",
     "vram_bytes",
     "rtf",
+    "loadavg_1m",
 )
 
 # Contract sentinel: "no GPU context" / "not yet resolvable". Also what
-# this ROS-free sampler always writes for rtf -- finalize_rtf.py fills it.
+# this ROS-free sampler always writes for rtf -- finalize_rtf.py fills it --
+# and what an unreadable /proc/loadavg writes for loadavg_1m.
 NOT_APPLICABLE = -1
 
 # cgroup v2 mount point for docker's systemd cgroup driver (spec: M3).
@@ -64,6 +82,41 @@ def read_pid_rss_bytes(pid: int, proc_root: str, page_size: int) -> int:
     with open(os.path.join(proc_root, str(pid), "statm")) as f:
         fields = f.read().split()
     return int(fields[1]) * page_size
+
+
+def read_loadavg_1m(proc_root: str) -> float:
+    """Host-wide 1-minute load average from <proc_root>/loadavg.
+
+    FIELD 1, deliberately. `benchmarks/scripts/preflight.sh` gates on
+    exactly this field (`awk '{print $1}' /proc/loadavg`, abort at >= 8),
+    so the in-run series is on the same basis as the pre-run gate and the
+    two are directly comparable; and Task 13's ad hoc 2 s sampling
+    recorded the same field (mean 25.80, peak 50.05 on
+    results/B/run-009), so this series is comparable with the figures
+    already in the committed record. Fields 2 and 3 are the 5- and
+    15-minute averages, which over a run of this length are dominated by
+    load from BEFORE the run started -- the opposite of the question.
+    Its own limitation, stated rather than glossed: the 1-minute figure
+    is itself a ~60 s exponential average, so it records the SUSTAINED
+    level and cannot resolve a sub-second spike (run-005 lost three rmw
+    responses inside one 0.4 s window). "Was this run contended?" is the
+    question it answers.
+
+    HOST-WIDE, so it is read once per sample cycle and stamped onto every
+    process row of that cycle -- the same shape as rtf -- and it is not
+    attributable to any one process.
+
+    An unreadable or malformed file returns the contract's -1 sentinel
+    rather than raising: this is a background recorder, and killing it
+    over one bad read would lose the whole M3 series for a live run. -1
+    and not 0.0, because a real 0.0 would state that the host was idle,
+    which is exactly the false reading this series exists to prevent.
+    """
+    try:
+        with open(os.path.join(proc_root, "loadavg")) as f:
+            return float(f.read().split()[0])
+    except (FileNotFoundError, OSError, ValueError, IndexError):
+        return float(NOT_APPLICABLE)
 
 
 def compute_cpu_pct(prev_ticks: dict, curr_ticks: dict, interval_s: float, clk_tck: int) -> float:
@@ -194,10 +247,19 @@ def gpu_totals_for_pids(pids, vram_map: dict, sm_map: dict):
 
 
 def format_row(
-    sample_system_ns, process, cpu_pct, rss_bytes, gpu_util_pct, vram_bytes, rtf
+    sample_system_ns, process, cpu_pct, rss_bytes, gpu_util_pct, vram_bytes, rtf, loadavg_1m
 ) -> list:
     """Row values in the resources.csv contract's exact column order."""
-    return [sample_system_ns, process, cpu_pct, rss_bytes, gpu_util_pct, vram_bytes, rtf]
+    return [
+        sample_system_ns,
+        process,
+        cpu_pct,
+        rss_bytes,
+        gpu_util_pct,
+        vram_bytes,
+        rtf,
+        loadavg_1m,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +451,13 @@ def run(processes_path, out_path, interval_s: float, proc_root: str) -> None:
             now_ns = time.time_ns()
             vram_map = gpu_pid_vram_bytes()
             sm_map = gpu_pid_sm_pct()
+            # Once per cycle, beside now_ns, because loadavg is a property of
+            # the HOST at this sample instant and not of any process -- so it
+            # repeats across the rows sharing this now_ns, exactly as rtf does.
+            # Read AFTER the two nvidia-smi calls on purpose: those are the
+            # cycle's own slowest step, and the figure a reader wants is the
+            # load the sampled processes were actually running under.
+            loadavg_1m = read_loadavg_1m(proc_root)
 
             for entry in entries:
                 label = entry["label"]
@@ -424,7 +493,9 @@ def run(processes_path, out_path, interval_s: float, proc_root: str) -> None:
                 else:
                     raise ValueError(f"process map entry {entry!r} needs 'pattern' or 'container'")
                 prev_sample_mono[label] = sample_mono
-                writer.writerow(format_row(now_ns, label, cpu, rss, sm, vram, NOT_APPLICABLE))
+                writer.writerow(
+                    format_row(now_ns, label, cpu, rss, sm, vram, NOT_APPLICABLE, loadavg_1m)
+                )
                 f.flush()
 
             next_tick += interval_s
