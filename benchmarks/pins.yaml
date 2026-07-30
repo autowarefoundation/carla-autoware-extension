@@ -108,24 +108,42 @@ town10_pcd_regen:
 # rather than fails, so without this block C/D would run with no provenance
 # recorded and nothing would notice the bundle changing under them.
 #
-# DIGEST OF RECORD, not a reproducible provenance chain -- stated plainly
-# because the difference matters. Unlike the Town10 bundles there is no fetch
-# script and no upstream revision committed here: the installed tree is the
-# `shinjuku_map` ROS package (its own package.xml at version 0.0.0, plus
-# CMakeLists.txt and LICENSE), and where it was obtained from is not recorded in
-# this repo. What these digests DO buy is precisely the failure this check
-# exists for -- an edited or swapped Nishi bundle stops matching and is refused,
-# rather than being measured and silently attributed to the map C/D's numbers
-# are filed under. Recovering the upstream source is future work, and belongs
-# with whoever owns the Nishi map rather than with a task that only needed to
-# stop misattributing it. Same standard as bench_observer_images.local_digest:
-# it pins WHICH bytes a run used, and is not a pullable reference.
+# UPSTREAM IS RECORDED, and an earlier revision of this comment wrongly said it
+# was not. docs/nishishinjuku-map.md and docs/e2e-report.md both name the source
+# -- AWSIM v2.0.0 `Shinjuku-Map.zip`, 129,585,415 bytes, with the release URL --
+# so `upstream` below is filled from them rather than left null. Recorded as the
+# correction it is: the claim of absence was made without reading the docs that
+# hold it, which is the same class of error as citing evidence that does not
+# exist, in its inverted form.
+#
+# WHAT REMAINS A GAP, narrowly: there is no fetch-and-verify script for this
+# bundle (fetch_maps.sh covers Town10 only), so nothing re-derives these digests
+# from `url` the way autoware_contents' are re-derived. The zip's own byte size
+# is pinned below as the one upstream-side check available without a fetcher.
+# A Nishi equivalent of fetch_maps.sh is future work and belongs with whoever
+# owns that map.
+#
+# ENFORCEMENT, stated exactly: only `pcd_sha256` has a consumer --
+# benchmarks/scripts/bundle_pin.py checks it via BUNDLE_REGISTRY, so an edited
+# or swapped POINTCLOUD is refused rather than measured and silently attributed
+# to the map C/D's numbers are filed under. `osm_sha256`,
+# `projector_info_sha256` and `zip_bytes` are RECORDED BUT NOT ENFORCED: nothing
+# reads them today, so a changed lanelet2 map or projector info would not be
+# caught here. They are kept because recording them costs nothing and a later
+# consumer can adopt them, not because they are currently checked.
 nishishinjuku_bundle:
+  # The enforced one (bundle_pin.py / BUNDLE_REGISTRY).
   pcd_sha256: 78b6cf81047489efb1f008a44238d497241da64bb158c824a3f18f23eb50e9d3
+  # Recorded, NOT enforced -- no consumer reads the three below.
   osm_sha256: a064a60cc6d866ff2cfec8d3100886b5e7fd5fa83019b2729d9413809c62d39e
   projector_info_sha256: c735f3f8ebb08f3a891b914c19d7d5f7d6c7cb0a83177dd57798d1eafaaa6d4f
+  zip_bytes: 129585415
   package_name: shinjuku_map
-  upstream: # NOT recorded in this repo -- see the note above
+  upstream: https://github.com/autowarefoundation/AWSIM/releases/download/v2.0.0/Shinjuku-Map.zip
+  upstream_release: AWSIM v2.0.0
+  # License travels with the data; the bundle is referenced in place, never
+  # committed (docs/nishishinjuku-map.md).
+  license: CC BY-NC 4.0
 carla_0915:
   url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
   sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7
