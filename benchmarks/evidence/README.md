@@ -41,11 +41,11 @@ that names the decision, not the date — the artifacts carry their own timestam
 
 ## What is here
 
-| Directory | Decision it supports |
-| --- | --- |
-| `g1-rung2-regen/` | Selects the G1 ladder's **absolute** branch, `abs_pose_gate_m: 0.5`, for cells A/A-hf: max NDT error **0.089 m** against the 0.5 m gate on `pins.yaml` `town10_pcd_regen`. Contains the raw NDT and ground-truth series plus the bundle digest the verdict is attributable to. |
-| `g2-regen-committed-route/` | The **1.929 m** FAIL on the original 438.9 m Town10 route — the measurement that justified re-picking the route. |
-| `g2-regen-repicked-route/` | The **0.244 m** PASS on the re-picked 258.9 m route. |
+| Directory                   | Decision it supports                                                                                                                                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `g1-rung2-regen/`           | Selects the G1 ladder's **absolute** branch, `abs_pose_gate_m: 0.5`, for cells A/A-hf: max NDT error **0.089 m** against the 0.5 m gate on `pins.yaml` `town10_pcd_regen`. Contains the raw NDT and ground-truth series plus the bundle digest the verdict is attributable to. |
+| `g2-regen-committed-route/` | The **1.929 m** FAIL on the original 438.9 m Town10 route — the measurement that justified re-picking the route.                                                                                                                                                               |
+| `g2-regen-repicked-route/`  | The **0.244 m** PASS on the re-picked 258.9 m route.                                                                                                                                                                                                                           |
 
 Each `*_summary.txt` records the map, the bundle's own pcd `sha256`, the window
 and the verdict, so a reader can confirm which bytes produced which number
