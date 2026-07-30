@@ -1728,15 +1728,87 @@ machine — not a footnote about this harness.**
 | downstream symptom 1                    | sensing chain **8.47 → 0.52 Hz**                      | `run-010`, in-container PublishedTime         |
 | downstream symptom 2                    | **3** AD-API services timing out rather than refusing | runs 005 / 009 / 011                          |
 
-**What would falsify it — and neither is available yet:**
+**What would falsify it. FALSIFIERS 1 AND 2 ARE NOW ANSWERED (2026-07-30, Task
+15b); falsifier 3 is still owed:**
 
-1. **Cell A's baseline load.** If cell A's Autoware also averages ~18 cores, the
-   saturation is a property of _this environment_, not of approach B, and B's gate
-   FAIL says nothing about tier4-native. If A's is materially lower, it is a real
-   finding about B. **Cell A has never run through this harness**, so there is no
-   control and the question is open.
-2. **Whether the M4 ceiling criterion actually fires at vlp16.** The sweep's own
-   ceiling test has never been evaluated at the baseline class.
+1. **Cell A's baseline load — ANSWERED. The saturation is SPECIFIC TO CELL B, not
+   environmental.** Cell A has now run through this harness:
+   `results/A/run-001` (static) and `results/A/run-002` (closed-loop), both
+   contract-valid, non-excluded and M5-PASS on the first attempt. Whole-run mean
+   CPU, the same reduction and the same `container: autoware` process label this
+   table's cell-B column uses:
+
+   | series                    | `autoware`                     | `carla-server` | total of 2400%      |
+   | ------------------------- | ------------------------------ | -------------- | ------------------- |
+   | A `run-002` (closed-loop) | **208.8%** (~**2.09 cores**)   | 262.9%         | 503.4% (**21.0%**)  |
+   | A `run-001` (static)      | 155.0% (~1.55 cores)           | 258.5%         | 441.9% (18.4%)      |
+   | B `run-010` (this table)  | **1832.5%** (~**18.33 cores**) | 280.5%         | 2173.5% (**90.6%**) |
+   | B `run-012`               | 1848.9% (~18.49 cores)         | 281.1%         | 2191.6% (91.3%)     |
+
+   So cell A's Autoware runs at **1/8.78** of cell B's while `carla-server` is
+   matched to within **6.7%** — the simulator side of both cells costs the same on
+   this host, which is what makes the Autoware difference a difference between the
+   cells rather than a host-wide effect or an artifact of the label. **Cell A does
+   not average ~18 cores, so the first branch above is refuted:** the 91%
+   saturation is not a property of _this environment_, and Task 13's load finding
+   survives as a real finding **about cell B**.
+
+   Two things sharpen it, one in each direction. Cell A carries the **heavier**
+   sensing load — ~639 000 pts/s measured (below) against cell B's registered
+   288 000 — so it does more sensor work for one ninth of the Autoware CPU. And
+   cell B's figure was recorded on `run-010`, which is `excluded` /
+   `gate:arm-failed`: **cell B consumed ~18.5 cores while never actually
+   arming**, where cell A consumed ~2.1 while driving the route. "Arm-matched"
+   between the two rows above therefore holds only for the manifest's `arm`
+   field, and the asymmetry runs against cell B.
+
+   **NOT yet separable from the IMAGE, and this is the live confound.** Cell A
+   runs `ghcr.io/autowarefoundation/autoware:universe-devel`; cell B runs
+   `pins.yaml`'s `universe-devel-**cuda**` digest. A CUDA-enabled image can spin
+   CUDA-aware nodes at much higher CPU even with `perception:=false`, so
+   "approach B costs 8.78×" is **not** yet distinguishable from "that image costs
+   8.78×", and nothing in the campaign isolates it today. **Task 18 measures M3
+   CPU with n ≥ 10 on both cells**, which is where this gets its error bars.
+   Task 22's confound table must carry this sentence beside any B-side M3 number.
+
+2. **Whether the M4 ceiling criterion actually fires — ANSWERED. IT DOES NOT
+   FIRE, so THIS CLAIM IS FALSIFIED.** `analysis/ceiling.evaluate_ceiling` on both
+   cell-A runs' registered inputs returns `reached=False, reasons=[]` — every one
+   of the four pre-registered disjuncts silent, by wide margins:
+
+   | `evaluate_ceiling` input | A `run-001` static        | A `run-002` closed-loop   | fires when           |
+   | ------------------------ | ------------------------- | ------------------------- | -------------------- |
+   | `rtf`                    | min 0.9965, median 0.9980 | min 0.9958, median 0.9982 | < 0.9 sustained 10 s |
+   | `tick_rate_ratio`        | n/a (paced arm)           | n/a (paced arm)           | < 0.9 sustained 10 s |
+   | `publisher_rate_ratio`   | 0.9993                    | 1.0000                    | < 0.9                |
+   | `quality_ok`             | True                      | True                      | is False             |
+
+   **Stated as falsified rather than quietly dropped:** the claim above predicted
+   the baseline sits at or above this host's throughput ceiling, and on cell A it
+   does not — RTF never leaves 0.996–1.003 and there is roughly **4× headroom**
+   (21.0% of 24 cores). The sweep's premise is therefore comfortably **true** for
+   cell A, and the 91% figure the premise was doubted on is cell B's alone.
+
+   **The class the runs were actually at, measured rather than labelled.**
+   `runner/spawn.py` pins `_TOP_LIDAR_CHANNELS = "128"` and
+   `_TOP_LIDAR_POINTS_PER_SECOND = "600000"`, and `cells/extension.sh` passes no
+   sweep overrides, so these runs are **not** at the registered `vlp16` class
+   (16 ch / 288 000 pts/s) and not at `128ch` (4 600 000) either. Confirmed from
+   the committed series, not just the constants: `run-002`'s
+   `/sensing/lidar/top/pointcloud_raw_ex` median is **511 288 B/msg** at
+   **20.00 Hz** → ~31 956 pts/cloud → **~639 000 pts/s**. The rig therefore
+   carries **~2.2× the vlp16 point rate**, so a criterion that does not fire here
+   would not fire at the lighter baseline under load monotonicity in point rate —
+   an **assumption, stated as one**, which makes the falsification more robust
+   than a `vlp16` run would have, not less. A strict `vlp16` confirmation remains
+   unavailable: both sweep launchers refuse a `--class` whose sensor arguments are
+   not spelled out, and `config/cells.yaml`'s header records that the class →
+   argument mapping "was owed to Task 26, which is struck, so it has NO owner now".
+   **Consequence, and it needs a DECISION rather than a new amendment:** `32ch` is
+   the step-up this file and `cells.yaml` already pre-registered as an
+   _anticipated_ amendment for exactly this branch. Reinstating it is the owner's
+   call and is not acted on here.
+
 3. **One paired baseline run under `powersave` vs `performance`** (registered
    2026-07-30 by owner ruling; **not yet run**). Neither falsifier above separates
    the governor confound, and `powersave` ramps more slowly than `performance` on
@@ -1765,23 +1837,36 @@ threshold is touched.** What follows is the characterization, because attributin
 a harness- or host-induced deficit to the approach under test would be a false
 finding about that approach — worse than no finding.
 
-> **⚠ THE FAIL IS NOT YET ATTRIBUTABLE TO APPROACH B. It is pending cell A's
-> bench-harness control.** Read this before quoting any number below.
+> **⚠ THE FAIL IS NOT ATTRIBUTABLE TO APPROACH B — but the reason has CHANGED
+> (updated 2026-07-30, Task 15b).** Read this before quoting any number below.
 >
 > Everything here — the ~18.3-core Autoware container, the ~15% wire loss, the
 > AD-API timeouts, the 2.02 / 3.42 / 0.52 Hz NDT figures — was measured on **one
-> cell, on one saturated host, with no control**. Cell A has **never** been run
-> through this harness (`benchmarks/results/A/` does not exist), and cell B runs a
-> _different image_ (`universe-devel-cuda`) with an _extra_ concat-relay node. So:
+> cell**. **The control now exists**: `benchmarks/results/A/run-001` (static) and
+> `run-002` (closed-loop) are filed, contract-valid and M5-PASS.
 >
-> - if cell A's Autoware also consumes ~18 cores, the saturation is a property of
->   **this environment** and cell B's gate FAIL says **nothing about
->   tier4-native**;
-> - if cell A's is materially lower, it is a real finding about **B**.
+> - **The "this environment" branch is REFUTED.** Cell A's Autoware averages
+>   **~2.09 cores** (whole-run, `run-002`) against cell B's **~18.33**
+>   (`run-010`), with `carla-server` matched to within 6.7% and cell A carrying
+>   the heavier sensor rig. The host is not saturated; **cell B is.** So the
+>   saturation is a real finding **about cell B**, and this host no longer
+>   explains it.
+> - **What remains unattributable is the IMAGE, not the environment.** Cell B
+>   runs a _different image_ (`universe-devel-**cuda**`), so "approach B costs
+>   8.78×" is still not separable from "that image costs 8.78×". **Task 18**
+>   measures M3 CPU with n ≥ 10 on both cells, which is where that separation
+>   gets its error bars.
 >
-> **The evidence cannot currently distinguish these.** "Cell B fails its
-> closed-loop gate" is therefore a statement about **cell B as measured here**, not
-> a finding about the tier4-native approach, and it must not be quoted as one.
+> **CORRECTED while updating this box:** the "_extra_ concat-relay node" was
+> never a cell-B-only difference. `scripts/e2e/launch_autoware.sh` starts one for
+> the extension family too — visible as `concat relay pid …` in
+> `results/A/run-001/launch.log`
+> (`/sensing/lidar/top/pointcloud_before_sync -> /sensing/lidar/concatenated/pointcloud`).
+> It must **not** be listed as an A-vs-B asymmetry in Task 22's confound table.
+>
+> "Cell B fails its closed-loop gate" is therefore a statement about **cell B as
+> measured here** — now with a control that rules out the host — and still not a
+> finding about the tier4-native approach, because the image is uncontrolled.
 >
 > Note also that cell B was made the campaign's first bench-harness closed-loop
 > cell even though **cell A is the cell already proven to drive**, so harness
@@ -3176,6 +3261,147 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   three neutralised in turn against the whole suite, failing only its own pins.
   No margin, threshold, tolerance, metric definition or cell definition
   changes; `config/margins.yaml` and `config/exclusions.md` are byte-identical.
+- **2026-07-30** — the **M4 registered claim's falsifiers 1 and 2 are recorded as
+  ANSWERED, and the claim itself as FALSIFIED**, in "Registered claim (Task 13)"
+  above; the `⚠` attribution box beside cell B's gate result is updated with the
+  control that now exists; and the three findings cell A's control produced are
+  registered in "Cell A's bench-harness control (Task 15b)". **Completeness, and
+  this is the gap that mattered most:** `results/A/run-001` and `run-002` answer
+  **both** registered falsifiers, but the tracked record still read "Cell A has
+  never run through this harness … the question is open" and "the ceiling test has
+  never been evaluated", while the falsification existed only in a **git-excluded**
+  `.superpowers/` report. That inverts two of this campaign's core conventions at
+  once — refuted hypotheses stay in the record _with the diagnostics that refuted
+  them_, and a claim that cannot be re-derived from tracked evidence is a defect —
+  so the strongest thing the control measured was the least visible thing in the
+  repo. Per item: **falsifier 1** is answered by cell A's Autoware averaging
+  ~2.09 cores against cell B's ~18.33 with `carla-server` matched to within 6.7%,
+  which refutes the "this environment is saturated" branch and leaves Task 13's
+  load figure standing as a finding about **cell B**; the **image** confound
+  (`universe-devel` vs `universe-devel-cuda`) is stated as the part still
+  unseparated, with Task 18's n ≥ 10 M3 measurement named as where it gets error
+  bars. **Falsifier 2** is answered by `evaluate_ceiling` returning
+  `reached=False, reasons=[]` on both arms with all four disjuncts' inputs
+  tabulated, recorded as a **falsification** rather than dropped, together with
+  the measured fact that the rig was ~639 000 pts/s (~2.2× `vlp16`) rather than
+  the registered baseline class — which makes the result more robust under load
+  monotonicity, stated as an assumption — and with the `32ch` step-up flagged as
+  needing a **decision** on an already-anticipated amendment, not a new one.
+  **The three findings** are the static-arm teardown-ordering gap that fabricates
+  a ~2% `publisher_drop_rate` (which Task 18 inherits on all ten static pairs),
+  the A-side instrument-asymmetry bound (`observer_loss_rate` 0.0000 against cell
+  B's 0.2564 / 0.1715, against a 0.02 margin on `achieved_rate_ratio`), and a
+  **refuted** 0.95 s stamp-domain hypothesis kept with the three diagnostics that
+  killed it. One correction rides along: the "extra concat-relay node" was never a
+  cell-B-only difference and must not be listed as an A-vs-B asymmetry. No margin,
+  threshold, tolerance, metric definition or cell definition changes; no filed run
+  is modified; `config/margins.yaml` and `config/exclusions.md` are byte-identical.
+- **2026-07-30** — `run.sh` gained **`--check-args`** (resolve the invocation,
+  print it as KEY=VALUE, exit before preflight — no host state touched, nothing
+  booted, nothing written under `results/`). **Completeness, against a campaign
+  rule the owner made binding on this date: a substring or text-scan assertion is
+  NOT a pin.** The fail-closed `duel_admissible` default was pinned only by tests
+  scanning `run.sh`'s and `duel.sh`'s source text, and inserting `DUEL=1` after
+  `run.sh`'s parse loop flips the default **on** with the whole suite green — the
+  **sixth** instance of that defect class in this campaign, this time in the guard
+  protecting the primary duel from contamination. `--dry-run` cannot serve as the
+  test vehicle because it deliberately runs preflight (host load, engine BuildId)
+  and so cannot execute without the CARLA trees. The behavioural pins now drive
+  the real parser, and one drives the whole `duel.sh` → `run.sh` chain end to end;
+  the text scans are kept, relabelled as secondary signals with their limitation
+  stated. Verified by re-running the post-parse insertion: the behavioural pin
+  fails, the text scans still pass. No measurement, metric, margin or cell
+  definition changes.
+
+### Cell A's bench-harness control (Task 15b): three findings the duel inherits
+
+**Added 2026-07-30 (Task 15b), before any P3 run.** All three come from
+`results/A/run-001` / `run-002` and are re-derivable from those committed series.
+The falsifier answers themselves are in "Registered claim (Task 13)" above.
+
+#### 1. The static arm's windowed M2 reconciliation charges a teardown-ordering gap to the publisher
+
+`duel_verdict._reconcile_run` reports **`publisher_drop_rate = 0.0213` on a
+publisher that dropped nothing** (`results/A/run-001`, static). The mechanism is
+exact and is a harness property, not an approach property:
+
+- `window.static_window` sets the window's upper bound to `clock_wall.max()` —
+  the run's **last** `/clock` sample.
+- `scripts/teardown.sh` stops the GT collector (which writes
+  `publisher_counts.json`) **before** it SIGINTs the observer (which writes
+  `clock.csv` and `observer.csv`). So the publisher series ends first.
+
+| run     | window top | publisher series end | gap          | scans at 20 Hz | in-window deficit  |
+| ------- | ---------- | -------------------- | ------------ | -------------- | ------------------ |
+| run-001 | 86.442 s   | 85.391 s             | **+1.051 s** | **21**         | 984 − 963 = **21** |
+| run-002 | 93.099 s   | 172.999 s            | −79.900 s    | 0              | 0                  |
+
+The predicted 21 equals the observed 21. **The closed-loop arm is immune**
+(`spatial_window` closes where the ego leaves the station band, ~80 s before the
+run ends: `run-002` reports 0.0000). `sweep_verdict._publisher_rate_ratio` is
+immune on both arms because it uses whole-run counts (0.9993 / 1.0000).
+
+**Task 18 inherits this on all ten static pairs, for cell A and cell B alike.**
+It is a fabricated non-zero publisher drop in the M2 reconciliation table, not a
+duel-margin metric, and being common to both cells it should barely move the
+A-vs-B delta. **Not fixed here** — it is a change to a pre-registered metric's
+companion output and the owner schedules it. Two candidate fixes, recorded with
+their costs: end the static window at `min(clock_wall.max(), publisher_end)`, or
+reverse the two teardown stops — the latter is smaller but moves flush ordering,
+which `run.sh` step 6's `exec` comment says was already paid for once.
+
+#### 2. The A-side instrument-asymmetry bound: cell A loses NOTHING where cell B loses 17–26%
+
+`cadence.reconcile_drops` over each run's own registered scoring window, on
+`/sensing/lidar/top/pointcloud_raw_ex` at the registered `lidar_expected_hz`:
+
+| run                     | expected | published | observed | `publisher_drop_rate` | `observer_loss_rate` |
+| ----------------------- | -------- | --------- | -------- | --------------------- | -------------------- |
+| A `run-001` static      | 984      | 963       | 983      | 0.0213 (finding 1)    | **0.0000**           |
+| A `run-002` closed-loop | 1041     | 1041      | 1042     | 0.0000                | **0.0000**           |
+| B (Task 13)             | —        | —         | —        | 0.0000                | **0.2564 / 0.1715**  |
+
+In-window observed rate on both cell-A runs: **20.0000 Hz** against a 20.0 Hz
+target. **So every observer-derived wire metric is biased downward for cell B and
+not at all for cell A, inside the primary duel.** Three of the five duel margin
+metrics are observer-derived (`one_hop_wall_ms`, `lidar_to_ndt_sim_ms`,
+`achieved_rate_ratio`), and `achieved_rate_ratio`'s margin is **0.02** — an order
+of magnitude below cell B's 0.17–0.26 loss.
+
+This is the confound Task 9 registered in exactly this spot, now bounded from the
+A side, and it adds a third independent leg to the existing two: the loss is not
+observer miscounting (Autoware's own PublishedTime saw 8.47 Hz against the
+observer's 8.53) and not observer-caused (Task 9's matrix measured
+10.006/10.071/10.070 Hz on the same transport). Cell A's **0.0000** on a
+_different_ transport shows the instrument is capable of losing nothing, so the
+loss is a property of cell B's SHM-off Fast-DDS transport. The per-process CPU
+agrees: cell A's `observer` averages **2.8%** against cell B's **22.7%**.
+
+#### 3. REFUTED: the apparent 0.95 s stamp-domain offset between the publisher and observer clocks
+
+Kept with the diagnostics that refuted it, per this file's own convention.
+`run-001`'s 0.0213 first looked like a stamp-domain defect: comparing the two
+series **sorted-elementwise** gave a constant **−0.9500 s** (19 ticks at 20 Hz)
+between `publisher_counts.json`'s `sim_stamps_ns` and `observer.csv`'s
+`header_stamp_ns`, and the same 0.95 s appeared against `gt.csv`'s `sim_ns` — the
+column `analysis/quality.py` joins to the NDT pose within a **25 ms** tolerance.
+That would have been serious, and it is the one check
+`collect_gt.lidar_stamp_recorder`'s docstring says only a live run can make:
+"On the first real counting run they must match to within one message period".
+
+**It is not a stamp-domain offset, and that check PASSES.** The elementwise
+comparison was invalid — it pairs `sorted[i]` with `sorted[i]` across two series
+whose _coverage intervals_ differ by 19 samples (finding 1), which manufactures a
+constant offset out of a pure index shift. Three diagnostics refute it:
+
+- The two series **overlap on one clock**: publisher `[16.341, 85.391]`, observer
+  `[17.291, 86.391]`, and **681 of 1382** stamps are bit-identical, the rest
+  differing by sub-tick jitter — not a rigid 0.95 s shift.
+- `run-002` reports `publisher_drop_rate = 0.0000` with in-window counts matching
+  to one message. A stamp-domain offset would be systematic across arms.
+- `run-002`'s M5 join succeeded on a **moving** ego at `pose_err_max = 0.264 m`. A
+  real 0.95 s label error would have injected ~0.95 s × speed, i.e. metres, and
+  the absolute gate would have failed.
 
 ## How to run
 
@@ -3195,7 +3421,13 @@ would run — without touching `benchmarks/results/` or booting anything.
 
 Flags: `--class <sweep-or-camera-class>`, `--unpaced`, `--runs N`,
 `--no-observer` (records `/clock` only), `--rpc-port N`, `--rmw`, `--shm`,
-`--dds-profile`, `--duel`.
+`--dds-profile`, `--duel`, `--check-args`.
+
+`--check-args` resolves the invocation (cell, approach, arm, transport triple,
+duel declaration, next run directory), prints it as `KEY=VALUE` and exits
+**before** preflight — so unlike `--dry-run` it touches no host state at all and
+runs anywhere. It is what lets a test pin the fail-closed `duel_admissible`
+default by running the real parser instead of scanning this script's text.
 
 `--duel` declares the run **primary-duel data** (`manifest.json`'s
 `duel_admissible`). `duel.sh` passes it on every run it orders, so the duel
