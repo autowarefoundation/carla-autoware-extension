@@ -1439,17 +1439,66 @@ fails in the launcher before `run.sh` reaches its arm step.
   reduced four-float cloud. Sources and the derived point counts are in finding 4
   of "Cell A's bench-harness control (Task 15b)".
 
-  **It is a runtime CONFIGURATION difference, not a fork capability difference** —
-  which is what makes it an interop observation rather than a limitation. BOTH
-  forks implement BOTH layouts: cell A's selects on `_extended`
-  (`CarlaLidarPublisher.h:42`, default **false**, driven by the CARLA actor
-  attribute `ros2_extended_lidar` per `CarlaLidarPublisher.h:17`), and cell B's
-  fork carries a ten-field `SetDataEx` beside the four-field `SetData` it actually
-  uses. Cell A opts in explicitly and requires it:
-  `runner/spawn.py:195` sets `"ros2_extended_lidar": "true"`, and `:226` lists it
-  in `_REQUIRED_NATIVE_ATTRS` so a blueprint lacking it fails loudly. The tier4
-  demo sets no such attribute, so cell B falls to its fork's default. **Cell B
-  could be configured to match**; nothing here is a defect of either fork.
+  > **RETRACTED 2026-07-30, same day.** An earlier revision of this entry
+  > explained the difference as "a runtime CONFIGURATION difference, not a fork
+  > capability difference … cell B's fork carries a ten-field `SetDataEx` beside
+  > the four-field `SetData` **it actually uses**", and concluded "cell B could be
+  > configured to match". **The last part was inferred from the wire bytes, not
+  > read from the call site, and it is wrong.** `carla-autoware-native`
+  > `LibCarla/source/carla/ros2/ROS2.cpp:985-986` calls `SetDataEx`
+  > **unconditionally** on the LiDAR path — there is no attribute gate, and the
+  > four-field `SetData` is dead code on that route. So cell B has no four-field
+  > path to "fall back to", and the mechanism claim is withdrawn. What replaces it
+  > is a **contradiction**, below. The measurements are untouched.
+
+  **UNRESOLVED CONTRADICTION: cell B's running binary does not match its pinned
+  source on this path.** Both sides cited so a later reader can re-derive it rather
+  than rediscover it:
+
+  | side              | says                | evidence                                                                                                                                                                                                                                                      |
+  | ----------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | **Pinned source** | `point_step` **32** | `carla-autoware-native` (pin `6315b856f`) `ROS2.cpp:985-986` calls `SetDataEx` unconditionally; `CarlaLidarPublisher.cpp:245-310`'s `SetDataEx` builds **ten** descriptors, accumulating `offset` 4+4+4+1+1+2+4+4+4+4 = **32**, and sets `point_step(offset)` |
+  | **Measured wire** | `point_step` **16** | `bench_observer` medians (241 813 B/msg), AND independently Autoware's own `localization.util.crop_box_filter_measurement_range` reporting `point_step 16` in **all six** of `results/B/run-007…012` (e.g. `run-012/tier4-autoware.log:555`)                  |
+
+  The wire side is strong because the second witness is a **consumer the campaign
+  does not control**: an Autoware node reading the cloud's own metadata, not this
+  harness measuring itself. (The `width` in those log lines is a downstream cropped
+  cloud, so only the `point_step` figure is load-bearing there.)
+
+  **The pinned-source side is solid too**, checked rather than assumed: the working
+  tree at `~/src/carla-autoware-native` is at the pinned sha `6315b856f`, and its
+  only differences from it are the three registered patches — modifying
+  `CMake/Toolchain.cmake`, `LibCarla/CMakeLists.txt` and
+  `PythonAPI/examples/autoware_demo.py`, plus the single file patch
+  `0002-glibc-compat` adds (`LibCarla/source/carla/GlibcCompat.c`, untracked).
+  **None touches the LiDAR publish path**, so `CarlaLidarPublisher.cpp`,
+  `ROS2.cpp` and `ExtendedLidarPoint.h` are byte-identical to the pin.
+
+  **MECHANISM UNRESOLVED. Not investigated here, and not guessed at.** The leading
+  hypothesis, labelled as a hypothesis: a **stale build artifact** — this project's
+  own documented failure mode. What lifts it above speculation is that the gate
+  which exists to catch exactly this **does not cover cell B**:
+  `scripts/e2e/verify_editor_artifact.sh` is invoked from exactly one place,
+  `scripts/e2e/run_e2e.sh:126`, which is the **extension** family's boot path, and
+  its `CARLA_ROOT=${CARLA_ROOT:?set CARLA_ROOT to ~/src/carla-autoware-integration}`
+  (`:20`) names cell A's fork in its own error text. `benchmarks/cells/tier4_autoware.sh`
+  performs **no artifact verification at all**. So the staleness gate is scoped to
+  cell A by construction. This is registered as an open item; the owner is
+  scheduling the investigation as its own task before Task 18.
+
+  **THE PROVENANCE BOUNDARY OF EVERY B-FAMILY CLAIM, stated plainly because it is
+  now the honest limit.** Manifests record `patches_git_sha`, and preflight checks
+  the engine `BuildId` for UE cells — but **nothing binds cell B's running LiDAR
+  binary to its pinned source**, and this contradiction is the first direct
+  evidence that the two can diverge. Whoever writes the findings document must
+  carry that caveat on every cell-B number, not only on this one.
+
+  **Cell A's side is unaffected and remains source-established**: `_extended`
+  (`CarlaLidarPublisher.h:42`, default false, driven by the CARLA actor attribute
+  `ros2_extended_lidar` per `:17`) is opted into explicitly by
+  `runner/spawn.py:195` (`"ros2_extended_lidar": "true"`), and `:226` lists it in
+  `_REQUIRED_NATIVE_ATTRS` so a blueprint lacking it fails loudly. Cell A's 32 B
+  layout is what both its source and its wire say.
 
   **NO DOWNSTREAM EFFECT IS CLAIMED, and this is deliberate.** Whether the six
   missing fields degrade any Autoware stage on cell B — ring-based ground
@@ -3426,9 +3475,10 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   directional**: cell A ships 2.118× the bytes for the same point count, so
   `one_hop_wall_ms` and `lidar_to_ndt_sim_ms` are biased **against cell A**, making
   an A-favourable latency result conservative and a B-favourable one confounded.
-  The layout difference is recorded as a runtime **configuration** difference, not
-  a fork capability one — both forks implement both layouts, cell A opts in via
-  `runner/spawn.py:195` — and **no downstream effect is claimed**: whether the six
+  The layout difference was recorded as a runtime **configuration** difference —
+  **that half is RETRACTED by the next entry below**, which replaces it with an
+  unresolved source-vs-wire contradiction; the measurements are unaffected — and
+  **no downstream effect is claimed**: whether the six
   missing fields degrade any Autoware stage is labelled UNMEASURED, because
   nothing in this campaign measures it. **This document's own earlier figure is
   corrected in place** rather than quietly replaced: "~639 000 pts/s (~2.2×
@@ -3438,6 +3488,46 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   ~53%. No margin, threshold, tolerance, metric or cell definition changes; no
   filed run modified; `config/margins.yaml` and `config/exclusions.md`
   byte-identical.
+- **2026-07-30** — the **MECHANISM** half of the entry above is **RETRACTED** and
+  replaced by a registered **unresolved contradiction**; every measurement it
+  carried is **retained**. **Completeness, and the retracted claim was mine
+  restating the coordinator's:** "both forks implement both layouts … cell B's fork
+  carries a ten-field `SetDataEx` beside the four-field `SetData` **it actually
+  uses**", concluding "cell B could be configured to match". The last part was
+  **inferred from the wire bytes rather than read from the call site**, and it is
+  wrong: `carla-autoware-native` `ROS2.cpp:985-986` calls `SetDataEx`
+  **unconditionally** on the LiDAR path, so the four-field `SetData` is dead code
+  there and cell B has no four-field path at all. `SetDataEx`
+  (`CarlaLidarPublisher.cpp:245-310`) builds ten descriptors accumulating `offset`
+  to **32**. So the **pinned source says 32 B/point while the wire measured 16**,
+  and the conclusion is that **cell B's running binary does not match its pinned
+  source on this path** — mechanism **UNRESOLVED**, not investigated here, with a
+  **stale build artifact** recorded as the leading _hypothesis_. What lifts that
+  above speculation is verifiable and is registered with it: the staleness gate
+  `scripts/e2e/verify_editor_artifact.sh` is invoked from exactly one place,
+  `run_e2e.sh:126` (the **extension** family's boot path), names cell A's fork in
+  its own `:20` error text, and `cells/tier4_autoware.sh` performs **no** artifact
+  verification — so the gate is scoped to cell A by construction. Both sides of the
+  contradiction are cited with paths and line numbers, including that the tier4
+  tree is at pin `6315b856f` and its only diffs from it are the three registered
+  patches, **none of which touches the LiDAR publish path**. Three consequences are
+  recorded rather than left implied: **every measured figure survives** (the byte
+  medians, the 2.118× ratio, the ~5.9% derived point gap and the directional
+  latency bias are all measurements of what ran, and cell B's wire `point_step` 16
+  is independently corroborated by Autoware's own
+  `crop_box_filter_measurement_range` in all six of `run-007…012`); the **8.78× CPU
+  finding keeps its direction**, because a 16 B/point cloud is _less_ data than the
+  pinned 32 B/point one, so a stale binary was doing _less_ work than its
+  registration implies and correcting it could only move cell B's cost up —
+  conservative for the extension either way; and the **provenance boundary** is
+  stated plainly, that manifests record `patches_git_sha` but nothing binds cell
+  B's running binary to it, which must now caveat every B-family claim. The
+  "both cells deliver ~53% of nominal" symmetry is **requalified**, not deleted:
+  the arithmetic holds for what ran (cell B's 52.5% is computed at its wire
+  `point_step` 16) but can no longer be described as the pinned configuration's
+  behaviour. No margin, threshold, tolerance, metric or cell definition changes; no
+  filed run modified; no fork touched and nothing rebuilt; `config/margins.yaml`
+  and `config/exclusions.md` byte-identical.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
@@ -3608,10 +3698,26 @@ gap slightly _smaller_ than shown):
 | B    | 241 813      | ÷ 16           | **15 113**      | 288 000 × 0.1 = 28 800  | 52.5%     |
 
 **So the point counts are nearly matched — 5.9% apart — while the bytes differ by
-2.118×.** The byte gap is almost entirely layout, and the "cell B emits half its
-registered points" reading is **refuted**: both cells deliver ~53% of nominal, by
-the same margin, which `runner/spawn.py:145` already documents for the extension
-side ("one ~half-rotation cloud per tick" in sync mode at the 0.05 s tick).
+2.118×.** The byte gap is almost entirely layout.
+
+> **REQUALIFIED 2026-07-30, same day.** An earlier revision read this as "both
+> cells deliver ~53% of nominal, by the same margin, which `runner/spawn.py:145`
+> already documents". **The arithmetic holds for WHAT RAN and nothing above
+> changes** — cell B's 52.5% is computed at its **wire** `point_step` of 16, which
+> is the value its running binary actually declared. But it can **no longer be
+> described as the pinned configuration's behaviour**: cell B's pinned source says
+> `point_step` 32 on its only LiDAR path, so the pinned configuration would give a
+> different per-cloud point count and the symmetry with cell A's documented
+> half-rotation mechanism is **not established** for cell B. See the "LiDAR point
+> layout" per-approach observation above for the unresolved contradiction. Cell A's
+> 53.4% remains both source- and wire-consistent.
+
+Read as a statement about what ran: both cells delivered ~53% of nominal (53.4% /
+52.5%), so the "cell B emits half its registered points" reading is not what
+distinguishes them — the byte gap is layout. Cell A's share is explained by
+`runner/spawn.py:145` ("one ~half-rotation cloud per tick" in sync mode at the
+0.05 s tick); cell B's cause is **not** established, and is now entangled with the
+source-vs-wire contradiction rather than with its registration.
 
 **The registered claim is therefore UNIT-AMBIGUOUS rather than simply wrong.**
 `cells/tier4_autoware.sh:78-80`'s "within 4% either way" is **false for bytes
@@ -3633,6 +3739,32 @@ count**. So the asymmetry penalises **cell A, the extension approach**:
   approach difference without equalizing the layout.
 
 That is a usable registration, and it is strictly better than "unresolved".
+
+**WHAT SURVIVES THE RETRACTION ABOVE, stated explicitly so nothing is quietly
+lost.** The mechanism claim was withdrawn; **none of the measurements depended on
+it**, because every one is a measurement of what actually ran on the wire:
+
+- **241 813 B/msg (B) and 512 184 B/msg (A)** — `bench_observer` medians, stable
+  across six and two runs.
+- **The 2.118× byte ratio** and **the ~5.9% derived point-count gap** — both
+  computed from those medians and each cell's **wire** `point_step`, which for cell
+  B is independently corroborated at 16 by an Autoware node.
+- **The directional latency bias against cell A** on `one_hop_wall_ms` and
+  `lidar_to_ndt_sim_ms` — it follows from the byte ratio alone.
+
+**And the 8.78× CPU finding stands with its DIRECTION UNCHANGED — the reason is
+worth spelling out, because it is not obvious.** If cell B's running binary is
+stale, then it was emitting a **16 B/point** cloud where its own pinned source
+specifies **32 B/point**: that is _less_ data per point, i.e. the stale binary was
+doing **less** work than its registration implies. So the ~18.5 cores cell B
+consumed was consumed while moving a **smaller** payload than the pinned
+configuration would have. Correcting the staleness could only push cell B's cost
+**up**, never down — so the 8.78× gap is **conservative for the extension approach**
+either way, exactly as the rig asymmetry (finding 4's opening) already is.
+
+**What is now in question is PROVENANCE, not the numbers.** That is the whole of the
+change: the figures are what ran; what is no longer safe is any claim that what ran
+is what cell B's pinned source specifies.
 
 ## How to run
 
