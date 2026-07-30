@@ -521,3 +521,115 @@ def test_the_reset_covers_every_observability_field_arm_observations_reads():
     for field in ("_cmd_longitudinal", "_speeds", "_first_xy", "_control_cmd_times"):
         assert f"self.{field}" in src, f"{field} disappeared from the module"
         assert field in block, f"{field} is read by arm_observations but not reset at engage"
+
+
+# --- I-1 BEHAVIOURAL pin (fix round 2) ---------------------------------------
+# The source-text scans below/above are a second signal only. They pass whenever
+# the text is PRESENT, so they survive the reset being commented out, moved off
+# the engage path, made unreachable, or shadowed -- they pin the source, not the
+# behaviour. That is the same "asserts less than its name claims" defect the
+# guard was added to close, so the real pin is here: drive the ACTUAL engage()
+# with sentinel state and assert every per-engage variable came back reset.
+#
+# engage() needs no rclpy -- it touches only time.monotonic() and its own
+# methods -- so it can be driven with a duck-typed object via the unbound
+# function. That is what makes a behavioural assertion possible at unit level.
+
+
+class _FakeLogger:
+    def info(self, *_a, **_k):
+        pass
+
+    def warning(self, *_a, **_k):
+        pass
+
+
+class _FakeArm:
+    """Duck-typed stand-in carrying only what engage() touches."""
+
+    def __init__(self):
+        import collections as _c
+
+        # Sentinels: every one must be gone after engage().
+        self._control_cmd_times = _c.deque([1.0, 2.0, 3.0])
+        self._autonomous_mode = True
+        self._control_enabled = True
+        self._cmd_longitudinal = _c.deque([4.17, 4.17, 4.17])
+        self._speeds = _c.deque([9.9, 9.9])
+        self._first_xy = (111.0, 222.0)
+        self._last_xy = (333.0, 444.0)
+        self.verify_called_with = None
+
+    def get_logger(self):
+        return _FakeLogger()
+
+    def arm_observations(self, label):
+        return f"obs[{label}]"
+
+    def suppress_false_mrm(self, _timeout):
+        return True
+
+    def try_adapi_engage(self, _timeout):
+        return False
+
+    def legacy_engage(self):
+        return None
+
+    def verify_control_flowing(self, timeout_s):
+        # Captured so the test can prove the reset happened BEFORE the
+        # verification window opened, not merely by the time engage() returned.
+        self.verify_called_with = {
+            "control_cmd_times": list(self._control_cmd_times),
+            "autonomous_mode": self._autonomous_mode,
+            "control_enabled": self._control_enabled,
+            "cmd_longitudinal": list(self._cmd_longitudinal),
+            "speeds": list(self._speeds),
+            "first_xy": self._first_xy,
+            "last_xy": self._last_xy,
+            "timeout_s": timeout_s,
+        }
+        return False
+
+
+def _drive_engage():
+    from benchmarks.injector.arm_and_goal import ArmAndGoal
+
+    fake = _FakeArm()
+    ArmAndGoal.engage(fake, 30.0)
+    return fake
+
+
+def test_engage_actually_resets_every_per_engage_variable():
+    """BEHAVIOURAL: fails if the reset is neutralised, not only if deleted."""
+    fake = _drive_engage()
+    assert list(fake._control_cmd_times) == []
+    assert fake._autonomous_mode is False
+    assert fake._control_enabled is False
+    assert list(fake._cmd_longitudinal) == []
+    assert list(fake._speeds) == []
+    assert fake._first_xy is None
+    assert fake._last_xy is None
+
+
+def test_the_reset_happens_BEFORE_the_verification_window_opens():
+    """Ordering matters: a reset after verify_control_flowing would let
+    pre-engage traffic satisfy the very check it is meant to gate."""
+    fake = _drive_engage()
+    seen = fake.verify_called_with
+    assert seen is not None, "engage() never called verify_control_flowing"
+    assert seen["control_cmd_times"] == []
+    assert seen["autonomous_mode"] is False
+    assert seen["control_enabled"] is False
+    assert seen["cmd_longitudinal"] == []
+    assert seen["speeds"] == []
+    assert seen["first_xy"] is None
+    assert seen["last_xy"] is None
+
+
+def test_engage_still_reports_the_verification_result():
+    """Guard against a reset refactor that swallows engage()'s return value."""
+    from benchmarks.injector.arm_and_goal import ArmAndGoal
+
+    fake = _FakeArm()
+    fake.verify_control_flowing = lambda _t: True
+    assert ArmAndGoal.engage(fake, 30.0) is True

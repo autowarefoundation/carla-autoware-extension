@@ -724,8 +724,14 @@ class ArmAndGoal(Node):
         self._speeds.clear()
         # Re-seeded rather than zeroed: post-engage displacement must be
         # measured FROM the engage moment, so the next kinematic_state
-        # callback establishes a fresh origin.
+        # callback establishes a fresh origin. _last_xy goes with it: it is
+        # currently inert on its own (arm_observations guards on
+        # `_first_xy is not None`, so a stale _last_xy cannot be read), but
+        # "inert because of a guard somewhere else" is one refactor away from
+        # live, and leaving half a pose pair reset is the same shape of defect
+        # I-1 was. Reset as a pair.
         self._first_xy = None
+        self._last_xy = None
         remaining = max(0.0, timeout_s - (time.monotonic() - start))
         armed = self.verify_control_flowing(remaining)
         # is_autoware_control_enabled is RECORDED here, not gating (NEW-1):
