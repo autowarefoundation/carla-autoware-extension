@@ -21,12 +21,24 @@ services:
       # selected by MAP_DIR (scripts/e2e/launch_autoware.sh), derived from MAP in
       # scripts/e2e/run_e2e.sh. Mounting them all costs nothing and keeps a map
       # switch down to a single environment variable.
-      # town10 (unshifted) stays mounted: it is still the provenance source
-      # for town10-shifted (benchmarks/pins.yaml town10_pcd_shifted) and
-      # Task 10 Step 5 compares against it.
+      # town10 (unshifted) stays mounted: it is still the provenance source for
+      # the rigid re-registrations (benchmarks/pins.yaml town10_pcd_shifted,
+      # town10_pcd_refit) and Task 10 Step 5 compares against it.
+      # town10-shifted holds whichever RIGID re-registration is currently
+      # installed -- shifted (dy -0.475) or refit (dy -0.607). Which one is on
+      # disk is answered by hashing it against pins.yaml, never by the
+      # directory name (see pins.yaml's one-block invariant).
+      # town10-regen is the ladder's rung-2 bundle: NON-rigid, rebuilt from
+      # ground-truth-registered LiDAR sweeps by
+      # benchmarks/scripts/build_pcd_from_gt.py. It gets its own directory
+      # rather than becoming another occupant of town10-shifted, because it is
+      # not a re-registration of that source at all. Select it with
+      # MAP_DIR=/autoware_map/town10-regen, which run_e2e.sh honours over
+      # map_defaults.sh's per-map default.
       - ~/autoware_map/nishishinjuku:/autoware_map/nishishinjuku:ro
       - ~/autoware_map/town10:/autoware_map/town10:ro
       - ~/autoware_map/town10-shifted:/autoware_map/town10-shifted:ro
+      - ~/autoware_map/town10-regen:/autoware_map/town10-regen:ro
       - ../extension/build:/work/extension:ro
       # Host X11 socket so scripts/e2e/launch_rviz.sh can show RViz on the host
       # display (grant access once per session with `xhost +local:`).

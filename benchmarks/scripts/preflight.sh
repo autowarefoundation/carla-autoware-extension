@@ -179,6 +179,38 @@ PY
 fi
 
 # ---------------------------------------------------------------------------
+# 6. Map-bundle provenance. pins.yaml carries several candidate contents for
+#    the ONE path map_defaults.sh resolves per map, so the registered
+#    invariant is that the installed file hashes to EXACTLY ONE pin block --
+#    and that block is the bundle the run used. Enforced here because an
+#    invariant with no consumer is a comment: a bundle matching NO block (an
+#    unrecorded local edit, e.g. a pcd regenerated but never pinned) or
+#    SEVERAL (a duplicated registration) makes every number the run produces
+#    unattributable. Reported as `map_bundle_pin` so the manifest records
+#    WHICH bundle, not merely that one matched.
+#
+#    Skipped, not failed, when the map has no host-side copy: the cells with
+#    no map at all (CAL-rmw) and a host that mounts a bundle from elsewhere
+#    are both legitimate, and this check is about provenance, not existence.
+# ---------------------------------------------------------------------------
+MAP_BUNDLE_PIN=""
+CELL_MAP="$(cell_field map)"
+if [ "$CELL_MAP" != "none" ]; then
+  # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
+  . "$REPO/scripts/e2e/map_defaults.sh"
+  carla_autoware_map_defaults "$CELL_MAP"
+  if [ -n "$MAP_DEFAULT_DIR" ]; then
+    BUNDLE_PCD="$HOME/autoware_map/$(basename "$MAP_DEFAULT_DIR")/pointcloud_map.pcd"
+    if [ -r "$BUNDLE_PCD" ]; then
+      if ! MAP_BUNDLE_PIN="$(cd "$REPO" &&
+        python3 -m benchmarks.scripts.bundle_pin "$BUNDLE_PCD" 2>&1)"; then
+        fail "$MAP_BUNDLE_PIN"
+      fi
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # KEY=VALUE report. run.sh folds these into placement.
 # ---------------------------------------------------------------------------
 GOVERNOR="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown)"
@@ -196,5 +228,8 @@ echo "shm_root_remaining=$(shm_count ! -user "$USER")"
 if [ -n "$ENGINE_BUILD_ID" ]; then
   echo "engine_build_id=$ENGINE_BUILD_ID"
   echo "carla_tree=$CARLA_TREE"
+fi
+if [ -n "$MAP_BUNDLE_PIN" ]; then
+  echo "map_bundle_pin=$MAP_BUNDLE_PIN"
 fi
 exit 0
