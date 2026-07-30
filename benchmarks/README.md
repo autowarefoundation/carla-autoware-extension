@@ -1488,14 +1488,45 @@ discipline or by removing instrumentation: the **DUT stack alone saturates 24
 cores at the harmonized 16-channel baseline**, the Autoware container alone
 averaging ~18.3 cores — and that is with `perception:=false`.
 
-**Two consequences, both larger than this section.** First, "host quiescence is an
-operational prerequisite" is violated **by the measurement itself**, so every rate
-metric this campaign takes is taken under ~90% saturation — a campaign-wide
-disclosure, not a per-run note. Second, and more consequential: **M4's ceiling may
-already be reached at the baseline configuration**, which would falsify the
-sweep's premise that the vlp16 baseline sits below the ceiling. **Neither is acted
-on here**; both are owner/`analysis/` questions, recorded so the sweep is not
-designed on an assumption its own baseline data contradicts.
+**Consequence 1: host quiescence is violated BY THE MEASUREMENT ITSELF.** Every
+rate metric this campaign takes is taken under ~90% saturation. That is a
+campaign-wide disclosure, not a per-run note.
+
+#### Registered claim (Task 13): the M4 sweep's premise may be false at its own baseline
+
+**Stated at full strength as a named, falsifiable claim rather than a caveat,
+because if it holds it is a headline result about running Autoware on this class of
+machine — not a footnote about this harness.**
+
+> **Claim.** The M4 sweep is premised on the harmonized **vlp16 baseline sitting
+> below this host's throughput ceiling**, with the heavier classes probing upward
+> from there. On this workstation that premise may be **false at the starting
+> point**: the baseline configuration already consumes **91% of 24 cores**, with
+> `perception:=false`.
+
+**Evidence** (all measured, all retained):
+
+| measurement                             | value                                                 | source                                        |
+| --------------------------------------- | ----------------------------------------------------- | --------------------------------------------- |
+| total sampled CPU at the vlp16 baseline | **2173.5%** of 2400% (**91%**)                        | `results/B/run-010/resources.csv`, 78 samples |
+| Autoware container alone                | **1832.5%** mean (~**18.3 cores**), perception OFF    | same                                          |
+| in-run 1-min loadavg                    | peak **50.05** / **54.01**; mean 25.80 / 29.80        | direct 2 s sampling, runs 009 / 010           |
+| downstream symptom 1                    | sensing chain **8.47 → 0.52 Hz**                      | `run-010`, in-container PublishedTime         |
+| downstream symptom 2                    | **3** AD-API services timing out rather than refusing | runs 005 / 009 / 011                          |
+
+**What would falsify it — and neither is available yet:**
+
+1. **Cell A's baseline load.** If cell A's Autoware also averages ~18 cores, the
+   saturation is a property of _this environment_, not of approach B, and B's gate
+   FAIL says nothing about tier4-native. If A's is materially lower, it is a real
+   finding about B. **Cell A has never run through this harness**, so there is no
+   control and the question is open.
+2. **Whether the M4 ceiling criterion actually fires at vlp16.** The sweep's own
+   ceiling test has never been evaluated at the baseline class.
+
+**Not acted on here.** No sweep class, margin or analysis is changed; this registers
+the claim and its evidence so the sweep is not designed on an assumption its own
+baseline data contradicts. The owner schedules any change.
 
 **What that does and does not explain.** `RTF` stayed **1.0000** on both runs that
 recorded a clock series, so the _simulator_ keeps up and the deficits are in the
@@ -1513,6 +1544,30 @@ criterion and the observer LiDAR-rate criterion. **The gate FAIL stands and no
 threshold is touched.** What follows is the characterization, because attributing
 a harness- or host-induced deficit to the approach under test would be a false
 finding about that approach — worse than no finding.
+
+> **⚠ THE FAIL IS NOT YET ATTRIBUTABLE TO APPROACH B. It is pending cell A's
+> bench-harness control.** Read this before quoting any number below.
+>
+> Everything here — the ~18.3-core Autoware container, the ~15% wire loss, the
+> AD-API timeouts, the 2.02 / 3.42 / 0.52 Hz NDT figures — was measured on **one
+> cell, on one saturated host, with no control**. Cell A has **never** been run
+> through this harness (`benchmarks/results/A/` does not exist), and cell B runs a
+> _different image_ (`universe-devel-cuda`) with an _extra_ concat-relay node. So:
+>
+> - if cell A's Autoware also consumes ~18 cores, the saturation is a property of
+>   **this environment** and cell B's gate FAIL says **nothing about
+>   tier4-native**;
+> - if cell A's is materially lower, it is a real finding about **B**.
+>
+> **The evidence cannot currently distinguish these.** "Cell B fails its
+> closed-loop gate" is therefore a statement about **cell B as measured here**, not
+> a finding about the tier4-native approach, and it must not be quoted as one.
+>
+> Note also that cell B was made the campaign's first bench-harness closed-loop
+> cell even though **cell A is the cell already proven to drive**, so harness
+> defects and approach defects were conflated by construction: the LiDAR
+> attach-tree walk, the GT anchor, the MRM suppression and the arm observability
+> were all found via B and **apply to every cell**.
 
 **These are TWO independent deficits, not one story.** Taking the observer's own
 count as the true input, `run-009` still goes 8.53 Hz → 3.42 Hz, a further ~60%.
@@ -1602,6 +1657,28 @@ output on that window. The first preprocessing stage is the next largest
 | NDT parameters vs the regen bundle      | **NOT RULED OUT** — untested                                                                                                                                                                                                           |
 | the single-LiDAR concat relay           | **NOT RULED OUT** — and `/sensing/lidar/concatenated/pointcloud` had **2 publishers** in a separate probe, so it needs a look                                                                                                          |
 
+**CONFIRMED CONTRIBUTOR: two publishers on NDT's input topic, and the launcher's
+own stated assumption is wrong.** Probed live on `run-012` from inside the
+container:
+
+```text
+/sensing/lidar/concatenated/pointcloud  publishers=2 subscribers=1
+  PUB node=/sensing/lidar/concatenate_data
+  PUB node=//relay
+```
+
+`cells/tier4_autoware.sh`'s comment justifies its relay by asserting that the
+awsim_labs concatenate node "HARD-REQUIRES >= 2 input topics and **never loads**
+with one". **It does load, and it publishes** — onto the same topic the relay
+publishes to, which is NDT's input. That explains a rate (4.89 Hz) that is neither
+the publisher's 10 Hz nor a clean fraction of the 2.77 Hz stage upstream of the
+relay: it is the **sum of two sources**. If `concatenate_data` emits empty or
+single-frame clouds, NDT is being fed an alternating mix of usable and unusable
+inputs, which would depress its output rate independently of any CPU effect.
+**Not fixed here** — removing or gating one publisher changes what the cell
+measures, so it needs its own decision — but it is now a measured defect rather
+than a suspicion, and the launcher comment that licensed it is falsified.
+
 **So the second deficit is NOT localized to a single cause, and is recorded as
 uncharacterized with the candidates above rather than attributed.** The two that
 remain both have measured support but neither is isolated. What is settled: it is
@@ -1657,12 +1734,44 @@ generalization from cell B's single observation, which is the hazard this
 document already names: a correct general rule applied to a case it does not
 govern reads exactly like a correct specific claim.
 
-What remains genuinely open is narrower: on `results/B/run-008` the same
-post-engage snapshot read `mode_autonomous=False`, but that run had MRM operating
-an emergency stop, so the observation is **confounded** and cannot yet be called
-a per-approach difference. It is re-measured after the MRM amendment above. Note
-also that `mode: 2` sits alongside `is_autonomous_mode_available: false` in the
-same snapshot, which is the flag-disagreement this section is about.
+**RESOLVED by measurement, and a SECOND claim of mine is retracted with it
+(`results/B/run-012`).** After `run-008` (MRM active, `mode_autonomous=False`) I
+called this a per-approach difference on the strength of `run-009`. **That was also
+wrong**, and it was the same over-generalization from a single confounded
+observation. With MRM cleared and the arm fully observed, cell B reads:
+
+```text
+arm observations [pre-engage]:  mode=1 autonomous=False is_autoware_control_enabled=True
+                                is_autonomous_mode_available=False
+                                nonzero_longitudinal=0/10 peak_abs_velocity=0.000
+arm observations [post-engage]: mode=2 autonomous=True  is_autoware_control_enabled=True
+                                is_autonomous_mode_available=False
+                                nonzero_longitudinal=0/10 peak_abs_velocity=0.000
+```
+
+**`mode` goes 1 → 2 at engage on cell B, exactly as on cell A.** So the legacy
+`/autoware/engage` publish sets the operation mode on **both** approaches, there is
+**no per-approach difference** in mode-setting, and R4's authority term is sound and
+satisfiable on both. The "authority trilemma" was an artifact of two confounded
+readings, not a real design problem — **no term needs re-picking.**
+
+**Two further things these readings settle, both previously hypothetical:**
+
+- **R4 round 1's rejection of `is_autoware_control_enabled` was CORRECT**, and the
+  campaign never had the reading to prove it. It is **`True` PRE-engage** on cell B,
+  with `mode=1` and **0/10 nonzero commands at peak 0.000 m/s** — so using it as the
+  authority term would pass **vacuously**, exactly as that round feared. Its
+  objection rested on "_if_ it is true in STOP mode on any cell"; it is, measured.
+- **`is_autonomous_mode_available` stays `false` even at `mode=2`** — the same flag
+  disagreement this section documents on cell A, now confirmed on B.
+
+**What the arm fails on instead is LIVENESS, and that is a different finding.** With
+`mode == AUTONOMOUS` satisfied, the gated `/control/command/control_cmd` measured
+**0.00 Hz** post-engage (1.67 Hz pre-engage), `0/10` nonzero. The cause is upstream
+of control: `/autoware/planning/topic_rate_check/trajectory` is **ERROR on 27
+samples** — a route was accepted but **no trajectory was ever produced**, so
+`vehicle_cmd_gate` had nothing to forward. The ego still shows
+`ego_displacement_m=0.609` at `0.033 m/s`, i.e. drift rather than commanded motion.
 
 **This is recorded as a per-approach finding, not fixed.** Two remedies were
 available: make each approach publish `control_mode = AUTONOMOUS`, or arm
