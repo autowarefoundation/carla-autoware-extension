@@ -338,6 +338,15 @@ class ArmAndGoal(Node):
         # RECORDED, NOT GATING (review round 2, NEW-1): logged for R4.3's
         # per-approach finding, never used in an arming decision.
         self._control_enabled: bool = False
+        # OBSERVABILITY ONLY (arm_observations). None of these feeds a decision;
+        # they exist so a filed arm failure records every candidate authority
+        # signal on both sides of engage instead of leaving them to inference.
+        self._mode_raw: int = -1
+        self._autonomous_available: bool = False
+        self._cmd_longitudinal: collections.deque[float] = collections.deque(maxlen=4000)
+        self._first_xy: tuple[float, float] | None = None
+        self._last_xy: tuple[float, float] | None = None
+        self._speeds: collections.deque[float] = collections.deque(maxlen=4000)
         self.create_subscription(
             OperationModeState,
             OPERATION_MODE_STATE_TOPIC,
@@ -345,15 +354,82 @@ class ArmAndGoal(Node):
             10,
         )
 
-    def _on_kinematic_state(self, _msg: Odometry) -> None:
+    def _on_kinematic_state(self, msg: Odometry) -> None:
         self._kinematic_times.append(time.monotonic())
+        # OBSERVABILITY ONLY (see arm_observations): the ego's own reported
+        # motion, so a filed arm failure records whether the vehicle moved
+        # rather than leaving it to be inferred. Autoware's own view, which is
+        # the only one available here -- this node has no CARLA client by
+        # design.
+        p = msg.pose.pose.position
+        self._last_xy = (p.x, p.y)
+        if self._first_xy is None:
+            self._first_xy = (p.x, p.y)
+        v = msg.twist.twist.linear
+        self._speeds.append(math.sqrt(v.x * v.x + v.y * v.y))
 
-    def _on_control_cmd(self, _msg: Control) -> None:
+    def _on_control_cmd(self, msg: Control) -> None:
         self._control_cmd_times.append(time.monotonic())
+        # OBSERVABILITY ONLY. The nonzero-longitudinal fraction is the
+        # discriminator step 11.6 actually used on cell A (+4.170 m/s, 281/281
+        # nonzero at 20.07 Hz engaged, against ~19.93 Hz of ZERO-velocity
+        # commands pre-engage in STOP mode). It is RECORDED here on both sides
+        # of engage and used in NO decision: armed_ok is untouched. Recording
+        # it is what makes a ruling on the authority term possible from data
+        # for cell B, which has never reached a state where gated control flows.
+        try:
+            vel = float(msg.longitudinal.velocity)
+        except AttributeError:  # pragma: no cover - message-shape guard
+            vel = 0.0
+        self._cmd_longitudinal.append(vel)
 
     def _on_operation_mode_state(self, msg: OperationModeState) -> None:
         self._autonomous_mode = msg.mode == OperationModeState.AUTONOMOUS
         self._control_enabled = bool(msg.is_autoware_control_enabled)
+        # OBSERVABILITY ONLY: the raw mode integer and the availability flag.
+        # `mode` is kept as an int because the retained cell-A evidence is an
+        # integer ("mode: 2"), so logging the same shape makes the two directly
+        # comparable instead of requiring a reader to map a bool back.
+        self._mode_raw = int(msg.mode)
+        self._autonomous_available = bool(getattr(msg, "is_autonomous_mode_available", False))
+
+    def arm_observations(self, label: str) -> str:
+        """A one-line snapshot of every candidate authority signal.
+
+        Called on BOTH sides of engage and written to the run's arm.log. Pure
+        formatting over already-collected state: it starts nothing, decides
+        nothing, and no value it reports feeds armed_ok.
+
+        It exists because the authority term cannot be ruled on from cell B's
+        data today -- B has never reached a state where gated control flows, so
+        the nonzero-command discriminator is measured on A and unmeasured on B,
+        and cell A's PRE-engage mode/availability were never read at all (A's
+        retained evidence is a post-engage snapshot). Logging all candidates on
+        both sides of engage, on every cell, is what turns that into a decision
+        on measured ground instead of a guess.
+        """
+        cmds = list(self._cmd_longitudinal)
+        nonzero, frac, peak = nonzero_longitudinal(cmds)
+        now = time.monotonic()
+        rate = (
+            len(self._control_cmd_times)
+            and recent_count(self._control_cmd_times, now, CONTROL_CMD_WINDOW_S)
+            / CONTROL_CMD_WINDOW_S
+        )
+        moved = 0.0
+        if self._first_xy is not None and self._last_xy is not None:
+            moved = math.dist(self._first_xy, self._last_xy)
+        speed = self._speeds[-1] if self._speeds else float("nan")
+        return (
+            f"arm observations [{label}]: mode={self._mode_raw} "
+            f"autonomous={self._autonomous_mode} "
+            f"is_autoware_control_enabled={self._control_enabled} "
+            f"is_autonomous_mode_available={self._autonomous_available} "
+            f"control_cmd_hz~{rate:.2f} n={len(cmds)} "
+            f"nonzero_longitudinal={nonzero}/{len(cmds)} frac={frac:.3f} "
+            f"peak_abs_velocity={peak:.3f} "
+            f"ego_displacement_m={moved:.3f} ego_speed_mps={speed:.3f}"
+        )
 
     def _spin_for(self, duration_s: float) -> None:
         """Spin this node for duration_s, in SPIN_SLICE_S slices, instead
@@ -610,6 +686,12 @@ class ArmAndGoal(Node):
         # change_to_autonomous report "The target mode is not available", so
         # clearing it first is what gives that call a chance to succeed. Its
         # budget is taken OUT of timeout_s, like the AD-API attempt's.
+        # PRE-engage snapshot, before anything is touched. This is the reading
+        # the campaign has never taken on ANY cell: cell A's retained evidence
+        # is a post-engage snapshot only, which is precisely why the
+        # vacuous-window objection to is_autoware_control_enabled could never be
+        # settled. Logged, never used.
+        self.get_logger().info(self.arm_observations("pre-engage"))
         self.suppress_false_mrm(min(MRM_PARAM_TIMEOUT_S, timeout_s))
         adapi_budget = min(
             ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, max(0.0, timeout_s - (time.monotonic() - start))
@@ -635,7 +717,39 @@ class ArmAndGoal(Node):
             f"is_autoware_control_enabled={self._control_enabled} "
             "(R4.3 observation; only mode_autonomous gates ARMED)"
         )
+        # POST-engage snapshot, the pair to the pre-engage one above. Together
+        # they give every candidate authority signal on both sides of engage, on
+        # whichever cell runs -- which is what a ruling on the authority term
+        # needs and has never had. Logged after armed_ok has already decided, so
+        # it cannot influence the outcome.
+        self.get_logger().info(self.arm_observations("post-engage"))
         return armed
+
+
+ZERO_COMMAND_EPS_MPS = 1e-6
+
+
+def nonzero_longitudinal(values) -> tuple[int, float, float]:
+    """(count, fraction, peak |v|) of nonzero longitudinal commands.
+
+    OBSERVABILITY ONLY -- nothing in this module's arming decision calls it.
+    It exists because the nonzero-command discriminator is the one with actual
+    measured support on cell A (step 11.6: +4.170 m/s, 281/281 nonzero at
+    20.07 Hz engaged, against ~19.93 Hz of ZERO-velocity commands pre-engage in
+    STOP mode) and is completely unmeasured on cell B, which has never reached a
+    state where gated control flows. Recording it on both sides of engage is
+    what would let that gap be closed from data rather than assumed.
+
+    An EMPTY series returns a NaN fraction, not 0.0: "no commands seen" and
+    "commands seen, all zero" are different states, and collapsing them to 0.0
+    would read as the second when it was the first -- the same reasoning
+    `cadence.reconcile_drops` uses for its NaN `observer_loss_rate`.
+    """
+    values = list(values)
+    nonzero = sum(1 for v in values if abs(v) > ZERO_COMMAND_EPS_MPS)
+    fraction = (nonzero / len(values)) if values else float("nan")
+    peak = max((abs(v) for v in values), default=0.0)
+    return nonzero, fraction, peak
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

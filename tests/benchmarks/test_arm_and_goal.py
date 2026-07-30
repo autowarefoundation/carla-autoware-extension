@@ -410,3 +410,71 @@ def test_mrm_param_budget_is_bounded_so_it_cannot_eat_the_whole_arm_timeout():
     assert 0.0 < MRM_PARAM_TIMEOUT_S <= 15.0
     # Both pre-engage attempts together must leave room inside a 60 s arm.
     assert MRM_PARAM_TIMEOUT_S + ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S < 60.0
+
+
+# --- arm observability (Task 13, coordinator ruling 2c) ----------------------
+# OBSERVABILITY ONLY: armed_ok is unchanged and none of this feeds a decision.
+# The point is that a filed arm failure records every candidate authority
+# signal on both sides of engage, so the authority term can be ruled on from
+# data instead of from a guess.
+
+
+def test_nonzero_longitudinal_counts_and_fractions():
+    from benchmarks.injector.arm_and_goal import nonzero_longitudinal
+
+    n, frac, peak = nonzero_longitudinal([0.0, 0.0, 4.17, -2.0])
+    assert n == 2
+    assert frac == pytest.approx(0.5)
+    assert peak == pytest.approx(4.17)
+
+
+def test_all_zero_commands_are_distinguished_from_no_commands():
+    """The pre-engage STOP-mode case: commands flowing, all zero."""
+    from benchmarks.injector.arm_and_goal import nonzero_longitudinal
+
+    n, frac, peak = nonzero_longitudinal([0.0] * 400)
+    assert n == 0
+    assert frac == pytest.approx(0.0)
+    assert peak == 0.0
+
+
+def test_empty_series_reports_nan_fraction_not_zero():
+    """ "No commands seen" must not read as "commands seen, all zero".
+
+    Same reasoning cadence.reconcile_drops uses for its NaN observer_loss_rate.
+    """
+    from benchmarks.injector.arm_and_goal import nonzero_longitudinal
+
+    n, frac, peak = nonzero_longitudinal([])
+    assert n == 0
+    assert math.isnan(frac)
+    assert peak == 0.0
+
+
+def test_step_11_6_engaged_trace_reads_as_fully_nonzero():
+    """Cell A engaged: 281/281 nonzero at +4.170 m/s."""
+    from benchmarks.injector.arm_and_goal import nonzero_longitudinal
+
+    n, frac, _ = nonzero_longitudinal([4.170] * 281)
+    assert n == 281
+    assert frac == pytest.approx(1.0)
+
+
+def test_zero_epsilon_is_tight_enough_to_not_swallow_a_real_creep():
+    from benchmarks.injector.arm_and_goal import ZERO_COMMAND_EPS_MPS, nonzero_longitudinal
+
+    assert ZERO_COMMAND_EPS_MPS <= 1e-6
+    n, _, _ = nonzero_longitudinal([0.001])
+    assert n == 1
+
+
+def test_armed_ok_is_unchanged_by_the_observability_work():
+    """Regression guard: the authority term must still be mode-gated only."""
+    from benchmarks.injector.arm_and_goal import armed_ok
+
+    now = 1000.0
+    live = [now - 0.1 * i for i in range(40)]
+    # Liveness satisfied but authority absent -> still NOT armed.
+    assert not armed_ok(False, live, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ)
+    # Both satisfied -> armed.
+    assert armed_ok(True, live, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ)

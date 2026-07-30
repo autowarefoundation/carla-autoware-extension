@@ -494,6 +494,41 @@ shared-mode term in A − B; the M2 three-way reconciliation
 (`cadence.reconcile_drops` over `publisher_counts.json`) separates publisher
 drop from observer loss and is reported per cell alongside the duel row.
 
+**A PERMANENT BOUND on that reconciliation, not pending a run (Task 13).**
+`observer_loss_rate` is **uncomputable for the entire E family, for good** — not
+"unmeasured yet". It needs `publisher_counts.json`, which `collect_gt.py`
+produces only under `--count-lidar`, and that flag is **refused by design** for
+`approach: python-bridge` (`LISTEN_OWNING_APPROACHES`): the bridge's publish path
+_is_ a Python `sensor.listen` callback, so attaching a counter would displace the
+very thing being measured. Only the **native** approaches can ever carry a
+publisher-side term. A reader must not assume the E family's wire numbers carry
+the same observer-loss correction B's do — they cannot, and no amount of
+re-running changes it.
+
+**And it is unmeasured for cell A as of Task 13**, for a different and fixable
+reason: `benchmarks/results/A/` does not exist, so cell A has never been run
+through this harness at all and has no `publisher_counts.json` either. Every
+cell-A number the campaign holds (G1 0.089 m, G2 0.244 m) came from
+`scripts/e2e/`, a different harness. Until a cell-A bench run exists the
+reconciliation has a publisher-side term for **exactly one cell**, so the A − B
+observer-loss asymmetry cannot be quantified.
+
+**Measured on cell B, so the term's size is not hypothetical** (Task 13,
+`lidar_expected_hz: 10.0`, `/sensing/lidar/top/pointcloud_raw_ex`):
+
+| run                 | expected | published | observed | `publisher_drop_rate` | `observer_loss_rate` |
+| ------------------- | -------- | --------- | -------- | --------------------- | -------------------- |
+| `results/B/run-008` | 930      | 940       | 699      | **0.0000**            | **0.2564**           |
+| `results/B/run-009` | 798      | 799       | 662      | **0.0000**            | **0.1715**           |
+
+The publisher delivers everything expected on both runs, so the whole deficit is
+observer-side. **But the bench observer is NOT a bad instrument** — measured
+independently from inside the Autoware container on `run-010`, Autoware itself
+receives that topic at **8.47 Hz** against the observer's 8.53 Hz on the
+comparable run. Two unrelated subscribers losing the same ~15% means the loss is
+**real on the wire**, on this family's mandatory SHM-off UDP transport with
+~460 KB clouds, so the observed count is trustworthy rather than an artifact.
+
 **Reconciliation window and scope.** Computed over the SAME resolved
 scoring window this metric uses for that run — never a second,
 independent window — and reported per cell AND per arm, never pooled
@@ -1444,6 +1479,77 @@ configuration**: the observer failed to record 25.6% of published clouds on
 Variability of that size is itself evidence that these figures are
 contention-sensitive rather than fixed properties of the approach — which is why
 they must not be reported as tier4-native's rates.
+
+### Sensing-chain rate deficits on cell B: TWO of them, separately localized (Task 13)
+
+**Added 2026-07-30 (Task 13), before any P3 run.** Cell B fails the M5 NDT-rate
+criterion and the observer LiDAR-rate criterion. **The gate FAIL stands and no
+threshold is touched.** What follows is the characterization, because attributing
+a harness- or host-induced deficit to the approach under test would be a false
+finding about that approach — worse than no finding.
+
+**These are TWO independent deficits, not one story.** Taking the observer's own
+count as the true input, `run-009` still goes 8.53 Hz → 3.42 Hz, a further ~60%.
+The wire loss does not explain the NDT figure.
+
+**Deficit 1 — publisher → subscriber, ~15–26%, REAL ON THE WIRE.** Established
+above under `achieved_rate_ratio`: `publisher_drop_rate = 0.0000` on both runs, so
+the source is perfect, and Autoware's own container sees **8.47 Hz** against the
+bench observer's **8.53 Hz** — two unrelated subscribers losing the same amount.
+The mandatory SHM-off UDP transport with ~460 KB clouds is the registered
+B-family confound this sits under (Task 9).
+
+**Deficit 2 — inside the Autoware container, and it is the larger one.** Measured
+on `run-010` from inside that container over a 40.05 s window after a 20 s
+discovery settle:
+
+| stage                                             | n   | Hz       |
+| ------------------------------------------------- | --- | -------- |
+| `/sensing/lidar/top/pointcloud_raw_ex` (arriving) | 339 | **8.47** |
+| `self_cropped/pointcloud_ex` PublishedTime        | 111 | **2.77** |
+| `mirror_cropped/pointcloud_ex` PublishedTime      | 111 | 2.77     |
+| `pointcloud_before_sync` PublishedTime            | 111 | 2.77     |
+| `/sensing/lidar/concatenated/pointcloud`          | 196 | 4.89     |
+| `measurement_range/pointcloud` PublishedTime      | 157 | 3.92     |
+| `voxel_grid_downsample/pointcloud` PublishedTime  | 157 | 3.92     |
+| `downsample/pointcloud` PublishedTime             | 157 | 3.92     |
+| `/localization/pose_estimator/pose` (NDT out)     | 21  | **0.52** |
+
+**Why this instrument is valid, and it is the reason the measurement means
+anything:** the PublishedTime topics are **tiny** messages, one per cloud a node
+publishes, so unlike the ~460 KB `PointCloud2` topics they are **not subject to
+the UDP fragmentation loss that is under suspicion**. They report what each
+Autoware stage actually published. They are also read from inside Autoware's own
+container, so they are independent of the bench observer — which could not answer
+this, being the instrument under suspicion.
+
+The largest single drop is **NDT itself**: 3.92 Hz of input to 0.52 Hz of pose
+output on that window. The first preprocessing stage is the next largest
+(8.47 → 2.77 Hz).
+
+**Candidates, and what is ruled out by measurement:**
+
+| candidate                               | verdict                                                                                                                                                                                                                                |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| source/publisher decimation             | **RULED OUT** — 9.994 Hz sim, stamps at 100,000,001 ns, `publisher_drop_rate` 0.0000                                                                                                                                                   |
+| slow simulator (RTF < 1)                | **RULED OUT** — RTF **1.0000** on both runs with a clock series                                                                                                                                                                        |
+| bench observer being a lossy instrument | **RULED OUT** — Autoware sees 8.47 Hz vs the observer's 8.53 Hz                                                                                                                                                                        |
+| SHM-off UDP transport on ~460 KB clouds | **CONSISTENT, not isolated** — the registered Task 9 B-family confound                                                                                                                                                                 |
+| host CPU starvation                     | **CONSISTENT, not isolated** — directly sampled in-run loadavg peaks **50.05** and **54.01** on 24 cores (means 25.80 / 29.80); and the deficits VARY between runs of one unchanged configuration (25.6% / 2.02 Hz vs 17.1% / 3.42 Hz) |
+| NDT parameters vs the regen bundle      | **NOT RULED OUT** — untested                                                                                                                                                                                                           |
+| the single-LiDAR concat relay           | **NOT RULED OUT** — and `/sensing/lidar/concatenated/pointcloud` had **2 publishers** in a separate probe, so it needs a look                                                                                                          |
+
+**So the second deficit is NOT localized to a single cause, and is recorded as
+uncharacterized with the candidates above rather than attributed.** The two that
+remain both have measured support but neither is isolated. What is settled: it is
+not the source, not the simulator, and not the observer.
+
+**Do not read 2.02 Hz, 3.42 Hz or 0.52 Hz as tier4-native's NDT rate.** They are
+measurements of this stack on this host under this transport, and they move
+between runs of one configuration. O-13.3 registered `ndt_expected_hz: 10.0` as
+the deliberately conservative choice precisely so a decimating chain would FAIL
+the criterion rather than hide inside a lower expectation — **on its first live
+use, that registration did exactly its job.**
 
 ### `control_mode` reporting (R4): a per-approach interop gap, recorded not patched
 
