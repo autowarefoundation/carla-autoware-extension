@@ -646,9 +646,24 @@ PY
     show "${AW_EXEC:-<from launch.env>} bash -lc '<setup>" \
       "python3 /work/benchmarks/injector/arm_and_goal.py --goal $goal_args $arm_flag --timeout 60'"
     if [ "$DRY_RUN" = "0" ]; then
+      # tee'd INTO the run directory, not just the console. Two reasons, both
+      # paid for. arm_and_goal.py's own findings -- the AD-API outcome, the
+      # post-engage mode/control flags, and the MRM configuration this run used
+      # -- were previously retained NOWHERE, so a filed gate:arm-failed run
+      # could not be diagnosed afterwards (results/B/run-008's evidence had to
+      # be read out of a console scrollback). And the MRM configuration must be
+      # RECORDED per run rather than inferred, so a reader can tell which arm
+      # configuration produced a number. PIPESTATUS keeps arm_and_goal.py's
+      # exit code authoritative over tee's.
+      local arm_rc
+      set +o pipefail
       # shellcheck disable=SC2086
       ${AW_EXEC} bash -lc "$AW_SETUP
-        python3 /work/benchmarks/injector/arm_and_goal.py --goal $goal_args $arm_flag --timeout 60" ||
+        python3 /work/benchmarks/injector/arm_and_goal.py --goal $goal_args $arm_flag --timeout 60" \
+        2>&1 | tee "$run_dir/arm.log"
+      arm_rc="${PIPESTATUS[0]}"
+      set -o pipefail
+      [ "$arm_rc" = "0" ] ||
         exclude_and_die "$run_dir" "gate:arm-failed" "arm_and_goal.py did not arm the stack"
     fi
   else

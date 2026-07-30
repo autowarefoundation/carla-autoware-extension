@@ -112,6 +112,8 @@ from autoware_adapi_v1_msgs.srv import ChangeOperationMode, ClearRoute, SetRoute
 from autoware_control_msgs.msg import Control
 from autoware_vehicle_msgs.msg import Engage
 from nav_msgs.msg import Odometry
+from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+from rcl_interfaces.srv import SetParameters
 from rclpy.node import Node
 
 LOCALIZED_TOPIC = "/localization/kinematic_state"
@@ -209,6 +211,46 @@ ENGAGE_TOPIC = "/autoware/engage"
 ENGAGE_DISCOVERY_TIMEOUT_S = 5.0
 ENGAGE_PUBLISH_COUNT = 5
 ENGAGE_PUBLISH_PERIOD_S = 0.2
+
+# The perception-off false MRM, cleared the SAME way the proven extension
+# sequence clears it. MEASURED 2026-07-30 (results/B/run-008, excluded
+# gate:arm-failed): with perception:=false the diagnostics graph holds
+# /autoware/modes/autonomous in ERROR, mrm_handler goes NORMAL ->
+# MRM_OPERATING and logs "EMERGENCY_STOP is operated." plus 231 x "no mrm
+# operation available: operate emergency_stop", and change_to_autonomous is
+# refused "The target mode is not available". The gate then MRM-overrides the
+# drive command, so nothing arms.
+#
+# NOT a new relaxation, and that is the decisive point: EVERY promoted gate
+# number in this repo was already produced with MRM off. CLAUDE.md documents
+# the extension arming sequence as "reseed -> dummy perception -> route -> MRM
+# off", and scripts/e2e/arm_closed_loop.sh step 5 (SUPPRESS_MRM=1 by default)
+# sets exactly this parameter, calling it "still required ... without this the
+# gate MRM-overrides the drive command". Cell A's G1 0.089 m and G2 0.244 m
+# came from that path. Doing it here makes every bench cell's arm IDENTICAL to
+# the configuration that produced the promoted A-side evidence; NOT doing it
+# would put an asymmetry inside the shared environment, between the two arms of
+# the primary duel.
+#
+# It is also a false positive of a setting the campaign already pre-registers:
+# the MRM fires because perception:=false, which benchmarks/README.md registers
+# and discloses campaign-wide with the clear-road injector standing in.
+#
+# Applied HERE rather than per launcher, deliberately: run.sh step 9 runs this
+# script for EVERY cell, so one call site is uniform by construction and cannot
+# drift between families.
+#
+# REJECTED, and recorded rather than merely unchosen: supplying the
+# operation_mode_availability / diagnostics input that perception would have
+# supplied, so the system genuinely believes it is safe instead of being told to
+# ignore emergencies. That is the more faithful design. It loses here only
+# because adopting it now would diverge from the configuration that produced
+# promoted cell-A evidence, and keeping both duel arms identical would then
+# require re-gating cell A -- re-deriving promoted evidence. If the campaign
+# ever re-gates A for an independent reason, reconsider it then.
+VEHICLE_CMD_GATE_NODE = "/control/vehicle_cmd_gate"
+EMERGENCY_HANDLING_PARAM = "use_emergency_handling"
+MRM_PARAM_TIMEOUT_S = 10.0
 
 EXIT_ARMED = 0
 EXIT_TIMEOUT = 2
@@ -471,6 +513,60 @@ class ArmAndGoal(Node):
         )
         return False
 
+    def suppress_false_mrm(self, timeout_s: float = MRM_PARAM_TIMEOUT_S) -> bool:
+        """Clear the perception-off false MRM, as the proven sequence does.
+
+        Sets `use_emergency_handling=false` on vehicle_cmd_gate -- see
+        EMERGENCY_HANDLING_PARAM's comment for why this is the configuration
+        every promoted gate number in this repo already came from, and for the
+        rejected alternative.
+
+        Returns whether the parameter was actually set, and NEVER raises: on a
+        stack that does not expose the node (a static arm, a cell with no
+        vehicle_cmd_gate) arming must still proceed. The outcome is logged
+        either way, so a run's arm.log records the MRM configuration it used
+        rather than leaving a reader to infer it.
+        """
+        client = self.create_client(SetParameters, f"{VEHICLE_CMD_GATE_NODE}/set_parameters")
+        deadline = time.monotonic() + timeout_s
+        while not client.service_is_ready() and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=SPIN_SLICE_S)
+        if not client.service_is_ready():
+            self.get_logger().warning(
+                f"MRM config: {VEHICLE_CMD_GATE_NODE}/set_parameters never became "
+                f"available within {timeout_s:.0f} s, so "
+                f"{EMERGENCY_HANDLING_PARAM} was NOT set. If this cell runs "
+                "perception:=false, expect the false MRM to override the drive "
+                "command (results/B/run-008)."
+            )
+            return False
+        request = SetParameters.Request()
+        request.parameters = [
+            Parameter(
+                name=EMERGENCY_HANDLING_PARAM,
+                value=ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=False),
+            )
+        ]
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(
+            self, future, timeout_sec=max(0.1, deadline - time.monotonic())
+        )
+        response = future.result()
+        ok = bool(response and response.results and response.results[0].successful)
+        if ok:
+            self.get_logger().info(
+                f"MRM config: {VEHICLE_CMD_GATE_NODE} {EMERGENCY_HANDLING_PARAM}=false "
+                "(the perception-off false MRM; same configuration as the proven "
+                "extension sequence and as every promoted gate number)"
+            )
+        else:
+            reason = response.results[0].reason if response and response.results else "no response"
+            self.get_logger().warning(
+                f"MRM config: setting {EMERGENCY_HANDLING_PARAM}=false was REFUSED "
+                f"({reason}); the false MRM may override the drive command"
+            )
+        return ok
+
     def legacy_engage(self) -> None:
         """R4.1 step (4b): publish /autoware/engage {engage: true} -- the
         repo's ONE proven arming path. Always runs, regardless of
@@ -510,7 +606,14 @@ class ArmAndGoal(Node):
         and whatever remains goes to verify_control_flowing().
         """
         start = time.monotonic()
-        adapi_budget = min(ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, timeout_s)
+        # BEFORE the AD-API attempt, not after: the false MRM is what makes
+        # change_to_autonomous report "The target mode is not available", so
+        # clearing it first is what gives that call a chance to succeed. Its
+        # budget is taken OUT of timeout_s, like the AD-API attempt's.
+        self.suppress_false_mrm(min(MRM_PARAM_TIMEOUT_S, timeout_s))
+        adapi_budget = min(
+            ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, max(0.0, timeout_s - (time.monotonic() - start))
+        )
         self.try_adapi_engage(adapi_budget)
         self.legacy_engage()
         # Reset BOTH terms AT the engage moment (review round 1 C3, round 2

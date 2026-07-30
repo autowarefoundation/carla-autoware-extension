@@ -63,6 +63,12 @@ for _name in (
     "autoware_vehicle_msgs.msg",
     "nav_msgs",
     "nav_msgs.msg",
+    # rcl_interfaces is the MRM suppression's parameter-service dependency
+    # (SetParameters on vehicle_cmd_gate). Stubbed for the same reason as the
+    # rest: CI has no ROS.
+    "rcl_interfaces",
+    "rcl_interfaces.msg",
+    "rcl_interfaces.srv",
 ):
     sys.modules.setdefault(_name, _StubModule(_name))
 
@@ -361,3 +367,46 @@ def test_wait_localized_only_and_timeout_are_parsed():
 def test_exit_codes_match_the_documented_contract():
     assert EXIT_ARMED == 0
     assert EXIT_TIMEOUT == 2
+
+
+# --- MRM suppression constants (Task 13, results/B/run-008) -----------------
+# The behaviour needs a live vehicle_cmd_gate, so what is pinned here is the
+# CONTRACT: which node and parameter, and that the value is false. run-008
+# measured what happens without it -- MRM_OPERATING, "EMERGENCY_STOP is
+# operated.", 231 x "no mrm operation available", /autoware/modes/autonomous
+# ERROR x35, and change_to_autonomous refused.
+
+
+def test_mrm_suppression_targets_the_same_node_and_param_as_the_proven_sequence():
+    """scripts/e2e/arm_closed_loop.sh step 5 sets exactly this pair."""
+    from benchmarks.injector.arm_and_goal import (
+        EMERGENCY_HANDLING_PARAM,
+        VEHICLE_CMD_GATE_NODE,
+    )
+
+    assert VEHICLE_CMD_GATE_NODE == "/control/vehicle_cmd_gate"
+    assert EMERGENCY_HANDLING_PARAM == "use_emergency_handling"
+
+
+def test_the_proven_extension_sequence_still_sets_that_exact_pair():
+    """If arm_closed_loop.sh ever changes node or parameter, this must fail.
+
+    The whole justification for suppressing MRM here is that it reproduces the
+    configuration every promoted gate number already came from. If the proven
+    script diverges, that justification no longer holds.
+    """
+    from benchmarks.injector.arm_and_goal import (
+        EMERGENCY_HANDLING_PARAM,
+        VEHICLE_CMD_GATE_NODE,
+    )
+
+    text = (Path(__file__).resolve().parents[2] / "scripts/e2e/arm_closed_loop.sh").read_text()
+    assert f"ros2 param set {VEHICLE_CMD_GATE_NODE} {EMERGENCY_HANDLING_PARAM} false" in text
+
+
+def test_mrm_param_budget_is_bounded_so_it_cannot_eat_the_whole_arm_timeout():
+    from benchmarks.injector.arm_and_goal import ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, MRM_PARAM_TIMEOUT_S
+
+    assert 0.0 < MRM_PARAM_TIMEOUT_S <= 15.0
+    # Both pre-engage attempts together must leave room inside a 60 s arm.
+    assert MRM_PARAM_TIMEOUT_S + ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S < 60.0

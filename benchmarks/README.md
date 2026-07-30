@@ -1292,6 +1292,62 @@ zero, and neither approach's data-path, conversion or transport code is
 touched. No new file appears under `benchmarks/patches/`, so no approach's patch
 set grows and the patch policy's two named exceptions are unaffected.
 
+### MRM suppression: the perception-off false MRM, cleared uniformly (Task 13)
+
+**Amended 2026-07-30 (Task 13), before any P3 run.** Campaign-wide disclosure,
+same class and same uniformity argument as the `stop_check_enabled` amendment
+above.
+
+**What.** `benchmarks/injector/arm_and_goal.py` sets `use_emergency_handling=false`
+on `/control/vehicle_cmd_gate` before attempting to engage. `run.sh` step 9 runs
+that script for **every** cell, so the setting is uniform by construction and
+cannot drift between families. No approach is patched, and nothing under
+`benchmarks/patches/` changes.
+
+**Why it is not a new relaxation — the decisive reason.** **Every promoted gate
+number in this repo was already produced with MRM off.** `CLAUDE.md` documents
+the extension arming sequence as "reseed → dummy perception → route → **MRM
+off**", and `scripts/e2e/arm_closed_loop.sh` step 5 (`SUPPRESS_MRM=1` by default)
+sets exactly this parameter, calling it _"still required … without this the gate
+MRM-overrides the drive command"_. Cell A's G1 0.089 m and G2 0.244 m came from
+that path. Doing it in the shared arm makes every bench cell's arm **identical to
+the configuration the promoted A-side evidence came from**; _not_ doing it would
+put an asymmetry inside the shared measurement environment, between the two arms
+of the primary duel.
+
+**Second reason: it is a false positive of an already-registered setting.** The
+MRM fires because `perception:=false`, which this document already registers and
+discloses campaign-wide with the clear-road injector standing in. Clearing it
+removes a consequence of a pre-registered choice rather than making an
+independent one.
+
+**Measured, so the effect is not asserted** (`results/B/run-008`, excluded
+`gate:arm-failed`, before this amendment):
+
+| evidence                                                                                 | count            |
+| ---------------------------------------------------------------------------------------- | ---------------- |
+| `mrm_handler: MRM State changed: NORMAL -> MRM_OPERATING`; `EMERGENCY_STOP is operated.` | 1 each           |
+| `no mrm operation available: operate emergency_stop`                                     | 231              |
+| `/autoware/modes/autonomous ERROR`                                                       | 35               |
+| `change_to_autonomous: 'The target mode is not available'`                               | 3                |
+| `/autoware/planning/topic_rate_check/trajectory ERROR`                                   | 34 of 35 samples |
+
+**Rejected, and recorded with its reason rather than merely unchosen:** supplying
+the `operation_mode_availability` / diagnostics input that perception would have
+supplied, so the system genuinely believes it is safe instead of being told to
+ignore emergencies. That is the **more faithful design**. It loses here only
+because adopting it now would diverge from the configuration that produced
+promoted cell-A evidence, and keeping both duel arms identical would then require
+re-gating cell A — re-deriving promoted evidence, which is exactly what the GT
+anchor's no-op requirement exists to prevent. **If the campaign ever re-gates
+cell A for an independent reason, reconsider it then.**
+
+**Recorded per run, not inferred.** `run.sh` step 9 now tees the arm to
+`<run>/arm.log`, so each run retains the MRM configuration it used alongside the
+AD-API outcome and the post-engage mode/control flags. Before this, none of that
+was retained anywhere — `run-008`'s evidence had to be read out of a console
+scrollback.
+
 ### `base_link` anchoring: a per-approach interop difference, normalized in the harness not patched (Task 13)
 
 **Added 2026-07-30 (Task 13), before any P3 run.** Same treatment as the
@@ -1383,6 +1439,35 @@ caveat below) to
 transition manager never marks autonomous available while `/autoware/engage`
 bypasses that gate entirely. That specific reading was taken interactively
 and is **not retained** (`benchmarks/evidence/README.md`'s step-11_6 row).
+
+**A REFUTED claim about this, recorded with what refuted it (Task 13).** Task 13
+asserted — in commit `296c8cb`'s message and its own report — that R4's arming
+guard was structurally broken because "the legacy `/autoware/engage` publish
+bypasses the operation-mode transition manager and never sets
+`mode == AUTONOMOUS`", so `armed_ok`'s authority term could never pass. **That is
+refuted by the retained evidence it should have been checked against first.**
+`benchmarks/evidence/step-11_6-adapi-engage/legacy_autoware_engage.log` records
+the post-legacy-engage snapshot on cell A as:
+
+```text
+mode: 2
+is_autoware_control_enabled: true
+is_autonomous_mode_available: false
+```
+
+and `OperationModeState.AUTONOMOUS == 2`. **So the legacy path DOES set the
+operation mode on cell A**, R4's guard is satisfiable through its own fallback,
+and there is no structural contradiction. The claim was a correct-sounding
+generalization from cell B's single observation, which is the hazard this
+document already names: a correct general rule applied to a case it does not
+govern reads exactly like a correct specific claim.
+
+What remains genuinely open is narrower: on `results/B/run-008` the same
+post-engage snapshot read `mode_autonomous=False`, but that run had MRM operating
+an emergency stop, so the observation is **confounded** and cannot yet be called
+a per-approach difference. It is re-measured after the MRM amendment above. Note
+also that `mode: 2` sits alongside `is_autonomous_mode_available: false` in the
+same snapshot, which is the flag-disagreement this section is about.
 
 **This is recorded as a per-approach finding, not fixed.** Two remedies were
 available: make each approach publish `control_mode = AUTONOMOUS`, or arm
