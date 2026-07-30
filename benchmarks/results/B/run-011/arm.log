@@ -1,0 +1,3 @@
+[INFO] [1785425302.068079639] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[WARN] [1785425364.357109299] [arm_and_goal]: set_route_points: not yet ok (no response (spin timed out)); retrying
+ARM FAIL: set_route_points did not succeed within 60 s (goal 74.869, 66.891)

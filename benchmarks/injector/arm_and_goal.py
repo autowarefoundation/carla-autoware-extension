@@ -801,6 +801,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return EXIT_TIMEOUT
 
+        # FIRST observation, taken as soon as localization is confirmed and
+        # BEFORE the route is set. MEASURED 2026-07-30 (results/B/run-011,
+        # excluded gate:arm-failed): the arm can fail at set_route_points, which
+        # is upstream of engage(), and an observation placed only inside engage()
+        # is then never taken -- that run recorded none of the authority signals
+        # it was launched to collect. The requirement is "before failing", not
+        # "before engaging", so every exit path below is now preceded by one.
+        node.get_logger().info(node.arm_observations("localized"))
+
         if args.wait_localized_only:
             print(
                 f"LOCALIZED: {LOCALIZED_TOPIC} sustained {LOCALIZED_MIN_HZ:.0f} Hz over "
@@ -809,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_ARMED
 
         if not node.set_route(goal_x, goal_y, yaw_rad, args.timeout):
+            node.get_logger().info(node.arm_observations("route-failed"))
             print(
                 f"ARM FAIL: set_route_points did not succeed within {args.timeout:.0f} s "
                 f"(goal {goal_x:.3f}, {goal_y:.3f})"

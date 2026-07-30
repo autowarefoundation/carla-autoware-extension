@@ -1471,6 +1471,32 @@ other work; it is the configuration the campaign measures under. (Sampled
 ad hoc, because `resources.csv` has no loadavg column; the series itself is not
 retained, and re-deriving it costs one run plus a 2 s-interval sampler.)
 
+**ATTRIBUTED, from the M3 sampler's own retained per-process CPU
+(`results/B/run-010/resources.csv`, 78 samples). It is NOT harness overhead.**
+
+| process           | mean CPU % | peak % | share of a 24-core (2400%) box |
+| ----------------- | ---------- | ------ | ------------------------------ |
+| `autoware`        | **1832.5** | 1930.3 | 76%                            |
+| `carla-server`    | 280.5      | 544.3  | 12%                            |
+| `injector`        | 37.7       | 44.6   | 1.6%                           |
+| `observer`        | **22.7**   | 93.2   | **0.9%**                       |
+| **total sampled** | **2173.5** |        | **91%**                        |
+
+**DUT stack (Autoware + CARLA) = 2113%, i.e. 88% of the box. Harness (injector +
+observer) = 60%, i.e. 2.5%.** So the saturation is **not** eliminable by session
+discipline or by removing instrumentation: the **DUT stack alone saturates 24
+cores at the harmonized 16-channel baseline**, the Autoware container alone
+averaging ~18.3 cores — and that is with `perception:=false`.
+
+**Two consequences, both larger than this section.** First, "host quiescence is an
+operational prerequisite" is violated **by the measurement itself**, so every rate
+metric this campaign takes is taken under ~90% saturation — a campaign-wide
+disclosure, not a per-run note. Second, and more consequential: **M4's ceiling may
+already be reached at the baseline configuration**, which would falsify the
+sweep's premise that the vlp16 baseline sits below the ceiling. **Neither is acted
+on here**; both are owner/`analysis/` questions, recorded so the sweep is not
+designed on an assumption its own baseline data contradicts.
+
 **What that does and does not explain.** `RTF` stayed **1.0000** on both runs that
 recorded a clock series, so the _simulator_ keeps up and the deficits are in the
 ROS layer above it. And they **vary between runs of one unchanged
@@ -1492,12 +1518,49 @@ finding about that approach — worse than no finding.
 count as the true input, `run-009` still goes 8.53 Hz → 3.42 Hz, a further ~60%.
 The wire loss does not explain the NDT figure.
 
-**Deficit 1 — publisher → subscriber, ~15–26%, REAL ON THE WIRE.** Established
-above under `achieved_rate_ratio`: `publisher_drop_rate = 0.0000` on both runs, so
-the source is perfect, and Autoware's own container sees **8.47 Hz** against the
-bench observer's **8.53 Hz** — two unrelated subscribers losing the same amount.
-The mandatory SHM-off UDP transport with ~460 KB clouds is the registered
-B-family confound this sits under (Task 9).
+**Deficit 1 — publisher → subscriber, ~15–26%, and it is LOAD, not the
+transport.** `publisher_drop_rate = 0.0000` on both runs, so the source is
+perfect, and Autoware's own container sees **8.47 Hz** against the bench
+observer's **8.53 Hz**.
+
+**Two DIFFERENT claims must be separated, because the same numbers do not settle
+both.** Two subscribers agreeing clears the observer of **miscounting**. It does
+not by itself clear the observer of **perturbing**, since the SHM-off transport
+could be an observer requirement whose side effect both subscribers then suffer.
+Both are now answered, on three independent lines of retained evidence:
+
+1. **Not miscounting.** 8.47 Hz vs 8.53 Hz — 0.06 Hz apart, from unrelated
+   subscribers in different containers.
+2. **The transport is NOT adopted for the observer's benefit, so this is not
+   observer perturbation.** Task 9's transport matrix
+   (`benchmarks/patches/tier4-native/README.md`) records `fastrtps` with
+   `none (SHM on)` as **`ECHO = no`, `RATE = —`** on rows 1, 3 and 8: with shared
+   memory ON the fork's cloud is **not readable at all**, because it announces
+   SHM-only user-data locators that Fast-DDS matches but cannot read. Rows 8/9 are
+   in **Autoware's own pinned image** — row 8 (SHM on) reads nothing, row 9
+   (`udp_only.xml`) reads **10.070 Hz** — so Autoware needs this transport
+   independently of the observer. The control-ingress table adds that with SHM on
+   the ego "never leaves rest: 0.000 m/s" and control is "not delivered". The
+   transport is not a revertible choice made for the instrument; it is the only
+   configuration in which this fork talks to a Fast-DDS consumer at all.
+3. **Not perturbing by CPU either.** The observer's own mean CPU is **22.7%** of a
+   2400% box — **0.9%** of the host (load attribution below).
+
+**The same matrix supplies the discriminator for what the deficit IS.** Rows 2, 4
+and 9 measured **10.006 / 10.071 / 10.070 Hz** on this exact
+`fastrtps + udp_only.xml` transport. So it delivers ~10 Hz when measured in
+isolation, and ~8.5 Hz is not a property of it. What differs is load: Task 9's
+rows were a wire-visibility diagnostic on a quiet host, while these runs put the
+box at **91% of 24 cores** with the Autoware container alone at **1832%**.
+**Deficit 1 is therefore attributed to CPU starvation, not UDP fragmentation** —
+a change from this section's first reading, made because those matrix rows refute
+the fragmentation story.
+
+**Consequence for the gate:** the FAIL is a true finding about **cell B's
+configuration on a saturated host**, and not an artifact of the bench observer.
+The SHM-on control run that would otherwise be the decisive test **cannot be
+performed and does not need to be** — its answer is already in the record, and it
+is "no data at all", not "~10 Hz".
 
 **Deficit 2 — inside the Autoware container, and it is the larger one.** Measured
 on `run-010` from inside that container over a 40.05 s window after a 20 s
