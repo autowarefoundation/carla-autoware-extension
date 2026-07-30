@@ -1,0 +1,7 @@
+[INFO] [1785424230.008961780] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785424240.376342537] [arm_and_goal]: MRM config: /control/vehicle_cmd_gate use_emergency_handling=false (the perception-off false MRM; same configuration as the proven extension sequence and as every promoted gate number)
+[WARN] [1785424250.388548242] [arm_and_goal]: change_to_autonomous: not yet ok (no response (spin timed out)); retrying
+[WARN] [1785424250.388815535] [arm_and_goal]: change_to_autonomous: did not succeed within 10 s -- FALLING BACK to the proven /autoware/engage publish (documented fallback, not silent; see step-11_6-adapi-engage and R4.3)
+[INFO] [1785424251.415679032] [arm_and_goal]: /autoware/engage: published engage=true x5
+[INFO] [1785424300.367499624] [arm_and_goal]: post-engage state: mode_autonomous=False is_autoware_control_enabled=True (R4.3 observation; only mode_autonomous gates ARMED)
+ARM FAIL: /api/operation_mode/state never reported mode == AUTONOMOUS together with /control/command/control_cmd sustaining ~5.00 Hz nominal (~4.67 Hz effective over a closed 3 s window), within 60 s after engage (see step-11_6-adapi-engage and R4.2 -- neither a service reporting success nor rate alone is enough)

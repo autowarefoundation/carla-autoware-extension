@@ -1,0 +1,41 @@
+{
+  "cell": "B",
+  "approach": "tier4-native",
+  "map_name": "Town10HD_Opt",
+  "run_index": 9,
+  "arm": "closed-loop",
+  "harness_git_sha": "1748a74e9c5fd91d1b0fb7e3fdbe003862fec5b9",
+  "patches_git_sha": "31aac85e610a3bd502a76689015cfd04f96a1c3b",
+  "transport": {
+    "rmw": "rmw_fastrtps_cpp",
+    "shm_enabled": false,
+    "dds_profile_sha256": "9886f7445306632b168763acc2c96a9f643329eb5d1ccf2da77e061466565098"
+  },
+  "carla_version": "0.10-tier4",
+  "autoware_image": "ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee",
+  "started_at_ns": 1785424167254395922,
+  "excluded": true,
+  "exclusion_reason": "gate:arm-failed",
+  "placement": {
+    "carla_rpc_port": "2000",
+    "carla_tree": "/home/youtalk/src/carla-autoware-native",
+    "container_image": "ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee",
+    "cpu_governor": "powersave",
+    "engine_build_id": "4210e602-78ec-46e1-8f2f-03fadbe036a3",
+    "free_gb": "470",
+    "loadavg": "2.65",
+    "map_bundle_pin": "town10_pcd_regen",
+    "nproc": "24",
+    "observer_env": {
+      "image": "bench-observer:universe-devel",
+      "rmw": "rmw_fastrtps_cpp",
+      "shm": "off",
+      "topics_file": "B.yaml"
+    },
+    "results_fs": "/home",
+    "run_mode": "editor-game",
+    "shm_root_cleared": "0",
+    "shm_root_remaining": "0",
+    "shm_user_cleared": "84"
+  }
+}

@@ -1419,6 +1419,32 @@ do not probe a live stack during bring-up.** Task 13's own in-container
 diagnostics contributed to run-005's 64 — recorded because it is the specific
 mistake to avoid, not as an excuse.
 
+**DIRECTLY SAMPLED, and it is not only about external interference (Task 13,
+`results/B/run-009`).** A 2 s-interval `/proc/loadavg` sample across a whole
+cell-B run, with **nothing else running on the box**, recorded:
+
+| statistic         | 1-min loadavg |
+| ----------------- | ------------- |
+| at launch         | 2.6           |
+| mean over the run | **25.80**     |
+| peak              | **50.05**     |
+
+on **24 cores**, from 75 samples. So the cell's **own** stack — the CARLA UE5
+editor, the demo's tick loop, ~163 Autoware nodes, the observer and the sampler —
+oversubscribes this host by more than 2x unaided. This is not contention from
+other work; it is the configuration the campaign measures under. (Sampled
+ad hoc, because `resources.csv` has no loadavg column; the series itself is not
+retained, and re-deriving it costs one run plus a 2 s-interval sampler.)
+
+**What that does and does not explain.** `RTF` stayed **1.0000** on both runs that
+recorded a clock series, so the _simulator_ keeps up and the deficits are in the
+ROS layer above it. And they **vary between runs of one unchanged
+configuration**: the observer failed to record 25.6% of published clouds on
+`run-008` and 17.1% on `run-009`, with NDT at 2.02 Hz and 3.42 Hz respectively.
+Variability of that size is itself evidence that these figures are
+contention-sensitive rather than fixed properties of the approach — which is why
+they must not be reported as tier4-native's rates.
+
 ### `control_mode` reporting (R4): a per-approach interop gap, recorded not patched
 
 Step 11.6 (`benchmarks/evidence/step-11_6-adapi-engage/`) found that on cell A —
