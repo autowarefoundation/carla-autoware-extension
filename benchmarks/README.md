@@ -1022,22 +1022,38 @@ getting made per approach, then unconditionally falls back to the proven
 
 **Rate alone cannot substitute for this flag, and `arm_and_goal.py`'s arm
 check does not try to.** R4's first cut verified only that the gated
-`/control/command/control_cmd` sustains 5.0 Hz (near the geometric mean of
-1.30 Hz measured not-engaged and 20.07 Hz measured engaged, both above).
-Review found that threshold passes `benchmarks/results/E/run-008` — 8.52 Hz
-on that same topic (`run-008/observer.csv`), yet `run-008/gt.csv` shows
-0.0000 m net displacement and 0.0000 m path length: the ego never moved,
-because `change_to_autonomous` was refused on that run too. A rate-only
-guard is therefore not sufficient on data this campaign has already
-measured, and cell A's own control_cmd runs ~19.9 Hz of zero-velocity
-commands pre-engage in STOP mode (not retained as tracked evidence — see
-step-11_6's row in `benchmarks/evidence/README.md`), so a rate check with no
-lower bound on WHEN it samples can pass vacuously before any engage at all.
-`arm_and_goal.py`'s `verify_control_flowing()` now requires BOTH
-`is_autoware_control_enabled` (this section's own flag) AND the rate,
-with the rate window reset at the engage call — authority for whether the
-stack claims to be under command, liveness for whether the gate is actually
-publishing, neither alone being sufficient on the campaign's own data.
+`/control/command/control_cmd` sustains ~5 Hz nominal (near the geometric
+mean of 1.30 Hz, `run-007`'s measured rate, and 20.07 Hz, step 11.6's
+actually-engaged rate). Review found that threshold passes
+`benchmarks/results/E/run-008` — 8.52 Hz on that same topic
+(`run-008/observer.csv`), while `run-008/gt.csv` recomputes to 0.0000 m net
+displacement and 0.0000 m path length: the ego never moved. That
+`change_to_autonomous` was refused on that run too is an **inference**, not
+a direct measurement of this flag — `run-008/bridge-stage2.log` retains 78
+occurrences of that service's "target mode is not available" refusal and
+zero `/autoware/engage` publications, over a harness commit that predates
+`092dc9a`; neither run's `observer_topics.yaml` captured
+`/api/operation_mode/state` itself. (`run-007` retains no arm-attempt
+evidence at all beyond its own 1.30 Hz rate — not even that inference is
+available for it.) A rate-only guard is therefore not sufficient on data
+this campaign has already measured, and cell A's own control_cmd runs
+~19.9 Hz of zero-velocity commands pre-engage in STOP mode (not retained as
+tracked evidence — see step-11_6's row in `benchmarks/evidence/README.md`),
+so a rate check with no lower bound on WHEN it samples can pass vacuously
+before any engage at all.
+
+A second review round found the first fix's authority term was itself the
+wrong field: `arm_and_goal.py` initially gated on
+`is_autoware_control_enabled`, but that flag reports **who drives**, not
+**which operation mode** — some vehicle interfaces report it true in STOP
+mode, which would let a stationary, un-engaged ego satisfy it (the same
+false-ARMED shape, through a different door). `verify_control_flowing()`
+now gates on `mode == OperationModeState.AUTONOMOUS` instead — the flag
+this section's own retained snapshot (`mode: 2`) actually states a value
+for — AND the rate, with BOTH reset at the engage call.
+`is_autoware_control_enabled` is still read and logged (a recorded, not
+gating, per-approach observation) rather than dropped, since whether it
+tracks `mode` correctly is itself part of the interop comparison.
 
 **Status: measured on cell A only; unmeasured elsewhere.** Cells B, B45, D
 and the E family have not been observed. Task 13 (cell B's closed-loop
