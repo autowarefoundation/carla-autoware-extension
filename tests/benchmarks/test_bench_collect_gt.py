@@ -254,3 +254,66 @@ def test_ego_lidar_sensors_selects_only_the_egos_children():
     mine, theirs, orphan = _Sensor(ego), _Sensor(other), _Sensor(None)
     found = collect_gt.ego_lidar_sensors(_World([mine, theirs, orphan]), ego.id)
     assert found == [mine]
+
+
+# --- attach-chain walk (Task 13, results/B/run-007) -------------------------
+# The tier4 demo hangs its rig off ego -> base_link -> sensor_kit -> sensor, so
+# the ego's LiDAR is a great-grandchild. A direct-parent test found nothing and
+# --count-lidar refused a run whose LiDAR was demonstrably on the ego.
+
+
+class _FakeActor:
+    def __init__(self, actor_id, parent=None):
+        self.id = actor_id
+        self.parent = parent
+
+
+def test_direct_child_is_a_descendant():
+    from benchmarks.scripts.collect_gt import is_descendant_of
+
+    ego = _FakeActor(1)
+    assert is_descendant_of(_FakeActor(2, parent=ego), 1)
+
+
+def test_great_grandchild_is_a_descendant_which_is_the_tier4_demo_layout():
+    from benchmarks.scripts.collect_gt import is_descendant_of
+
+    ego = _FakeActor(1)
+    base_link = _FakeActor(2, parent=ego)
+    sensor_kit = _FakeActor(3, parent=base_link)
+    lidar = _FakeActor(4, parent=sensor_kit)
+    assert is_descendant_of(lidar, 1)
+
+
+def test_unparented_actor_is_not_a_descendant():
+    from benchmarks.scripts.collect_gt import is_descendant_of
+
+    assert not is_descendant_of(_FakeActor(2), 1)
+
+
+def test_actor_on_a_different_ego_is_not_a_descendant():
+    from benchmarks.scripts.collect_gt import is_descendant_of
+
+    other = _FakeActor(99)
+    assert not is_descendant_of(_FakeActor(2, parent=other), 1)
+
+
+def test_cyclic_parent_chain_terminates_instead_of_hanging():
+    """A cycle must be bounded: the collector runs during start-up."""
+    from benchmarks.scripts.collect_gt import is_descendant_of
+
+    a = _FakeActor(2)
+    b = _FakeActor(3, parent=a)
+    a.parent = b
+    assert not is_descendant_of(b, 1)
+
+
+def test_depth_limit_is_respected():
+    from benchmarks.scripts.collect_gt import is_descendant_of
+
+    ego = _FakeActor(1)
+    node = ego
+    for i in range(6):
+        node = _FakeActor(10 + i, parent=node)
+    assert is_descendant_of(node, 1, max_depth=8)
+    assert not is_descendant_of(node, 1, max_depth=3)

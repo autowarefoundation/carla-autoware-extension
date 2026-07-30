@@ -202,13 +202,43 @@ def lidar_stamp_recorder(series: list[int]):
     return _record
 
 
+# How far up the attach chain to look for the ego. The deepest real chain is the
+# tier4 demo's ego -> base_link -> sensor_kit -> sensor (3); 8 leaves slack for a
+# deeper rig while still BOUNDING the walk, so a cyclic parent cannot hang the
+# collector during start-up.
+MAX_ATTACH_DEPTH = 8
+
+
+def is_descendant_of(actor, ancestor_id: int, max_depth: int = MAX_ATTACH_DEPTH) -> bool:
+    """True when `actor` hangs off `ancestor_id` through ANY chain of parents.
+
+    NOT just a direct-parent test, and the difference is measured rather than
+    defensive. MEASURED 2026-07-30 (results/B/run-007, excluded
+    crash:collect_gt): the tier4 demo attaches its rig as
+    ego -> base_link -> sensor_kit -> sensor, so the LiDAR is the ego's
+    GREAT-GRANDCHILD (`autoware_demo.py`'s `attach_to=sensor_kit`). A direct
+    `a.parent.id == ego_id` test found nothing, and `--count-lidar` refused the
+    run -- correctly, because a silent 0 would have become an M1/M2 publisher
+    count. The extension rig attaches sensors straight to the ego, so this is
+    one more consequence of the same extra `base_link` actor the GT anchor
+    exists for (benchmarks/analysis/gt_anchor.py).
+
+    Pure apart from attribute access, so the chain walk is unit-tested without a
+    live CARLA.
+    """
+    node = getattr(actor, "parent", None)
+    for _ in range(max_depth):
+        if node is None:
+            return False
+        if node.id == ancestor_id:
+            return True
+        node = getattr(node, "parent", None)
+    return False
+
+
 def ego_lidar_sensors(world, ego_id: int) -> list:
-    """The ego's LiDAR sensors (`sensor.lidar.*`), by parent id."""
-    return [
-        a
-        for a in world.get_actors().filter("sensor.lidar.*")
-        if getattr(a, "parent", None) is not None and a.parent.id == ego_id
-    ]
+    """The ego's LiDAR sensors (`sensor.lidar.*`), anywhere in its attach tree."""
+    return [a for a in world.get_actors().filter("sensor.lidar.*") if is_descendant_of(a, ego_id)]
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

@@ -1,0 +1,3 @@
+GT FAIL: --count-lidar found no sensor.lidar.* parented to 'ego'; publisher-side count would silently be 0
+gt base_link anchor: -1.39706787 m (body frame) for approach 'tier4-native'
+carla client=0.10.0 server=0.10.0
