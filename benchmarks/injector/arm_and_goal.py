@@ -45,26 +45,34 @@ Sequence:
         succeeded. The two paths are not documented as interchangeable
         (arm_closed_loop.sh --disarm calls BOTH the AD-API change_to_stop
         service AND publishes /autoware/engage false), so this function
-        does not assume (a) alone is ever sufficient.
-     c. Verify the GATED `/control/command/control_cmd` -- what
-        vehicle_cmd_gate actually sends, not
-        /control/trajectory_follower/control_cmd, the raw planner output
-        -- sustains >= CONTROL_CMD_MIN_HZ before reporting ARMED. This is
-        the guard that matters most: step 11.6 (this same evidence
-        directory) measured the gated topic at 20.07 Hz commanding
-        +4.170 m/s on 281/281 samples once actually engaged, against
-        ~1.30 Hz (n=109, benchmarks/results/E/run-007/observer.csv) for a
-        run whose engage() reported success while nothing drove -- the
-        defect that produced cell E's false conclusion. engage() returns
-        this check's result, not (a)'s or (b)'s reported success, so a
-        near-silent gate cannot reach ARMED through this function.
+        does not assume (a) alone is ever sufficient. The gated control_cmd
+        window is reset here (see verify_control_flowing): only traffic
+        from this moment on can prove the engage.
+     c. Verify BOTH, per review round 1: AUTHORITY --
+        /api/operation_mode/state reports is_autoware_control_enabled, the
+        exact flag step 11.6 used to tell an engaged stack from a refused
+        one -- AND LIVENESS -- the GATED `/control/command/control_cmd`
+        (not /control/trajectory_follower/control_cmd, the raw planner
+        output) sustains >= CONTROL_CMD_MIN_HZ. Rate alone is not enough:
+        benchmarks/results/E/run-008 measured 8.52 Hz on this exact topic
+        with 0.0000 m net displacement and the ego never engaged, and
+        cell A measures ~19.93 Hz of zero-velocity commands PRE-engage
+        while in STOP mode (see CONTROL_CMD_MIN_HZ's comment) -- either one
+        alone would let verify_control_flowing() return True on a stack
+        that never armed. engage() returns this check's result, not (a)'s
+        or (b)'s reported success, so a near-silent OR not-actually-engaged
+        gate cannot reach ARMED through this function.
 
   Steps 3 and (4a) each retry every 2 s until their service reports
   status.success, up to their own timeout budget. (4a)'s budget is fixed at
   ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, taken OUT of --timeout, not in addition to
   it: engage()'s total wall time is still bounded by --timeout, matching
   "retrying each up to --timeout" for the localize / set-route / engage
-  three-phase contract below.
+  three-phase contract below. Every wait on the arming path spins this
+  node instead of blind-sleeping (review round 1, C2): a non-spinning
+  sleep lets the keep-last-10 control_cmd subscription queue up messages
+  that then drain in a burst on the next spin, all stamped "now" -- which
+  can manufacture a fake sustained rate out of stale backlog.
 
 Usage (inside the `autoware` container, overlay sourced, ROS_DOMAIN_ID=0).
 Direct script path, like scripts/e2e/reseed_localization.py -- this module
@@ -81,7 +89,7 @@ fields, so a caller reads a route file and passes its goal straight through.
 
 Exit 0 armed (or localized, under --wait-localized-only); exit 2 on any
 timeout (localization never sustained 5 Hz, set_route_points never
-succeeded, or the gated control_cmd never reached sustained flow) within
+succeeded, or authority + the gated control_cmd never both held) within
 --timeout.
 """
 
@@ -92,8 +100,10 @@ import collections
 import math
 import sys
 import time
+from typing import Callable
 
 import rclpy
+from autoware_adapi_v1_msgs.msg import OperationModeState
 from autoware_adapi_v1_msgs.srv import ChangeOperationMode, ClearRoute, SetRoutePoints
 from autoware_control_msgs.msg import Control
 from autoware_vehicle_msgs.msg import Engage
@@ -104,41 +114,77 @@ LOCALIZED_TOPIC = "/localization/kinematic_state"
 LOCALIZED_WINDOW_S = 5.0
 LOCALIZED_MIN_HZ = 5.0
 SERVICE_RETRY_PERIOD_S = 2.0
+# Slice size for every spin-based wait on the arming path (review round 1,
+# C2) -- small enough that a blocked spin never meaningfully overshoots the
+# deadlines computed against it.
+SPIN_SLICE_S = 0.1
 
-# R4.2 -- the gated control topic and the threshold that decides whether an
-# engage actually took. Measured reference points (both cited in
-# benchmarks/evidence/step-11_6-adapi-engage/ and the R4 report):
-#   ~1.30 Hz (n=109) -- benchmarks/results/E/run-007/observer.csv, a
-#     closed-loop run whose engage() reported success while the vehicle was
-#     not under command (cell E's false conclusion).
+# R4.2 -- the gated control topic. Measured reference points (recomputable
+# from benchmarks/evidence/step-11_6-adapi-engage/ and
+# benchmarks/results/E/run-007|run-008/observer.csv):
+#   ~1.30 Hz (n=109, max 11 samples in any trailing 3 s window) --
+#     benchmarks/results/E/run-007/observer.csv. change_to_autonomous was
+#     refused for 60 s on this run; it never engaged.
+#   8.52 Hz (n=588, max 70 samples in any trailing 3 s window) --
+#     benchmarks/results/E/run-008/observer.csv. Also never engaged (same
+#     refusal), yet clears a rate threshold set anywhere near the 1.30 Hz
+#     figure alone -- ground truth for both runs shows 0.0000 m net
+#     displacement and 0.0000 m path length (task-10-review.md). RATE ALONE
+#     THEREFORE CANNOT DISTINGUISH AN ENGAGED STACK FROM run-008's STATE.
+#   ~19.9 Hz -- gate_g2_closed_loop.sh's header claims the same gated topic
+#     publishes this fast PRE-engage, in STOP mode, carrying zero-velocity
+#     commands. NOT RETAINED as tracked evidence (benchmarks/evidence/
+#     README.md's step-11_6 row) -- cited here as the stated reason a
+#     script header already treats rate as insufficient on its own, not as
+#     a number this threshold is computed from.
 #   20.07 Hz -- gated_control_cmd.log, the SAME topic once actually engaged
 #     via /autoware/engage, 281/281 samples carrying a nonzero velocity
 #     command.
-# CONTROL_CMD_MIN_HZ=5.0 sits close to the geometric mean of the two
-# (sqrt(1.30 * 20.07) ~= 5.11 Hz), giving a roughly symmetric ~4x margin on
-# each side in log-space: comfortably clears the near-silent failure mode
-# without demanding anywhere near the full engaged rate, which is free to
-# vary a little across approaches. This is a LIVENESS precondition only
-# (matching gate_g2_closed_loop.sh's own liveness check) -- it does not
-# prove command AUTHORITY: the same gated topic is measured elsewhere
-# (gate_g2_closed_loop.sh's header) publishing ~19.9 Hz in STOP mode
-# carrying zero-velocity commands, which is why a full driving verdict
-# stays G2's job, not this script's.
+# CONTROL_CMD_MIN_HZ=5.0 is chosen against the 1.30 Hz / 20.07 Hz pair (near
+# their geometric mean, sqrt(1.30 * 20.07) ~= 5.11 Hz) but the run-008 and
+# pre-engage figures show a threshold on rate ALONE cannot be calibrated to
+# separate "engaged" from "not engaged" -- 8.52 Hz sits above it and ~19.9 Hz
+# sits far above it, both while genuinely not commanding. That is why
+# verify_control_flowing() below requires is_autoware_control_enabled
+# (AUTHORITY) in addition to this rate (LIVENESS), and resets the rate
+# window at the engage call so pre-engage traffic cannot satisfy it. Kept as
+# a real, if now secondary, requirement: an approach that reports itself
+# engaged (authority true) but is not actually commanding would still be a
+# false ARMED without it, which is the ORIGINAL cell-E defect this task
+# started from. recent_count's closed-interval convention (`now - t <=
+# window_s`) means a perfectly steady stream needs ~4.67 Hz, not exactly
+# 5.0 Hz, to reach the 15-sample count this threshold checks for over a 3 s
+# window (14/3 = 4.667; the same approximation pre-exists for
+# LOCALIZED_MIN_HZ). CONTROL_CMD_MIN_HZ/CONTROL_CMD_WINDOW_S are engineering
+# judgment, not independently measured constants.
 CONTROL_CMD_TOPIC = "/control/command/control_cmd"
 CONTROL_CMD_MIN_HZ = 5.0
 CONTROL_CMD_WINDOW_S = 3.0
 
+# R4.2 (review round 1, C1/C3) -- the AUTHORITY half of the compound check.
+# /api/operation_mode/state's is_autoware_control_enabled is the exact flag
+# benchmarks/evidence/step-11_6-adapi-engage/legacy_autoware_engage.log used
+# to show cell A was actually engaged (true, alongside mode=2) when the
+# AD-API's own is_autonomous_mode_available stayed false. Approach-agnostic:
+# every cell runs the same AD-API operation-mode layer regardless of which
+# vehicle interface backs it.
+OPERATION_MODE_STATE_TOPIC = "/api/operation_mode/state"
+
 # R4.1 -- the AD-API attempt is bounded far below --timeout's default (60 s)
 # because step 11.6 already measured it refuse consistently for the full
 # 60 s; a few retries are enough to record the per-approach observation
-# without taxing every run in the campaign for the whole budget.
+# without taxing every run in the campaign for the whole budget. Engineering
+# judgment, not an independently measured constant.
 ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S = 10.0
 
 # R4.1 -- the proven engage path (scripts/e2e/arm_closed_loop.sh,
-# gate_g2_closed_loop.sh). Published multiple times over
-# ENGAGE_DISCOVERY_TIMEOUT_S + (ENGAGE_PUBLISH_COUNT * ENGAGE_PUBLISH_PERIOD_S)
-# seconds for delivery margin against a still-joining DDS graph; harmless
-# because engage is documented to LATCH (CLAUDE.md's arming gotchas).
+# gate_g2_closed_loop.sh). Published ENGAGE_PUBLISH_COUNT times over
+# ENGAGE_PUBLISH_COUNT * ENGAGE_PUBLISH_PERIOD_S seconds, AFTER up to
+# ENGAGE_DISCOVERY_TIMEOUT_S spent waiting for a subscriber to appear --
+# the two spans are sequential, not summed into one publish window. The
+# repeat is delivery margin against a still-joining DDS graph; harmless
+# because engage is documented to LATCH (CLAUDE.md's arming gotchas). All
+# four constants are engineering judgment, not independently measured.
 ENGAGE_TOPIC = "/autoware/engage"
 ENGAGE_DISCOVERY_TIMEOUT_S = 5.0
 ENGAGE_PUBLISH_COUNT = 5
@@ -149,26 +195,54 @@ EXIT_TIMEOUT = 2
 
 
 def recent_count(timestamps, now: float, window_s: float) -> int:
-    """Count of `timestamps` within [now - window_s, now].
+    """Count of `timestamps` within the closed interval [now - window_s,
+    now] -- BOTH bounds enforced (`0 <= now - t`, not just `now - t <=
+    window_s`), so a timestamp that is actually in the future relative to
+    `now` is never counted. In the live wait loop this bound is redundant
+    (a deque fed only by callbacks that fire before the loop reads `now`
+    can never hold a future value), but it matters for a caller -- namely
+    tests/benchmarks/test_arm_and_goal.py's real-trace regression pins --
+    that evaluates this function at a `now` drawn from the MIDDLE of an
+    already-known series rather than at the moving present.
 
     Pure so the "sustained >= N Hz over a trailing window" rule is
-    unit-testable without rclpy or a live topic (tests/benchmarks/
-    test_arm_and_goal.py); wait_localized/verify_control_flowing below are
-    this function plus the rclpy spin loop that keeps `timestamps` current,
-    not a re-implementation of it.
+    unit-testable without rclpy or a live topic; wait_localized/
+    verify_control_flowing below are this function plus the rclpy spin
+    loop that keeps `timestamps` current, not a re-implementation of it.
     """
-    return sum(1 for t in timestamps if now - t <= window_s)
+    return sum(1 for t in timestamps if 0.0 <= now - t <= window_s)
 
 
 def sustained_rate_ok(timestamps, now: float, window_s: float, min_hz: float) -> bool:
     """True if `timestamps` shows >= min_hz sustained over the trailing
-    window_s seconds ending at `now`. The one decision point behind BOTH
-    wait_localized (kinematic_state) and verify_control_flowing
-    (control_cmd, R4.2) -- pure and shared so the regression R4.2 exists to
-    pin (an engage that reports success while the gate is near-silent) is
-    tested directly against this predicate, without a live rclpy graph.
+    window_s seconds ending at `now`. The LIVENESS half of the compound
+    arming decision (armed_ok below); also used standalone by
+    wait_localized. Pure so it is testable without a live rclpy graph.
+
+    Rate alone is NOT sufficient to decide an arm (review round 1, C1):
+    benchmarks/results/E/run-008 clears any threshold set near the 1.30 Hz
+    figure this was originally calibrated against (8.52 Hz, never engaged,
+    0.0000 m net displacement) -- see CONTROL_CMD_MIN_HZ's comment. Kept as
+    the liveness half of armed_ok, not the whole decision.
     """
     return recent_count(timestamps, now, window_s) >= min_hz * window_s
+
+
+def armed_ok(control_enabled: bool, timestamps, now: float, window_s: float, min_hz: float) -> bool:
+    """The compound R4.2 decision verify_control_flowing() polls each
+    iteration: AUTHORITY (control_enabled, from
+    /api/operation_mode/state's is_autoware_control_enabled) AND LIVENESS
+    (sustained_rate_ok on the gated control_cmd). Pure and separate from
+    sustained_rate_ok so both halves -- and specifically that authority is
+    load-bearing, not vestigial -- are unit-testable without rclpy.
+
+    This is the fix for a rate-only guard passing benchmarks/results/E/
+    run-008 (8.52 Hz, never engaged): tests/benchmarks/test_arm_and_goal.py
+    replays run-008's own retained observer.csv arrivals with
+    control_enabled=False (its actual, measured state) and asserts this
+    returns False throughout, even though sustained_rate_ok alone would not.
+    """
+    return control_enabled and sustained_rate_ok(timestamps, now, window_s, min_hz)
 
 
 def yaw_to_quaternion_zw(yaw_rad: float) -> tuple[float, float]:
@@ -183,13 +257,22 @@ class ArmAndGoal(Node):
         super().__init__("arm_and_goal")
         self._kinematic_times: collections.deque[float] = collections.deque()
         self.create_subscription(Odometry, LOCALIZED_TOPIC, self._on_kinematic_state, 10)
-        # Subscribed from construction, not just after engage: the trailing
-        # window in verify_control_flowing() only needs samples arriving
-        # DURING its own wait, but subscribing early costs nothing and means
-        # no message published between node start and the engage call is
-        # ever missed.
+        # Subscribed from construction so no message is ever missed, but
+        # verify_control_flowing() clears this deque at the engage call
+        # (review round 1, C3) -- pre-engage traffic must not be able to
+        # satisfy the post-engage liveness check. See engage()'s reset.
         self._control_cmd_times: collections.deque[float] = collections.deque()
         self.create_subscription(Control, CONTROL_CMD_TOPIC, self._on_control_cmd, 10)
+        # AUTHORITY half of armed_ok. Starts False like a fresh stack's
+        # actual state; only a delivered OperationModeState message can
+        # ever set it True.
+        self._control_enabled: bool = False
+        self.create_subscription(
+            OperationModeState,
+            OPERATION_MODE_STATE_TOPIC,
+            self._on_operation_mode_state,
+            10,
+        )
 
     def _on_kinematic_state(self, _msg: Odometry) -> None:
         self._kinematic_times.append(time.monotonic())
@@ -197,54 +280,103 @@ class ArmAndGoal(Node):
     def _on_control_cmd(self, _msg: Control) -> None:
         self._control_cmd_times.append(time.monotonic())
 
-    def _wait_for_sustained_rate(
-        self,
-        timestamps: collections.deque[float],
-        min_hz: float,
-        window_s: float,
-        timeout_s: float,
-    ) -> bool:
-        """Block (spinning this node) until `timestamps` shows >= min_hz
-        sustained over the trailing window_s seconds, or timeout_s elapses.
-        Shared driver behind wait_localized and verify_control_flowing;
-        sustained_rate_ok() above is the pure decision this loop polls."""
+    def _on_operation_mode_state(self, msg: OperationModeState) -> None:
+        self._control_enabled = bool(msg.is_autoware_control_enabled)
+
+    def _spin_for(self, duration_s: float) -> None:
+        """Spin this node for duration_s, in SPIN_SLICE_S slices, instead
+        of a blind time.sleep (review round 1, C2). A non-spinning sleep on
+        the arming path lets subscriptions -- control_cmd chief among them
+        -- queue up (keep-last depth 10) and then drain in a burst on the
+        next spin, every buffered message stamped whatever `now()` is at
+        drain time. That can manufacture up to 10 samples inside a single
+        trailing window out of stale backlog, which is exactly how a
+        near-silent gate could otherwise look sustained."""
+        deadline = time.monotonic() + duration_s
+        while time.monotonic() < deadline:
+            slice_s = max(0.0, min(SPIN_SLICE_S, deadline - time.monotonic()))
+            rclpy.spin_once(self, timeout_sec=slice_s)
+
+    def _service_ready(self, client, timeout_s: float) -> bool:
+        """client.wait_for_service() replacement: rclpy's own version polls
+        the graph with a blind sleep and never spins this node (review
+        round 1, C2b) -- another route into the same burst-on-drain
+        failure as a bare time.sleep. Poll readiness while spinning."""
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
-            rclpy.spin_once(self, timeout_sec=0.2)
+            if client.service_is_ready():
+                return True
+            rclpy.spin_once(self, timeout_sec=SPIN_SLICE_S)
+        return client.service_is_ready()
+
+    def _wait_for_condition(
+        self,
+        timestamps: collections.deque[float],
+        window_s: float,
+        timeout_s: float,
+        is_ready: Callable[[collections.deque[float], float], bool],
+    ) -> bool:
+        """Block (spinning this node), trimming `timestamps` to the
+        trailing window_s seconds each iteration, until
+        is_ready(timestamps, now) is True or timeout_s elapses. Shared
+        driver behind wait_localized (is_ready checks sustained_rate_ok
+        alone) and verify_control_flowing (is_ready checks armed_ok, the
+        compound authority-AND-liveness decision)."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=SPIN_SLICE_S)
             now = time.monotonic()
             while timestamps and now - timestamps[0] > window_s:
                 timestamps.popleft()
-            if sustained_rate_ok(timestamps, now, window_s, min_hz):
+            if is_ready(timestamps, now):
                 return True
         return False
 
     def wait_localized(self, timeout_s: float) -> bool:
         """Block until LOCALIZED_TOPIC sustains >= LOCALIZED_MIN_HZ over a
         trailing LOCALIZED_WINDOW_S window, or timeout_s elapses."""
-        return self._wait_for_sustained_rate(
-            self._kinematic_times, LOCALIZED_MIN_HZ, LOCALIZED_WINDOW_S, timeout_s
+        return self._wait_for_condition(
+            self._kinematic_times,
+            LOCALIZED_WINDOW_S,
+            timeout_s,
+            lambda ts, now: sustained_rate_ok(ts, now, LOCALIZED_WINDOW_S, LOCALIZED_MIN_HZ),
         )
 
     def verify_control_flowing(self, timeout_s: float) -> bool:
-        """R4.2: block until the GATED CONTROL_CMD_TOPIC sustains >=
-        CONTROL_CMD_MIN_HZ over a trailing CONTROL_CMD_WINDOW_S window, or
-        timeout_s elapses. This is the check that pins the regression that
-        produced cell E's false conclusion: a near-silent gate (measured
-        ~1.30 Hz) must fail here, before main() ever prints ARMED. See the
-        module docstring's CONTROL_CMD_MIN_HZ comment for the threshold's
-        justification."""
-        return self._wait_for_sustained_rate(
-            self._control_cmd_times, CONTROL_CMD_MIN_HZ, CONTROL_CMD_WINDOW_S, timeout_s
+        """R4.2 (revised, review round 1): block until BOTH hold -- AUTHORITY
+        (self._control_enabled, from /api/operation_mode/state) AND
+        LIVENESS (the GATED CONTROL_CMD_TOPIC sustains >= CONTROL_CMD_MIN_HZ
+        over a trailing CONTROL_CMD_WINDOW_S window) -- or timeout_s
+        elapses. Neither alone was sufficient: rate alone passes
+        benchmarks/results/E/run-008 (8.52 Hz, never engaged) and passes
+        vacuously pre-engage on cell A (~19.9 Hz zero-velocity in STOP
+        mode); authority alone would not catch a stack that reports itself
+        engaged but is not actually commanding -- the original cell-E
+        defect. See CONTROL_CMD_MIN_HZ's and armed_ok's comments.
+
+        engage() clears self._control_cmd_times immediately before calling
+        this, so the window here can only be satisfied by traffic that
+        postdates the engage call (review round 1, C3)."""
+        return self._wait_for_condition(
+            self._control_cmd_times,
+            CONTROL_CMD_WINDOW_S,
+            timeout_s,
+            lambda ts, now: armed_ok(
+                self._control_enabled, ts, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ
+            ),
         )
 
     def _call_with_retries(self, client, request, service_name: str, timeout_s: float):
         """Call `client` with `request`, retrying every SERVICE_RETRY_PERIOD_S
-        until response.status.success, up to timeout_s. Returns the
+        until response.status.success, up to ONE overall timeout_s deadline
+        shared by the service-readiness wait and every retry (review round
+        1, M1 -- the previous version gave each its own fresh timeout_s,
+        so a caller could block up to ~2x timeout_s). Returns the
         successful response, or None on timeout."""
-        if not client.wait_for_service(timeout_sec=timeout_s):
+        deadline = time.monotonic() + timeout_s
+        if not self._service_ready(client, max(0.0, deadline - time.monotonic())):
             self.get_logger().error(f"{service_name}: service never became available")
             return None
-        deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             future = client.call_async(request)
             rclpy.spin_until_future_complete(
@@ -255,7 +387,10 @@ class ArmAndGoal(Node):
                 return resp
             reason = resp.status.message if resp is not None else "no response (spin timed out)"
             self.get_logger().warning(f"{service_name}: not yet ok ({reason}); retrying")
-            time.sleep(SERVICE_RETRY_PERIOD_S)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                break
+            self._spin_for(min(SERVICE_RETRY_PERIOD_S, remaining))
         return None
 
     def set_route(self, goal_x: float, goal_y: float, yaw_rad: float, timeout_s: float) -> bool:
@@ -263,7 +398,7 @@ class ArmAndGoal(Node):
         # failure must not block setting the new one (arm_closed_loop.sh's
         # own clear_route call is likewise not treated as fatal).
         clear_client = self.create_client(ClearRoute, "/api/routing/clear_route")
-        if clear_client.wait_for_service(timeout_sec=2.0):
+        if self._service_ready(clear_client, 2.0):
             future = clear_client.call_async(ClearRoute.Request())
             rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
 
@@ -309,7 +444,7 @@ class ArmAndGoal(Node):
         pub = self.create_publisher(Engage, ENGAGE_TOPIC, 10)
         deadline = time.monotonic() + ENGAGE_DISCOVERY_TIMEOUT_S
         while pub.get_subscription_count() == 0 and time.monotonic() < deadline:
-            time.sleep(0.1)
+            rclpy.spin_once(self, timeout_sec=SPIN_SLICE_S)
         if pub.get_subscription_count() == 0:
             self.get_logger().warning(
                 f"{ENGAGE_TOPIC}: no subscriber found after "
@@ -323,17 +458,17 @@ class ArmAndGoal(Node):
         msg.engage = True
         for _ in range(ENGAGE_PUBLISH_COUNT):
             pub.publish(msg)
-            time.sleep(ENGAGE_PUBLISH_PERIOD_S)
+            self._spin_for(ENGAGE_PUBLISH_PERIOD_S)
         self.get_logger().info(f"{ENGAGE_TOPIC}: published engage=true x{ENGAGE_PUBLISH_COUNT}")
 
     def engage(self, timeout_s: float) -> bool:
         """R4.1 + R4.2 orchestration. Returns verify_control_flowing()'s
         result -- NOT try_adapi_engage()'s or legacy_engage()'s reported
         success -- so a call that reports success while the gate is
-        near-silent cannot reach ARMED through this function. That
-        substitution (trusting a service response instead of the gated
-        topic) is exactly the defect that produced cell E's false
-        conclusion.
+        not actually under command cannot reach ARMED through this
+        function. That substitution (trusting a service response instead
+        of the gated topic's authority + liveness) is exactly the defect
+        this task exists to close.
 
         timeout_s bounds the WHOLE phase, matching the "fresh timeout
         budget per step" contract documented at module scope: the AD-API
@@ -344,6 +479,12 @@ class ArmAndGoal(Node):
         adapi_budget = min(ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, timeout_s)
         self.try_adapi_engage(adapi_budget)
         self.legacy_engage()
+        # Reset the liveness window AT the engage moment (review round 1,
+        # C3): without this, a control_cmd stream that predates the engage
+        # (e.g. cell A's own ~19.9 Hz zero-velocity STOP-mode traffic) could
+        # satisfy verify_control_flowing() on its very first iteration,
+        # regardless of whether the engage took.
+        self._control_cmd_times.clear()
         remaining = max(0.0, timeout_s - (time.monotonic() - start))
         return self.verify_control_flowing(remaining)
 
@@ -413,9 +554,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if not node.engage(args.timeout):
             print(
-                f"ARM FAIL: {CONTROL_CMD_TOPIC} never sustained {CONTROL_CMD_MIN_HZ:.0f} Hz "
-                f"within {args.timeout:.0f} s after engage (see step-11_6-adapi-engage and "
-                "R4.2 -- a service reporting success is not enough)"
+                f"ARM FAIL: {OPERATION_MODE_STATE_TOPIC} never reported "
+                f"is_autoware_control_enabled together with {CONTROL_CMD_TOPIC} "
+                f"sustaining {CONTROL_CMD_MIN_HZ:.0f} Hz, within {args.timeout:.0f} s "
+                "after engage (see step-11_6-adapi-engage and R4.2 -- neither a "
+                "service reporting success nor rate alone is enough)"
             )
             return EXIT_TIMEOUT
 
