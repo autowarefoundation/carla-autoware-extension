@@ -15,7 +15,7 @@
   "autoware_image": "bridge-bench-patched:latest",
   "started_at_ns": 1785363351486289475,
   "excluded": true,
-  "exclusion_reason": "gate:arm-failed",
+  "exclusion_reason": "harness:092dc9a",
   "placement": {
     "carla_rpc_port": "2100",
     "container_image": "bridge-bench-patched:latest",
