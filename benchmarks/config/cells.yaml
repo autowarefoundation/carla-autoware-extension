@@ -108,34 +108,49 @@ cells:
       # explains the number but is an assertion about Autoware, not evidence
       # from this repo, so it is not what this binding rests on.)
       ndt_expected_hz: 20.0
-      # SELECTED by Task 11's live G1 re-gate on the shifted Town10 bundle
-      # (2026-07-29). The absolute branch was MEASURED and NOT met, on two
-      # successive registrations of this bundle:
-      #   dy = -0.475 (pins.yaml town10_pcd_shifted): max NDT error 0.824 m
-      #     over 400 static samples; 0.749 m on a second window.
-      #   dy = -0.607 (pins.yaml town10_pcd_refit, the ladder's rung-1
-      #     refit): max NDT error 0.570 m over 399 static samples.
-      # All three windows PASS the relative criteria (drift <= 0.018 m,
-      # p95 - p50 <= 0.244 m), so the relative branch is what applies.
+      # SELECTED by Task 11's live G1 re-gate (2026-07-29). This cell
+      # localizes against the ladder's RUNG-2 bundle (pins.yaml
+      # town10_pcd_regen, via map_defaults.sh), which IS registered to the
+      # world it runs in, so branch (a) applies. MEASURED on that bundle: max
+      # NDT error 0.089 m over 400 static samples -- 411 mm inside the 0.5 m
+      # gate, bias (dx, dy) = (+0.021, -0.038) m, per-axis jitter std 0.019 /
+      # 0.013 m. Raw NDT + ground-truth series and the bundle's own sha256 are
+      # retained under reports/g1-rung2-regen/, so the number is recomputable
+      # rather than merely asserted.
       #
-      # Why no further re-registration reaches 0.5 m: the residual max is
-      # NOT a frame offset. Subtracting the best possible rigid 2-D offset
-      # from the dy = -0.475 window's own samples still leaves max 0.635 m;
-      # and the refit -- which drove the cross-track bias to -0.029 m and
-      # the along-track to -0.075 m -- still measured 0.570 m, because the
-      # error is dominated by along-track jitter (dx std 0.229 m). That is
-      # the shallow-basin effect of Town10's sparse vertical structure
-      # (0.50 points/m^2 in the 0.8-3.0 m band against Nishi-Shinjuku's
-      # 4.25), which no rigid transform can add. Ladder rung 2 (regenerate
-      # from GT) is BLOCKED, not skipped: it requires driving the committed
-      # route once, and the ego halts ~68% along it at the same place on
-      # BOTH registrations (NDT score 2.05-2.30 against the 2.3 acceptance
-      # threshold). Recorded in the Task 11 report.
+      # The ladder was walked in order; the earlier rungs are kept because
+      # they bound what re-registration alone can do:
+      #   dy = -0.475 (town10_pcd_shifted): max 0.824 m; 0.749 m on a second
+      #     window.
+      #   dy = -0.607 (town10_pcd_refit, rung 1's refit): max 0.570 m.
+      # Both MISSED the absolute gate; all three windows pass the relative
+      # criteria. Rung 2 closed it, for a reason no rigid shift reproduces:
+      # it rebuilds the cloud from ground-truth-registered sweeps, so it fixes
+      # point DENSITY and not merely a frame offset.
       #
-      # Constant bias this branch reports: (dx, dy) = (-0.075, -0.029) m,
-      # the refit bundle this cell localizes against via map_defaults.sh.
-      ladder_branch: relative
-      abs_pose_gate_m: # null: the relative branch carries no threshold
+      # How close rigid registration got, stated as only what is verified: on
+      # the refit window, subtracting the CHEBYSHEV-OPTIMAL 2-D offset (the
+      # minimum-enclosing-circle centre -- the offset that actually minimises
+      # the max) leaves max 0.5041 m, over the gate by 4 mm, on a statistic
+      # whose same-bundle window-to-window spread was 0.075 m (0.824 vs
+      # 0.749). Rigid registration therefore came MARGINALLY short; it was
+      # never shown to be decisively excluded. Two earlier claims here were
+      # wrong and are corrected rather than quietly dropped: a 0.635 m "floor"
+      # from centroid subtraction was an UPPER bound (a centroid minimises
+      # RMS, not max) and the refit's own 0.570 m came in under it; and the
+      # residual was attributed to along-track jitter, which the data does not
+      # support -- the dominant jitter axis SWAPPED between windows (dx 0.097 /
+      # dy 0.171 on the dy = -0.475 window against dx 0.229 / dy 0.094 on the
+      # refit). What IS established: the residual max is within-lock jitter
+      # rather than a frame offset, and Town10 carries 0.50 vertical
+      # points/m^2 in the 0.8-3.0 m band against Nishi-Shinjuku's 4.25.
+      #
+      # CONFOUND (README, "Known confounds"): this bundle is built from THIS
+      # rig's own sweeps, including at the pose G1 measures, so 0.089 m is
+      # optimistic relative to an independently-sourced map and is NOT
+      # directly comparable to Nishi-Shinjuku's 0.078 m on cell C.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: B
     approach: tier4-native
     carla: 0.10-tier4
@@ -163,21 +178,23 @@ cells:
       tick_hz:
       lidar_expected_hz:
       ndt_expected_hz:
-      # SELECTED by Task 11 (2026-07-29), and it holds for EITHER Town10
-      # bundle Task 13 can wire, which is why it can be registered before
-      # that task runs. The two candidates both land on the relative
-      # branch, for independently sufficient reasons: the UNSHIFTED
-      # ~/autoware_map/town10 carries the known ~+0.475 m cross-track
-      # offset, which is branch (b) by definition; and the shifted/refit
-      # bundle was measured live by Task 11 to miss the 0.5 m absolute gate
-      # (see cell A above for the numbers and the mechanism). If Task 13
-      # wires a Town10 bundle that is NEITHER of those two, this pair must
-      # be re-derived from that bundle -- the branch is a property of the
-      # bundle the cell localized against, never a campaign constant.
-      # Note this does not make cell B gateable on its own: the M5 gate
-      # still refuses it while ndt_expected_hz above is null.
-      ladder_branch: relative
-      abs_pose_gate_m: # null: the relative branch carries no threshold
+      # NOT REGISTERED, and it is Task 13's to fill, not Task 11's. Task 11
+      # measured the branch for each Town10 bundle it drove, and the answer
+      # DIFFERS BY BUNDLE, so it cannot be settled before Task 13 chooses one:
+      #   town10-regen (pins.yaml town10_pcd_regen)  -> absolute, 0.5
+      #     (measured max NDT error 0.089 m; see cell A)
+      #   town10-shifted / the unshifted ~/autoware_map/town10 -> relative
+      #     (measured max 0.570 m and 0.824 m; the unshifted bundle also
+      #     carries the known ~+0.475 m cross-track offset, branch (b) by
+      #     definition)
+      # An earlier revision of this comment registered `relative` here on the
+      # reasoning that every Town10 bundle landed on that branch. Rung 2
+      # falsified exactly that premise, so the binding goes back to unset:
+      # guessing would gate a tier4 cell on whichever bundle Task 11 happened
+      # to drive rather than the one Task 13 wires. Task 13 must register this
+      # pair from the bundle it mounts, in the same commit that mounts it.
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: C
     approach: extension
     carla: 0.10-fork
@@ -411,13 +428,14 @@ cells:
       lidar_expected_hz:
       ndt_expected_hz:
       # SELECTED by Task 11 (2026-07-29), as cell A: this cell runs the same
-      # cells/extension.sh launcher on the same Town10 bundle, and the branch
-      # is a property of that bundle, not of the tick or sensor rate Task 26
-      # still owes above. See cell A for the measured numbers and mechanism.
+      # cells/extension.sh launcher against the same Town10 bundle
+      # (town10-regen), and the branch is a property of that bundle, not of
+      # the tick or sensor rate Task 26 still owes above. See cell A for the
+      # measured numbers, the ladder walk and the self-built-map confound.
       # The three null rate bindings above still make this cell un-gateable
       # until Task 26 registers them; that is independent of this pair.
-      ladder_branch: relative
-      abs_pose_gate_m: # null: the relative branch carries no threshold
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: B-hf
     approach: tier4-native
     carla: 0.10-tier4
@@ -441,12 +459,11 @@ cells:
       tick_hz:
       lidar_expected_hz:
       ndt_expected_hz:
-      # SELECTED by Task 11 (2026-07-29), on cell B's reasoning: both Town10
-      # bundles Task 13 can wire land on the relative branch, so this pair is
-      # registrable before that task runs. Re-derive it only if Task 13 wires
-      # a Town10 bundle that is neither of those two.
-      ladder_branch: relative
-      abs_pose_gate_m: # null: the relative branch carries no threshold
+      # NOT REGISTERED, as cell B: Task 11 measured a DIFFERENT branch per
+      # Town10 bundle (regen -> absolute 0.5, rigid/unshifted -> relative), so
+      # this is Task 13's to register from the bundle it wires. See cell B.
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: B45
     approach: tier4-native
     carla: 0.10-tier4
@@ -462,9 +479,10 @@ cells:
       tick_hz: # Task 13, as cell B (identical CARLA-side recipe)
       lidar_expected_hz: # Task 13, as cell B
       ndt_expected_hz: # Task 13, as cell B
-      # SELECTED by Task 11 (2026-07-29), on cell B's reasoning; see there.
-      ladder_branch: relative
-      abs_pose_gate_m: # null: the relative branch carries no threshold
+      # NOT REGISTERED, as cell B: the branch differs per Town10 bundle, so
+      # Task 13 registers it from the bundle it wires. See cell B.
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }

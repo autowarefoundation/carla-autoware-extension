@@ -1098,32 +1098,33 @@ def test_run_sh_warns_when_the_gate_refuses():
 def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
     """R3.3's registration, now partly FILLED -- pinned either way.
 
-    Task 11's live G1 re-gate (2026-07-29) selected the RELATIVE branch for
-    the Town10 cells: the absolute gate was measured and MISSED on two
-    successive registrations of the Town10 bundle (max NDT error 0.824 m on
-    `dy = -0.475`, 0.570 m on the `dy = -0.607` rung-1 refit, against the
-    0.5 m threshold), while every window passed the relative criteria. See
-    benchmarks/README.md's 2026-07-29 ladder amendment for the rung-by-rung
-    record.
+    Task 11's live G1 re-gate (2026-07-29) walked the ladder to rung 2 and
+    selected the ABSOLUTE branch for the two extension Town10 cells, which
+    localize against the regenerated bundle (pins.yaml town10_pcd_regen):
+    max NDT error 0.089 m against the 0.5 m gate. The rigid rungs missed it
+    (0.824 m on `dy = -0.475`, 0.570 m on the `dy = -0.607` refit). See
+    benchmarks/README.md's 2026-07-29 ladder amendment for the full record.
 
-    The cells NOT listed below still owe a selection and must stay UNSET, so
-    the M5 gate keeps refusing them instead of gating on a guessed branch --
-    the property R3.3 added this test for. Nishi-Shinjuku (C, D) is Task
-    15's; the E family measures its own bundle first; the CAL cells have no
-    localization stack at all.
+    The B family is deliberately NOT listed: Task 11 measured a DIFFERENT
+    branch per Town10 bundle (regen -> absolute, rigid/unshifted ->
+    relative), so those cells cannot be registered until Task 13 wires one.
+    Nishi-Shinjuku (C, D) is Task 15's, the E family measures its own bundle
+    first, and the CAL cells have no localization stack. Every cell not
+    listed must stay UNSET so the M5 gate keeps refusing it rather than
+    gating on a guessed branch -- the property R3.3 added this test for.
     """
-    selected_relative = {"A", "A-hf", "B", "B-hf", "B45"}
+    selected_absolute = {"A", "A-hf"}
     doc = load_cells_doc()
     for cell in (c["id"] for c in doc["cells"]):
         metrics = metrics_for(doc, cell)
-        if cell in selected_relative:
-            assert metrics["ladder_branch"] == "relative", cell
+        if cell in selected_absolute:
+            assert metrics["ladder_branch"] == "absolute", cell
+            # Non-null iff absolute, and it is the README's registered
+            # threshold -- not any float, which would let a relaxed gate in.
+            assert metrics["abs_pose_gate_m"] == pytest.approx(0.5), cell
         else:
             assert metrics["ladder_branch"] is None, cell
-        # Null on EVERY cell either way: the relative branch carries no
-        # threshold, and an unselected cell carries nothing at all. A
-        # non-null value on any cell would be an inconsistent registration.
-        assert metrics["abs_pose_gate_m"] is None, cell
+            assert metrics["abs_pose_gate_m"] is None, cell
 
 
 def test_committed_route_stations_stop_short_of_the_goal():
@@ -1144,7 +1145,15 @@ def test_committed_route_stations_stop_short_of_the_goal():
     """
     from benchmarks.analysis.window import _cum_arclen, project_station_m
 
-    for map_name, expected_gap_m in (("Town10HD_Opt", 19.772), ("NishishinjukuMap", 20.039)):
+    # Town10's 19.850 m replaced 19.772 m when Task 11 RE-PICKED that route
+    # (2026-07-29): the original 438.9 m route proved infeasible BEFORE any
+    # measurement, so its goal moved to station 258.9 m. This test firing is
+    # precisely the "revisit the ruling rather than silently invalidate it"
+    # behaviour its docstring asks for -- and the ruling SURVIVES unchanged:
+    # the gap is still ~20 m, so a station-trimmed goal metric still could not
+    # clear the 1.0 m criterion, which is the ruling's whole basis. Only the
+    # constant moved.
+    for map_name, expected_gap_m in (("Town10HD_Opt", 19.850), ("NishishinjukuMap", 20.039)):
         doc = yaml.safe_load((write_quality.ROUTES_DIR / f"{map_name}.yaml").read_text())
         poly = np.asarray(doc["polyline"], dtype=np.float64)
         goal = np.asarray([doc["goal"]["x"], doc["goal"]["y"]], dtype=np.float64)

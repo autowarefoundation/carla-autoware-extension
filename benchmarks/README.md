@@ -99,8 +99,11 @@ after a number is known.
   branch is a property of **the map bundle THAT CELL localized against**,
   not of whether a fix has landed somewhere in the campaign:
   (a) the cell localized against a bundle whose pcd is registered to the
-  world it runs in (for Town10, the shifted bundle Task 11 produced):
-  max pose_error < 0.5 m; (b) the cell localized against a bundle
+  world it runs in (for Town10, the **REGENERATED** bundle Task 11's ladder
+  rung 2 produced — `pins.yaml` `town10_pcd_regen`, measured at max
+  0.089 m; **not** the rigid `town10_pcd_shifted` / `town10_pcd_refit`
+  variants, which were measured at 0.824 m and 0.570 m and so fall under
+  (b)): max pose_error < 0.5 m; (b) the cell localized against a bundle
   carrying a known or unmeasured bundle-internal offset: no drift
   (|mean of last 20% − mean of first 20%| < 0.2 m) and p95 − p50 < 0.3 m,
   with the constant bias reported. Which branch applied is recorded per
@@ -112,19 +115,25 @@ after a number is known.
   arm — including the sweep arms, which `run.sh` drives under either a
   static or a closed-loop `window_arm` — gets the goal criterion, since
   only the manifest's own `static` states that the ego was parked.
-  Why it is keyed on the bundle: the Town10 pcd shift is registered to
-  the UE5 world, so it applies to cells A/B; whether E's 0.9.15 world
-  carries the same bundle-internal offset is MEASURED (E's static NDT
-  bias, Task 10) before deciding which pcd variant E localizes against.
+  Why it is keyed on the bundle: the Town10 fix is registered to the UE5
+  world, so it applies to cells A/B; whether E's 0.9.15 world carries the
+  same bundle-internal offset is MEASURED (E's static NDT bias, Task 10)
+  before deciding which pcd variant E localizes against.
   A campaign-level "the fix landed" would gate cell E at 0.5 m against a
   bundle it may sit ~0.475 m off — failing E for a reason that reads as
-  the bridge's. The bundle is whichever one that cell's launcher mounts:
-  `scripts/e2e/map_defaults.sh`'s `/autoware_map/town10-shifted` for the
+  the bridge's. Task 11's rung-2 result makes this sharper still, since
+  the branch now DIFFERS between two bundles of the same map: the
+  regenerated Town10 bundle takes (a) and every rigid variant of it takes
+  (b), so "which Town10 bundle" is not a detail. The bundle is whichever
+  one that cell's launcher mounts:
+  `scripts/e2e/map_defaults.sh`'s `/autoware_map/town10-regen` for the
   extension cells (via `run_e2e.sh` → `launch_autoware.sh`), the
   unshifted `~/autoware_map/town10` that `cells/python-bridge.sh` pins
   for the E family, and — for the tier4 cells, whose launcher defers the
   map to Task 13's `$TIER4_DEMO` — whatever that task wires, which it
-  must do explicitly since it does not inherit `map_defaults.sh`.
+  must do explicitly since it does not inherit `map_defaults.sh`. That is
+  also why cells B/B-hf/B45 keep a `null` ladder binding: Task 11 could
+  not settle their branch without knowing which bundle Task 13 mounts.
 - Scoring windows: closed-loop = spatial gate between the route-station
   bounds in `config/routes/<map>.yaml` after a 20 s warm-up discard;
   static = wall window [t0 + 20 s, end].
@@ -699,8 +708,18 @@ not as a filter:
 
 | Route                   | Cells | Total length | Straight-line separation  | Accumulated turn       | Closest prior approach |
 | ----------------------- | ----- | ------------ | ------------------------- | ---------------------- | ---------------------- |
-| `Town10HD_Opt.yaml`     | A, B  | 438.9 m      | 250.9 m (57.2% of length) | 233.0° — PASS ≥ 60°    | 33.5 m — PASS ≥ 10 m   |
+| `Town10HD_Opt.yaml`     | A, B  | 258.9 m      | 209.0 m (80.7% of length) | 169.4° — PASS ≥ 60°    | 11.3 m — PASS ≥ 10 m   |
 | `NishishinjukuMap.yaml` | C, D  | 230.5 m      | 227.3 m (98.6% of length) | 35.8° — **FAIL** ≥ 60° | 29.4 m — PASS ≥ 10 m   |
+
+The Town10 row moved with the 2026-07-29 route re-pick; it previously read
+438.9 m / 250.9 m (57.2%) / 233.0° / 33.5 m. The re-picked route still clears
+all four properties, but two moved toward their bounds and the comparison below
+must be read against the new numbers: separation is now 80.7% of length rather
+than 57.2%, so the two routes are LESS different in straightness than they
+were, and the closest prior approach is 11.3 m against a 10 m bound where the
+original had 33.5 m of margin. Accumulated turn stays clear at 169.4°, so the
+Town10 route is still a genuinely turning drive and the paragraph below still
+holds directionally — but by a smaller margin than the original 233.0° vs 35.8°.
 
 The Nishi-Shinjuku route does not clear the accumulated-turn property: it is
 98.6% a straight line, with 35.8° of total heading change against Town10's
@@ -712,6 +731,33 @@ cell — a mostly-straight 230 m drive is an easier control problem than a
 439 m drive through several junction turns. Any P3 report comparing M5
 closed-loop numbers across map families must state this alongside the
 numbers, not just alongside the route's provenance.
+
+### Map provenance: self-built Town10 pcd (A/A-hf) vs. sourced Nishi-Shinjuku pcd (C)
+
+**C4, added 2026-07-29.** The Town10 bundle the extension cells localize
+against (`pins.yaml` `town10_pcd_regen`) was **rebuilt from this rig's own
+LiDAR sweeps**, ground-truth-registered, by
+`benchmarks/scripts/build_pcd_from_gt.py`. Nishi-Shinjuku's bundle is
+independently sourced. That difference flatters Town10's localization numbers
+and the comparison must say so:
+
+- The regenerated map contains the returns this exact sensor produces, at the
+  poses it drove — including the pose G1 measures from. A scan match against
+  it is a materially easier problem than matching an independently-authored HD
+  map, so **max NDT error 0.089 m on cell A is NOT directly comparable to
+  Nishi-Shinjuku's 0.078 m on cell C**, even though the two look alike.
+- It is nonetheless a legitimate G1 result rather than a tautology: the map is
+  registered by CARLA **ground truth**, never by NDT's own estimate, so the
+  pose it implies is the true pose and the error measured against ground truth
+  is real. Ladder rung 2 pre-registered exactly this construction.
+- Coverage is bounded by where the ego drove (see `town10_pcd_regen`), so the
+  bundle is dense along the committed corridor and thins beyond it. The route
+  re-pick keeps the drive inside the dense region — which also means the
+  route and the map's dense region were chosen together, a circularity
+  disclosed in the route-re-pick amendment.
+
+Any P3 report comparing M5 localization numbers across map families must state
+this alongside the numbers, exactly as it must for route difficulty above.
 
 ### Perception load: clear-road stand-in (A/B/C/D) vs. real CUDA perception (E family)
 
@@ -1488,60 +1534,106 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   body and a test — this file is where the contradiction and its resolution
   belong, following the precedent of the CAL-seam "open contradiction recorded"
   block above.
-- **2026-07-29** — the **G1 ladder branch is SELECTED for the Town10 cells:
-  `relative`** (`cells.yaml` `ladder_branch: relative`, `abs_pose_gate_m: null`
-  on `A`, `A-hf`, `B`, `B-hf`, `B45`). Registered here because branch selection
-  is a pre-registration item, and legitimate now only because no P3 measurement
-  run has happened. **Neither threshold changes**: both branches' criteria are
-  exactly as the M5 definitions above already fixed them, and no gate was
-  relaxed to reach this outcome — the absolute branch was measured and missed.
-  Which ladder rung fired, on Task 11's live re-gate:
-  - **Step 3 (the pinned `dy = -0.475` bundle): FAIL.** Max NDT error
-    **0.824 m** against the 0.5 m absolute gate over 400 static samples, and
-    0.749 m on a second window. The registered shift did work — the
-    cross-track constant fell from the pre-shift +0.477 m to +0.123 m, and an
-    8-seed sweep put it at +0.005 m across all seeds — but a residual
-    `(dx, dy) = (-0.32, +0.12)` m and, decisively, along-track excursions
-    remained.
-  - **Rung 1 (Refit): FIRED, and FAILED.** The sweep's cleanly-converged
-    subset showed a clean constant y-residual of +0.132 m (std 0.012), so the
-    precondition was met; re-shifting from source by the new mean
-    (`dy = -0.607`, pinned as `town10_pcd_refit`) drove the bias to
-    `(-0.075, -0.029)` m yet still measured max **0.570 m**. Rung 1's single
-    permitted repeat of Step 3 is spent.
-  - **Rung 2 (Regenerate): BLOCKED, not skipped.** It requires driving the
-    committed route once to accumulate GT-registered sweeps, and the ego halts
-    ~68% along that route — at the SAME place on both registrations —
-    because `ndt_scan_matcher`'s match score sits at 2.05–2.30 against its
-    2.3
-    acceptance threshold, so the EKF rejects the pose and MRM stops the
-    vehicle. The precondition is therefore unmet by measurement, not by
-    choice.
-  - **Rung 3 (relative branch): TAKEN**, autonomously, as Task 1 pre-registered
-    it. The duel stays on Town10; moving it to Nishi-Shinjuku was neither
-    considered nor proposed, being reserved to the plan owner.
-    Why no further re-registration could have reached 0.5 m: the residual max is
-    not a frame offset. Subtracting the best possible rigid 2-D offset from the
-    `dy = -0.475` window's own samples still leaves max 0.635 m, and the refit's
-    own max stayed at 0.570 m with the bias essentially removed, because the
-    error is dominated by along-track jitter (dx std 0.229 m) — the
-    shallow-basin effect of Town10 carrying 0.50 vertical points/m² in the
-    0.8–3.0 m band
-    against Nishi-Shinjuku's 4.25. A rigid transform cannot add structure. All
-    three measured windows PASS the relative criteria (drift ≤ 0.018 m,
-    p95 − p50 ≤ 0.244 m), so the selected branch is satisfied on its own
-    terms.
-- **2026-07-29** — `pins.yaml` gained **`town10_pcd_refit`** (`dy_m: -0.607`,
-  its own `sha256` and `tool_commit`) beside the existing
-  `town10_pcd_shifted`, rather than editing that block. Both describe
-  candidate contents of the ONE path `map_defaults.sh` resolves and
-  `docker/compose.yaml` mounts, and exactly one is installed at a time, so the
-  invariant is: **the file at that path hashes to the `sha256` of exactly one
-  block, and that block is the bundle the run used** — never "whichever block
-  is listed last". Completeness: the refit was written in place, so editing
-  the original block would have destroyed the only record of the bundle the
-  recorded Step-3 and G2 measurements were taken against, and leaving it alone
-  would have left the pin describing bytes that no longer exist.
+- **2026-07-29** — the **G1 ladder branch is SELECTED for the two extension
+  Town10 cells: `absolute`, `abs_pose_gate_m: 0.5`** (`cells.yaml` on `A` and
+  `A-hf`). Registered here because branch selection is a pre-registration item,
+  and legitimate now only because no P3 measurement run has happened. **No
+  threshold changed**: both branches' criteria are exactly as the M5
+  definitions above fix them, and nothing was relaxed — the absolute gate was
+  met on its own terms. Cells `B`/`B-hf`/`B45` deliberately keep a `null`
+  binding; see the last bullet of this entry. Rung by rung, on Task 11's live
+  re-gate:
+  - **Step 3 (the pinned `dy = -0.475` rigid shift): FAIL.** Max NDT error
+    **0.824 m** over 400 static samples, and 0.749 m on a second window. The
+    registered shift did work — the cross-track constant fell from the
+    pre-shift +0.477 m to +0.005 m across an 8-seed sweep — but a residual
+    `(dx, dy) = (-0.32, +0.12)` m and within-lock jitter remained.
+  - **Rung 1 (Refit): FIRED, FAILED.** The sweep's cleanly-converged seeds
+    still showed a clean +0.132 m cross-track residual (std 0.012), so the
+    precondition was met; re-shifting from source by that mean
+    (`dy = -0.607`, `pins.yaml` `town10_pcd_refit`) drove the bias to
+    `(-0.075, -0.029)` m and still measured max **0.570 m**.
+  - **Rung 2 (Regenerate): FIRED, and PASSED at max 0.089 m** — 411 mm inside
+    the gate, bias `(+0.021, -0.038)` m, per-axis jitter std 0.019 / 0.013 m.
+    `benchmarks/scripts/build_pcd_from_gt.py` rebuilt the pointcloud from
+    1996 ground-truth-registered 128-channel sweeps (0.2 m voxel,
+    `pins.yaml` `town10_pcd_regen`), recorded over a 100 s `--window` while
+    the ego drove. Rung 3 was therefore NOT reached and the relative branch
+    was NOT taken.
+    Why rung 2 succeeded where re-registration could not: it fixes point
+    DENSITY, not merely a frame offset. Two corrections to an earlier revision of
+    this entry, kept rather than quietly dropped: a 0.635 m "floor" derived by
+    subtracting the CENTROID was an **upper** bound, not a lower one (a centroid
+    minimises RMS, not the max), and the refit's own 0.570 m came in under it;
+    and the residual was attributed to along-track jitter, which the data does
+    not support — the dominant jitter axis SWAPPED between windows (dx 0.097 /
+    dy 0.171 on the `dy = -0.475` window against dx 0.229 / dy 0.094 on the
+    refit). Stated as only what is verified: on the refit window the
+    **Chebyshev-optimal** rigid offset (the minimum-enclosing-circle centre, the
+    offset that genuinely minimises the max) leaves max **0.5041 m** — over the
+    gate by 4 mm, on a statistic whose same-bundle window-to-window spread was
+    0.075 m. Rigid registration came MARGINALLY short and was never decisively
+    excluded; and since rung 2 is non-rigid, a rigid bound said nothing about it
+    in any case.
+    Because the branch now differs between two bundles of the SAME map —
+    regenerated takes (a), every rigid variant takes (b) — cells
+    `B`/`B-hf`/`B45` cannot be registered until Task 13 wires a bundle, and
+    their binding stays `null` so the M5 gate refuses them rather than gating on
+    whichever bundle Task 11 happened to drive.
+- **2026-07-29** — `pins.yaml` gained **`town10_pcd_refit`** (`dy_m: -0.607`)
+  and **`town10_pcd_regen`** beside the existing `town10_pcd_shifted`, rather
+  than either being edited into it, and `scripts/e2e/map_defaults.sh` now
+  points `Town10HD_Opt` at `/autoware_map/town10-regen`. All three describe
+  candidate contents of the ONE path `map_defaults.sh` resolves, and exactly
+  one is installed at a time, so the registered invariant is: **the file at
+  that path hashes to the `sha256` of exactly one block, and that block is the
+  bundle the run used** — never "whichever block is listed last", and never the
+  directory name. Completeness: the refit was written in place, so editing the
+  original block would have destroyed the only record of the bundle the
+  recorded Step-3 and G2 measurements were taken against, while leaving it
+  alone would have left the pin describing bytes that no longer exist.
+  `town10_pcd_regen` is deliberately NOT reproducible from its pin (its input
+  is a live drive); the pin fixes which file a run used plus the parameters
+  that shaped it, the same standard `bench_observer_images.local_digest`
+  already documents. The invariant now has consumers rather than being prose:
+  `benchmarks/scripts/bundle_pin.py`, called by `preflight.sh` (which reports
+  `map_bundle_pin` into the manifest and refuses a bundle matching zero or
+  several blocks), plus `tests/benchmarks/test_bundle_pin.py`.
+- **2026-07-29 — DEVIATION, disclosed** — the committed **Town10 route was
+  re-picked**: the goal moved from `(-101.021, 55.014)` at station 438.9 m to
+  **`(74.869, 66.891)` at station 258.9 m** of the same polyline
+  (`config/routes/Town10HD_Opt.yaml`, and `map_defaults.sh`'s
+  `MAP_DEFAULT_GOAL` with it). The reason is infeasibility established
+  **before** measurement, not re-tuning of a result: on the rigid bundles the
+  ego halted ~292 m along the route at the SAME place on both registrations,
+  and on the regenerated bundle it drove the full route but closed only to
+  **1.929 m** against the 1.0 m criterion, stopped by MRM before Autoware ever
+  reported ARRIVED, with 108 of 311 NDT score breaches falling in the final
+  quarter — the stretch the regenerated bundle covers most thinly, its
+  collection drive having ended at ~292 m. On the re-picked route G2 measures
+  **0.244 m — PASS**. The route was produced by `benchmarks/scripts/pick_route.py`
+  and its four gate-honesty properties were verified independently: length
+  258.9 m, accumulated turn **169.4°** (≥ 60), straight-line separation
+  **209.0 m** (≥ 100), closest prior approach **11.3 m** (≥ 10). The new goal
+  sits 1.750 m from the nearest lanelet2 boundary way, matching the old goal's
+  1.819 m and the spawn's 1.750 m, i.e. on a centreline. Two knock-on effects
+  are recorded rather than absorbed: the station-to-goal gap moves from
+  19.772 m to 19.850 m, so the 2026-07-29 goal-window ruling was re-checked
+  and **survives unchanged** (the gap is still ~20 m, so a station-trimmed
+  goal metric still could not clear 1.0 m); and the confound table's Town10 row
+  is updated below. **Known circularity, disclosed:** the re-picked route lies
+  inside the corridor the regenerated bundle was built from, so that bundle is
+  densest exactly where the route now runs.
+- **2026-07-29** — campaign-level finding, recorded here and not only in a task
+  report: **G2 completes on NEITHER rigid Town10 registration.** On both
+  `town10_pcd_shifted` (142.599 m closest approach) and `town10_pcd_refit`
+  (142.398 m) the ego halts ~292 m into the 438.9 m route at the same place,
+  because `ndt_scan_matcher` scores 2.05–2.30 against its 2.3 acceptance
+  threshold, the EKF then rejects the pose, and MRM stops the vehicle. Only
+  the regenerated bundle drives a closed-loop route at all. This is why the
+  Town10 closed-loop arm depends on `town10_pcd_regen` specifically, and why a
+  future full-route Town10 bundle needs a second collection pass over the
+  stretch beyond station ~292 m.
 
 ## How to run
 

@@ -59,6 +59,39 @@ town10_pcd_refit:
   tool: benchmarks/scripts/shift_pcd.py
   tool_commit: 13a3719
   sha256: 38b10c3a8f4e50f4b828222562d4d9ff04de71f8e1711a21d4b2c0b3145c0401
+# The G1 ladder's RUNG-2 bundle, and the one the Town10 cells now localize
+# against (scripts/e2e/map_defaults.sh points Town10HD_Opt at it). Rebuilt from
+# ground-truth-registered LiDAR sweeps rather than RE-REGISTERED: rung 1's rigid
+# refit above still measured max NDT error 0.570 m against the 0.5 m absolute
+# gate, and this bundle measures 0.089 m. It lives in its own directory
+# (~/autoware_map/town10-regen) rather than displacing a rigid variant, because
+# it is not a re-registration of that source at all.
+#
+# NOT reproducible from this pin alone, and that is a property of the METHOD,
+# not an omission: the input is a live 100 s drive, so a rebuild yields a
+# different point set. What the pin fixes is WHICH FILE a run used (`sha256`)
+# plus the parameters that shaped it, which is the same standard
+# bench_observer_images' local_digest already documents for a non-content hash.
+#
+# COVERAGE IS BOUNDED BY WHERE THE EGO DROVE. The collection drive reached
+# ~292 m of the then-438.9 m route before the rigid bundle's own localization
+# stopped it, so this bundle is dense along that corridor and thins out beyond
+# it -- measured: 108 of 311 NDT score breaches fell in the final quarter of a
+# full-route drive. That is why the Town10 route was re-picked to end at
+# station 258.9 m (config/routes/Town10HD_Opt.yaml), and why a future
+# full-route bundle needs a second collection pass over the remainder.
+town10_pcd_regen:
+  built_on_bundle_sha256: 38b10c3a8f4e50f4b828222562d4d9ff04de71f8e1711a21d4b2c0b3145c0401
+  tool: benchmarks/scripts/build_pcd_from_gt.py
+  tool_commit: 85d6d45
+  window_s: 100
+  voxel_m: 0.2
+  lidar_channels: 128
+  lidar_points_per_second: 2200000
+  lidar_range_m: 100
+  sweeps: 1996
+  points: 1990168
+  sha256: c3bc613b0ea3e77528d081792dedc6fa0a22a89ae10aeabe5c72a09afcbfaba3
 carla_0915:
   url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
   sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7
