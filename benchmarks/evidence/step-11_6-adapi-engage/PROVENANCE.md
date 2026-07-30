@@ -12,11 +12,11 @@ All three captures are from one stack, in this order, with no reboot between:
 localization reseeded to 0.03 m, trajectory live at 10 Hz, dummy perception
 injected, MRM suppressed, route SET via the same AD-API.
 
-| File | What it shows |
-| --- | --- |
-| `adapi_change_to_autonomous.log` | `arm_and_goal.py` on the AD-API path: `set_route_points` succeeds, then `change_to_autonomous` **refuses for 60 s**, ~30 retries, every one "The target mode is not available. Please check the diagnostics." Exit 2. |
-| `legacy_autoware_engage.log` | The legacy `/autoware/engage` publish **seconds later, same state**: `mode: 2` (AUTONOMOUS), `is_autoware_control_enabled: true` — and `is_autonomous_mode_available: false` **while it is driving**, which is the decisive detail: the difference is which interface consults that flag, not the state. |
-| `gated_control_cmd.log` | The gated output under the legacy path: `msgs=281 rate=20.07 Hz`, velocity command `+4.170` m/s on **281/281** samples. |
+| File                             | What it shows                                                                                                                                                                                                                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `adapi_change_to_autonomous.log` | `arm_and_goal.py` on the AD-API path: `set_route_points` succeeds, then `change_to_autonomous` **refuses for 60 s**, ~30 retries, every one "The target mode is not available. Please check the diagnostics." Exit 2.                                                                                    |
+| `legacy_autoware_engage.log`     | The legacy `/autoware/engage` publish **seconds later, same state**: `mode: 2` (AUTONOMOUS), `is_autoware_control_enabled: true` — and `is_autonomous_mode_available: false` **while it is driving**, which is the decisive detail: the difference is which interface consults that flag, not the state. |
+| `gated_control_cmd.log`          | The gated output under the legacy path: `msgs=281 rate=20.07 Hz`, velocity command `+4.170` m/s on **281/281** samples.                                                                                                                                                                                  |
 
 ## Why the rate alone was not sufficient
 

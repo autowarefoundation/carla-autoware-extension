@@ -12,11 +12,11 @@ so nobody mistakes it for gate output. The series themselves ARE the gate's own
 (the ego-pose and ground-truth files it fed to `measure_ndt.py`); only the
 summary is reconstructed.
 
-| Directory | Bundle | `pins.yaml` block | max NDT error | Verdict |
-| --- | --- | --- | --- | --- |
-| `shifted-run1/` | `dy = -0.475` | `town10_pcd_shifted` | **0.824 m** | FAIL |
-| `shifted-run2/` | `dy = -0.475` | `town10_pcd_shifted` | **0.749 m** | FAIL |
-| `refit/` | `dy = -0.607` | `town10_pcd_refit` | **0.570 m** | FAIL |
+| Directory       | Bundle        | `pins.yaml` block    | max NDT error | Verdict |
+| --------------- | ------------- | -------------------- | ------------- | ------- |
+| `shifted-run1/` | `dy = -0.475` | `town10_pcd_shifted` | **0.824 m**   | FAIL    |
+| `shifted-run2/` | `dy = -0.475` | `town10_pcd_shifted` | **0.749 m**   | FAIL    |
+| `refit/`        | `dy = -0.607` | `town10_pcd_refit`   | **0.570 m**   | FAIL    |
 
 `shifted-run1` is the Step-3 protocol run — the pristine GNSS-initialised lock,
 no reseed — and is therefore the number that drove the ladder forward.

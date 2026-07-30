@@ -5,10 +5,10 @@ measurements that established the closed-loop arm was not viable there. Their
 retention is UNEVEN, and this file states which is which so no reader has to
 guess.
 
-| Run | Bundle | Closest approach | Retained here? |
-| --- | --- | --- | --- |
-| `dy = -0.475` | `town10_pcd_shifted` | **142.599 m** | The gate's own output, `g2_gate_output.log` — the number and `dist_rows=1198`, but NOT the distance series |
-| `dy = -0.607` | `town10_pcd_refit` | **142.398 m** | **NOT RETAINED** |
+| Run           | Bundle               | Closest approach | Retained here?                                                                                             |
+| ------------- | -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `dy = -0.475` | `town10_pcd_shifted` | **142.599 m**    | The gate's own output, `g2_gate_output.log` — the number and `dist_rows=1198`, but NOT the distance series |
+| `dy = -0.607` | `town10_pcd_refit`   | **142.398 m**    | **NOT RETAINED**                                                                                           |
 
 ## Why, precisely
 
