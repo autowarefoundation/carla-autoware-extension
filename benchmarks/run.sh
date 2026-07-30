@@ -634,9 +634,12 @@ PY
   # publish gate_g2_closed_loop.sh uses (not change_to_autonomous alone --
   # that AD-API call is attempted and logged as a per-approach observation,
   # benchmarks/README.md's control_mode finding, but never trusted on its
-  # own), and it already verifies the GATED control_cmd sustains >= 5 Hz
-  # before step 9 reports success. So by the time execution reaches here,
-  # a successful step 9 already means the gate was flowing at arm time --
+  # own), and it already verifies BOTH is_autoware_control_enabled
+  # (authority) AND the GATED control_cmd sustaining >= 5 Hz, rate-window
+  # reset at the engage call, before step 9 reports success -- rate alone
+  # was found to pass a run that never engaged (benchmarks/README.md's
+  # control_mode finding). So by the time execution reaches here, a
+  # successful step 9 already means the gate was flowing at arm time --
   # this second check is a redundant, independent sanity probe (a fresh CLI
   # read, not the rclpy subscription arm_and_goal.py used), not the
   # harness's only liveness gate. It still checks the GATED output --
