@@ -1063,11 +1063,33 @@ fails in the launcher before `run.sh` reaches its arm step.
   this image's `pose_initializer` is **not a subscribed topic at all**. Task 13
   wrote `benchmarks/injector/seed_localization.py` (the direct-service path) for
   every cell to share; Task 20 must not assume the `/initialpose` route works.
-- **Whether cell A hits the same wall is UNMEASURED.** The extension publishes
-  `lateral_velocity` too (`extension/src/publishers/StatusPublishers.cpp:99`),
-  so the mechanism is not fork-specific — only the VALUE is, and only B's has
-  been measured. If cell A's parked rig also reports > 1 mm/s laterally, this
-  blocks the whole matrix rather than one cell.
+- **The defect is B-SPECIFIC, and that is MEASURED on both sides of the duel.**
+  The mechanism is not fork-specific — the extension publishes
+  `lateral_velocity` too (`extension/src/publishers/StatusPublishers.cpp:99`) —
+  but the VALUE differs, and the value is what decides. Recorded as a
+  per-approach observation, the same treatment the `control_mode` gap above gets:
+
+  | cell | parked-ego `VelocityReport` (longitudinal, lateral, heading_rate) | over the 1e-3 m/s stop threshold |
+  | ---- | ----------------------------------------------------------------- | -------------------------------- |
+  | A    | 0.0, 0.0, 0.0 — exactly zero                                      | **0 / 400 samples**              |
+  | B    | ~1.5e-12, 2.17–2.41e-3, ~1.9e-4                                   | **180 / 180 samples**            |
+
+  Cell A's reading is from a live cell-A rig on 2026-07-30
+  (`scripts/e2e/run_e2e.sh` with `WITH_AUTOWARE` unset: CARLA fork + extension
+  `.so` + runner at the committed route's spawn pose, probed over cell A's
+  registered CycloneDDS consumer transport, 400 samples in 20 s). Cell B's is
+  `benchmarks/evidence/b-closed-loop-stopcheck/`. **Cell A's figure is NOT
+  retained as a tracked artifact** — the probe was interactive, the same status
+  step 11.6's readings have — so it is recomputable only by repeating that boot,
+  and is labelled accordingly. Cells C, D and the E family are unmeasured; the E
+  family localizes today, so its check evidently passes, which is an inference
+  from behaviour and not a reading.
+
+  So the stop check is doing its job on cell A and producing a **false positive**
+  on cell B: A's parked ego is bit-exactly stopped, B's is reported drifting
+  sideways at 2 mm/s while its longitudinal velocity is 1e-12 m/s. That is also
+  the direct explanation for why cell A initialized and drove in Task 11 (G1
+  0.089 m, G2 0.244 m) while cell B cannot initialize at all.
 
 **Not fixed, and deliberately escalated rather than worked around.** The three
 available remedies all cross a line this campaign drew: patching the fork's
