@@ -1022,9 +1022,13 @@ getting made per approach, then unconditionally falls back to the proven
 and the E family have not been observed. Task 13 (cell B's closed-loop
 gate) and Task 15 (cell C's re-gate) must record their own
 `change_to_autonomous` outcome here, in this same form: which cell, refused
-or succeeded, with the evidence (arm_and_goal.py logs `change_to_autonomous:
-SUCCEEDED` or `did not succeed`, retained per run under that run's own
-`launch.log`).
+or succeeded. `arm_and_goal.py` logs `change_to_autonomous: SUCCEEDED` or
+`did not succeed` to its own stdout/stderr at `run.sh` step 9, but `run.sh`
+does not currently redirect that step into a per-run file (`launch.log` is
+written by the cell launcher's earlier bring-up, a different step) — the
+observer capturing that invocation's console output is what makes this
+observation recomputable; a bare "succeeded/refused" claim without it would
+not clear this file's own evidence rule.
 
 **Caveat carried forward from step 11.6:** the link from `control_mode =
 MANUAL` to the transition manager's refusal is inferred, not measured — the
