@@ -1,0 +1,296 @@
+=== B  arm=closed-loop  run 1/1 ===
+
+ 1. cell_info: resolve cell + class, check the arm
+      cell=B approach=tier4-native map=Town10HD_Opt carla=0.10-tier4 arms=[static closed-loop]
+      transport: -> rmw_fastrtps_cpp, shm off, /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/observer/config/udp_only.xml (required for the tier4-native family)
+      topics=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/observer_topics/B.yaml
+      processes=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/processes/B.yaml
+      route=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/routes/Town10HD_Opt.yaml  tl_groups=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/tl_groups/Town10HD_Opt.yaml
+      autoware_image=ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee
+      observer_image=bench-observer:universe-devel
+
+ 2. RUN_DIR: next gap-free index under results/B
+      /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-004
+
+ 3. preflight: host load, disk, RPC port, stale SHM, engine BuildId
+      $ bash /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/scripts/preflight.sh B --port 2000 --results-dir /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results
+      cpu_governor=powersave
+      nproc=24
+      loadavg=2.98
+      results_fs=/home
+      free_gb=424
+      carla_rpc_port=2000
+      shm_user_cleared=84
+      shm_root_cleared=0
+      shm_root_remaining=0
+      engine_build_id=4210e602-78ec-46e1-8f2f-03fadbe036a3
+      carla_tree=/home/youtalk/src/carla-autoware-native
+      map_bundle_pin=town10_pcd_regen
+
+ 4. write_manifest: transport, versions, placement; excluded=false
+      $ python3 -m benchmarks.scripts.write_manifest --run-dir /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-004 --cell B --arm closed-loop --rmw rmw_fastrtps_cpp --shm off --dds-profile /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/observer/config/udp_only.xml --carla-version 0.10-tier4 --autoware-image ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee --placement-json '<json>'
+
+ 5. cells/tier4-native.sh: boot sim + stack, wait for readiness
+      $ bash /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/cells/tier4-native.sh up
+waiting up to 420s for CARLA RPC on 2000 (log: /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-004/launch.log)
+OK: tier4 CARLA up on port 2000
+starting the tier4 Autoware stack via /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/cells/tier4_autoware.sh
+starting the tier4 demo (ego + sensors + 20 Hz sync tick)
+waiting up to 180s for CARLA + the tier4 ego
+OK: tier4 ego + sensor rig up, world ticking at 20 Hz
+OK: bringing Autoware up (map Town10HD_Opt, bundle /autoware_map/town10-regen) -- log /tmp/tier4-autoware.log
+waiting up to 120s for /sensing/lidar/top/pointcloud_raw_ex to be readable in the container
+OK: the fork's LiDAR is readable inside the stack (Task 9 rung 1 holds)
+OK: concat relay /sensing/lidar/top/pointcloud_before_sync -> /sensing/lidar/concatenated/pointcloud
+seeding localization at the ego's ground-truth map pose: 55.322 -141.155 -0.001 -0.005334
+[INFO] [1785405104.532409440] [seed_localization]: seeding /localization/initialize at (55.322, -141.155, -0.001) yaw=-0.31 deg (timeout 90 s)
+[WARN] [1785405111.819452077] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405113.824760966] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405115.825920175] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405117.827307439] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405119.828456205] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405121.829684783] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405123.831400767] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405125.832550719] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405127.833881988] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405129.835318353] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405131.837148324] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405133.838684148] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405135.840005941] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405137.843903433] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405139.845681983] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405141.846783415] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405143.848090782] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405145.849368935] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405147.850705752] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405149.851790557] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405151.853863581] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405153.857876284] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405155.859624426] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405157.861040175] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405159.863731412] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405161.868657861] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405163.871680816] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405165.873461656] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405167.875496611] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405169.876721114] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405171.878177111] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405173.881187664] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405175.883334270] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405177.884639329] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405179.886034604] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405181.893109377] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405183.895233245] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405185.896601681] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405187.897922550] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405189.899201799] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405191.901313433] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405193.903932281] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+SEED FAIL: localization did not initialize within 90 s (/localization/initialize never succeeded, or /localization/pose_estimator/pose never came within 1.0 m of the seed)
+      seed did not take yet; retrying
+[INFO] [1785405195.585297731] [seed_localization]: seeding /localization/initialize at (55.322, -141.155, -0.001) yaw=-0.31 deg (timeout 90 s)
+[WARN] [1785405197.701504984] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405199.704476152] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405201.705816603] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405203.707010183] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405205.708512230] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405207.711113499] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405209.712430145] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405211.714107493] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405213.715937188] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405215.717734203] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405217.719690691] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405219.721689572] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405221.722992820] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405223.724590478] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405225.725927591] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405227.727478166] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405229.728793614] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405231.730109627] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405233.732745012] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405235.735971820] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405237.738884083] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405239.740454059] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405241.741771017] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405243.743050776] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405245.744551358] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405247.745626518] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405249.746869284] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405251.748079349] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405253.749422658] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405255.750818838] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405257.752329125] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405259.754078582] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405261.755576303] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405263.757360116] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405265.759306794] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405267.760425321] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405269.762839300] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405271.764268595] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405273.765547982] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405275.766881863] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405277.768315011] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405279.769669428] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405281.771142778] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405283.773350834] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+SEED FAIL: localization did not initialize within 90 s (/localization/initialize never succeeded, or /localization/pose_estimator/pose never came within 1.0 m of the seed)
+      seed did not take yet; retrying
+[INFO] [1785405286.446390457] [seed_localization]: seeding /localization/initialize at (55.322, -141.155, -0.001) yaw=-0.31 deg (timeout 90 s)
+[WARN] [1785405287.865238111] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405289.866646286] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405291.869623075] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405293.870976302] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405295.873954153] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405297.875787881] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405299.877300625] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405301.878587773] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405303.879910844] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405305.884307258] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405307.885884902] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405309.887640917] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405311.889807450] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405313.891159575] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405315.893751877] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405317.897337029] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405319.898908313] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405321.900398620] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405323.903141728] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405325.905343432] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405327.907539618] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405329.909174303] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405331.910371046] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405333.911459141] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405335.912626775] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405337.916183212] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405339.918119631] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405341.920485377] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405343.921806162] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405345.923427949] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405347.924878496] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405349.927296318] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405351.928893888] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405353.953659581] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405355.955573893] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405357.956838629] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405359.959132977] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405361.960435921] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405363.961874258] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405365.963134347] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405367.964357632] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405369.966232536] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405371.967870227] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405373.972620984] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405375.973954638] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+SEED FAIL: localization did not initialize within 90 s (/localization/initialize never succeeded, or /localization/pose_estimator/pose never came within 1.0 m of the seed)
+      seed did not take yet; retrying
+[INFO] [1785405377.460915668] [seed_localization]: seeding /localization/initialize at (55.322, -141.155, -0.001) yaw=-0.31 deg (timeout 90 s)
+[WARN] [1785405378.054747843] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405380.056341910] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405382.059532743] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405384.060899345] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405386.063265043] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405388.067544005] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405390.070300917] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405392.071651829] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405394.075566705] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405396.077179740] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405398.078435066] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405400.079813427] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405402.081151161] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405404.082448216] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405406.083802378] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405408.085366625] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405410.088245528] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405412.089449798] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405414.093196086] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405416.096203328] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405418.097254344] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405420.098569734] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405422.099829623] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405424.101145349] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405426.102294140] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405428.103955631] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405430.105582501] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405432.107381966] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405434.109129765] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405436.110614330] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405438.112036740] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405440.113290229] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405442.114871398] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405444.116175771] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405446.117587576] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405448.119121734] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405450.123059221] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405452.124927349] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405454.126582972] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405456.127951418] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405458.129214580] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405460.130959536] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405462.132280373] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405464.133824083] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405466.135107253] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+SEED FAIL: localization did not initialize within 90 s (/localization/initialize never succeeded, or /localization/pose_estimator/pose never came within 1.0 m of the seed)
+      seed did not take yet; retrying
+[INFO] [1785405468.376292109] [seed_localization]: seeding /localization/initialize at (55.322, -141.155, -0.001) yaw=-0.31 deg (timeout 90 s)
+[WARN] [1785405470.923913382] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405472.925334135] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405474.926581064] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405476.928138639] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405478.929465867] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405480.934492113] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405482.936715151] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405484.937830351] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405486.939436982] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405488.940776802] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405490.942545485] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405492.945069340] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405494.946715720] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405496.953293786] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405498.954661822] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405500.955826564] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405502.959639951] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405504.962448832] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405506.965896874] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405508.967131220] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405510.969086502] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405512.970725575] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405514.972393421] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405516.973879441] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405518.975178571] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405520.977075412] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405522.978472683] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405524.983825440] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405526.985183097] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405528.986969046] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405530.988060327] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405532.992142506] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405534.993529295] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405536.994822505] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405538.995925369] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405540.997331616] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405542.998704477] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405544.999949915] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405547.001292047] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405549.005372194] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405551.007075925] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405553.009130008] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405555.010605848] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+[WARN] [1785405557.011984441] [seed_localization]: /localization/initialize: not yet ok (The vehicle is not stopped.); retrying
+SEED FAIL: localization did not initialize within 90 s (/localization/initialize never succeeded, or /localization/pose_estimator/pose never came within 1.0 m of the seed)
+      seed did not take yet; retrying
+TIER4 AUTOWARE FAIL (B): localization never initialized from the seeded ground-truth
+  pose in 420s. The fork's LiDAR WAS readable in the container
+  (checked above) and the seed goes to pose_initializer's own service, so this
+  is a LOCALIZATION failure rather than a transport or an initializer-routing
+  one -- the cloud reaching NDT, or the bundle it is matched against, or the
+  seed's own affine. Localization nodes present:
+/localization/pose_twist_fusion_filter/ekf_localizer
+/localization/pose_twist_fusion_filter/transform_listener_impl_5ed1cf8e75d8
+RUN FAIL: cells/tier4-native.sh could not bring the cell up
+RUN ABORTED (exit 2): tearing down and excluding /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-004
+teardown: SIGTERM tier4 autoware_demo.py (pid 932325)
+teardown: SIGTERM carla (pid 931579)
+teardown: saved tier4-autoware.log
+teardown: saved tier4-concat-relay.log
+teardown: done
+EXCLUDED /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-004/manifest.json: crash:cell-launch
