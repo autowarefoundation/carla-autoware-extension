@@ -997,10 +997,12 @@ succeeded and localization/trajectory were healthy. Seconds later, in the
 SAME state, the legacy `/autoware/engage` publish engaged instead:
 `is_autoware_control_enabled: true`, and the gated `/control/command/control_cmd`
 running at 20.07 Hz commanding +4.170 m/s on 281/281 samples
-(`gated_control_cmd.log`) — while `is_autonomous_mode_available` stayed
-`false` throughout (`legacy_autoware_engage.log`). The decisive fact is that
-last one: **which interface consults the flag differs; the vehicle state does
-not.** Root cause is localized (inferred, not measured — caveat below) to
+(`gated_control_cmd.log`) — while the same post-engage snapshot recorded
+`is_autonomous_mode_available: false` (`legacy_autoware_engage.log`; a single
+reading, not a continuous observation — "throughout" would overclaim it). The
+decisive fact is that one: **which interface consults the flag differs; the
+vehicle state does not.** Root cause is localized (inferred, not measured —
+caveat below) to
 `/vehicle/status/control_mode` reporting `4` (MANUAL), so the operation-mode
 transition manager never marks autonomous available while `/autoware/engage`
 bypasses that gate entirely. That specific reading was taken interactively
@@ -1017,6 +1019,25 @@ silently convert a genuine finding into a harness detail.
 on every cell and logs its outcome specifically so this observation keeps
 getting made per approach, then unconditionally falls back to the proven
 `/autoware/engage` publish so a refusal never blocks arming.
+
+**Rate alone cannot substitute for this flag, and `arm_and_goal.py`'s arm
+check does not try to.** R4's first cut verified only that the gated
+`/control/command/control_cmd` sustains 5.0 Hz (near the geometric mean of
+1.30 Hz measured not-engaged and 20.07 Hz measured engaged, both above).
+Review found that threshold passes `benchmarks/results/E/run-008` — 8.52 Hz
+on that same topic (`run-008/observer.csv`), yet `run-008/gt.csv` shows
+0.0000 m net displacement and 0.0000 m path length: the ego never moved,
+because `change_to_autonomous` was refused on that run too. A rate-only
+guard is therefore not sufficient on data this campaign has already
+measured, and cell A's own control_cmd runs ~19.9 Hz of zero-velocity
+commands pre-engage in STOP mode (not retained as tracked evidence — see
+step-11_6's row in `benchmarks/evidence/README.md`), so a rate check with no
+lower bound on WHEN it samples can pass vacuously before any engage at all.
+`arm_and_goal.py`'s `verify_control_flowing()` now requires BOTH
+`is_autoware_control_enabled` (this section's own flag) AND the rate,
+with the rate window reset at the engage call — authority for whether the
+stack claims to be under command, liveness for whether the gate is actually
+publishing, neither alone being sufficient on the campaign's own data.
 
 **Status: measured on cell A only; unmeasured elsewhere.** Cells B, B45, D
 and the E family have not been observed. Task 13 (cell B's closed-loop
