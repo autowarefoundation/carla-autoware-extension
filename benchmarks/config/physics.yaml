@@ -1,14 +1,114 @@
-# Physics substepping parity values shared between the extension (approach A) and the
-# tier4-native fork (approach B) CARLA runners (M4, three-approach evaluation P2-P4 plan).
-# Harmonising max_substep_delta_time/max_substeps across both runners is what makes the
-# A-vs-B benchmark duel a fair comparison -- an uncontrolled physics-substep mismatch would
-# confound the load-sweep results with a physics-fidelity difference instead.
+# Physics substepping parity values shared between the extension (approach A)
+# and the tier4-native fork (approach B) CARLA runners (M4, three-approach
+# evaluation P2-P4 plan). Harmonising max_substep_delta_time/max_substeps
+# across both runners is what makes the A-vs-B benchmark duel a fair
+# comparison -- an uncontrolled physics-substep mismatch would confound the
+# load-sweep results with a physics-fidelity difference instead.
 #
 # Consumed by runner/__main__.py's --substep-config flag (loaded by
-# runner/loop.py::load_physics_config, applied via runner/loop.py::apply_substep_config to
-# carla.WorldSettings before the run). Keys match carla.WorldSettings verbatim.
+# runner/loop.py::load_physics_config, applied via
+# runner/loop.py::apply_substep_config to carla.WorldSettings before the run)
+# AND, since patch 0003, by the tier4 demo's own --substep-config
+# (autoware_demo.py::load_substep_config). Keys match carla.WorldSettings
+# verbatim, so ONE file drives both approaches.
 #
-# TASK 13 FILLS IN THE VALUES BELOW, sourced from the tier4 demo script's hardcoded
-# substepping literals -- do not invent physics numbers here.
-max_substep_delta_time: # seconds; carla.WorldSettings.max_substep_delta_time
-max_substeps: # count; carla.WorldSettings.max_substeps
+# SOURCED 2026-07-30 (Task 13) from the tier4 demo's hardcoded literals, in
+# ~/src/carla-autoware-native PythonAPI/examples/autoware_demo.py at tier4 sha
+# 6315b856f -- i.e. the file BEFORE patch 0003 turned these two into that
+# flag's defaults. Every line number below is that pre-patch file's
+# (`git show 6315b856f:PythonAPI/examples/autoware_demo.py`), not the patched
+# working tree's.
+#
+#   line 483  settings.max_substep_delta_time = 0.001  # max 1 ms per physics
+#                                                      # substep, swap to 0.01
+#                                                      # if no need of extreme
+#                                                      # physics realism
+#   line 484  settings.max_substeps = 10
+max_substep_delta_time: 0.001 # seconds; WorldSettings.max_substep_delta_time
+max_substeps: 10 # count; carla.WorldSettings.max_substeps
+#
+# WHAT THESE TWO NUMBERS DO NOT SETTLE, stated because copying them to the A
+# side without it reads as a parity that does not hold. The demo does not
+# apply them unconditionally:
+#
+#   line 480-481  if is_pure_step_execution_enabled(): substepping = False
+#   line 483-485  elif synchronous_mode: <the pair above>, then
+#                 settings.substepping = fixed_delta_seconds <=
+#                                        max_substep_delta_time * max_substeps
+#   line 421      is_pure_step_execution_enabled() == synchronous AND hz_rate
+#                                                     set AND NOT --substepping
+#
+# So at the harmonised 20 Hz world tick (fixed_delta 0.05) the demo ends with
+# `substepping = False` on BOTH branches: without --substepping the first
+# branch disables it outright, and with --substepping the CARLA condition on
+# line 485 evaluates 0.05 <= 0.001 * 10 == 0.01 -> False. The pair above is
+# therefore the demo's declared substep BUDGET, and at 20 Hz it is a budget
+# that switches substepping off rather than one that shapes it. Both facts are
+# properties of the committed demo, checkable at the line numbers above.
+#
+# CONSEQUENCE FOR THE DUEL, recorded rather than silently absorbed:
+# cells/extension.sh passes no --substep-config today, so cell A runs with
+# CARLA's own WorldSettings substepping defaults (substepping enabled) while
+# cell B runs with substepping disabled by the demo's line 481. Feeding this
+# file to runner/__main__.py --substep-config does NOT close that gap by
+# itself either: apply_substep_config sets only these two keys and leaves
+# `substepping` untouched (runner/loop.py's own docstring says so), so A would
+# keep substepping ON with a 0.01 s budget below its own 0.05 s tick. Closing
+# it needs a `substepping` switch on the A side, which is Task 12/26's
+# surface, not this file's. Registered as a confound in benchmarks/README.md
+# ("Physics substepping") so Task 22 carries it rather than rediscovering it.
+#
+# --------------------------------------------------------------------------
+# The rest of the tier4 demo's rig, recorded here (same pre-patch line
+# numbers) because Task 13's step 1 owes the sensor list, the topic names and
+# the GNSS/pose mechanism in one place, and because
+# benchmarks/cells/tier4_autoware.sh's harmonisation arguments are only
+# reviewable against what the demo does by default. NOT consumed by any tool:
+# the notes below are documentation, the two keys above are the contract.
+#
+#   world tick      --hz_rate, default 100 (line 626) -> fixed_delta 0.01 =
+#                   100 Hz. cells/tier4_autoware.sh passes 20 to match cell
+#                   A's runner/loop.py DEFAULT_FIXED_DELTA = 0.05.
+#   TF              world.set_publish_tf(False) (line 494): Autoware publishes
+#                   TF from the vehicle + sensor-kit URDFs, CARLA does not.
+#   ego             vehicle.lincoln.mkz, role_name "ego" (lines 375-378);
+#                   base_link is a util.actor.empty at x = -1.39706787 from
+#                   the vehicle pivot (lines 385-391) -- the rear-axle offset
+#                   benchmarks/README.md's "Ground truth is the CARLA actor
+#                   origin" confound is about.
+#   top LiDAR       sensor.lidar.ray_cast, channels 16, range 100.0,
+#                   upper/lower fov 10.0/-20.0, points_per_second 288000,
+#                   sensor_tick 0.1 (10 Hz) (lines 201-209); ros_name
+#                   "velodyne_top", ros_topic_name
+#                   /sensing/lidar/top/pointcloud_raw_ex (lines 212-213).
+#                   Mounted on the sensor kit at yaw 1.575 rad (line 311).
+#   traffic-light   sensor.camera.rgb, fov 90.0, 1920x1080, sensor_tick 0.1,
+#   camera          post_process_profile "autoware_demo" (lines 228-232);
+#                   ros_name "traffic_light_left_camera/camera_optical_link",
+#                   ros_topic_name /sensing/camera/traffic_light (235-236).
+#   IMU             sensor.other.imu, sensor_tick 1/30 (line 246); ros_name
+#                   "tamagawa/imu_link", ros_topic_name
+#                   /sensing/imu/tamagawa/imu_raw (lines 249-250). Attached to
+#                   the EGO, not the kit, "because this is required for
+#                   angular velocity to work" (line 329), at the
+#                   PyKDL-composed pivot->kit->imu transform (lines 330-341).
+#   GNSS / pose     sensor.other.autoware_gnss (the MGRS path, and the
+#                   DEFAULT: `--mgrs_off` is `action='store_false'`, so the
+#                   flag DISABLES the offset and its absence leaves
+#                   is_mgrs_enabled True; lines 258, 630-631), sensor_tick
+#                   1.0, ros_name "map", ros_topic_name /sensing/gnss (lines
+#                   272-276). The fork's AutowareGNSSPublisher fans that one
+#                   name out to /sensing/gnss/pose AND
+#                   /sensing/gnss/pose_with_covariance (ROS2.cpp:423-445,
+#                   suffixes "/pose" and "/pose_with_covariance"), which is
+#                   what Autoware's automatic pose initializer consumes -- so
+#                   the B family needs no seed/reseed step of its own.
+#   vehicle status  sensor.other.vehicle_status (line 297), attached to
+#                   base_link with no offset "because velocities should come
+#                   from rear axle" (lines 357-360). The fork's
+#                   AutowarePublisher turns it into /vehicle/status/{velocity,
+#                   steering,control_mode,gear,turn_indicators,hazard_lights}
+#                   _status, and it reports control_mode AUTONOMOUS
+#                   unconditionally (ROS2.cpp:1117) -- the per-approach
+#                   observation benchmarks/README.md's control_mode confound
+#                   records.

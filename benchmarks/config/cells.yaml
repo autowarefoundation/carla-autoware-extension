@@ -168,40 +168,70 @@ cells:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
-      control_published_time_topic: # Tasks 13/20
+      # REGISTERED 2026-07-30 (Task 13) from LIVE discovery on this cell's own
+      # stack -- `ros2 topic list --no-daemon | grep published_time` inside the
+      # pinned container during results/B/run-002. Type
+      # autoware_internal_msgs/msg/PublishedTime (NOT the plan's assumed
+      # autoware_internal_debug_msgs). observer_topics/B.yaml lists the other
+      # six PublishedTime topics that exist and says why only this one is
+      # subscribed; cell A's stays unregistered because its IMAGE differs and
+      # Task 20 owes that observation.
+      control_published_time_topic: /control/command/control_cmd/debug/published_time
       cpu_process_label: carla-server
-      # NOT REGISTERED (all three): Task 13 (tier4 demo harmonization patch)
-      # fixes the tier4 rig's world tick AND its sensor_tick, and BOTH come
-      # from the same out-of-repo demo script -- nothing committed here sets
-      # either (cells/tier4-native.sh passes no rate at all). An earlier
-      # revision registered tick_hz: 20.0 from the demo's `--hz_rate 20` while
-      # nulling lidar_expected_hz for being un-sourced: the same evidence,
-      # two different standards. physics.yaml's precedent settles it -- values
-      # are SOURCED from the demo by Task 13, not transcribed from a report --
-      # so all three are Task 13's to register, in one commit, before any
-      # B-family P3 run. P1 measured the unpatched demo at sensor_tick=0.1
-      # (10 Hz) against the extension's 0.05 (20 Hz), so harmonization is a
-      # real open choice, not a transcription.
-      tick_hz:
-      lidar_expected_hz:
-      ndt_expected_hz:
-      # NOT REGISTERED, and it is Task 13's to fill, not Task 11's. Task 11
-      # measured the branch for each Town10 bundle it drove, and the answer
-      # DIFFERS BY BUNDLE, so it cannot be settled before Task 13 chooses one:
-      #   town10-regen (pins.yaml town10_pcd_regen)  -> absolute, 0.5
-      #     (measured max NDT error 0.089 m; see cell A)
-      #   town10-shifted / the unshifted ~/autoware_map/town10 -> relative
-      #     (measured max 0.570 m and 0.824 m; the unshifted bundle also
-      #     carries the known ~+0.475 m cross-track offset, branch (b) by
-      #     definition)
-      # An earlier revision of this comment registered `relative` here on the
-      # reasoning that every Town10 bundle landed on that branch. Rung 2
-      # falsified exactly that premise, so the binding goes back to unset:
-      # guessing would gate a tier4 cell on whichever bundle Task 11 happened
-      # to drive rather than the one Task 13 wires. Task 13 must register this
-      # pair from the bundle it mounts, in the same commit that mounts it.
-      ladder_branch:
-      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
+      # REGISTERED 2026-07-30 (Task 13), all three SOURCED from the launcher
+      # arguments the same commit landed -- benchmarks/cells/tier4_autoware.sh's
+      # TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ, which are what a B-family run
+      # actually passes to the fork's (patch-0003) autoware_demo.py. They are
+      # committed constants in this repo, not transcriptions from a report, and
+      # not the demo's own defaults: the demo defaults to --hz_rate 100.
+      #
+      # tick_hz: `--hz_rate 20` -> fixed_delta_seconds 0.05, harmonized to cell
+      # A's runner/loop.py DEFAULT_FIXED_DELTA. The demo's own 100 Hz default
+      # would have put a 5x physics-step difference inside every M3 CPU and RTF
+      # comparison of the primary duel.
+      tick_hz: 20.0
+      # lidar_expected_hz: `--lidar-rotation-hz 10.0` -> sensor_tick 0.1, the
+      # demo's OWN value, deliberately NOT harmonized to cell A's 20 Hz. The
+      # demo derives points_per_second FROM that period ("horizontal_fov /
+      # horizontal_resolution / sensor_tick * channels"), so halving the period
+      # at a fixed 288000 pts/s halves the angular resolution -- a fidelity
+      # change dressed as harmonization -- while doubling pts/s specifies a
+      # different sensor than the VLP16 the demo documents. The M4 sweep
+      # classes (sweep_classes below, applying to A and B alike) are where the
+      # two rigs ARE equalized. CORROBORATED live before this registration:
+      # Task 9 measured the same rig at 10.002 Hz CARLA-side (3300 frames) and
+      # 10.006/10.070 Hz on the wire, and the stock bench_observer recorded 243
+      # rows in 24 s (10.1 Hz) -- benchmarks/patches/tier4-native/README.md.
+      lidar_expected_hz: 10.0
+      # ndt_expected_hz: the SENSOR rate, not the tick rate (see this file's
+      # header) -- one NDT pose per input cloud is the target, so registering
+      # 10.0 is the conservative choice: a chain that decimates fails the M5
+      # NDT-rate criterion instead of hiding inside a lower expectation. The
+      # mechanism (rate-preserving sensing chain) is an assertion about
+      # Autoware; what backs the NUMBER is cell B's own closed-loop gate run,
+      # whose measured ndt_rate_ratio is recorded with the run
+      # (results/B/run-001/quality.json) and in the Task 13 report.
+      ndt_expected_hz: 10.0
+      # SELECTED 2026-07-30 (Task 13) from THE BUNDLE THIS CELL MOUNTS, which
+      # is the pre-registered rule (README, "M5 definitions"): the branch is a
+      # property of the bundle, and cells/tier4_autoware.sh resolves its bundle
+      # through scripts/e2e/map_defaults.sh -- the SAME table cells A/A-hf read
+      # -- so Town10HD_Opt is pins.yaml `town10_pcd_regen`, the ladder's rung-2
+      # bundle. The MEASUREMENT backing the absolute branch on that bundle is
+      # Task 11's, tracked under benchmarks/evidence/g1-rung2-regen/ (max NDT
+      # error 0.089 m over 400 static samples, 411 mm inside the gate); cell A
+      # carries its full ladder walk. Cell B's own run confirms it against the
+      # same 0.5 m threshold rather than re-deriving it.
+      #
+      # Task 11 deliberately left this null because the branch DIFFERS BY
+      # BUNDLE, not by map -- town10-regen -> absolute 0.5, while
+      # town10-shifted / the unshifted ~/autoware_map/town10 -> relative
+      # (measured max 0.570 m and 0.824 m) -- so it could not be settled until
+      # Task 13 chose one. That choice is now made and it is A's bundle, which
+      # is also what keeps README confound C4 a cross-map caveat instead of
+      # escalating it to a duel-level confound.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: C
     approach: extension
     carla: 0.10-fork
@@ -236,11 +266,20 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      tick_hz: # Task 13, as cell B
-      lidar_expected_hz: # Task 13, as cell B
-      ndt_expected_hz: # Task 13, as cell B
-      # Task 15, as cell C (the Nishi bundle), once Task 13 wires this
-      # cell's map.
+      # REGISTERED 2026-07-30 (Task 13), as cell B: this cell runs the SAME
+      # launcher with the same TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ -- only
+      # BENCH_MAP differs, and neither constant is per-map. See cell B for what
+      # each number is sourced from and why the LiDAR is not re-rated.
+      # Whether the tier4 tree can cook this cell's MAP at all is separate and
+      # still open (`mandatory: false` above); these three describe what a run
+      # would apply, which is what the binding is for.
+      tick_hz: 20.0
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: 10.0
+      # Task 15, as cell C: this cell's bundle is the Nishi-Shinjuku one (the
+      # same map_defaults.sh entry cell C reads, now that Task 13's launcher
+      # reads that table too), and the branch needs a live G1 measurement ON
+      # that bundle, which is Task 15's Step 1.
       ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E
@@ -455,22 +494,28 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      # NOT REGISTERED: this cell's INTENT is the A-hf counterpart, but the
-      # launch argument that would apply it is Task 13's and does not exist
-      # (processes/B-hf.yaml says so). 100.0 here would be an intent, not a
-      # setting -- same standard as cell B above. Task 26 Step 2 owns this
-      # cell's configuration (`--hz_rate 100` plus tier4 patch-0003 sensor
-      # ticks "to match"), on top of Task 13's launcher; like A-hf, the sensor
-      # ticks are set explicitly there, so none of the three can be derived
-      # from the tick rate. Task 26 registers all three from what it applies.
+      # STILL NOT REGISTERED, and Task 13 deliberately did not fill these.
+      # Task 13's launcher now exists (benchmarks/cells/tier4_autoware.sh), so
+      # the mechanism is no longer the blocker -- but that launcher applies cell
+      # B's 20 Hz tick, and this cell's INTENT is the A-hf counterpart at 100 Hz
+      # with sensor ticks "to match". Task 26 Step 2 owns that configuration,
+      # and until it exists, registering 100.0 here would be an intent no run is
+      # obliged to honour and nothing checks -- the same silent-wrong-number
+      # class cell A-hf's comment records. Like A-hf, the sensor ticks are set
+      # explicitly there, so none of the three can be derived from the tick
+      # rate: Task 26 registers all three from what it actually applies.
       tick_hz:
       lidar_expected_hz:
       ndt_expected_hz:
-      # NOT REGISTERED, as cell B: Task 11 measured a DIFFERENT branch per
-      # Town10 bundle (regen -> absolute 0.5, rigid/unshifted -> relative), so
-      # this is Task 13's to register from the bundle it wires. See cell B.
-      ladder_branch:
-      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
+      # SELECTED 2026-07-30 (Task 13), as cell B and for the same reason cell
+      # A-hf inherits cell A's: this cell runs the same launcher, which resolves
+      # Town10HD_Opt through map_defaults.sh to pins.yaml `town10_pcd_regen`,
+      # and the branch is a property of that bundle rather than of the tick or
+      # sensor rate Task 26 still owes above. See cell B for the measurement.
+      # The three null rate bindings still make this cell un-gateable until Task
+      # 26 registers them; that is independent of this pair.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: B45
     approach: tier4-native
     carla: 0.10-tier4
@@ -483,13 +528,18 @@ cells:
       control_topic: /control/command/control_cmd
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
-      tick_hz: # Task 13, as cell B (identical CARLA-side recipe)
-      lidar_expected_hz: # Task 13, as cell B
-      ndt_expected_hz: # Task 13, as cell B
-      # NOT REGISTERED, as cell B: the branch differs per Town10 bundle, so
-      # Task 13 registers it from the bundle it wires. See cell B.
-      ladder_branch:
-      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
+      # REGISTERED 2026-07-30 (Task 13), as cell B: identical CARLA-side recipe
+      # (same launcher, same TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ). Only the
+      # Autoware IMAGE differs (pins.yaml autoware_045), and none of these three
+      # is a property of the image. See cell B for the sourcing.
+      tick_hz: 20.0
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: 10.0
+      # SELECTED 2026-07-30 (Task 13), as cell B: same launcher, same
+      # map_defaults.sh entry, so the same rung-2 bundle (pins.yaml
+      # `town10_pcd_regen`) and therefore the same branch. See cell B.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }

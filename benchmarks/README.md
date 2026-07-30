@@ -774,30 +774,36 @@ and the comparison must say so:
 Any P3 report comparing M5 localization numbers across map families must state
 this alongside the numbers, exactly as it must for route difficulty above.
 
-**Scope: whether this stays a cross-map caveat or becomes a DUEL-level confound
-is not yet decided, and Task 13 decides it.** As written above, C4 bears on
-comparisons across map families (A vs C) and on reading 0.089 m as an absolute
-localization result. It leaves the A/B primary duel intact **only if cells A and
-B localize against the same bundle** — which is precisely what is not yet
-established: cell B's ladder binding is deliberately `null` pending Task 13,
-because that task owns what the tier4 launcher mounts and it does not inherit
-`map_defaults.sh`. So:
+**Scope: RESOLVED 2026-07-30 by Task 13 — this stays a cross-map caveat and does
+NOT escalate to a duel-level confound.** The conditional was: C4 leaves the A/B
+primary duel intact only if cells A and B localize against the same bundle, and
+cell B's ladder binding was `null` because Task 13 owned what the tier4 launcher
+mounts. It mounts **`town10-regen`, the same bundle cell A localizes against**:
+`benchmarks/cells/tier4_autoware.sh` resolves its map through
+`scripts/e2e/map_defaults.sh` — the extension path's own table, read
+deliberately rather than duplicated — and `benchmarks/scripts/preflight.sh`
+resolves this family's bundle through that same table, so every B-family run's
+`manifest.json` records `map_bundle_pin: town10_pcd_regen` as a checked fact
+rather than an intention. Cells B/B-hf/B45 are registered on the ABSOLUTE branch
+at 0.5 m accordingly. The alternative branch is kept for the record: had Task 13
+mounted a rigid or unshifted variant, A would localize against a bundle built
+from its own sweeps while B did not, the two cells' ladder branches would differ
+(absolute vs relative) as the visible symptom, and C4 would have had to escalate.
 
-- **If Task 13 mounts `town10-regen` for the B family**, A and B share the
-  self-built bundle, C4 remains a cross-map caveat, and the duel's M5
-  localization terms stay comparable.
-- **If Task 13 mounts a rigid or unshifted Town10 variant**, A localizes against
-  a bundle built from its own sweeps while B does not, and **C4 escalates to a
-  duel-level confound**: A's localization advantage would then be an artifact of
-  map provenance rather than a property of the approach, contaminating the
-  headline A/B equivalence verdict. The two cells' ladder branches would also
-  differ (absolute vs relative), which is the visible symptom of the same
-  problem.
-
-Task 13 must therefore state which bundle it mounts and, if it is not
-`town10-regen`, record C4 as a duel-level confound rather than assuming parity.
-No margin or threshold changes either way: this fixes what must be checked, not
-what counts as equivalent.
+**What that costs, said plainly, because parity here is not neutrality.** The duel
+now compares both approaches against a map **built from one of them** — the
+regenerated bundle was assembled from the EXTENSION rig's own ground-truth-
+registered sweeps (`pins.yaml` `town10_pcd_regen`, built by
+`benchmarks/scripts/build_pcd_from_gt.py` from a cell-A-style drive), including at
+the pose G1 measures. Cell B's LiDAR is a different sensor spec (16 channels /
+288000 pts/s / 100 m range against A's 128 / 600000 / 120 m) mounted through a
+different transform chain, so it is matching scans against a cloud produced by
+neither its own rig nor an independent survey. That is a shared, single reference
+rather than a level one, and it is a reason the duel's M5 localization terms are
+comparable **to each other** and still not readable as absolute accuracy for
+either cell. Task 22's confound table must carry this sentence, not merely the
+"same bundle" conclusion. No margin or threshold changes: this fixes what must be
+checked, not what counts as equivalent.
 
 ### Perception load: clear-road stand-in (A/B/C/D) vs. real CUDA perception (E family)
 
@@ -904,6 +910,38 @@ further forward than Autoware's TF chain believes it is. Recorded rather than
 patched — it is inside the harmonization the E family is measured under, and
 correcting it is a sensor-config change that would have to be re-gated.
 
+### Physics substepping (Task 13): B disables it at 20 Hz, A leaves CARLA's default on
+
+**Added 2026-07-30 (Task 13), before any P3 run.** `benchmarks/config/physics.yaml`
+exists so that both approaches apply the same `max_substep_delta_time` /
+`max_substeps`. Sourcing those two values from the tier4 demo showed that
+agreeing on them does **not** by itself make the substepping equal:
+
+- The tier4 demo applies the pair only on its non-"pure step execution"
+  branch, and then computes `substepping = fixed_delta_seconds <=
+max_substep_delta_time * max_substeps` — CARLA's own condition. At the
+  harmonized 20 Hz tick (`fixed_delta` 0.05) that is `0.05 <= 0.01` →
+  **false**, so cell B runs with physics substepping OFF whether or not
+  `--substepping` is passed (without it the other branch disables it
+  outright). Line-numbered in `physics.yaml`.
+- `cells/extension.sh` passes no `--substep-config`, so cell A runs with
+  CARLA's own `WorldSettings` substepping defaults, i.e. **ON**. Passing this
+  file to `runner/__main__.py --substep-config` would not close the gap
+  either: `runner/loop.py::apply_substep_config` sets only these two keys and
+  leaves `substepping` untouched, so A would keep substepping enabled with a
+  0.01 s budget below its own 0.05 s tick.
+
+**This is a genuine confound, not a defect to fix here.** Closing it needs a
+`substepping` switch on the extension runner (Task 12/26's surface), and
+Task 13 registered the two values rather than changing either runner's
+behaviour. Its direction is stated but its magnitude is unmeasured: a
+substepped vehicle-dynamics integration and a single-step one are not the same
+physics, so an A-vs-B difference in M5's `lateral_deviation_m` or
+`goal_closest_approach_m` — the terms that depend on how the ego actually
+tracks a trajectory — carries this alongside the integration difference.
+Nothing in the campaign isolates it. Task 22's confound table must state it
+beside the B-family M5 numbers.
+
 ### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
 
 CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
@@ -987,6 +1025,60 @@ and must not present `CAL-rmw` as bounding it. Quantifying the DUT-side
 part would need a calibration cell that runs the same Autoware stack twice
 under two middlewares, which the campaign does not have.
 
+### Localization initialization (Task 13): the stop check blocks every path on cell B
+
+**Added 2026-07-30 (Task 13), before any P3 run. This is a FAIL, not a caveat:
+cell B does not close the loop, and the duel's B half does not exist yet.**
+Evidence, with retention stated per figure:
+`benchmarks/evidence/b-closed-loop-stopcheck/`.
+
+`autoware_pose_initializer` refuses **every** initialization request with
+`'The vehicle is not stopped.'` — through the AD-API
+(`/api/localization/initialize`, which its own automatic initializer calls every
+1–3 s), through `/initialpose`, and through its own
+`/localization/initialize` service. Its stop check reads
+`/sensing/vehicle_velocity_converter/twist_with_covariance`, and on cell B that
+twist carries **2.17 mm/s of LATERAL velocity** on 180/180 measured samples
+while `linear.x` is 1.5e-12 m/s: the ego is stationary along its own axis and
+the checker compares the squared norm of the whole linear vector. The lateral
+term is the fork's — `/vehicle/status/velocity_status` reports
+`lateral_velocity` ≈ 2.3 mm/s for a parked ego, and
+`autoware_vehicle_velocity_converter` forwards it into `twist.linear.y`. So NDT
+never initializes, `/localization/kinematic_state` never publishes, and the run
+fails in the launcher before `run.sh` reaches its arm step.
+
+**Three things this changes, and they are not all about cell B:**
+
+- **The M5 gate has no B-family input.** No `quality.json` exists for any B run,
+  so cell B has no NDT rate, no `pose_error_m` and no `goal_closest_approach_m`.
+  The ladder and rate bindings registered for B/B-hf/B45 in `cells.yaml` are
+  registrations of what a run _would_ be scored against, not results.
+- **The campaign has no working localization-seed step for ANY cell.** Both
+  approaches publish only `/sensing/gnss/pose{,_with_covariance}` and
+  `/vehicle/status/*`; neither self-initializes. `run.sh`'s shared arm step
+  cannot seed (`injector/arm_and_goal.py` runs inside the container with no
+  simulator client, by design), so each cell's LAUNCHER owes it, and
+  `scripts/e2e/run_e2e.sh` does not have one. `scripts/e2e/reseed_localization.py`
+  — the extension harness's proven re-seed — publishes `/initialpose`, which on
+  this image's `pose_initializer` is **not a subscribed topic at all**. Task 13
+  wrote `benchmarks/injector/seed_localization.py` (the direct-service path) for
+  every cell to share; Task 20 must not assume the `/initialpose` route works.
+- **Whether cell A hits the same wall is UNMEASURED.** The extension publishes
+  `lateral_velocity` too (`extension/src/publishers/StatusPublishers.cpp:99`),
+  so the mechanism is not fork-specific — only the VALUE is, and only B's has
+  been measured. If cell A's parked rig also reports > 1 mm/s laterally, this
+  blocks the whole matrix rather than one cell.
+
+**Not fixed, and deliberately escalated rather than worked around.** The three
+available remedies all cross a line this campaign drew: patching the fork's
+velocity report (or the extension's) changes a DUT and erases the interop
+difference, exactly as the `control_mode` section argues; overriding
+`pose_initializer`'s `stop_check_enabled`/`stop_check_duration` means
+bind-mounting a modified Autoware param file, i.e. a new patch-policy exception
+for the B family only, which also disables a safety precondition inside the
+measured system; and accepting the FAIL costs the duel its B half. Task 13
+reports the choice to the plan owner instead of taking it.
+
 ### `control_mode` reporting (R4): a per-approach interop gap, recorded not patched
 
 Step 11.6 (`benchmarks/evidence/step-11_6-adapi-engage/`) found that on cell A —
@@ -1055,17 +1147,37 @@ for — AND the rate, with BOTH reset at the engage call.
 gating, per-approach observation) rather than dropped, since whether it
 tracks `mode` correctly is itself part of the interop comparison.
 
-**Status: measured on cell A only; unmeasured elsewhere.** Cells B, B45, D
-and the E family have not been observed. Task 13 (cell B's closed-loop
-gate) and Task 15 (cell C's re-gate) must record their own
-`change_to_autonomous` outcome here, in this same form: which cell, refused
-or succeeded. `arm_and_goal.py` logs `change_to_autonomous: SUCCEEDED` or
-`did not succeed` to its own stdout/stderr at `run.sh` step 9, but `run.sh`
-does not currently redirect that step into a per-run file (`launch.log` is
-written by the cell launcher's earlier bring-up, a different step) — the
-observer capturing that invocation's console output is what makes this
-observation recomputable; a bare "succeeded/refused" claim without it would
-not clear this file's own evidence rule.
+**Status: cell A measured; cell B PARTLY measured (2026-07-30, Task 13); cells
+B45, D and the E family unmeasured.** Task 13 (cell B's closed-loop gate) and
+Task 15 (cell C's re-gate) must record their own `change_to_autonomous` outcome
+here, in this same form: which cell, refused or succeeded. `arm_and_goal.py` logs
+`change_to_autonomous: SUCCEEDED` or `did not succeed` to its own stdout/stderr
+at `run.sh` step 9, but `run.sh` does not currently redirect that step into a
+per-run file (`launch.log` is written by the cell launcher's earlier bring-up, a
+different step) — the observer capturing that invocation's console output is what
+makes this observation recomputable; a bare "succeeded/refused" claim without it
+would not clear this file's own evidence rule.
+
+**Cell B's half of the observation, and it is a real per-approach difference.**
+The value the gap is about differs between the two duel cells:
+
+| cell | `/vehicle/status/control_mode` while parked | published by                                                                                                                                                                      |
+| ---- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | `4` (MANUAL)                                | the extension, from the ego's live state (step 11.6, not retained)                                                                                                                |
+| B    | `1` (AUTONOMOUS)                            | the tier4 fork, **unconditionally** — `ROS2.cpp:1117` `SetControlMode(ControlMode::AUTONOMOUS)`, with the fork's own `TODO: Add logic to use the input of control mode` beside it |
+
+Cell B's reading was taken live from `/vehicle/status/control_mode` during
+`benchmarks/results/B/run-002` (`mode: 1`, stamp 28.41 s of sim time). So the
+approaches differ on exactly the flag this section is about: one under-reports
+its mode, the other reports AUTONOMOUS whether or not it is. **Neither is
+patched**, for this section's original reason — whether an approach reports its
+own control mode correctly is part of the interop completeness being compared.
+
+**What is still unobserved on cell B:** the `change_to_autonomous` outcome
+itself. `run.sh` never reached step 9 on any B run — the cell launcher failed
+first, on the localization-initialization block described in the next section —
+so `arm_and_goal.py` has still never run against a real stack, on any cell. That
+is the R4 verification the plan expected from Task 13 and it remains owed.
 
 **Caveat carried forward from step 11.6:** the link from `control_mode =
 MANUAL` to the transition manager's refusal is inferred, not measured — the

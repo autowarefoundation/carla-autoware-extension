@@ -7,14 +7,37 @@
 # actually sends, NOT /control/trajectory_follower/control_cmd, the raw
 # planner output that flows even while the gate suppresses everything.
 #
-# PublishedTime topics are NOT listed here yet. They are appended in
-# Tasks 13/20, after live discovery on the running stack
-# (`ros2 topic list | grep published_time`) -- a pre-P3 registration step,
-# because a guessed name records silence as "no publisher-side stamps"
-# rather than as a wrong topic. On the pinned universe-devel-cuda image the
-# message is autoware_internal_msgs/msg/PublishedTime (verified against the
-# image; NOT autoware_internal_debug_msgs), so an appended line reads:
+# PublishedTime: STILL NOT LISTED, and Task 13 deliberately did NOT add it --
+# TASK 20 owes it, on cell A's own live stack. Recorded here 2026-07-30 with
+# what is now known, so the gap is a decision rather than an omission.
+#
+# Task 13 discovered the real names LIVE, but on CELL B's stack: seven
+# `<topic>/debug/published_time` topics, the control one being
+# /control/command/control_cmd/debug/published_time, of type
+# autoware_internal_msgs/msg/PublishedTime -- refuting the plan's
+# autoware_internal_debug_msgs assumption. observer_topics/B.yaml carries the
+# full list and states which part of it is measured and which inferred.
+#
+# WHY THAT IS NOT ENOUGH FOR THIS CELL: cell B runs pins.yaml's
+# universe-devel-cuda DIGEST, cell A runs docker/compose.yaml's
+# `ghcr.io/autowarefoundation/autoware:universe-devel` -- a different image.
+# Which topics exist at run time is a property of the image's own launch
+# configuration, so a name observed on one is not a measurement of the other.
+# SUPPORTING, not sufficient: the four packages that decide these names carry
+# identical versions in both images -- autoware_universe_utils 0.50.0,
+# autoware_vehicle_cmd_gate 0.50.0, autoware_pointcloud_preprocessor 0.50.0,
+# autoware_internal_msgs 1.12.1 (read from each image's own package.xml,
+# 2026-07-30) -- so the names are very likely identical. Task 20 confirms it on
+# a live cell-A stack and appends the row then; registering it here off B's
+# observation would file an unmeasured claim as a checked one.
+#
+# The appended line will read:
 #   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
+#
+# One construction FINDING already applies to this cell as much as to B: the
+# injection topic /sensing/lidar/top/pointcloud_raw_ex has NO PublishedTime
+# companion and cannot have one, because CARLA publishes it while
+# PublishedTimePublisher is an Autoware-side facility. See B.yaml.
 #
 # Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
 # that takes an argument; kind in generic|odometry|pose|tf|published_time
