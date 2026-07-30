@@ -20,16 +20,36 @@ Task 13, `benchmarks/results/B/run-002` and `run-003`):
        [ERROR] [system.service_log_checker]: /api/localization/initialize:
          status code 1 'The vehicle is not stopped.'
 
-   That is a DEADLOCK, not a statement about the ego. The AD-API's stop check
-   is `autoware::motion_utils::VehicleStopChecker`, which reads
+   That is a DEADLOCK for THIS path: the AD-API's stop check is
+   `autoware::motion_utils::VehicleStopChecker`, which reads
    `/localization/kinematic_state` -- the EKF output that only exists once
    localization HAS initialized (an rclpy probe counted 0 messages on it while
-   the refusals repeated). MEASURED against the alternative explanation: the
-   ego was stationary to 3.7e-12 m/s on `/vehicle/status/velocity_status`
-   (n=283 over 15 s) and exactly 0.0 on
+   the refusals repeated). The ego was stationary to 3.7e-12 m/s on
+   `/vehicle/status/velocity_status` (n=283 over 15 s) at the time.
+
+   **CORRECTION, and it matters because this docstring is the evidence
+   `cells/tier4_autoware.sh` points at.** An earlier revision of this text
+   added "and exactly 0.0 on
    `/sensing/vehicle_velocity_converter/twist_with_covariance` (n=238), so
    `pose_initializer`'s OWN stop check -- which reads that converter twist --
-   would pass. The refusal is the AD-API's, on a topic that cannot exist yet.
+   would pass". That conclusion is **REFUTED**, twice, and the "exactly 0.0"
+   reading was a longitudinal-only sample recorded as if it were the whole
+   twist. The converter twist carries the fork's LATERAL term, and the checker
+   compares the squared norm of the entire linear vector:
+
+     - `run-004`: |v| 0.00216644-0.00217256 m/s, entirely in `linear.y`,
+       **180/180** samples over the 1e-3 m/s threshold;
+     - `run-005` (Task 13 final): n=239, first
+       `(-2.57e-15, 0.0018524, 0.0)`, |v| 0.00185177-0.00185245 m/s,
+       **239/239** over threshold.
+
+   So `pose_initializer`'s own stop check did NOT pass, and route 3 below was
+   refused for that reason until the campaign-wide
+   `benchmarks/config/autoware/pose_initializer.param.yaml` override set
+   `stop_check_enabled: false` for every cell (benchmarks/README.md,
+   "Localization initialization (Task 13)"). With that override live -- MEASURED
+   on the running node, `ros2 param get /localization/util/pose_initializer
+   stop_check_enabled` -> `False` -- the refusal no longer occurs.
 
 2. **Publishing `/initialpose`** (what `scripts/e2e/reseed_localization.py`
    does, the extension harness's proven re-seed) does not reach

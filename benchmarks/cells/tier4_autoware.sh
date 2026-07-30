@@ -483,7 +483,32 @@ done
   (checked above) and the seed goes to pose_initializer's own service, so this
   is a LOCALIZATION failure rather than a transport or an initializer-routing
   one -- the cloud reaching NDT, or the bundle it is matched against, or the
-  seed's own affine. Localization nodes present:
+  seed's own affine.
+  BUT CHECK THIS FIRST, and the run's own tier4-autoware.log answers it.
+  MEASURED 2026-07-30 (results/B/run-005, excluded crash:cell-launch): there
+  is a THIRD cause that looks identical from here and is neither of the above
+  -- pose_initializer WEDGED during its own start-up, before it can serve any
+  request. Its deactivation handshake with ndt_scan_matcher lost a service
+  RESPONSE at the rmw layer:
+    grep -n 'client will not receive response' <run>/tier4-autoware.log
+  On run-005 that fired three times inside one 0.4 s window at peak bring-up
+  (mrm_emergency_stop_operator/_container/load_node,
+  pointcloud_container/_container/load_node, and the decisive
+  /localization/pose_estimator/trigger_node), with the host at loadavg 64.
+  The signature is pose_initializer's OWN log stopping mid-handshake --
+    grep 'localization.util.pose_initializer]' <run>/tier4-autoware.log
+  showed 'EKF triggering service is available!' -> 'EKF Deactivation
+  succeeded' -> 'NDT triggering service is available!' and then NOTHING (no
+  'NDT Deactivation succeeded'), with the process blocked in futex_do_wait.
+  A wedged node still ADVERTISES the service, so the seed discovers it, calls
+  it, and every attempt reports 'no response (spin timed out)' rather than a
+  refusal -- and RETRYING CANNOT RECOVER IT, because the executor never
+  returns. So: refusal text => a real precondition; 'no response' on every
+  attempt + a truncated pose_initializer log => this wedge, which is the same
+  dropped-rclcpp/rmw-response class as results/E/run-003 and did not reproduce
+  on the next bring-up. Recycle the stack on a QUIET host; do not tune
+  SEED_TIMEOUT_S, which only buys more attempts against a dead executor.
+  Localization nodes present:
 $(cx "$AW_ENV
     ros2 node list --no-daemon 2>/dev/null | grep '^/localization/' | sort" 2>/dev/null || true)"
 echo "OK: NDT locked on the seeded pose"
