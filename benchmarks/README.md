@@ -76,13 +76,27 @@ comparability consequence below needed and did not have.
 
 **Backward compatibility is part of the contract, not a courtesy.** Every run
 already filed — `results/B/run-007…012` and all of `results/E/`, which may not
-be modified — carries the seven-column header. The column is **appended last**
-so the old header stays a strict prefix: `sampler/finalize_rtf.py` locates
-columns with `header.index()` and writes back whatever header it read, so
-re-finalizing an old run fills its `rtf` and **does not** add a `loadavg_1m` it
-never sampled. `read_resources_csv` returns an all-NaN column of the right
-length for such a run. Both halves are pinned against old-format fixtures and
-against the real filed runs (`tests/benchmarks/test_bench_io.py`,
+be modified — carries the seven-column header.
+
+**What makes that work is name-based access, not column position.**
+`read_resources_csv` goes through `csv.DictReader`, keyed by header **name**;
+`sampler/finalize_rtf.py` resolves `header.index("sample_system_ns")` /
+`header.index("rtf")` out of the header it just read and writes that same header
+back. So re-finalizing an already-filed run fills its `rtf` and **does not** add
+a `loadavg_1m` it never sampled, and `read_resources_csv` returns an all-NaN
+column of the right length for it. No committed consumer of `resources.csv`
+reads it positionally.
+
+**Appending the column last is a legibility convention, not the mechanism.** It
+keeps the pre-2026-07-30 header a strict prefix, so a diff of a filed run against
+a new one shows one **added** column rather than a shifted table — those runs are
+retained evidence that has to stay comparable by eye. Do not read it as "position
+is load-bearing": reordering would not break a reader, and neither would
+inserting elsewhere. Keep new columns at the end for the prefix property alone.
+
+Both halves are pinned — the NaN-on-absence behaviour against an old-format
+fixture **and** against every real filed run, and the position-independence
+against a deliberately shuffled header (`tests/benchmarks/test_bench_io.py`,
 `test_finalize_rtf.py`).
 
 ## Patch policy
@@ -256,7 +270,28 @@ independent everywhere: `--fixed-delta` moves the world tick, the rig's
 high-frequency cells are where that separation bites — Task 26 configures both
 `A-hf` and `B-hf` by setting the tick AND the sensor ticks explicitly, so
 neither cell's sensor rate can be derived from its tick rate, and all three
-bindings on both cells are `null` until Task 26 registers what it applied.
+bindings on both cells are `null` naming Task 26 as their owner.
+
+> **Status note (2026-07-30): those six `null`s are now PERMANENT, and that is a
+> legitimate end state rather than a gap.** Task 26 was struck by the owner's
+> core-duel scope cut (`cells.yaml` `dropped:` on `A-hf`/`B-hf`, and the
+> amendment of that date below), so nothing is going to register what it applied
+> and **no reader should expect a resolution.** What the nulls mean changes with
+> it: they were provisional pending a measurement, and they are now final. This
+> is the campaign's own registered vocabulary, not a new rule — a value that no
+> committed evidence fixes and that no run's data mechanically discriminates is
+> registered `null` **naming its owner**, so a tool reports the metric
+> UNAVAILABLE for that cell instead of inventing one (`cells.yaml`'s header
+> block; `cell_info.metrics_for` returns `None` as-is and the caller must say
+> so). `cells.yaml`'s `A-hf` entry pre-registered exactly this outcome before it
+> happened: "If the owner strikes Task 26 the cell is dropped and these stay
+> null permanently — a legitimate end state, not a gap." **This note changes no
+> binding, no threshold and no definition** — every rate binding, every divisor
+> rule in this section and both `-hf` entries' values are exactly as they were;
+> only the expectation of a future filler is withdrawn. The `sensor_tick`
+> question `cells.yaml`'s `A-hf` comment raised with the plan owner (0.1 vs 0.01)
+> is likewise closed as never-to-be-applied rather than answered.
+
 Substituting one for another is never correct, even where they happen to
 agree. An expected message COUNT must be derived from
 `lidar_expected_hz`; only the M4 ceiling's unpaced `tick_rate_ratio` disjunct
@@ -813,6 +848,26 @@ written into `cells.yaml` beside `sweep_classes` for the same reason
 `ladder_branch` / `abs_pose_gate_m` are two keys: a choice a run's own data
 makes mechanically must be pre-registered on both sides, never settled after
 seeing the number.
+
+**What reinstating it actually costs, stated precisely rather than as "no work".**
+The **registry** needs no edit — `cell_info --class 32ch` resolves today, because
+the entry was kept registered rather than deleted, so no `cells.yaml` change is
+required to run the class. But a `32ch` run is **not** turnkey: both sweep
+launchers refuse a `--class` whose sensor arguments are not spelled out, because
+nothing maps a class id onto them (`cells/tier4-native.sh`'s
+`BENCH_TIER4_SWEEP_ARGS` refusal and `cells/extension.sh`'s
+`BENCH_RUNNER_SWEEP_ARGS` refusal — a sweep run that quietly used the baseline
+VLP16 rig would be filed as a `32ch` measurement). So the operator must supply
+those arguments by hand — for the tier4 side, in the form that launcher's own
+message gives: `BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000"`
+(patch 0003's flags, matching `32ch`'s registered `channels` / `points_per_second`).
+The class→arguments mapping itself is still unwritten on **both** sides, and the
+two name different owners: the tier4 side was owed to **Task 26**, which is
+struck, so it now has **no owner** and that refusal is permanent until someone
+writes it; the extension side is owed to **Task 12** per
+`cells/extension.sh`'s own refusal text. The ruling that reinstatement is "a
+decision, not an edit" is about the **pre-registration** — the branch needs no
+new amendment — and is not a claim that no operator work is involved.
 
 **Read the reason precisely.** Every strike is an owner **time-budget**
 decision, taken on two measurements (recorded in the amendment). **None of

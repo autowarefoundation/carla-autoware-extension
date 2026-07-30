@@ -30,13 +30,28 @@ import yaml
 # benchmarks/analysis/bench_io.py's RESOURCE_INT_COLS/RESOURCE_FLOAT_COLS
 # (+ RESOURCE_OPTIONAL_FLOAT_COLS for loadavg_1m).
 #
-# loadavg_1m was APPENDED (2026-07-30), and last on purpose. Every run filed
-# before that date carries the seven-column header, so keeping the old header
-# a strict PREFIX of this one means finalize_rtf.py -- which locates columns
-# with header.index() and writes back whatever header it read -- keeps working
-# unchanged on both formats without upgrading an old file, and a diff of an
-# old run against a new one shows one added column rather than a shifted
-# table.
+# loadavg_1m was APPENDED (2026-07-30). Every run filed before that date
+# carries the seven-column header and both readers cope -- but be precise
+# about WHY, because the obvious explanation is wrong:
+#
+#   WHAT MAKES IT WORK IS NAME-BASED ACCESS, NOT POSITION. bench_io's
+#   read_resources_csv goes through csv.DictReader, keyed by header NAME; and
+#   finalize_rtf.py resolves header.index("sample_system_ns") /
+#   header.index("rtf") out of the header it just read, then writes that same
+#   header back. Neither depends on where a column sits, and no committed
+#   consumer of resources.csv reads it positionally.
+#
+#   APPENDING LAST IS A LEGIBILITY CONVENTION, NOT A CORRECTNESS MECHANISM.
+#   It keeps the pre-2026-07-30 header a strict PREFIX of this tuple, so a
+#   diff of an already-filed run against a new one shows one ADDED column
+#   rather than a shifted table -- which matters because those runs are
+#   retained evidence that has to stay comparable by eye.
+#
+# So do NOT conclude that position is load-bearing: reordering would not break
+# a reader and appending elsewhere would not either. Keep new columns at the
+# end for the prefix property, not out of fear of the reader. The
+# position-independence is pinned by test_finalize_rtf.py's shuffled-header
+# test, so this comment is a checked claim rather than an assurance.
 RESOURCE_COLUMNS = (
     "sample_system_ns",
     "process",

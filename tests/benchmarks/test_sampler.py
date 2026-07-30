@@ -303,11 +303,21 @@ def test_resource_columns_matches_the_registered_contract():
 
 
 def test_loadavg_is_appended_last_so_the_old_header_stays_a_prefix():
-    """Position is load-bearing, not cosmetic. `finalize_rtf.py` locates
-    columns with `header.index(...)` and rewrites whatever header it read, so
-    appending keeps it working unchanged on BOTH formats -- and it means a
-    diff of an old run against a new one shows one added column rather than a
-    shifted table."""
+    """A LEGIBILITY convention, deliberately NOT a correctness mechanism.
+
+    Appending keeps the pre-2026-07-30 header a strict PREFIX of the contract,
+    so a diff of an already-filed run against a new one shows one ADDED column
+    rather than a shifted table -- and those runs are retained evidence that
+    has to stay comparable by eye.
+
+    What it is NOT: the reason the readers survive both formats. That is
+    name-based access on both sides -- `csv.DictReader` in
+    `bench_io.read_resources_csv`, and `header.index(...)` in
+    `finalize_rtf.py`, which is position-INDEPENDENT and is pinned directly by
+    test_finalize_rtf.py's shuffled-header test. An earlier revision of this
+    docstring claimed position was load-bearing; that would have licensed a
+    reader to believe reordering is unsafe, or that appending anywhere else
+    would break a consumer. Neither is true."""
     assert RESOURCE_COLUMNS[-1] == "loadavg_1m"
     assert RESOURCE_COLUMNS[:-1] == (
         "sample_system_ns",

@@ -161,6 +161,63 @@ def test_finalize_preserves_other_columns_and_row_order_and_is_atomic(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["clock.csv", "resources.csv"]
 
 
+def test_finalize_resolves_columns_by_NAME_not_by_position(tmp_path):
+    """The ACTUAL backward-compatibility mechanism, pinned rather than left as a
+    comment's assurance.
+
+    `finalize_rtf` resolves `header.index("sample_system_ns")` /
+    `header.index("rtf")` out of the header it just read, so it is
+    position-INDEPENDENT -- and that, not column order, is why it survives both
+    the seven- and eight-column formats. Appending `loadavg_1m` last is a
+    separate, legibility-only convention (the old header stays a strict prefix,
+    so a diff of a retained run shows one added column rather than a shifted
+    table). An earlier revision of the sampler's comment claimed the position
+    was what made the readers work; that is wrong, and it would license someone
+    to believe reordering is unsafe or that appending elsewhere would break a
+    consumer.
+
+    Driven with rtf in the MIDDLE and loadavg_1m FIRST -- the arrangement a
+    positional implementation would silently corrupt, by rewriting whichever
+    column happened to sit at the index it hardcoded."""
+    shuffled = (
+        "loadavg_1m",
+        "process",
+        "rtf",
+        "sample_system_ns",
+        "cpu_pct",
+        "rss_bytes",
+        "gpu_util_pct",
+        "vram_bytes",
+    )
+    assert set(shuffled) == set(RESOURCE_HEADER), "same columns, different order"
+    clock_csv = tmp_path / "clock.csv"
+    resources_csv = tmp_path / "resources.csv"
+    _write_clock_csv(clock_csv, BASE, n=50, step_ns=100_000_000)
+    t1 = BASE + 1_000_000_000
+    # (loadavg_1m, process, rtf, sample_system_ns, cpu_pct, rss, gpu, vram)
+    rows = [(25.8, "carla-server", -1, t1, 12.5, 1000, -1, -1)]
+    _write_csv(resources_csv, shuffled, rows)
+
+    finalize_rtf(resources_csv, clock_csv)
+
+    with open(resources_csv, newline="") as f:
+        out_rows = list(csv.reader(f))
+    assert out_rows[0] == list(shuffled), "header order preserved verbatim"
+    out = out_rows[1]
+    # rtf sits at index 2 here, not last, and is the only field rewritten...
+    assert out[2] != "-1"
+    assert float(out[2]) == pytest.approx(1.0, abs=1e-6)
+    # ...and nothing else moved or was clobbered -- loadavg_1m in particular,
+    # which sits at index 0 and a positional write would have destroyed.
+    for i in (0, 1, 3, 4, 5, 6, 7):
+        assert out[i] == str(rows[0][i]), f"column {shuffled[i]} was disturbed"
+
+    # And the shared reader still finds every column by name, order regardless.
+    cols = read_resources_csv(resources_csv)["carla-server"]
+    assert cols["loadavg_1m"][0] == pytest.approx(25.8)
+    assert cols["rtf"][0] == pytest.approx(1.0, abs=1e-6)
+
+
 def test_finalize_does_not_upgrade_a_legacy_file_that_has_no_loadavg_column(tmp_path):
     """BACKWARD COMPATIBILITY, on the write side. Every run already filed under
     benchmarks/results/ has the pre-2026-07-30 header, `results/E/` may not be

@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -204,20 +205,44 @@ _FILED_RESOURCES = sorted(
 
 @pytest.mark.parametrize("filed", _FILED_RESOURCES, ids=lambda p: f"{p.parts[-3]}/{p.parts[-2]}")
 def test_every_already_filed_run_still_reads(filed):
-    """Not a fixture -- the REAL committed runs. Every one of them predates the
-    column, `results/E/` may not be modified at all, and none of them is
-    rewritten by this change: a reader that now REQUIRED loadavg_1m would break
-    on all of them, which is the failure this parametrization exists to catch.
-    Self-adjusting: a future run filed WITH the column passes here too, on the
-    non-NaN branch."""
+    """Not a fixture -- the REAL committed runs. `results/E/` may not be modified
+    at all, none of them is rewritten by this change, and a reader that now
+    REQUIRED loadavg_1m would break on every one of them.
+
+    The assertion is keyed off each file's OWN header rather than off an
+    assumption about which format it is in, so it stays self-adjusting: a run
+    filed before the column must read all-NaN, one filed with it must read no
+    NaN. An earlier revision asserted only key presence, shape and
+    NaN-homogeneity -- which let this whole parametrization PASS while
+    `_optional_float` returned 0.0 instead of NaN, because all-zeros satisfies
+    the "not any isnan" branch. That made the real-run coverage weaker than its
+    own name and left NaN-on-absence pinned by the hand-written fixture alone."""
+    with open(filed, newline="") as f:
+        header = next(csv.reader(f))
+    has_column = "loadavg_1m" in header
+
     d = read_resources_csv(filed)
     assert d, f"{filed} has no process rows"
     for process, cols in d.items():
         load = cols["loadavg_1m"]
         assert load.shape == cols["cpu_pct"].shape, f"{filed}:{process}"
-        assert np.all(np.isnan(load)) or not np.any(np.isnan(load)), (
-            f"{filed}:{process} mixes recorded and unrecorded loadavg samples"
-        )
+        if has_column:
+            # Recorded: every sample is a real reading or the -1 sentinel. A NaN
+            # would mean the reader invented an absence that is not in the file.
+            assert not np.any(np.isnan(load)), (
+                f"{filed}:{process} has the column but reads NaN samples"
+            )
+            assert np.all(load >= -1.0), f"{filed}:{process} has an impossible loadavg"
+        else:
+            # Absent: NaN, and specifically NOT 0.0 -- 0.0 would assert that
+            # this run's host was idle, a measurement nobody took. THIS is
+            # the real-filed-run assertion that fails under NaN->0.0.
+            assert np.all(np.isnan(load)), (
+                f"{filed}:{process} predates loadavg_1m but does not read NaN"
+            )
+            assert not np.any(load == 0.0), (
+                f"{filed}:{process} reads an un-sampled loadavg as 0.0 (idle host)"
+            )
 
 
 UNSORTED_OBS = """topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes

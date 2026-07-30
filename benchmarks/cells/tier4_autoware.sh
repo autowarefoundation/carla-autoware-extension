@@ -84,9 +84,16 @@ TIER4_LIDAR_ROTATION_HZ=10.0
 # The demo's default rig carries ONE 1920x1080 traffic-light camera; cell A's
 # baseline rig carries no camera at all, and this cell runs perception:=false
 # with the clear-road injector, so nothing consumes it. Spawning it would put
-# a GPU capture path in B's M3 series that A's does not have. The M4
-# camera-load arm (cells.yaml camera_classes) drives both approaches up from
-# zero instead, through --cameras/--camera-width/--camera-height/--camera-tick.
+# a GPU capture path in B's M3 series that A's does not have. THAT is the whole
+# reason for the 0, and it stands on its own: it keeps the two duel cells'
+# sensor rigs comparable.
+#
+# The justification USED to end "...the M4 camera-load arm (cells.yaml
+# camera_classes) drives both approaches up from zero instead". That half is now
+# stale: the camera-load arm was STRUCK IN FULL 2026-07-30 by the owner's
+# core-duel scope cut, so nothing drives either approach up from zero and there
+# is no camera axis in this campaign. The setting does not change -- 0 is still
+# correct, and now it is simply where every B-family run stays.
 TIER4_CAMERAS=0
 
 fail() {

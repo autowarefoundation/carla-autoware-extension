@@ -72,10 +72,20 @@ TIER4_DEMO="${BENCH_TIER4_DEMO:-$BENCH_REPO/benchmarks/cells/tier4_autoware.sh}"
 # Patch 0003 gives the demo the sensor flags a sweep class needs
 # (--lidar-channels/--lidar-pps/--lidar-rotation-hz/--lidar-range plus the
 # camera ones), and tier4_autoware.sh passes BENCH_TIER4_SWEEP_ARGS straight
-# through to it -- but nothing DERIVES those arguments from a class id yet
-# (Task 26 owns the sweep arms), and a sweep run that quietly used the
-# baseline VLP16 rig would be filed as a 128ch measurement. Same refusal, and
-# the same reason, as cells/extension.sh's for BENCH_RUNNER_SWEEP_ARGS.
+# through to it -- but nothing DERIVES those arguments from a class id, and a
+# sweep run that quietly used the baseline VLP16 rig would be filed as a 128ch
+# measurement. Same refusal, and the same reason, as cells/extension.sh's for
+# BENCH_RUNNER_SWEEP_ARGS.
+#
+# That derivation was owed to Task 26, which was STRUCK 2026-07-30 by the
+# owner's core-duel scope cut -- so it has NO owner now and this refusal is
+# permanent until someone writes the mapping. It stays a refusal rather than
+# becoming a warning: unlike a struck CELL (run.sh step 1 only WARNs there,
+# because dropping is scope and un-dropping is legitimate), an unmapped class
+# id would file a run under the WRONG workload label, which is a false
+# measurement rather than an out-of-scope one. Relevant to the pre-registered
+# 32ch step-up branch (config/cells.yaml, sweep_classes): taking it needs no
+# config edit, but it does need these arguments supplied by hand.
 if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_TIER4_SWEEP_ARGS:-}" ]; then
   fail "--class $BENCH_CLASS_ID needs the tier4-side sensor arguments spelled
   out: patch 0003's flags exist, but nothing maps a class id onto them yet.

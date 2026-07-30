@@ -111,8 +111,15 @@ IMU_ROS_NAME = IMU_FRAME
 
 # ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay (the
 # concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans. Shared
-# by the top LiDAR and, best-effort, by the M4 camera-load arm's cameras (camera_attributes
-# below) -- it is the one AWSIM-relay QoS profile, not two independent ones.
+# by the top LiDAR and, best-effort, by the camera path's cameras
+# (camera_attributes below) -- it is the one AWSIM-relay QoS profile, not two
+# independent ones.
+#
+# The cameras were the M4 camera-load arm's. That arm was STRUCK
+# 2026-07-30 by the owner's core-duel scope cut
+# (benchmarks/config/cells.yaml `camera_classes`), so this campaign
+# exercises the LiDAR half only. Nothing about the profile changes, and
+# the camera path stays supported for any other caller.
 _QOS_RELIABILITY = "best_effort"
 _QOS_DURABILITY = "volatile"
 _QOS_HISTORY_DEPTH = "5"
@@ -221,7 +228,14 @@ _REQUIRED_NATIVE_ATTRS = ("ros_topic_name", "ros2_extended_lidar")
 # falls back to direct VehicleControl), so this one keeps the has_attribute skip.
 _OPTIONAL_ATTRS = ("ros2_ackermann_control",)
 
-# Camera policy (M4 camera-load arm): ros_topic_name is still the one load-bearing native
+# Camera policy. Written for the M4 camera-load arm, which was STRUCK
+# 2026-07-30 by the owner's core-duel scope cut
+# (benchmarks/config/cells.yaml `camera_classes`), so no benchmark cell
+# drives this path any more: it stays committed and unexercised by the
+# campaign. The policy below is unchanged and still correct for any
+# other caller of --cameras.
+#
+# ros_topic_name is still the one load-bearing native
 # attr to fail loudly on. ros2_extended_lidar has no camera meaning, so it is NOT in the
 # camera required set. Unlike the LiDAR, sensor.camera.rgb does not declare ros2_qos_* at
 # all (only MakeLidarDefinition does) -- so the QoS trio is genuinely best-effort here:

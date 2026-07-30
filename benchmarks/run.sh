@@ -344,8 +344,12 @@ do_run() {
   observer_image="${BENCH_OBSERVER_IMAGE:-bench-observer:universe-devel}"
   if [ "$CELL" = "B45" ] && [ -z "${BENCH_OBSERVER_IMAGE:-}" ]; then
     # B45 runs the 0.45 message set; its observer must be built against the
-    # same base or PublishedTime will not resolve (pins.yaml notes this image
-    # is built in Task 21).
+    # same base or PublishedTime will not resolve. THIS IMAGE DOES NOT EXIST
+    # and none is coming: pins.yaml records bench-observer:045 as NEVER BUILT,
+    # because it was Task 21's and cell B45 was struck 2026-07-30 by the
+    # owner's core-duel scope cut. So this branch is unreachable in practice
+    # -- kept, not deleted, because B45 stays registered and un-dropping it is
+    # a legitimate later decision that would need exactly this wiring.
     observer_image="bench-observer:045"
   fi
   echo "      autoware_image=$autoware_image"

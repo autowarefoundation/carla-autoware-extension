@@ -685,8 +685,19 @@ cells:
 # cells above: `cell_info.merge` copies every non-meta class key into the
 # merged cell JSON at TOP level, so a class-level `dropped:` would read there
 # as if the CELL were dropped. Both entries stay REGISTERED -- struck is not
-# deleted, and `cell_info --class 32ch` still resolves, which is also what
-# makes the step-up branch reachable without a config change.
+# deleted, and `cell_info --class 32ch` still resolves, so taking the step-up
+# branch needs no edit to THIS file.
+#
+# It DOES need operator work, and the record says so rather than implying
+# turnkey: both sweep launchers REFUSE a --class whose sensor arguments are not
+# spelled out, because nothing maps a class id onto them
+# (cells/tier4-native.sh's BENCH_TIER4_SWEEP_ARGS refusal, cells/extension.sh's
+# BENCH_RUNNER_SWEEP_ARGS one -- a sweep run that quietly used the baseline
+# VLP16 rig would be filed as a 32ch measurement). That mapping was owed to
+# Task 26, which is struck, so it has NO owner now and the refusal stands until
+# someone writes it. So reinstating `32ch` is a DECISION rather than an
+# amendment -- which is what "anticipated" means above -- but not a decision
+# with zero operator cost.
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }
