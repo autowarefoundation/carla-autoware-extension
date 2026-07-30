@@ -1424,6 +1424,41 @@ fails in the launcher before `run.sh` reaches its arm step.
   the direct explanation for why cell A initialized and drove in Task 11 (G1
   0.089 m, G2 0.244 m) while cell B cannot initialize at all.
 
+- **LiDAR point layout (added 2026-07-30, Task 15b) — the two approaches publish
+  DIFFERENT PointCloud2 point types.** A per-approach observation of the same kind
+  as the `control_mode` gap above and the parked-lateral-velocity entry: recorded,
+  not patched, and with no downstream claim attached.
+
+  | cell | `point_step` | fields                                                                                                                  |
+  | ---- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+  | A    | **32 B**     | 10 — `x,y,z`, `intensity`(u8), `return_type`(u8), `channel`(u16), `azimuth`, `elevation`, `distance`, `time_stamp`(u32) |
+  | B    | **16 B**     | 4 — `x,y,z,intensity`, all `FLOAT32`                                                                                    |
+
+  Cell A publishes the **AWSIM-extended** layout, whose extra six fields are what
+  Autoware's pointcloud preprocessing is written against; cell B publishes a
+  reduced four-float cloud. Sources and the derived point counts are in finding 4
+  of "Cell A's bench-harness control (Task 15b)".
+
+  **It is a runtime CONFIGURATION difference, not a fork capability difference** —
+  which is what makes it an interop observation rather than a limitation. BOTH
+  forks implement BOTH layouts: cell A's selects on `_extended`
+  (`CarlaLidarPublisher.h:42`, default **false**, driven by the CARLA actor
+  attribute `ros2_extended_lidar` per `CarlaLidarPublisher.h:17`), and cell B's
+  fork carries a ten-field `SetDataEx` beside the four-field `SetData` it actually
+  uses. Cell A opts in explicitly and requires it:
+  `runner/spawn.py:195` sets `"ros2_extended_lidar": "true"`, and `:226` lists it
+  in `_REQUIRED_NATIVE_ATTRS` so a blueprint lacking it fails loudly. The tier4
+  demo sets no such attribute, so cell B falls to its fork's default. **Cell B
+  could be configured to match**; nothing here is a defect of either fork.
+
+  **NO DOWNSTREAM EFFECT IS CLAIMED, and this is deliberate.** Whether the six
+  missing fields degrade any Autoware stage on cell B — ring-based ground
+  segmentation, distortion correction, or anything that reads `channel` /
+  `azimuth` / `time_stamp` — is **UNMEASURED**, and the campaign has no
+  measurement that would settle it (cell B's runs never armed, and perception is
+  off in every cell). The **fact of the layout difference** is what is
+  established; any performance or quality consequence is not.
+
 **Escalated rather than worked around, then AMENDED.** The three available
 remedies all cross a line this campaign drew: patching the fork's velocity
 report (or the extension's) changes a DUT and erases the interop difference,
@@ -1758,8 +1793,10 @@ machine — not a footnote about this harness.**
    survives as a real finding **about cell B**.
 
    Two things sharpen it, one in each direction. Cell A carries the **heavier**
-   sensing load — ~639 000 pts/s measured (below) against cell B's registered
-   288 000 — so it does more sensor work for one ninth of the Autoware CPU. And
+   sensing load — a nominal 600 000 pts/s at 20 Hz against cell B's registered
+   288 000 at 10 Hz (finding 4 for the derived emitted rates, which preserve the
+   same ~2.1× ratio) — so it does more sensor work for one ninth of the Autoware
+   CPU. And
    cell B's figure was recorded on `run-010`, which is `excluded` /
    `gate:arm-failed`: **cell B consumed ~18.5 cores while never actually
    arming**, where cell A consumed ~2.1 while driving the route. "Arm-matched"
@@ -1805,11 +1842,24 @@ machine — not a footnote about this harness.**
    `runner/spawn.py` pins `_TOP_LIDAR_CHANNELS = "128"` and
    `_TOP_LIDAR_POINTS_PER_SECOND = "600000"`, and `cells/extension.sh` passes no
    sweep overrides, so these runs are **not** at the registered `vlp16` class
-   (16 ch / 288 000 pts/s) and not at `128ch` (4 600 000) either. Confirmed from
-   the committed series, not just the constants: `run-002`'s
-   `/sensing/lidar/top/pointcloud_raw_ex` median is **511 288 B/msg** at
-   **20.00 Hz** → ~31 956 pts/cloud → **~639 000 pts/s**. The rig therefore
-   carries **~2.2× the vlp16 point rate**, so a criterion that does not fire here
+   (16 ch / 288 000 pts/s) and not at `128ch` (4 600 000) either.
+
+   > **CORRECTED 2026-07-30, same day.** An earlier revision read "median is
+   > 511 288 B/msg at 20.00 Hz → ~31 956 pts/cloud → **~639 000 pts/s**", derived
+   > by dividing the message size by an **assumed** 16 B/point. Cell A's
+   > `point_step` is **32 B** — `ExtendedLidarPoint.h:58`,
+   > `static_assert(sizeof(LidarPointEx) == 32u)` — so that figure was wrong by
+   > 2×. The derived emitted rate is **~320 115 pts/s**; finding 4 below carries
+   > the full layout resolution. **The ~2.1× conclusion is unaffected**, because
+   > the right basis is the NOMINAL rates, and both cells under-deliver against
+   > nominal by the same ~53%, so the ratio survives on either basis.
+
+   The point rate rests on the committed constant
+   (`_TOP_LIDAR_POINTS_PER_SECOND = "600000"`), with wire bytes as support rather
+   than the reverse. **Nominal-to-nominal** the rig carries
+   **600 000 / 288 000 = 2.083×** the `vlp16` point rate at 2× its frequency; on
+   the derived emitted rates it is 320 115 / 151 133 = **2.118×** cell B's. So a
+   criterion that does not fire here
    would not fire at the lighter baseline under load monotonicity in point rate —
    an **assumption, stated as one**, which makes the falsification more robust
    than a `vlp16` run would have, not less. A strict `vlp16` confirmation remains
@@ -3295,7 +3345,8 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   bars. **Falsifier 2** is answered by `evaluate_ceiling` returning
   `reached=False, reasons=[]` on both arms with all four disjuncts' inputs
   tabulated, recorded as a **falsification** rather than dropped, together with
-  the measured fact that the rig was ~639 000 pts/s (~2.2× `vlp16`) rather than
+  the measured fact that the rig was a nominal 600 000 pts/s (2.083× `vlp16`
+  nominal-to-nominal) rather than
   the registered baseline class — which makes the result more robust under load
   monotonicity, stated as an assumption — and with the `32ch` step-up flagged as
   needing a **decision** on an already-anticipated amendment, not a new one.
@@ -3355,6 +3406,38 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   Task 13/20's. No margin, threshold, tolerance, metric or cell definition
   changes; no filed run modified; `config/margins.yaml` and
   `config/exclusions.md` byte-identical.
+- **2026-07-30** — the per-message-size contradiction above is **RESOLVED from both
+  forks' sources**, and the resolution is registered three ways: as the CAUSE in
+  finding 4, as a **new per-approach observation** ("LiDAR point layout", beside
+  the `control_mode` gap and the parked-lateral-velocity entry), and as a
+  **correction** to this document's own earlier figure. **Completeness:** finding 4
+  previously recorded the 2.118× byte gap with the cause explicitly unresolved, and
+  an unresolved confound on two of the five duel margin metrics is not a usable
+  registration. The cause is the point **LAYOUT**: cell A's `point_step` is 32 B
+  over ten fields (`ExtendedLidarPoint.h:44-58`), cell B's is 16 B over four
+  (`CarlaLidarPublisher.cpp:204,209`), so dividing each cell's median message size
+  by its own `point_step` gives **16 006 vs 15 113** derived points — **5.9%
+  apart** against a 2.118× byte gap. That **refutes** the "cell B emits half its
+  registered points" reading: both cells deliver ~53% of nominal, the same margin,
+  which `runner/spawn.py:145` already documents as one half-rotation cloud per
+  tick. The registered "within 4% either way" claim is therefore **unit-ambiguous**
+  rather than wrong — true for points, false for bytes, and it licenses a
+  byte-sensitive conclusion. The duel consequence is now **bounded and
+  directional**: cell A ships 2.118× the bytes for the same point count, so
+  `one_hop_wall_ms` and `lidar_to_ndt_sim_ms` are biased **against cell A**, making
+  an A-favourable latency result conservative and a B-favourable one confounded.
+  The layout difference is recorded as a runtime **configuration** difference, not
+  a fork capability one — both forks implement both layouts, cell A opts in via
+  `runner/spawn.py:195` — and **no downstream effect is claimed**: whether the six
+  missing fields degrade any Autoware stage is labelled UNMEASURED, because
+  nothing in this campaign measures it. **This document's own earlier figure is
+  corrected in place** rather than quietly replaced: "~639 000 pts/s (~2.2×
+  vlp16)" assumed 16 B/point for cell A and was wrong by 2×; the derived emitted
+  rate is ~320 115 pts/s, the nominal 600 000 remains the primary basis, and the
+  ~2.1× conclusion is unaffected because both cells under-deliver by the same
+  ~53%. No margin, threshold, tolerance, metric or cell definition changes; no
+  filed run modified; `config/margins.yaml` and `config/exclusions.md`
+  byte-identical.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
@@ -3505,17 +3588,51 @@ is stable: six cell-B runs agree to within 0.30% and two cell-A runs to 0.35%, s
 this is not an artifact of cell B's runs being excluded (`gate:arm-failed`) —
 per-message size is a property of the sensor configuration, not of arming.
 
-**The cause is NOT established here and is deliberately not guessed at.** It is
-consistent with cell B emitting roughly half the points its registration predicts,
-or with the two publishers using different `point_step` layouts (CARLA's native
-publisher for A, the tier4 fork's for B). `point_step` was not determined for
-either cell, so neither reading is asserted. What IS established is that the
-registered parity claim does not hold on the wire, and that claim is the stated
-justification for `one_hop_wall_ms` and `lidar_to_ndt_sim_ms` — **two of the five
-duel margin metrics** — comparing like with like across the two cells. Whoever
-takes the `vlp16` remedy should confirm rig parity **on the wire**, not from the
-registry. `cells/tier4_autoware.sh` is cell B's launcher and its comment is left
-untouched here rather than silently rewritten; correcting it is Task 13/20's.
+**CAUSE RESOLVED from both forks' sources — it is the point LAYOUT, not the
+sensor workload.** The two cells' `point_step` differs by 2×:
+
+| cell | `point_step` | fields                                                                                                                 | source                                                                                                                                                                                              |
+| ---- | ------------ | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | **32 B**     | 10: `x,y,z`, `intensity`(u8), `return_type`(u8), `channel`(u16), `azimuth`, `elevation`, `distance`, `time_stamp`(u32) | `carla-autoware-integration` `LibCarla/source/carla/ros2/publishers/ExtendedLidarPoint.h:44-55`, `static_assert(sizeof(LidarPointEx) == 32u)` at `:58`; selected by `CarlaLidarPublisher.cpp:38-39` |
+| B    | **16 B**     | 4: `x,y,z,intensity`, all `FLOAT32`                                                                                    | `carla-autoware-native` `LibCarla/source/carla/ros2/publishers/CarlaLidarPublisher.cpp:204` (`const size_t point_size = 4 * sizeof(float)`), descriptors at `:209`                                  |
+
+Dividing the medians above by each cell's own `point_step` gives **derived** point
+counts (the observer records only `size_bytes`, so these are derived, not
+measured; the derivation ignores per-message header and field-descriptor overhead,
+which is larger for A's ten descriptors than B's four and therefore makes the true
+gap slightly _smaller_ than shown):
+
+| cell | median B/msg | ÷ `point_step` | derived pts/msg | nominal pts/msg         | delivered |
+| ---- | ------------ | -------------- | --------------- | ----------------------- | --------- |
+| A    | 512 184      | ÷ 32           | **16 006**      | 600 000 × 0.05 = 30 000 | 53.4%     |
+| B    | 241 813      | ÷ 16           | **15 113**      | 288 000 × 0.1 = 28 800  | 52.5%     |
+
+**So the point counts are nearly matched — 5.9% apart — while the bytes differ by
+2.118×.** The byte gap is almost entirely layout, and the "cell B emits half its
+registered points" reading is **refuted**: both cells deliver ~53% of nominal, by
+the same margin, which `runner/spawn.py:145` already documents for the extension
+side ("one ~half-rotation cloud per tick" in sync mode at the 0.05 s tick).
+
+**The registered claim is therefore UNIT-AMBIGUOUS rather than simply wrong.**
+`cells/tier4_autoware.sh:78-80`'s "within 4% either way" is **false for bytes
+(2.118×)** and **nearly true for points (5.9%)** — its own parenthetical reasons in
+_points per message_ (30 000 vs 28 800) while the quantity it licenses,
+"M1/M2's per-message latency terms", is carried by **bytes** on the wire. Someone
+wrote a point-count tolerance against a byte-sensitive conclusion. Recorded here as
+the correction; `cells/tier4_autoware.sh` is cell B's launcher and its comment is
+left untouched rather than silently rewritten — correcting it is Task 13/20's.
+
+**The duel-margin consequence, now BOUNDED and DIRECTIONAL.** `one_hop_wall_ms` and
+`lidar_to_ndt_sim_ms` are byte-sensitive (serialization plus transport of a
+511 KB vs a 242 KB message), and **cell A ships 2.118× the bytes for the same point
+count**. So the asymmetry penalises **cell A, the extension approach**:
+
+- an **A-favourable** latency result on those two metrics is **conservative** — A
+  won while carrying 2.1× the payload;
+- a **B-favourable** result on them is **confounded** and must not be read as an
+  approach difference without equalizing the layout.
+
+That is a usable registration, and it is strictly better than "unresolved".
 
 ## How to run
 
