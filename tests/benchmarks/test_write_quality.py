@@ -1,0 +1,662 @@
+"""write_quality.py: the M5 gate step, from a run directory to quality.json.
+
+Every fixture here is built so exactly one thing is wrong at a time -- the
+other gate criteria are kept comfortably healthy -- so a test cannot pass
+because a second criterion happened to fire. Several tests are written
+specifically to DIE under a plausible wrong implementation and say so in their
+docstring (the NDT source, the window branch, the wall->sim conversion, the
+join tolerance, the ladder-branch provenance): a suite that stays green when
+the implementation is replaced by a rejected interpretation is not pinning
+anything.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+
+import numpy as np
+import pytest
+import yaml
+
+from benchmarks.analysis.manifest import RunManifest
+from benchmarks.analysis.quality import QualityStats
+from benchmarks.scripts import sweep_verdict, write_quality
+from benchmarks.scripts.cell_info import METRIC_KEYS, load_cells_doc, metrics_for
+from benchmarks.scripts.write_quality import GateRefused, build_quality, main, write_quality as _wq
+
+BASE_WALL = 1_700_000_000_000_000_000
+DT_NS = 50_000_000  # 20 Hz
+NDT_TOPIC = "/localization/pose_estimator/pose_with_covariance"
+ODOM_TOPIC = "/localization/kinematic_state"
+MAP = "SyntheticStraight"
+ROUTE_LEN_M = 200.0
+N_SAMPLES = 3000  # 150 s at 20 Hz, so the 20 s warm-up leaves plenty
+
+
+# --- fixtures -------------------------------------------------------------
+
+
+def _cells_yaml(
+    tmp_path,
+    *,
+    cell="A",
+    ndt_topic=NDT_TOPIC,
+    ndt_expected_hz=20.0,
+    ladder_branch=None,
+    abs_pose_gate_m=None,
+) -> str:
+    metrics = {
+        "lidar_topic": "/sensing/lidar/top/pointcloud_raw_ex",
+        "ndt_topic": ndt_topic,
+        "control_topic": "/control/command/control_cmd",
+        "control_published_time_topic": None,
+        "cpu_process_label": "carla-server",
+        "tick_hz": 20.0,
+        "lidar_expected_hz": 20.0,
+        "ndt_expected_hz": ndt_expected_hz,
+        "ladder_branch": ladder_branch,
+        "abs_pose_gate_m": abs_pose_gate_m,
+    }
+    assert set(metrics) == set(METRIC_KEYS), "fixture drifted from the registry's keys"
+    path = tmp_path / "cells.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "cells": [
+                    {
+                        "id": cell,
+                        "approach": "extension",
+                        "carla": "0.10-fork",
+                        "map": MAP,
+                        "mandatory": True,
+                        "arms": ["static", "closed-loop"],
+                        "metrics": metrics,
+                    }
+                ],
+                "sweep_arms": ["paced", "unpaced", "ablation"],
+            }
+        )
+    )
+    return str(path)
+
+
+def _write_route(routes_dir, *, map_name=MAP, start_m=20.0, end_m=ROUTE_LEN_M, goal=None):
+    """A straight 200 m route whose goal is its own end point, so a track that
+    drives to the end is BOTH inside the station window and at the goal. The
+    committed routes are not like that -- see
+    test_committed_route_window_cannot_reach_the_goal_criterion."""
+    routes_dir.mkdir(exist_ok=True)
+    n = 101
+    poly = [[round(i * ROUTE_LEN_M / (n - 1), 6), 0.0] for i in range(n)]
+    goal_xy = poly[-1] if goal is None else list(goal)
+    (routes_dir / f"{map_name}.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "map": map_name,
+                "spawn_pose": {"x": 0.0, "y": 0.0, "z": 0.0, "yaw_deg": 0.0},
+                "goal": {"x": goal_xy[0], "y": goal_xy[1], "yaw_rad": 0.0},
+                "stations": {"start_m": start_m, "end_m": end_m},
+                "polyline": poly,
+            }
+        )
+    )
+
+
+def _track(n=N_SAMPLES, length_m=ROUTE_LEN_M, hold_n=0):
+    """(sim stamps, xy) for an ego crawling from station 0 to `length_m`.
+
+    `hold_n` leading samples are parked at station 0, which is what makes the
+    spatial window and the static window disagree.
+    """
+    t = np.arange(n, dtype=np.int64) * DT_NS
+    x = np.concatenate([np.zeros(hold_n), np.linspace(0.0, length_m, n - hold_n)])
+    return t, np.column_stack([x, np.zeros(n)])
+
+
+def _write_xy_csv(path, topic, stamps, xy):
+    lines = ["topic,header_stamp_ns,x_m,y_m\n"]
+    for t, (x, y) in zip(stamps, xy):
+        lines.append(f"{topic},{int(t)},{x:.4f},{y:.4f}\n")
+    path.write_text("".join(lines))
+
+
+def _write_gt_csv(path, sim_ns, xy):
+    lines = ["arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad\n"]
+    for t, (x, y) in zip(sim_ns, xy):
+        lines.append(f"{BASE_WALL + int(t)},{int(t)},{x:.4f},{y:.4f},0.0000,0.000000\n")
+    path.write_text("".join(lines))
+
+
+def _write_clock_csv(path, sim_ns, rtf=1.0):
+    """clock.csv pairing each sim stamp with a wall arrival at `1 / rtf` x sim.
+
+    rtf != 1 is what makes the static branch's wall->sim conversion observable.
+    """
+    lines = ["clock_ns,arrival_system_ns\n"]
+    for t in sim_ns:
+        lines.append(f"{int(t)},{BASE_WALL + int(round(int(t) / rtf))}\n")
+    path.write_text("".join(lines))
+
+
+def _write_manifest(run_dir, *, arm="closed-loop", cell="A", excluded=False, reason=""):
+    """Write the manifest through `dataclasses.asdict`, not `save()`.
+
+    `save()` validates `cell` and `map_name` against the REAL cells.yaml,
+    which these per-test synthetic registries deliberately do not stand in
+    for. The gate step reads the file back with `load_manifest`, which does
+    not validate, so the JSON shape is what matters here and it is produced by
+    the same dataclass.
+    """
+    manifest = RunManifest(
+        cell=cell,
+        approach="extension",
+        map_name=MAP,
+        run_index=1,
+        arm=arm,
+        harness_git_sha="abc",
+        patches_git_sha="def",
+        transport={
+            "rmw": "rmw_cyclonedds_cpp",
+            "shm_enabled": False,
+            "dds_profile_sha256": "0" * 64,
+        },
+        carla_version="0.10-fork",
+        autoware_image="img",
+        started_at_ns=0,
+        excluded=excluded,
+        exclusion_reason=reason,
+        placement={
+            "run_mode": "editor-game",
+            "container_image": "img@sha256:dead",
+            "observer_env": "bench-observer:universe-devel",
+            "engine_build_id": "b4c93e55-fc8f-42fc-b377-358910364e1c",
+        },
+    )
+    (run_dir / "manifest.json").write_text(json.dumps(dataclasses.asdict(manifest), indent=2))
+
+
+def _run(
+    tmp_path,
+    monkeypatch,
+    *,
+    arm="closed-loop",
+    ndt_bias=0.0,
+    ndt_stride=1,
+    ndt_stamp_offset_ns=0,
+    hold_n=0,
+    rtf=1.0,
+    odom_bias=0.0,
+    gt_stride=1,
+    route_kwargs=None,
+    **cells_kwargs,
+):
+    """A synthetic run directory plus the cells.yaml path that describes it."""
+    monkeypatch.setattr(write_quality, "ROUTES_DIR", tmp_path / "routes")
+    _write_route(tmp_path / "routes", **(route_kwargs or {}))
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, arm=arm)
+    t, xy = _track(hold_n=hold_n)
+    _write_gt_csv(run_dir / "gt.csv", t[::gt_stride], xy[::gt_stride])
+    _write_xy_csv(run_dir / "odometry.csv", ODOM_TOPIC, t, xy + [0.0, odom_bias])
+    _write_xy_csv(
+        run_dir / "pose.csv",
+        NDT_TOPIC,
+        t[::ndt_stride] + ndt_stamp_offset_ns,
+        xy[::ndt_stride] + [0.0, ndt_bias],
+    )
+    _write_clock_csv(run_dir / "clock.csv", t, rtf=rtf)
+    return run_dir, _cells_yaml(tmp_path, **cells_kwargs)
+
+
+# --- the ladder's two branches --------------------------------------------
+
+
+def test_absolute_branch_passes_a_clean_run(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is True
+    assert doc["reasons"] == []
+    assert doc["ladder_branch"] == "absolute"
+    assert doc["pose_err_max_m"] == pytest.approx(0.05, abs=1e-6)
+    assert doc["goal_closest_approach_m"] == pytest.approx(0.0, abs=1e-6)
+    assert doc["ndt_rate_ratio"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_absolute_branch_fails_over_the_registered_threshold(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.6
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is False
+    assert any("pose_error max" in r for r in doc["reasons"])
+    # Only the localization criterion fired: the rate and goal criteria are
+    # healthy in this fixture, so the failure cannot be a coincidence.
+    assert len(doc["reasons"]) == 1
+
+
+def test_relative_branch_reports_the_bias_and_passes(tmp_path, monkeypatch):
+    """The same 0.6 m constant offset that fails the absolute branch passes the
+    relative one -- no drift, bounded spread -- with the bias recorded."""
+    run_dir, cells = _run(tmp_path, monkeypatch, ladder_branch="relative", ndt_bias=0.6)
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is True
+    assert doc["ladder_branch"] == "relative"
+    assert doc["pose_bias_m"] == pytest.approx(0.6, abs=1e-6)
+    assert doc["pose_err_p95_m"] - doc["pose_err_p50_m"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_unselected_ladder_branch_refuses_and_writes_nothing(tmp_path, monkeypatch):
+    """The registered R3.3 behaviour, and the single most important test here:
+    an unset slot must REFUSE, not fall through to the relative branch.
+    `evaluate_quality(abs_pose_gate_m=None)` IS the relative branch, so a
+    silent default would record an UNGATED cell as gated."""
+    run_dir, cells = _run(tmp_path, monkeypatch, ndt_bias=0.6)  # both keys null
+    with pytest.raises(GateRefused, match="ladder_branch is null"):
+        build_quality(run_dir, cells_yaml=cells)
+    with pytest.raises(GateRefused, match="Task 11"):
+        build_quality(run_dir, cells_yaml=cells)
+    assert main(["--run-dir", str(run_dir), "--cells-yaml", cells]) == write_quality.EXIT_REFUSED
+    assert not (run_dir / "quality.json").exists()
+
+
+def test_absolute_branch_with_no_threshold_is_refused(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=None, ndt_bias=0.05
+    )
+    with pytest.raises(GateRefused, match="null abs_pose_gate_m"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_relative_branch_with_a_threshold_is_refused(tmp_path, monkeypatch):
+    """A registered threshold the relative branch would silently ignore is an
+    inconsistent registration, not a harmless extra."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="relative", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    with pytest.raises(GateRefused, match="relative branch applies no"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_unrecognised_ladder_branch_is_refused(tmp_path, monkeypatch):
+    run_dir, cells = _run(tmp_path, monkeypatch, ladder_branch="strict", ndt_bias=0.05)
+    with pytest.raises(GateRefused, match="registered branches"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_ladder_branch_is_written_from_the_registry(tmp_path, monkeypatch):
+    """`ladder_branch` must come from the binding, never be inferred from
+    `abs_pose_gate_m is None` -- inference is what makes an unselected cell
+    read as a deliberate relative-branch scoring."""
+    run_dir, cells = _run(tmp_path, monkeypatch, ladder_branch="relative", ndt_bias=0.05)
+    assert build_quality(run_dir, cells_yaml=cells)["ladder_branch"] == "relative"
+
+
+# --- the other two gate criteria ------------------------------------------
+
+
+def test_ndt_rate_gate_fires(tmp_path, monkeypatch):
+    """One NDT pose in four -> 5 Hz against a registered 20 Hz."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_stride=4,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is False
+    assert doc["ndt_rate_ratio"] == pytest.approx(0.25, abs=0.01)
+    assert len(doc["reasons"]) == 1
+    assert "ndt rate" in doc["reasons"][0]
+
+
+def test_expected_ndt_hz_comes_from_the_registry_not_the_tick(tmp_path, monkeypatch):
+    """The divisor is `metrics.ndt_expected_hz` and nothing else. This fixture
+    registers 10.0 beside a `tick_hz` of 20.0 and publishes at 20 Hz, so a
+    tool that reached for the tick would record 1.0 instead of 2.0."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_expected_hz=10.0,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["expected_ndt_hz"] == 10.0
+    assert doc["ndt_rate_ratio"] == pytest.approx(2.0, abs=1e-3)
+
+
+# --- the NDT source ------------------------------------------------------
+
+
+def test_pose_error_reads_pose_csv_not_odometry_csv(tmp_path, monkeypatch):
+    """pose.csv carries a 0.6 m NDT bias while odometry.csv is clean, so an
+    implementation that scored `pose_error` on `/localization/kinematic_state`
+    -- the EKF-fused pose -- would PASS this run instead of failing it. That
+    substitution is exactly what README's M5 definitions forbid, because
+    fusion masks NDT error."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.6
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is False
+    assert doc["pose_err_max_m"] == pytest.approx(0.6, abs=1e-6)
+
+
+def test_missing_pose_csv_is_refused(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    (run_dir / "pose.csv").unlink()
+    with pytest.raises(GateRefused, match="NDT pose series"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_a_header_only_pose_csv_is_refused_by_topic(tmp_path, monkeypatch):
+    """The observer opens pose.csv on every run, so "the NDT pose was never
+    recorded" arrives as a header-only file, not a missing one -- and it must
+    name the topic and the `pose` kind rather than scoring zero rows."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    (run_dir / "pose.csv").write_text("topic,header_stamp_ns,x_m,y_m\n")
+    with pytest.raises(GateRefused, match="has no rows in"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_null_ndt_topic_is_refused(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_topic=None,
+    )
+    with pytest.raises(GateRefused, match="ndt_topic is null"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_null_ndt_expected_hz_is_refused(tmp_path, monkeypatch):
+    """README: a cell whose ndt_expected_hz is null cannot be gated. Cell B is
+    that cell today (pending Task 13)."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_expected_hz=None,
+    )
+    with pytest.raises(GateRefused, match="ndt_expected_hz is null"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+# --- the ground truth and the join ---------------------------------------
+
+
+def test_missing_gt_csv_is_refused(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    (run_dir / "gt.csv").unlink()
+    with pytest.raises(GateRefused, match="ground truth"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_out_of_order_gt_is_refused(tmp_path, monkeypatch):
+    """The nearest-stamp join searchsorts gt.csv, so an unsorted series would
+    pair NDT poses with the wrong ground truth instead of failing."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    rows = (run_dir / "gt.csv").read_text().splitlines()
+    rows[1], rows[500] = rows[500], rows[1]
+    (run_dir / "gt.csv").write_text("\n".join(rows) + "\n")
+    with pytest.raises(GateRefused, match="non-decreasing"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+@pytest.mark.parametrize(
+    ("offset_ns", "pairs"),
+    [(10_000_000, True), (40_000_000, False)],
+)
+def test_the_join_tolerance_is_enforced(tmp_path, monkeypatch, offset_ns, pairs):
+    """Both sides sit on a 100 ms grid (`gt_stride=2`, `ndt_stride=2`), so the
+    NDT-to-nearest-GT distance IS the offset -- on the default 50 ms grid the
+    nearest neighbour is never more than 25 ms away, so no offset could ever
+    exceed the tolerance and such a fixture would pin nothing.
+
+    10 ms pairs and scores; 40 ms is past `quality.JOIN_TOL_NS` (25 ms), so no
+    pair survives and the gate refuses. A tolerance dropped or widened flips
+    exactly one of these two, which is the point of running both.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_expected_hz=10.0,  # both series are decimated to 10 Hz here
+        gt_stride=2,
+        ndt_stride=2,
+        ndt_stamp_offset_ns=offset_ns,
+    )
+    if pairs:
+        assert build_quality(run_dir, cells_yaml=cells)["gate_pass"] is True
+    else:
+        with pytest.raises(GateRefused, match="stamp pairs"):
+            build_quality(run_dir, cells_yaml=cells)
+
+
+# --- window resolution ---------------------------------------------------
+
+
+def test_closed_loop_uses_the_spatial_window_not_the_static_one(tmp_path, monkeypatch):
+    """The ego is PARKED at station 0 for the first 60 s, so the two candidate
+    windows disagree by ~40 s: the registered spatial window opens only once
+    the ego passes station 20 m, while a static window would open at
+    t0 + 20 s. A test whose fixture starts moving immediately cannot tell the
+    two apart, which is exactly how a "uses the spatial window" test passes
+    under a static one."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        hold_n=1200,  # 60 s parked
+    )
+    lo, hi = build_quality(run_dir, cells_yaml=cells)["window_sim_ns"]
+    # Parked for 1200 samples, then 1800 samples covering 200 m: station 20 m
+    # is reached 180 samples later, i.e. at sample 1380 = 69.0 s.
+    assert lo == pytest.approx(69_000_000_000, abs=DT_NS)
+    assert lo > 20_000_000_000 + 40_000_000_000, "a static window would open at t0 + 20 s"
+    assert hi == (N_SAMPLES - 1) * DT_NS
+
+
+def test_static_arm_window_is_the_clock_window_converted_into_sim(tmp_path, monkeypatch):
+    """The static branch takes its bounds from clock.csv's WALL arrivals and
+    converts them through the run's own affine fit. This run advances sim at
+    half wall time (rtf 0.5), so the registered inverse
+    `(wall - intercept) / slope` is observable in the lower bound: the 20 s
+    WALL warm-up is 10 s of SIM. An implementation that skipped the conversion
+    would put `lo` at a wall epoch (~1.7e18); one that subtracted the origin
+    but forgot the slope would put it at exactly 20 s."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        arm="static",
+        ladder_branch="relative",
+        ndt_bias=0.05,
+        rtf=0.5,
+    )
+    lo, hi = build_quality(run_dir, cells_yaml=cells)["window_sim_ns"]
+    assert lo == pytest.approx(10_000_000_000, abs=1_000_000)
+    assert lo < 20_000_000_000
+    assert hi == pytest.approx((N_SAMPLES - 1) * DT_NS, abs=1_000_000)
+
+
+def test_static_arm_on_an_unfittable_clock_is_refused(tmp_path, monkeypatch):
+    """Fewer than 2 clock.csv rows is README's UNFITTABLE branch: no sim
+    domain exists, so there is no sim window to convert to and none is
+    invented."""
+    run_dir, cells = _run(tmp_path, monkeypatch, arm="static", ladder_branch="relative")
+    (run_dir / "clock.csv").write_text("clock_ns,arrival_system_ns\n0,%d\n" % BASE_WALL)
+    with pytest.raises(GateRefused, match="UNFITTABLE"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_a_missing_route_file_is_refused(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    (tmp_path / "routes" / f"{MAP}.yaml").unlink()
+    with pytest.raises(GateRefused, match="no route file"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_an_empty_spatial_window_is_refused(tmp_path, monkeypatch):
+    """Station bounds the ego never reaches must abort by name, not score
+    whatever rows happened to be in the file."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        route_kwargs={"start_m": 900.0, "end_m": 1000.0},
+    )
+    with pytest.raises(GateRefused, match="spatial window"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+# --- provenance, schema, and the consumer contract -----------------------
+
+
+def test_excluded_runs_are_not_scored(tmp_path, monkeypatch):
+    """run.sh runs this step before the exclusion step, so this refusal is
+    what stops the ordering ever being inverted silently -- excluded data must
+    not carry an M5 verdict."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    _write_manifest(run_dir, excluded=True, reason="stall:clock")
+    with pytest.raises(GateRefused, match="marked excluded"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_an_unreadable_manifest_is_refused_by_name(tmp_path, monkeypatch):
+    """`load_manifest` splats the document into the dataclass, so a manifest
+    whose shape has drifted raises a TypeError from inside it -- which must
+    arrive as a named refusal, not as a traceback out of an unattended step."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    (run_dir / "manifest.json").write_text(json.dumps({"cell": "A", "unexpected": 1}))
+    with pytest.raises(GateRefused, match="run manifest"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_schema_is_exactly_the_registered_keys(tmp_path, monkeypatch):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, arm="static", ladder_branch="relative", ndt_bias=0.05
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    stat_keys = [f.name for f in dataclasses.fields(QualityStats)]
+    assert list(doc) == stat_keys + ["arm", "window_sim_ns", "ladder_branch", "expected_ndt_hz"]
+    assert doc["arm"] == "static"
+    assert isinstance(doc["window_sim_ns"], list) and len(doc["window_sim_ns"]) == 2
+
+
+def test_written_file_round_trips_through_sweep_verdicts_reader(tmp_path, monkeypatch):
+    """The consumer contract is fixed: sweep_verdict._quality_ok reads
+    `gate_pass` out of this file, and a missing file is a hard error on any arm
+    that closes the loop."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    assert not (run_dir / "quality.json").exists()
+    with pytest.raises(FileNotFoundError, match="quality"):
+        sweep_verdict._quality_ok(run_dir, "paced")
+
+    path = _wq(run_dir, cells_yaml=cells)
+    assert path == run_dir / "quality.json"
+    assert sweep_verdict._quality_ok(run_dir, "paced") == (True, None)
+    # ... and a failing verdict round-trips as a failure, not as a pass.
+    doc = json.loads(path.read_text())
+    doc["gate_pass"] = False
+    path.write_text(json.dumps(doc))
+    assert sweep_verdict._quality_ok(run_dir, "paced") == (False, None)
+
+
+def test_main_writes_the_file_and_exits_zero(tmp_path, monkeypatch, capsys):
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    assert main(["--run-dir", str(run_dir), "--cells-yaml", cells]) == 0
+    assert (run_dir / "quality.json").is_file()
+    assert "gate_pass=True" in capsys.readouterr().out
+
+
+def test_main_names_the_refusal_on_stderr(tmp_path, monkeypatch, capsys):
+    run_dir, cells = _run(tmp_path, monkeypatch, ndt_bias=0.05)  # ladder unset
+    assert main(["--run-dir", str(run_dir), "--cells-yaml", cells]) == write_quality.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "QUALITY GATE FAIL" in err
+    assert "ladder_branch is null" in err
+
+
+# --- the committed registry ----------------------------------------------
+
+
+def test_committed_cells_yaml_leaves_every_ladder_slot_unset():
+    """R3.3's registration, pinned: the slot is registered UNSET on every
+    cell, naming Task 11, so no cell can be gated on a guessed branch. When
+    Task 11 fills a cell in, this test is the reminder that the fill is a
+    deliberate pre-registration amendment."""
+    doc = load_cells_doc()
+    for cell in (c["id"] for c in doc["cells"]):
+        metrics = metrics_for(doc, cell)
+        assert metrics["ladder_branch"] is None, cell
+        assert metrics["abs_pose_gate_m"] is None, cell
+
+
+def test_committed_route_window_cannot_reach_the_goal_criterion():
+    """A REGISTRATION FINDING, pinned rather than fixed.
+
+    Both committed routes set `stations.end_m` 20 m short of their own length,
+    and their goal sits at the route's END. The closed-loop scoring window is
+    the spatial gate between those stations, so every in-window odometry
+    sample is at least ~18 m from the goal -- while the gate's registered
+    goal criterion is `goal_closest_approach < 1.0 m`. As registered, those
+    two cannot both hold, on either map.
+
+    R3 implements the registration verbatim (window from the route's stations,
+    `evaluate_quality` untouched) and does NOT relax a pre-registered
+    threshold or station bound to make the gate passable. This test records
+    the arithmetic so the inconsistency is visible in the suite until an owner
+    rules on it.
+    """
+    from benchmarks.analysis.window import _cum_arclen, project_station_m
+
+    for map_name, min_gap_m in (("Town10HD_Opt", 15.0), ("NishishinjukuMap", 15.0)):
+        doc = yaml.safe_load((write_quality.ROUTES_DIR / f"{map_name}.yaml").read_text())
+        poly = np.asarray(doc["polyline"], dtype=np.float64)
+        goal = np.asarray([doc["goal"]["x"], doc["goal"]["y"]], dtype=np.float64)
+        cum = _cum_arclen(poly)
+        end_m = float(doc["stations"]["end_m"])
+        # The goal is the route's own end point, so its station is the length.
+        assert project_station_m(poly, goal[None, :])[0] == pytest.approx(cum[-1], abs=1e-6)
+        # Interpolate the point AT end_m and measure how far the window's last
+        # possible sample is from the goal.
+        at_end = np.array([np.interp(end_m, cum, poly[:, 0]), np.interp(end_m, cum, poly[:, 1])])
+        gap = float(np.linalg.norm(at_end - goal))
+        assert gap > min_gap_m, f"{map_name}: expected a large goal gap, got {gap:.3f} m"
+        assert gap > 1.0, f"{map_name}: the 1.0 m goal criterion is unreachable in-window"

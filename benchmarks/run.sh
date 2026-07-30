@@ -12,7 +12,7 @@
 # step 4 leaves no run directory at all, and every abort after it either
 # completes the directory or excludes it.
 #
-# --dry-run prints the fourteen numbered steps with fully resolved commands
+# --dry-run prints the fifteen numbered steps with fully resolved commands
 # and runs everything that has no side effects on the results tree: the cell
 # and class lookup, the arm check, the next run index, the config-file
 # existence checks, and the cell launcher's own `plan` (which validates the
@@ -184,7 +184,7 @@ do_run() {
   map_name="$(json_field "$cell_json" map)"
   carla_kind="$(json_field "$cell_json" carla)"
   # Derived by cell_info (and unit-tested there), read ONCE here and consumed
-  # by steps 7, 13 and 14. A cell with no simulator publishes no /clock, so
+  # by steps 7, 14 and 15. A cell with no simulator publishes no /clock, so
   # clock.csv stays header-only by design: starting the watchdog for it would
   # mark EVERY run of that cell excluded as `stall:clock` once the grace
   # period expired -- quietly, under a legitimate-looking pre-registered
@@ -505,7 +505,7 @@ PY
   # watchdog would report "no /clock rows at all" the moment its grace period
   # expired -- excluding every single run of that cell as `stall:clock`,
   # silently and under a pre-registered reason that looks entirely
-  # legitimate. Same flag step 13 and step 14 branch on.
+  # legitimate. Same flag step 14 and step 15 branch on.
   if [ "$has_sim_clock" = "1" ]; then
     show "python3 -m benchmarks.scripts.clock_watchdog --clock-csv $run_dir/clock.csv" \
       "--stall-s $CLOCK_STALL_S --grace-s $CLOCK_GRACE_S --marker $run_dir/clock_stall.marker"
@@ -670,7 +670,7 @@ PY
       # has NOT produced a comparable run: its scoring window is shorter than
       # every other run's, and a merely-slow sim (RTF below 1/CAP) gets there
       # without ever tripping the clock watchdog. Recorded and excluded at
-      # step 13 rather than filed as if it were a full window.
+      # step 14 rather than filed as if it were a full window.
       if ! wait_sim_window "$run_dir/clock.csv" "$window_s" "$run_dir/window.json"; then
         WINDOW_SHORT=1
       fi
@@ -693,7 +693,7 @@ PY
   step 11 "teardown: watchdog + GT -> observer (SIGINT, to flush) -> stack -> sim"
   show "bash $BENCH/scripts/teardown.sh $run_dir"
   if [ "$DRY_RUN" = "0" ]; then
-    # The EXIT trap stays ARMED across steps 12-14. teardown is idempotent, so
+    # The EXIT trap stays ARMED across steps 12-15. teardown is idempotent, so
     # a second run of it from on_abort is a no-op; clearing the trap here
     # instead left every failure in finalization (finalize_rtf, the exclusion
     # rewrites, the smoke) exiting without labelling the directory at all.
@@ -710,7 +710,40 @@ PY
   fi
 
   # ---- 13 ----------------------------------------------------------------
-  step 13 "exclusions: clock stall, short unpaced window, silent control gate"
+  step 13 "M5 gate: write quality.json (pose_error, goal, NDT rate, G1 ladder)"
+  show "python3 -m benchmarks.scripts.write_quality --run-dir $run_dir"
+  if [ "$DRY_RUN" = "0" ]; then
+    # NON-FATAL BY DESIGN, and it must stay that way. The gate refuses (writing
+    # nothing, exit 2, naming the input) whenever it cannot score the run: a
+    # cell whose ndt_expected_hz or G1 ladder branch is still null in
+    # cells.yaml -- cell B today, and every cell's ladder until Task 11 selects
+    # it -- a cell with no localization stack at all, or a run whose own data
+    # does not support the measurement. Aborting here would make those
+    # legitimate, pre-registered gaps unfileable: the run's data is already on
+    # disk, step 14 still owes it an exclusion label, and hard-failing would
+    # leave the directory unlabelled and wedge every later run of the cell.
+    #
+    # The ABSENCE of quality.json is what carries the refusal downstream, and
+    # it is load-bearing: sweep_verdict._quality_ok treats a missing file as a
+    # hard error on every arm that closes the loop (only `ablation` defaults to
+    # a pass), so an ungated run can never read as a passing one. That is why
+    # this step must never write a partial or defaulted verdict, and why the
+    # warning below names the run -- a refusal has to be visible in the run log
+    # and not only in the absent file.
+    #
+    # It runs BEFORE step 14 so a run that is about to be excluded is still
+    # attempted (a stalled-clock run may still have enough data to score, and
+    # that verdict is evidence about the stall); write_quality itself refuses an
+    # already-excluded manifest, so the ordering cannot be inverted silently.
+    if ! (cd "$REPO" && python3 -m benchmarks.scripts.write_quality \
+      --run-dir "$run_dir"); then
+      echo "WARN: the M5 gate did not score $run_dir (named reason above);" >&2
+      echo "      no quality.json is written, so its consumers fail loudly" >&2
+    fi
+  fi
+
+  # ---- 14 ----------------------------------------------------------------
+  step 14 "exclusions: clock stall, short unpaced window, silent control gate"
   show "if $run_dir/clock_stall.marker exists: write_manifest --exclude 'stall:clock'"
   RUN_EXCLUDED=0
   if [ "$DRY_RUN" = "0" ]; then
@@ -733,8 +766,8 @@ PY
     fi
   fi
 
-  # ---- 14 ----------------------------------------------------------------
-  step 14 "smoke: the results tree renders through the real analysis path"
+  # ---- 15 ----------------------------------------------------------------
+  step 15 "smoke: the results tree renders through the real analysis path"
   # NOT `python3 -m benchmarks.report <results>/<cell>`. report.main() takes
   # the results ROOT and treats each child as a cell, so handing it a single
   # cell directory makes it walk that cell's run-NNN directories AS IF they
@@ -832,7 +865,7 @@ PY
 }
 
 # EXIT trap, armed the moment the run directory exists and kept armed through
-# step 14. Its whole job is the invariant this harness promises: a results
+# step 15. Its whole job is the invariant this harness promises: a results
 # directory is either contract-valid or explicitly excluded, never a silent
 # partial. Any failure after step 4 that no specific site already handled
 # lands here, and $ABORT_REASON says which pre-registered criterion it is:
@@ -854,7 +887,7 @@ on_abort() {
   exit "$rc"
 }
 
-# Marks the run excluded and CONTINUES. Used at step 13, where the run is
+# Marks the run excluded and CONTINUES. Used at step 14, where the run is
 # complete but not scorable.
 exclude_run() {
   local run_dir="$1" reason="$2" detail="$3"
