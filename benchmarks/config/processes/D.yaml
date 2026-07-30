@@ -3,6 +3,14 @@
 # cells.yaml). Same tree/recipe as cell B, only the map differs (not
 # part of any pattern here) -- process identities are unchanged. See
 # B.yaml for the full grounding/evidence notes.
+#
+# STRUCK 2026-07-30 by the owner's core-duel scope cut (cells.yaml
+# `dropped:`; benchmarks/README.md's 2026-07-30 amendment). An owner
+# TIME-BUDGET decision -- and note what it does NOT record: whether the
+# tier4 tree can cook Nishi-Shinjuku was never tested, so this cell's
+# question stays OPEN and UNMEASURED rather than answered "no". Already
+# non-mandatory, so the strike is a note, not a matrix change. Kept so
+# the cell stays runnable if it is ever revived.
 processes:
   - label: carla-server
     pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject

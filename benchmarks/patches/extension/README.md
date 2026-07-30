@@ -62,6 +62,8 @@ Full diffs are reproduced in the report appendix; the authoritative source is th
 
 ## CAL-seam fork-side publisher spec (Task 14)
 
+> **NOT IMPLEMENTED, AND NOW NOT PLANNED (2026-07-30).** Cell CAL-seam was **STRUCK** by the owner's core-duel scope cut — `benchmarks/config/cells.yaml` `dropped:`, and `benchmarks/README.md`'s 2026-07-30 amendment — which took Task 14's live half and Task 17 with it. **The fork-side twin specified below was never written and will not be**, so the seam-vs-in-core pair never exists and **C1(a) seam overhead is UNMEASURED** rather than weakly measured. It is an owner **time-budget** decision, not a technical block: the extension side of the pair *did* land (`extension/src/publishers/BenchCloudPublisher.{h,cpp}`, registered in `ExtensionInit.cpp`, unit-tested in `extension/test/test_bench_cloud_publisher.cpp`) and is committed and green — it is simply never exercised by a measurement. This spec is kept verbatim, not deleted: it is the record of what the instrument would have been, and it is directly reusable if a later campaign takes C1(a) up. Nothing below should be read as describing code that exists on the fork.
+
 Task 14 (the C1(a) seam-overhead isolation instrument, "CAL-seam") pairs the SAME synthetic
 `sensor_msgs/PointCloud2` message published two ways on one CARLA fork process: through this
 extension's C-ABI seam (`extension/src/publishers/BenchCloudPublisher.{h,cpp}`, topic

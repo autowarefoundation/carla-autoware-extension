@@ -16,6 +16,16 @@
 # and nothing to observe, and a run that produced an empty-but-valid results
 # directory would be indistinguishable from a transport that delivered
 # nothing.
+#
+# That refusal is now PERMANENT for this campaign. Cell CAL-seam was STRUCK
+# 2026-07-30 by the owner's core-duel scope cut (cells.yaml `dropped:`;
+# benchmarks/README.md's 2026-07-30 amendment), taking Task 14's live half and
+# Task 17 with it, so no CAL-seam run will be filed and C1(a) seam overhead is
+# UNMEASURED. An owner TIME-BUDGET decision, not a technical block: the
+# extension-side half of the publisher pair DID land (Task 14's code half) and
+# only the fork-side twin was ever missing. The refusal is kept exactly as it
+# is -- a launcher that quietly came up for a struck cell would file a run
+# nothing is going to score.
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_ARM:?}"
@@ -40,7 +50,9 @@ if [ "$BENCH_CELL" = "CAL-seam" ]; then
   fail "CAL-seam's seam/in-core publisher pair is Task 14 (CAL-seam publisher
   pair) and has not been written: no process to launch, and
   config/observer_topics/CAL-seam.yaml is deliberately empty for the same
-  reason. Task 17 runs this cell after Task 14 lands."
+  reason. The cell was STRUCK 2026-07-30 by the owner's core-duel scope cut,
+  which took Task 17 with it, so nothing will run it and C1(a) seam overhead
+  stays UNMEASURED."
 fi
 [ "$BENCH_CELL" = "CAL-rmw" ] || fail "cell $BENCH_CELL is not a calibration cell"
 

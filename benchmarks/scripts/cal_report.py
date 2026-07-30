@@ -3,6 +3,18 @@
 
     python3 -m benchmarks.scripts.cal_report <run_dir>
 
+CAMPAIGN STATUS -- DEAD CODE, AND DELIBERATELY KEPT (2026-07-30). Cell
+CAL-seam was STRUCK by the owner's core-duel scope cut (config/cells.yaml
+`dropped:`; benchmarks/README.md's 2026-07-30 amendment), so THIS TOOL WILL
+NEVER BE RUN AGAINST A MEASUREMENT in this campaign and there is no C1(a)
+table in the results. C1(a) seam overhead is UNMEASURED -- not weakly
+measured. It is an owner TIME-BUDGET decision, not a technical block: this
+module and its unit tests (tests/benchmarks/test_cal_report.py) are complete
+and green, and so is the extension-side publisher they were written for
+(extension/src/publishers/BenchCloudPublisher.{h,cpp}, registered in
+ExtensionInit.cpp). Nothing is deleted, so a later campaign can pick the
+instrument up; nobody should read its presence as evidence that it ran.
+
 CAL-seam pairs the SAME synthetic sensor_msgs/PointCloud2 message published
 two ways on one CARLA fork process -- through the extension's C-ABI seam .so
 (`/bench/seam_cloud`) and by an in-core publisher (`/bench/incore_cloud`) --

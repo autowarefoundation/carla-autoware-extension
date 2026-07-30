@@ -1,6 +1,13 @@
 # M3 process map for cell CAL-seam (calibration approach, CARLA
 # 0.10-fork, Town10HD_Opt, static arm only; cells.yaml, mandatory).
 #
+# STRUCK 2026-07-30 by the owner's core-duel scope cut -- and that
+# `mandatory` above still stands on purpose: it is what records that a
+# MANDATORY cell was given up. No CAL-seam run will be filed, so the
+# gap left below is permanent and C1(a) seam overhead is UNMEASURED.
+# Owner TIME-BUDGET decision, not infeasibility; see cells.yaml
+# `dropped:` and benchmarks/README.md's 2026-07-30 amendment.
+#
 # task-8-brief.md step 7: "CAL-seam = extension fork + seam/in-core
 # publishers (Task 14)". The CARLA-side half is grounded the same way
 # as cell A (same extension fork tree, same UnrealEditor -game
@@ -11,14 +18,14 @@
 processes:
   - label: carla-server
     pattern: carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject
-  # NOT YET KNOWABLE: the seam/in-core publisher pair does not exist
-  # yet (Task 14 pending). No "autoware" container either -- CAL-seam
-  # is a transport/serialization calibration, not a closed-loop drive,
-  # so there is no evidence an Autoware stack runs here at all.
-  # Add the publisher-pair entry/entries once Task 14 lands and names
-  # its actual process(es); do not guess a pattern here in the
-  # meantime, since a wrong guess would silently read as "the
-  # publisher pair used no CPU" instead of flagging the gap.
+  # NEVER FILLED IN: the seam/in-core publisher pair's fork-side twin
+  # does not exist, and now never will -- the cell is struck (header
+  # above). No "autoware" container either -- CAL-seam is a
+  # transport/serialization calibration, not a closed-loop drive, so
+  # there is no evidence an Autoware stack runs here at all.
+  # Left as a recorded gap rather than guessed at: a wrong pattern
+  # would silently read as "the publisher pair used no CPU" instead of
+  # flagging the gap, and there is no run left to grind that error out.
   # RE-GROUNDED in Task 8 (run.sh step 6's `--name bench-observer`).
   # NOTE: benchmarks/cells/calibration.sh currently REFUSES to launch
   # CAL-seam at all, naming Task 14 -- so this file cannot be reached

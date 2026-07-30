@@ -217,3 +217,82 @@ def test_metrics_for_rejects_a_partial_metrics_block():
 def test_metrics_for_rejects_an_unknown_cell(doc):
     with pytest.raises(cell_info.UnknownIdError, match="unknown cell 'Q'"):
         cell_info.metrics_for(doc, "Q")
+
+
+# ---------------------------------------------------------------------------
+# The 2026-07-30 core-duel scope cut, pinned as a record-integrity guard.
+#
+# `dropped:` says a cell is out of MEASUREMENT scope; `mandatory:` still says
+# whether a campaign result rested on it. That PAIRING is the record, so it is
+# pinned here rather than left to prose: quietly flipping CAL-seam or B45 to
+# `mandatory: false` would make cells.yaml read as if they had always been
+# optional (they were not), and silently striking a third mandatory cell
+# without an amendment entry would be invisible. Both now fail a test instead
+# of passing review.
+#
+# Nothing in the harness reads either key to decide completeness -- these
+# tests are the only consumers, deliberately, and they check the RECORD, not a
+# measurement.
+# ---------------------------------------------------------------------------
+
+# Struck by the owner's 2026-07-30 core-duel scope cut, on an owner
+# time-budget decision (benchmarks/README.md, `## Amendments made so far`).
+# NOT dropped for being infeasible, blocked or unmeasurable.
+DROPPED_CELL_IDS = frozenset({"CAL-seam", "B45", "E-opt", "A-hf", "B-hf", "D"})
+# The two that carried `mandatory: true` when they were struck -- the reason
+# that scope cut is a pre-registration AMENDMENT and not merely a note.
+DROPPED_MANDATORY_CELL_IDS = frozenset({"CAL-seam", "B45"})
+DROPPED_MARKER = "owner-time-budget-2026-07-30"
+
+
+def test_the_scope_cut_struck_exactly_the_recorded_cells(doc):
+    struck = {str(c["id"]) for c in doc["cells"] if c.get("dropped")}
+    assert struck == set(DROPPED_CELL_IDS)
+
+
+@pytest.mark.parametrize("cell", sorted(DROPPED_CELL_IDS))
+def test_every_struck_cell_names_the_owner_time_budget_decision(doc, cell):
+    """One marker value, so "why was this dropped?" has one answer for every
+    struck cell and cannot drift into a per-cell story that reads as a
+    technical failure on some of them."""
+    assert cell_info.cell_entry(doc, cell)["dropped"] == DROPPED_MARKER
+
+
+@pytest.mark.parametrize("cell", sorted(DROPPED_MANDATORY_CELL_IDS))
+def test_the_two_mandatory_strikes_keep_mandatory_true(doc, cell):
+    """The strike must not erase what was given up. `mandatory: true` is the
+    only thing in the tree that still records that a MANDATORY cell was cut --
+    C1(a) seam overhead for CAL-seam, the hard-fork-maintenance finding for
+    B45 -- as opposed to an owner-strikable one (D / E-opt / A-hf / B-hf,
+    which were `mandatory: false` before the cut and still are)."""
+    assert cell_info.cell_entry(doc, cell)["mandatory"] is True
+
+
+@pytest.mark.parametrize("cell", sorted(DROPPED_CELL_IDS - DROPPED_MANDATORY_CELL_IDS))
+def test_the_note_only_strikes_were_already_non_mandatory(doc, cell):
+    """The converse, so the two classes cannot be merged from the other side:
+    these four needed no matrix change because they were pre-registered as
+    owner-strikable. A cell appearing here with `mandatory: true` would mean
+    an amendment item is missing."""
+    assert cell_info.cell_entry(doc, cell)["mandatory"] is False
+
+
+@pytest.mark.parametrize("cell", sorted(set(ALL_CELL_IDS) - DROPPED_CELL_IDS))
+def test_every_kept_cell_carries_no_dropped_key(doc, cell):
+    """Absence of the key is what "in scope" means, so it must be absent and
+    not `dropped: false` -- the A-vs-B duel plus C / E0 / E / CAL-rmw."""
+    assert "dropped" not in cell_info.cell_entry(doc, cell)
+
+
+def test_a_struck_cell_still_resolves_through_cell_info(doc):
+    """Struck is NOT deleted. The entries stay registered so the record of
+    what was given up survives, so `analysis/manifest.py` still accepts the id
+    on the already-filed runs, and so a reader can see the full matrix. The
+    key rides along in the merged JSON (`cell_info.merge` copies it), where
+    run.sh ignores it -- run.sh reads only approach / map / carla /
+    has_sim_clock / arms / sweep_arms."""
+    merged = cell_info.merge(doc, "CAL-seam")
+    assert merged["dropped"] == DROPPED_MARKER
+    assert merged["mandatory"] is True
+    assert merged["has_sim_clock"] is True  # unchanged by the strike
+    assert "dropped" not in cell_info.merge(doc, "A")

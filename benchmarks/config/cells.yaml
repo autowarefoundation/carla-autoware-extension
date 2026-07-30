@@ -79,6 +79,45 @@
 # in THIS repo fixes it (a constant in committed code, or a live measurement
 # recorded in a committed document); an out-of-repo script's literal is not
 # enough, whichever direction it would move the number.
+#
+# `dropped:` -- SCOPE, NOT FEASIBILITY (added 2026-07-30). A cell carrying
+# this key is one the owner's 2026-07-30 core-duel scope cut removed from
+# what this campaign will MEASURE. It is deliberately a SEPARATE key rather
+# than a flip of `mandatory:`, because the two answer different questions and
+# this file needs both answers at once:
+#
+#   mandatory: true  + no `dropped:`  -> owed; a campaign result rests on it
+#   mandatory: true  + `dropped:`     -> WAS owed, struck by the 2026-07-30
+#                                        pre-registration amendment
+#                                        (CAL-seam, B45). `mandatory: true`
+#                                        STAYS, so the record still shows
+#                                        what was given up.
+#   mandatory: false + `dropped:`     -> pre-registered as owner-strikable
+#                                        and now struck (D, E-opt, A-hf,
+#                                        B-hf): a note, not a matrix change.
+#   mandatory: false + no `dropped:`  -> optional and still in scope
+#
+# Flipping `mandatory` to false instead would have collapsed rows 2 and 3
+# into one value, so the file would read as if CAL-seam and B45 had always
+# been optional -- which is false, and is exactly the misstatement this
+# amendment exists to avoid. Same shape of argument as `ladder_branch` /
+# `abs_pose_gate_m` above: two distinct states one flag cannot carry.
+#
+# NONE of the dropped cells was technically infeasible, blocked or
+# unmeasurable. The reason is an owner TIME-BUDGET decision taken on two
+# measurements, stated per item in benchmarks/README.md's
+# `## Amendments made so far` (2026-07-30, the core-duel scope cut). B45 in
+# particular was expected to surface a hard-fork-maintenance result; the
+# campaign is choosing NOT TO LOOK, which is a different statement from "it
+# failed" or "it could not be measured".
+#
+# No consumer reads either key to decide completeness, so neither the strike
+# nor this new key can make a tool report a false "all mandatory cells
+# measured": `cell_info.merge` copies both into its JSON and `run.sh` reads
+# only approach / map / carla / has_sim_clock / arms / sweep_arms from it;
+# `analysis/manifest.py` reads `id` alone. tests/benchmarks/test_cell_info.py
+# pins the table above instead, so a later silent strike of a MANDATORY cell
+# fails a test rather than passing review.
 cells:
   - id: A
     approach: extension
@@ -259,6 +298,13 @@ cells:
     carla: 0.10-tier4
     map: NishishinjukuMap
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut (see `dropped:` in
+    # this file's header, and README's 2026-07-30 amendment). Owner
+    # time-budget, NOT infeasibility: whether the tier4 tree can cook this
+    # map was never tested, so the cross-map tier4 question this cell exists
+    # to answer stays OPEN and UNMEASURED rather than answered either way.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [static, closed-loop] # only if the map cooks in the tier4 tree
     metrics:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
@@ -348,6 +394,13 @@ cells:
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut (owner
+    # time-budget; README's 2026-07-30 amendment). The bridge's local
+    # packer-optimized sensitivity arm goes unmeasured. Cells E (patched) and
+    # E0 (as-shipped) both stay in scope, so C2 keeps its evidence; what is
+    # lost is only the sensitivity of E's numbers to the local packer.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop] # local packer-optimized sensitivity
     metrics:
       # AMENDED 2026-07-29 (Task 10), as cell E: E-opt runs the same patched
@@ -397,6 +450,24 @@ cells:
     carla: 0.10-fork
     map: Town10HD_Opt
     mandatory: true
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut. This is one of
+    # the TWO strikes that make that cut a pre-registration amendment:
+    # `mandatory: true` above is deliberately UNCHANGED, so the record still
+    # shows that a mandatory cell was given up (see `dropped:` in this file's
+    # header).
+    #
+    # CONSEQUENCE: C1(a) seam overhead is now UNMEASURED, and there is no
+    # weaker evidence standing in for it -- this cell's paired seam-vs-in-core
+    # delta was "the only measurement the seam-overhead claim rests on"
+    # (scripts/cal_report.py's own opening paragraph).
+    #
+    # Owner time-budget, NOT infeasibility. Task 14's CODE half landed: the
+    # extension-side publisher (extension/src/publishers/BenchCloudPublisher.
+    # {h,cpp}), its ExtensionInit registration, scripts/cal_report.py and
+    # their unit tests are all committed and green. They will simply never be
+    # exercised by a measurement, and that is disclosed rather than tidied
+    # away -- nothing here is deleted.
+    dropped: owner-time-budget-2026-07-30
     arms: [static]
     metrics:
       # NOT REGISTERED: the seam/in-core publisher pair is Task 14 and names
@@ -421,6 +492,16 @@ cells:
     carla: 0.10-fork
     map: Town10HD_Opt
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut (owner
+    # time-budget; README's 2026-07-30 amendment): no 100 Hz sensitivity
+    # result on either high-frequency cell. This is EXACTLY the end state the
+    # `tick_hz` comment below already pre-registered -- "If the owner strikes
+    # Task 26 the cell is dropped and these stay null permanently -- a
+    # legitimate end state, not a gap" -- so the three null rate bindings are
+    # now permanent, and the sensor_tick question that comment raises with the
+    # plan owner is closed as never-to-be-applied rather than answered.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop] # fixed_delta 0.01
     metrics:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
@@ -487,6 +568,13 @@ cells:
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut, with cell A-hf and
+    # for the same reason (owner time-budget; README's 2026-07-30 amendment):
+    # the 100 Hz sensitivity axis is a PAIR, so striking one half would have
+    # left a one-sided result. The three null rate bindings below are now
+    # permanent, on the end state cell A-hf's comment pre-registered.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop]
     metrics:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
@@ -521,6 +609,26 @@ cells:
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: true
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut. The SECOND of the
+    # two strikes that make that cut a pre-registration amendment (see
+    # CAL-seam above): `mandatory: true` stays, so the record shows what was
+    # given up.
+    #
+    # CONSEQUENCE: no hard-fork-maintenance finding. This cell existed to
+    # measure what it costs to carry the tier4 fork against a DIFFERENT
+    # Autoware release (pins.yaml `autoware_045`, universe-devel-0.45.1) and
+    # it was expected to surface a real result -- that is why it was
+    # mandatory.
+    #
+    # Owner time-budget, NOT infeasibility, and the distinction matters most
+    # here: the campaign is choosing NOT TO LOOK. That is not the same
+    # statement as "carrying the fork across releases failed", and nothing in
+    # this record may be read as the latter. Nothing about this cell was ever
+    # measured and found wanting; the one open prerequisite on it (its
+    # pinned image is not on this workstation, so the pose_initializer param
+    # comparison config/autoware/pose_initializer.param.yaml records was never
+    # made) is a logistics item, not a defect of the approach.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop] # Autoware 0.45.x image
     metrics:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
@@ -540,6 +648,22 @@ cells:
       # `town10_pcd_regen`) and therefore the same branch. See cell B.
       ladder_branch: absolute
       abs_pose_gate_m: 0.5
+# `32ch` and `128ch` STRUCK 2026-07-30 by the owner's core-duel scope cut: the
+# M4 LiDAR-load sweep is reduced to a ceiling CONFIRMATION at the duel size,
+# so `vlp16` is the only class this campaign measures. Owner time-budget, on
+# the two measurements README's 2026-07-30 amendment states -- the duel size
+# already consumes 91% of 24 cores with perception off, so the sweep's premise
+# (baseline below the ceiling, heavier classes probing upward) is likely false
+# at its starting point; and Task 16's margin formula consumes only the duel
+# size, so the other two sizes were sweep context and go with the sweep.
+# NOT infeasibility: both classes are ordinary sensor configurations and
+# either would have run.
+#
+# Recorded as a COMMENT rather than a per-entry `dropped:` field, unlike the
+# cells above: `cell_info.merge` copies every non-meta class key into the
+# merged cell JSON at TOP level, so a class-level `dropped:` would read there
+# as if the CELL were dropped. Both entries stay REGISTERED -- struck is not
+# deleted, and `cell_info --class 32ch` still resolves.
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }
@@ -548,6 +672,14 @@ sweep_arms: [paced, unpaced, ablation] # ablation = publish-disabled baseline
 # M4 camera-load arm (spec: M4): each approach's native camera path, observer
 # as the only consumer, topic names as-emitted. 20 fps == the 20 Hz tick
 # ceiling (P1 Verdict 4: a higher request would be silently clamped).
+#
+# STRUCK IN FULL 2026-07-30 by the owner's core-duel scope cut (owner
+# time-budget; README's 2026-07-30 amendment): this campaign has NO
+# camera-load axis, on any approach. All three classes stay registered for the
+# same reason the sweep classes above do, recorded as a comment for the same
+# `cell_info.merge` reason, and `runner/spawn.py`'s native camera spawn plus
+# `runner/__main__.py`'s --cameras/--camera-* flags stay committed and
+# unexercised by this campaign.
 camera_classes:
   - { id: cam1, cameras: 1, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }
   - { id: cam3, cameras: 3, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }

@@ -24,9 +24,16 @@
 #   A/A-hf/C, docker/compose.yaml), bridge-bench:latest (cell E0) and
 #   bridge-bench-patched:latest (cells E/E-opt). So this copy is a ONE-LINE
 #   change in every family that mounts it, not a cross-version file swap.
-#   NOT verified for cell B45: its pinned autoware:universe-devel-0.45.1
-#   (pins.yaml autoware_045) is not on this workstation, so Task 21 must
-#   re-read that image's own copy and compare before it files a B45 run.
+#   NEVER verified for cell B45: its pinned autoware:universe-devel-0.45.1
+#   (pins.yaml autoware_045) is not on this workstation, and the comparison
+#   is now MOOT rather than owed -- cell B45 was STRUCK 2026-07-30 by the
+#   owner's core-duel scope cut (cells.yaml `dropped:`), which took Task 21
+#   with it, so no B45 run will be filed and this mount never reaches that
+#   image. Recorded rather than deleted: if B45 is ever revived, re-read
+#   that image's own copy and compare before filing a run. Note what this
+#   is NOT -- the unverified comparison is a logistics gap (the image is
+#   absent from this box), never a finding about the 0.45 image or about
+#   carrying the tier4 fork across releases.
 #
 # THE SINGLE CHANGED LINE -- same key, same indentation, same position:
 #   source:  stop_check_enabled: <the launch substitution for the variable

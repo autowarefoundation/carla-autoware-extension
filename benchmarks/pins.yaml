@@ -221,13 +221,23 @@ bench_observer_images:
     # (BENCH_E2E=1 tests/benchmarks/test_observer_contract.py) was run green
     # against; treat it as "which build a run used", never as a content hash.
     local_digest: sha256:b78ec01af5c4229b2fe803abcb11be298699bed2eb1de7700f934c476d6a5385
-    # bench-observer:045, base = autoware_045.digest, built in Task 21 once
-    # B45's disk is freed. Task 21 builds it from THIS observer source, so it
+    # bench-observer:045, base = autoware_045.digest: NEVER BUILT. It was
+    # Task 21's, and cell B45 was STRUCK 2026-07-30 by the owner's core-duel
+    # scope cut (config/cells.yaml `dropped:`; README's 2026-07-30
+    # amendment), which took Task 21 with it. No `045` observer image exists
+    # and none is coming, so run.sh's B45 branch is unreachable in practice.
+    # If B45 is ever revived, build it from THIS observer source so it
     # carries the two new kinds as well.
 # Cell B45: the tier4 native path is documented against Autoware 0.45.1 and
 # sensor_model:=awsim_sensor_kit. There is NO universe-devel-cuda-0.45.1 tag;
 # the newest CUDA-enabled 0.45.x is universe-devel-cuda-0.45.0, recorded below
 # as the fallback should B45 turn out to need CUDA perception.
+#
+# The pins below STAY, though cell B45 is struck: they record which release
+# the dropped hard-fork-maintenance measurement would have been taken against,
+# which is part of stating precisely what was given up. Nothing was ever
+# measured against them -- the absence of a result is a scope decision, not a
+# failure of this image or of the fork.
 autoware_045:
   image: ghcr.io/autowarefoundation/autoware:universe-devel-0.45.1
   digest: ghcr.io/autowarefoundation/autoware@sha256:6afe9ee4a25a1082685c266f96dabd6041e77424bf10ea729bd488e02ae92175

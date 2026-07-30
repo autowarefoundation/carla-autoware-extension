@@ -1,5 +1,17 @@
 #pragma once
 
+// CAMPAIGN STATUS -- COMMITTED BUT NEVER EXERCISED (2026-07-30). Cell
+// CAL-seam was STRUCK by the owner's core-duel scope cut
+// (benchmarks/config/cells.yaml `dropped:`; benchmarks/README.md's
+// 2026-07-30 amendment), so this publisher never runs in a measurement and
+// the C1(a) seam-overhead claim is UNMEASURED. Its unit tests
+// (extension/test/test_bench_cloud_publisher.cpp) do exercise it, so it is
+// verified code -- but no benchmark result rests on it, and its presence in
+// the tree must not be read as evidence that the seam was measured. Kept
+// rather than deleted, on purpose: a later campaign can pick the instrument
+// up, and it costs a production run nothing (the $CARLA_BENCH_SEAM_CLOUD
+// gate below leaves an unset environment byte-identical to today).
+//
 // CAL-seam isolation instrument, extension side. Publishes a synthetic
 // sensor_msgs/PointCloud2 through the extension's C-ABI seam so its one-hop
 // wall latency can be paired against the fork's in-core twin publisher on

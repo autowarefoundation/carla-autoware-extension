@@ -277,8 +277,18 @@ table's notes naming both branches. It must be visible in the artifact a reader
 sees, not only in a log. If the two tools grow a shared window resolver, the
 check lives there once rather than twice.
 
-> **Open contradiction in committed code, owed to Task 14 before any CAL-seam
-> run.** `cells.yaml` gives `CAL-seam` `carla: 0.10-fork`, so
+> **Open contradiction in committed code, and now PERMANENTLY UNSETTLED
+> (2026-07-30).** Cell CAL-seam was **struck** by the owner's core-duel scope
+> cut (`cells.yaml` `dropped:`, and the 2026-07-30 amendment below), which took
+> Task 14's live half with it — so there will be no CAL-seam run, nobody owes
+> this resolution any more, and it cannot now be settled by measurement. The
+> contradiction is kept on the record exactly as it was found: both halves are
+> still in committed code, and a later campaign reviving the cell inherits it.
+> **Nothing downstream is blocked**, for the reason the original entry gives at
+> its end — `cells/calibration.sh` refuses the cell — and the metric rule above
+> is correct either way, because it tests the data instead of the attribute.
+>
+> `cells.yaml` gives `CAL-seam` `carla: 0.10-fork`, so
 > `cell_info.merge`'s `has_sim_clock` is true, so `run.sh` starts the clock
 > watchdog for it (step 7), waits for a sim span off `clock.csv` on the unpaced
 > path (step 10), and routes step 15 to `report.py`'s fit-strict renderer. But
@@ -721,6 +731,34 @@ definitions" above).
 under which a run may be marked `excluded: true`; it may not be edited
 after the first P3 measurement run.
 
+### Scope: the core duel only (owner decision, 2026-07-30)
+
+**Six of the twelve registered cells will not be measured.** The owner cut the
+campaign's scope to the core duel; the full per-item reasoning is the
+2026-07-30 "core-duel scope cut" entry under `## Amendments made so far`, and
+the strike is machine-readable in `cells.yaml` as a `dropped:` key.
+
+| status                                                   | cells                                                          |
+| -------------------------------------------------------- | -------------------------------------------------------------- |
+| **in scope**                                             | `A`, `B` (the primary duel, n ≥ 10), `C`, `E0`, `E`, `CAL-rmw` |
+| **struck** — was `mandatory: true` (amendment items)     | `CAL-seam`, `B45`                                              |
+| **struck** — was already `mandatory: false` (note items) | `D`, `E-opt`, `A-hf`, `B-hf`                                   |
+
+The M4 LiDAR-load sweep is reduced to a ceiling confirmation at the duel size,
+so `sweep_classes`' `32ch` and `128ch` are struck too, and the M4 **camera-load
+arm is struck in full** (`camera_classes` cam1/cam3/cam6). CAL-rmw runs at the
+duel size only.
+
+**Read the reason precisely.** Every strike is an owner **time-budget**
+decision, taken on two measurements (recorded in the amendment). **None of
+these cells was technically infeasible, blocked, or unmeasurable**, and no
+result about any of them may be inferred from its absence. `B45` in particular
+was expected to surface a hard-fork-maintenance result: the campaign is
+choosing not to look, which is a different statement from "it failed". The
+struck entries stay **registered, not deleted** — `mandatory: true` still
+stands on `CAL-seam` and `B45`, because that flag is what records that a
+mandatory cell was given up.
+
 ## Known confounds
 
 Differences between cells that are not part of the design (C1–C3) but bear
@@ -1098,6 +1136,20 @@ beside the B-family M5 numbers.
 
 ### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
 
+> **MOOT AS A CONFOUND — the cell is struck and there are no CAL-seam numbers (2026-07-30).** The
+> owner's core-duel scope cut dropped cell CAL-seam (`cells.yaml` `dropped:`; the 2026-07-30
+> amendment below), so **C1(a) seam overhead is UNMEASURED**: the paired seam-vs-in-core delta this
+> entry qualifies was, in `scripts/cal_report.py`'s own words, "the only measurement the
+> seam-overhead claim rests on", and it will not be taken. Two consequences for the text below.
+> First, its closing instruction — "Task 22's confound table must state this alongside the CAL-seam
+> numbers" — **is withdrawn**: there are no CAL-seam numbers to state it alongside. What Task 22
+> owes instead is the plain statement that C1(a) has **no evidence**, not weak evidence.
+> Second, the asymmetry itself is **still a true fact about the committed code** on both sides, so
+> the entry is kept in full rather than deleted: it is the analysis a revived CAL-seam would need on
+> day one, and it also records that the extension side's preallocated `msg_` is not merely a style
+> choice. An owner **time-budget** decision, not a defect and not an infeasibility — this confound
+> was never a reason the cell could not run.
+
 CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
 CARLA fork process — through the extension's C-ABI seam (`/bench/seam_cloud`) and by an in-core
 publisher (`/bench/incore_cloud`, spec in `benchmarks/patches/extension/README.md`) — so that the
@@ -1285,8 +1337,12 @@ it could affect exists.
    `universe-devel`, `bridge-bench:latest`, `bridge-bench-patched:latest`), so
    it is a one-line change in each and not a cross-version file swap. **Cell
    B45's pinned `universe-devel-0.45.1` is NOT verified** — that image is not on
-   this workstation — so Task 21 owes the same comparison before it files a B45
-   run.
+   this workstation. That comparison was Task 21's, and it is now **moot rather
+   than owed**: cell B45 was struck by the owner's core-duel scope cut
+   (2026-07-30, see the amendment below), so this mount never reaches that
+   image. The gap is recorded, not closed — it is a **logistics** gap (the image
+   is absent from this box) and never a finding about the 0.45 image or about
+   carrying the tier4 fork across releases.
 2. **Why it is not "relaxing a safety check": Autoware itself ships this value
    for simulation.** `tier4_simulator_launch/launch/simulator.launch.xml:193`
    and `:211` both pass `stop_check_enabled` with value `false`, and
@@ -1849,10 +1905,14 @@ gating, per-approach observation) rather than dropped, since whether it
 tracks `mode` correctly is itself part of the interop comparison.
 
 **Status: cell A measured; cell B PARTLY measured (2026-07-30, Task 13); cells
-B45, D and the E family unmeasured.** Task 13 (cell B's closed-loop gate) and
-Task 15 (cell C's re-gate) must record their own `change_to_autonomous` outcome
-here, in this same form: which cell, refused or succeeded. `arm_and_goal.py` logs
-`change_to_autonomous: SUCCEEDED` or `did not succeed` to its own stdout/stderr
+B45, D and the E family unmeasured** — and for B45 and D that is now
+**permanent**, since both were struck by the owner's core-duel scope cut
+(2026-07-30, see the amendment below), so this observation will never be
+recorded for either. The E family's half stays owed (Task 20). Task 13 (cell
+B's closed-loop gate) and Task 15 (cell C's re-gate) must record their own
+`change_to_autonomous` outcome here, in this same form: which cell, refused or
+succeeded. `arm_and_goal.py` logs `change_to_autonomous: SUCCEEDED` or
+`did not succeed` to its own stdout/stderr
 at `run.sh` step 9, but `run.sh` does not currently redirect that step into a
 per-run file (`launch.log` is written by the cell launcher's earlier bring-up, a
 different step) — the observer capturing that invocation's console output is what
@@ -2737,6 +2797,132 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   claim gains a **third falsifier** (one paired baseline run, `powersave` vs
   `performance`). That run is registered, **not performed**; the owner schedules
   live measurements. No margin, threshold or cell definition changes.
+- **2026-07-30 — owner scope decision: the CORE-DUEL SCOPE CUT.** The owner cut
+  the campaign to the core duel. `config/cells.yaml` gains a `dropped:` key on
+  six cells — `CAL-seam`, `B45`, `D`, `E-opt`, `A-hf`, `B-hf` — and its header
+  registers what that key means. **This is a pre-registration amendment and not
+  a note, because `CAL-seam` and `B45` were `mandatory: true`.** Both keep
+  `mandatory: true`: it is the only thing in the tree that still records that a
+  MANDATORY cell was given up, and flipping it to `false` would have made the
+  file read as if the two had always been optional — which is false, and is the
+  misstatement this entry exists to prevent. (`D` / `E-opt` / `A-hf` / `B-hf`
+  were already `mandatory: false`, pre-registered as owner-strikable, so for
+  those four the strike genuinely is a note.) **The reason is an owner
+  TIME-BUDGET decision, taken on two measurements this record already carries:**
+  (1) the DUT stack consumes **91% of 24 cores, ~18.3 for Autoware alone with
+  `perception:=false`** ("Host load during a run is unbounded" above), which
+  makes the M4 sweep's premise — the harmonized 16-channel baseline sitting
+  BELOW the ceiling, heavier classes probing upward — likely **false at its
+  starting point**, so the 81-run sweep would largely re-confirm saturation
+  while the claim itself is established by cell A's control run; and (2) Task
+  16's margin formula consumes **only the duel size**, so the 32-channel and
+  128-channel sizes were sweep context and go with the sweep. **What this is
+  NOT:** none of the six cells was technically infeasible, blocked, or
+  unmeasurable, and none was measured and found wanting. No result about any of
+  them may be inferred from the absence of a result. `B45` in particular was
+  expected to surface a hard-fork-maintenance result — the campaign is choosing
+  not to look, which is a different statement from "it failed". Kept in scope:
+  the A-vs-B duel at **n ≥ 10** (deliberately NOT reduced: cutting n widens the
+  equivalence CI and risks an inconclusive verdict on the one thing the campaign
+  exists for), cells `C` / `E0` / `E`, `CAL-rmw` at the duel size, and a reduced
+  M4 ceiling confirmation. The struck entries stay REGISTERED, not deleted, so
+  the record of what was given up survives and `analysis/manifest.py` still
+  accepts every id on the already-filed runs. **No margin, threshold, tolerance
+  or metric definition changes with this entry** — verified, not asserted:
+  `config/margins.yaml` is byte-identical (sha256
+  `8ef5fdb87b6620ed92a210439ae2ed871f98d9b231697ef523b2f5b3c042d8b7`, unchanged
+  in this commit); no metric definition, threshold, tolerance, aggregation rule
+  or scoring window is edited — the ONLY change inside `## Metrics` is a status
+  note on the recorded Task-14 contradiction, which alters no rule and restates
+  the existing one; and the `control_staleness_ms` per-Autoware-image recording
+  rule above is deliberately left exactly as written even though `B45` was its
+  second image, because narrowing a metric definition to match a scope cut is
+  precisely the kind of edit the amendment rule forbids. The losses this cut
+  accepts are registered as their own items below rather than folded into this
+  one.
+- **2026-07-30 — registered loss: `C1(a)` seam overhead is UNMEASURED.** Not
+  weakly measured, not partly measured — there is **no evidence at all**. Cell
+  `CAL-seam`'s paired seam-vs-in-core one-hop delta was, in
+  `scripts/cal_report.py`'s own words, "the only measurement the seam-overhead
+  claim rests on", so striking the cell removes the claim's entire evidence
+  base. **Every `C1(a)` wording anywhere in the record is downgraded to match**:
+  the "Expected branch per cell" block's Task-14 contradiction is now recorded
+  as permanently unsettled rather than owed; the `## Known confounds` CAL-seam
+  entry withdraws its instruction that "Task 22's confound table must state this
+  alongside the CAL-seam numbers", since there will be no CAL-seam numbers, and
+  what Task 22 owes instead is the plain statement that C1(a) has no evidence;
+  and `cells/calibration.sh`'s refusal, `config/observer_topics/CAL-seam.yaml`'s
+  empty list and `config/processes/CAL-seam.yaml`'s missing publisher entry are
+  all re-marked as final states rather than pending ones. No margin or threshold
+  changes.
+- **2026-07-30 — registered loss: the CAL-seam publishers are committed but
+  UNEXERCISED, i.e. dead code for this campaign.** Task 14's CODE half landed
+  and stays in the tree: `extension/src/publishers/BenchCloudPublisher.{h,cpp}`,
+  its `ExtensionInit.cpp` registration and `ext_on_tick` drive,
+  `benchmarks/scripts/cal_report.py`, and their tests
+  (`extension/test/test_bench_cloud_publisher.cpp`,
+  `tests/benchmarks/test_cal_report.py`). **None of it will ever run in a
+  measurement**, and its presence must not be read as evidence that the seam was
+  measured — so the disclosure is written into the artifacts themselves
+  (`BenchCloudPublisher.h`'s header, `cal_report.py`'s docstring, and
+  `patches/extension/README.md`'s spec section, whose fork-side twin was never
+  written and now will not be) as well as here. **Deliberately NOT deleted**:
+  the code is unit-tested and green, it costs a production run nothing (the
+  `$CARLA_BENCH_SEAM_CLOUD` gate leaves an unset environment byte-identical to
+  today), and a later campaign reviving C1(a) inherits both the instrument and
+  the spec. No engine relink and no behaviour change: the edits are comments and
+  documentation only.
+- **2026-07-30 — registered loss: no hard-fork-maintenance finding (`B45`).**
+  This cell existed to measure what it costs to carry the tier4 CARLA fork
+  against a **different** Autoware release (`pins.yaml` `autoware_045`,
+  `universe-devel-0.45.1`), which is why it was mandatory. It is not measured.
+  The pins stay, as the record of which release the finding would have been
+  taken against; `pins.yaml`'s `bench-observer:045` note now says that image was
+  never built and is not coming, and `config/autoware/pose_initializer.param.yaml`'s
+  unverified-for-B45 comparison is re-marked moot rather than owed. **That one
+  open prerequisite was a LOGISTICS gap** — the 0.45.1 image is not on this
+  workstation — **never a defect of the 0.45 image or of carrying the fork
+  across releases**, and nothing in this record may be read as the latter.
+- **2026-07-30 — registered loss: no camera-load axis.** The M4 camera-load arm
+  is struck **in full**, on every approach: `cells.yaml`'s `camera_classes`
+  (cam1/cam3/cam6, 1600×900 @ 20 fps) will not be measured, so there is no
+  camera table and no per-approach native-camera-path comparison. The classes
+  stay registered, and `runner/spawn.py`'s native camera spawn plus
+  `runner/__main__.py`'s `--cameras` / `--camera-*` flags stay committed and
+  unexercised by this campaign — the same disclosure as the CAL-seam publishers,
+  for the same reason.
+- **2026-07-30 — registered loss: no 100 Hz sensitivity cells (`A-hf` /
+  `B-hf`).** Both high-frequency cells are struck, as a pair — striking one half
+  would have left a one-sided result. This realizes exactly the end state
+  `cells.yaml`'s `A-hf` comment already pre-registered ("If the owner strikes
+  Task 26 the cell is dropped and these stay null permanently — a legitimate end
+  state, not a gap"), so all three rate bindings on both cells are now
+  permanently `null`, and the sensor_tick question that comment raised with the
+  plan owner (0.1 vs 0.01) is closed as never-to-be-applied rather than
+  answered. The `## Metrics` prose explaining why those bindings are `null` is
+  left as written, for the metric-definition reason given two entries above.
+- **2026-07-30 — registered loss: no cell `D` cross-map tier4 attempt.** Cell
+  `D` (tier4-native on Nishi-Shinjuku) is struck, so the tier4 family is
+  measured on Town10 only and the cross-map half of the A/B-vs-C/D design is not
+  attempted. **Its own open question stays OPEN, not answered:** whether the
+  tier4 tree can cook the Nishi-Shinjuku map at all — the condition its
+  `arms:` comment makes the cell conditional on — was never tested, so the
+  absence of a `D` result says nothing either way. This also means README
+  confound C4 (map provenance) keeps only the A/B-vs-C comparison it already
+  had.
+- **2026-07-30 — the M4 LiDAR-load sweep is reduced to a ceiling confirmation at
+  the duel size.** `cells.yaml`'s `sweep_classes` `32ch` and `128ch` are struck
+  (comment-marked rather than given a `dropped:` field, because
+  `cell_info.merge` copies every non-meta class key into the merged CELL JSON at
+  top level, where a class-level `dropped:` would read as if the cell were
+  dropped); `vlp16` is the only class this campaign measures, and `CAL-rmw` runs
+  at that one size. Reason: ground (1) of the scope cut above — the duel size
+  already saturates the host, so the heavier classes would largely re-confirm
+  saturation — plus ground (2), that Task 16's margin formula consumes only the
+  duel size. Both classes stay registered and `cell_info --class 32ch` still
+  resolves. **The registered M4 ceiling claim above is unchanged**, including
+  its three falsifiers: what is reduced is how many runs probe it, not the claim
+  or any threshold. No margin, threshold or `sweep_arms` change.
 
 ## How to run
 
