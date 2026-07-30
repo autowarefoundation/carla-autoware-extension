@@ -75,11 +75,20 @@ town10_pcd_refit:
 #
 # COVERAGE IS BOUNDED BY WHERE THE EGO DROVE. The collection drive reached
 # ~292 m of the then-438.9 m route before the rigid bundle's own localization
-# stopped it, so this bundle is dense along that corridor and thins out beyond
-# it -- measured: 108 of 311 NDT score breaches fell in the final quarter of a
-# full-route drive. That is why the Town10 route was re-picked to end at
-# station 258.9 m (config/routes/Town10HD_Opt.yaml), and why a future
-# full-route bundle needs a second collection pass over the remainder.
+# stopped it, so this bundle is dense along that corridor and thins beyond it.
+# The RETAINED evidence for that is the closed-loop outcome, not a point count:
+# on the full 438.9 m route the ego closed only to 1.929 m and was stopped
+# before arrival (benchmarks/evidence/g2-regen-committed-route/), while on the
+# re-picked 258.9 m route -- entirely inside the collection corridor -- it
+# reached 0.244 m (benchmarks/evidence/g2-regen-repicked-route/). Both numbers
+# are recomputable from the retained distance series.
+# An earlier revision of this comment also cited an NDT-score breach
+# distribution over that drive. That was observed live but its source log lived
+# inside a container that has since been removed, so it is NOT retained and is
+# no longer offered as evidence here.
+# This bound is why the Town10 route was re-picked to end at station 258.9 m
+# (config/routes/Town10HD_Opt.yaml), and why a future full-route bundle needs a
+# second collection pass over the remainder.
 town10_pcd_regen:
   built_on_bundle_sha256: 38b10c3a8f4e50f4b828222562d4d9ff04de71f8e1711a21d4b2c0b3145c0401
   tool: benchmarks/scripts/build_pcd_from_gt.py
@@ -92,6 +101,31 @@ town10_pcd_regen:
   sweeps: 1996
   points: 1990168
   sha256: c3bc613b0ea3e77528d081792dedc6fa0a22a89ae10aeabe5c72a09afcbfaba3
+# The Nishi-Shinjuku bundle cells C/D localize against
+# (~/autoware_map/nishishinjuku, via scripts/e2e/map_defaults.sh). Added
+# 2026-07-29 so those cells have registered provenance at all: the bundle-pin
+# check is scoped per bundle DIRECTORY and an unregistered directory SKIPS
+# rather than fails, so without this block C/D would run with no provenance
+# recorded and nothing would notice the bundle changing under them.
+#
+# DIGEST OF RECORD, not a reproducible provenance chain -- stated plainly
+# because the difference matters. Unlike the Town10 bundles there is no fetch
+# script and no upstream revision committed here: the installed tree is the
+# `shinjuku_map` ROS package (its own package.xml at version 0.0.0, plus
+# CMakeLists.txt and LICENSE), and where it was obtained from is not recorded in
+# this repo. What these digests DO buy is precisely the failure this check
+# exists for -- an edited or swapped Nishi bundle stops matching and is refused,
+# rather than being measured and silently attributed to the map C/D's numbers
+# are filed under. Recovering the upstream source is future work, and belongs
+# with whoever owns the Nishi map rather than with a task that only needed to
+# stop misattributing it. Same standard as bench_observer_images.local_digest:
+# it pins WHICH bytes a run used, and is not a pullable reference.
+nishishinjuku_bundle:
+  pcd_sha256: 78b6cf81047489efb1f008a44238d497241da64bb158c824a3f18f23eb50e9d3
+  osm_sha256: a064a60cc6d866ff2cfec8d3100886b5e7fd5fa83019b2729d9413809c62d39e
+  projector_info_sha256: c735f3f8ebb08f3a891b914c19d7d5f7d6c7cb0a83177dd57798d1eafaaa6d4f
+  package_name: shinjuku_map
+  upstream: # NOT recorded in this repo -- see the note above
 carla_0915:
   url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
   sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7

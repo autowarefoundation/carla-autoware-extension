@@ -179,34 +179,66 @@ PY
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Map-bundle provenance. pins.yaml carries several candidate contents for
-#    the ONE path map_defaults.sh resolves per map, so the registered
-#    invariant is that the installed file hashes to EXACTLY ONE pin block --
-#    and that block is the bundle the run used. Enforced here because an
-#    invariant with no consumer is a comment: a bundle matching NO block (an
-#    unrecorded local edit, e.g. a pcd regenerated but never pinned) or
-#    SEVERAL (a duplicated registration) makes every number the run produces
-#    unattributable. Reported as `map_bundle_pin` so the manifest records
-#    WHICH bundle, not merely that one matched.
+# 6. Map-bundle provenance. pins.yaml can carry several candidate contents for
+#    ONE mounted bundle directory, so the registered invariant is that the
+#    installed file hashes to EXACTLY ONE pin block -- and that block is the
+#    bundle the run used. Enforced here because an invariant with no consumer
+#    is a comment. Reported as `map_bundle_pin` so the manifest records WHICH
+#    bundle, not merely that one matched.
 #
-#    Skipped, not failed, when the map has no host-side copy: the cells with
-#    no map at all (CAL-rmw) and a host that mounts a bundle from elsewhere
-#    are both legitimate, and this check is about provenance, not existence.
+#    FAILS only on a provenance FAULT: bytes matching none of the pins
+#    registered for that bundle (changed without re-pinning) or matching
+#    several (a duplicated registration). An UNREGISTERED bundle directory is
+#    a gap in the record, not a corrupted bundle, so it SKIPS with a named
+#    warning -- helper exit 3, distinct from its fault exit 2. That
+#    distinction is load-bearing: an earlier revision checked one flat
+#    candidate list against every cell and so FAILED every Nishi-Shinjuku run,
+#    which would have blocked Task 15 and the whole C/D half of the campaign.
+#    A provenance check must not stop measurement.
+#
+#    The bundle is resolved from what THE CELL'S OWN LAUNCHER mounts, not from
+#    map_defaults.sh unconditionally: that table is the EXTENSION path's, while
+#    cells/python-bridge.sh pins the unshifted ~/autoware_map/town10 for the E
+#    family. Resolving E through map_defaults.sh recorded the extension cells'
+#    bundle as E's -- a wrong provenance record the B family would have
+#    inherited. APPROACH_BUNDLE_DIR in bundle_pin.py holds the non-extension
+#    mappings: tier4-native resolves to nothing because Task 13 owns what it
+#    mounts, and calibration has no localization stack at all.
 # ---------------------------------------------------------------------------
 MAP_BUNDLE_PIN=""
 CELL_MAP="$(cell_field map)"
+BUNDLE_DIR_NAME=""
 if [ "$CELL_MAP" != "none" ]; then
-  # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
-  . "$REPO/scripts/e2e/map_defaults.sh"
-  carla_autoware_map_defaults "$CELL_MAP"
-  if [ -n "$MAP_DEFAULT_DIR" ]; then
-    BUNDLE_PCD="$HOME/autoware_map/$(basename "$MAP_DEFAULT_DIR")/pointcloud_map.pcd"
-    if [ -r "$BUNDLE_PCD" ]; then
-      if ! MAP_BUNDLE_PIN="$(cd "$REPO" &&
-        python3 -m benchmarks.scripts.bundle_pin "$BUNDLE_PCD" 2>&1)"; then
-        fail "$MAP_BUNDLE_PIN"
-      fi
+  if [ "$APPROACH" = "extension" ]; then
+    # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
+    . "$REPO/scripts/e2e/map_defaults.sh"
+    carla_autoware_map_defaults "$CELL_MAP"
+    if [ -n "$MAP_DEFAULT_DIR" ]; then
+      BUNDLE_DIR_NAME="$(basename "$MAP_DEFAULT_DIR")"
     fi
+  else
+    BUNDLE_DIR_NAME="$(cd "$REPO" && APPROACH="$APPROACH" python3 -c '
+import os
+
+from benchmarks.scripts.bundle_pin import APPROACH_BUNDLE_DIR
+
+print(APPROACH_BUNDLE_DIR.get(os.environ["APPROACH"]) or "")
+')"
+  fi
+fi
+if [ -n "$BUNDLE_DIR_NAME" ]; then
+  BUNDLE_PCD="$HOME/autoware_map/$BUNDLE_DIR_NAME/pointcloud_map.pcd"
+  if [ -r "$BUNDLE_PCD" ]; then
+    set +e
+    BUNDLE_OUT="$(cd "$REPO" && python3 -m benchmarks.scripts.bundle_pin \
+      --bundle-dir "$BUNDLE_DIR_NAME" "$BUNDLE_PCD" 2>&1)"
+    BUNDLE_RC=$?
+    set -e
+    case "$BUNDLE_RC" in
+      0) MAP_BUNDLE_PIN="$BUNDLE_OUT" ;;
+      3) echo "WARN: $BUNDLE_OUT" >&2 ;;
+      *) fail "$BUNDLE_OUT" ;;
+    esac
   fi
 fi
 
