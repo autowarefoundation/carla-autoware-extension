@@ -1178,6 +1178,52 @@ zero, and neither approach's data-path, conversion or transport code is
 touched. No new file appears under `benchmarks/patches/`, so no approach's patch
 set grows and the patch policy's two named exceptions are unaffected.
 
+### Host load during a run is unbounded, and it changes outcomes (Task 13)
+
+**Added 2026-07-30 (Task 13), before any P3 run. Session discipline every P3 run
+inherits — read this before starting one.**
+
+`benchmarks/scripts/preflight.sh` gates the 1-min loadavg at **8**
+(`exclusions.md` criterion 6) **only BEFORE a run starts**. Nothing bounds it
+during the run, and the run's own stack plus anything else on the box drives it
+far past that gate.
+
+**Measured, same cell, same commit, same day, two runs:**
+
+| run                 | loadavg at preflight | during bring-up   | outcome                                                                                                                                                                                                                                                                    |
+| ------------------- | -------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `results/B/run-005` | 4.21                 | **64** (24 cores) | **three rclcpp/rmw service responses lost in one 0.4 s window** — `mrm_emergency_stop_operator/…/load_node`, `pointcloud_container/…/load_node`, and `/localization/pose_estimator/trigger_node`. The last wedged `pose_initializer` in `futex_do_wait` for the whole run. |
+| `results/B/run-006` | 2.64                 | ~15               | no dropped responses; `pose_initializer` served normally                                                                                                                                                                                                                   |
+
+The dropped-response class is not new: `results/E/run-003` lost four
+`pointcloud_container` `load_node` responses the same way, and
+`cells/python-bridge.sh` records it as load-sensitive and non-reproducing on the
+next bring-up. Task 13 is the second cell to hit it and the first to tie it to a
+measured loadavg.
+
+**Two consequences, separated because they need different fixes.**
+
+- **Comparability (M3).** Any cross-run `carla_process_cpu_pct` or `rtf`
+  comparison assumes the runs saw similar host contention, and nothing in the
+  record establishes that. **`resources.csv` carries no loadavg column** — its
+  contract is `sample_system_ns, process, cpu_pct, rss_bytes, gpu_util_pct,
+vram_bytes, rtf` (`benchmarks/sampler/sample_resources.py`), and
+  `grep -rniE 'loadavg|getloadavg|/proc/loadavg' benchmarks/sampler/` returns
+  nothing. So a filed run cannot answer "was this run contended?" after the
+  fact. Adding a loadavg series is a **sampler-contract change**, not session
+  discipline, and it would have to land before Task 16 to be usable by the P3
+  analysis.
+- **Validity (bring-up).** A contended host does not merely make a run slow; it
+  can make one **fail in a way that reads as an approach defect**. Run-005's
+  wedge would look like "cell B cannot initialize localization" to anyone who did
+  not grep for `client will not receive response`.
+  `cells/tier4_autoware.sh`'s seed-timeout message now names that signature.
+
+**Until a loadavg series exists: one cell at a time, nothing else on the box, and
+do not probe a live stack during bring-up.** Task 13's own in-container
+diagnostics contributed to run-005's 64 — recorded because it is the specific
+mistake to avoid, not as an excuse.
+
 ### `control_mode` reporting (R4): a per-approach interop gap, recorded not patched
 
 Step 11.6 (`benchmarks/evidence/step-11_6-adapi-engage/`) found that on cell A —

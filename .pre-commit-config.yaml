@@ -106,6 +106,16 @@ repos:
       # longer linted or formatted. Anything meant to be maintained as code
       # belongs under benchmarks/scripts/ or benchmarks/injector/, which are
       # both still covered.
+      #
+      # DO NOT "fix" this by deleting the exclude and letting ruff reformat
+      # those files. benchmarks/evidence/ is RETAINED EVIDENCE, not
+      # style-linted code, and each PROVENANCE.md certifies specific files as
+      # the exact scripts that produced specific tracked figures.
+      # Reformatting them would falsify that certification: the lint would go
+      # green and the provenance claim would become false, which is strictly
+      # worse than an unlinted directory. If a probe script there is ever
+      # promoted to maintained code, MOVE it under benchmarks/scripts/ (where
+      # it is linted) and leave the evidence copy untouched.
       - id: ruff
         args: [--fix]
         exclude: ^benchmarks/evidence/
