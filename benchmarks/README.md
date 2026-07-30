@@ -1766,6 +1766,14 @@ machine — not a footnote about this harness.**
    between the two rows above therefore holds only for the manifest's `arm`
    field, and the asymmetry runs against cell B.
 
+   **NOT RIG-MATCHED either, and the scope cut removed the only place it would
+   have been.** The 8.78× compares two DIFFERENT sensor rigs. That asymmetry is
+   registered and deliberate, and the M4 sweep was its registered equalization
+   point — which is now cut. Full treatment, the direction of the bias
+   (**conservative**: rig-matching can only widen this gap, never close it) and
+   the one-run remedy are in **finding 4** of "Cell A's bench-harness control
+   (Task 15b)" below.
+
    **NOT yet separable from the IMAGE, and this is the live confound.** Cell A
    runs `ghcr.io/autowarefoundation/autoware:universe-devel`; cell B runs
    `pins.yaml`'s `universe-devel-**cuda**` digest. A CUDA-enabled image can spin
@@ -3316,6 +3324,37 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   stated. Verified by re-running the post-parse insertion: the behavioural pin
   fails, the text scans still pass. No measurement, metric, margin or cell
   definition changes.
+- **2026-07-30** — **a duel-level consequence of the core-duel scope cut is
+  registered**: the cut removed the only place cells A and B are measured on equal
+  sensor rigs. Recorded as finding 4 of "Cell A's bench-harness control (Task
+  15b)", with a pointer from the 8.78× CPU finding it bears on.
+  **Completeness, and nothing in the cut's own rationale had noticed it:**
+  `cells.yaml:232-240` and `cells/tier4_autoware.sh:70-80` both justify the duel's
+  deliberate rig asymmetry by naming the M4 sweep as the place "where the two rigs
+  ARE equalized" — so the sweep was carrying a **duel-level** job as well as an M4
+  one, and reducing it to a ceiling confirmation (which then did not fire) left
+  **no rig-matched A-vs-B measurement anywhere in the campaign**. The entry states
+  the bias direction, which is **conservative** — cell A carries ~2.1× the point
+  rate at 2× the frequency for ~8.78× less Autoware CPU, so equalizing can only
+  widen that gap — so the finding survives while its precision does not, and no
+  rig-matched figure may be quoted as one. It also registers the **available
+  remedy**: cell B's registered 288 000 pts/s is exactly `vlp16`'s registered
+  value, so a **single cell-A run at `vlp16`** would put both duel cells on one
+  common class without touching cell B; that run is **not performed and not
+  decided** here (it needs Task 23's class → argument mapping, and the scheduling
+  is the coordinator's and the owner's). Finally it records a NEWLY MEASURED
+  contradiction the remedy must verify rather than assume:
+  `cells/tier4_autoware.sh:78-80` registers per-message size as landing "within 4%
+  either way", but the as-emitted medians are **512 184 B/msg (A)** against
+  **241 813 B/msg (B)** — **2.118×**, stable across two cell-A and six cell-B runs
+  (0.35% / 0.30% spread), on the same instrument and topic so no point-layout
+  assumption is involved. The CAUSE is deliberately not guessed at (`point_step`
+  was not determined per cell); what matters is that the falsified claim is the
+  stated justification for `one_hop_wall_ms` and `lidar_to_ndt_sim_ms` comparing
+  like with like. Cell B's launcher comment is left untouched — correcting it is
+  Task 13/20's. No margin, threshold, tolerance, metric or cell definition
+  changes; no filed run modified; `config/margins.yaml` and
+  `config/exclusions.md` byte-identical.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
@@ -3406,6 +3445,77 @@ constant offset out of a pure index shift. Three diagnostics refute it:
 - `run-002`'s M5 join succeeded on a **moving** ego at `pose_err_max = 0.264 m`. A
   real 0.95 s label error would have injected ~0.95 s × speed, i.e. metres, and
   the absolute gate would have failed.
+
+#### 4. The scope cut removed the ONLY rig-matched A-vs-B measurement in the campaign
+
+This is a **duel-level confound**, not a cell-A one, and it lands directly on the
+8.78× CPU finding above, which compares two different sensor rigs.
+
+**The asymmetry is registered and deliberate, and that part is sound.**
+`config/cells.yaml:232-240` keeps cell B's LiDAR at "the demo's OWN value,
+deliberately NOT harmonized to cell A's 20 Hz", because the demo derives
+`points_per_second` FROM its `sensor_tick`, so re-rating it would be "a fidelity
+change dressed as harmonization" — it would either halve the angular resolution or
+specify a different sensor than the VLP16 the demo documents.
+`cells/tier4_autoware.sh:70-80` repeats the reasoning. **Each approach running on
+its native rig is by design.**
+
+**But both of those blocks name the same equalization point, and it is gone.**
+Verbatim, `cells.yaml:238-240`: "The M4 sweep classes (`sweep_classes` below,
+applying to A and B alike) are where the two rigs ARE equalized." The M4 sweep is
+now reduced to a ceiling confirmation by the 2026-07-30 core-duel scope cut, and
+the ceiling criterion did not fire, so **no rig-matched A-vs-B measurement exists
+anywhere in this campaign**. The registered plan had one; the cut removed it; and
+nothing in the cut's rationale noticed that the sweep was carrying a duel-level
+job as well as an M4 one.
+
+**The 8.78× survives, because the bias is CONSERVATIVE — and this is why.** Cell A
+runs the HEAVIER rig on every axis that costs CPU: ~600 000 pts/s against cell B's
+registered 288 000 (~2.1×) at 20 Hz against 10 Hz (2×). So cell A does
+substantially **more** sensor work for ~8.78× **less** Autoware CPU. Equalizing the
+rigs would move cell A's load DOWN relative to cell B's, or cell B's UP — either
+way **widening** the gap. **The finding's direction is safe; its precision is not**,
+and no rig-matched number should be quoted as one.
+
+**The available remedy, registered here so whoever schedules Task 18 sees it
+rather than discovering it after the duel is collected.** Cell B's registered
+`points_per_second` is **288 000** — which is **exactly** `vlp16`'s registered
+value in `sweep_classes`. So the cheapest rig-matched comparison in the whole
+campaign is **a single cell-A run at `vlp16`**: it would put both duel cells on one
+common registered class without touching cell B at all. It is **not run and not
+decided here** — it needs the class → argument mapping (owed to Task 23 now that
+Task 26 is struck; both sweep launchers refuse a `--class` without it), and the
+scheduling is the coordinator's and the owner's.
+
+**One thing that remedy must VERIFY rather than assume, newly measured.**
+`cells/tier4_autoware.sh:78-80` registers a per-message-size parity claim —
+"Per-message size happens to land within 4% either way (A: 600000 \* 0.05 = 30000
+points/message; B: 288000 \* 0.1 = 28800), so M1/M2's per-message latency terms
+compare like with like even at different rates". **On the wire it is not within 4%;
+it is 2.118×:**
+
+| cell | median serialized size of `/sensing/lidar/top/pointcloud_raw_ex` | runs                      | spread |
+| ---- | ---------------------------------------------------------------- | ------------------------- | ------ |
+| A    | **512 184 B/msg**                                                | `run-001`, `run-002`      | 0.35%  |
+| B    | **241 813 B/msg**                                                | `run-007` … `run-012` (6) | 0.30%  |
+
+Both columns are the same instrument's `generic` serialized-size record on the same
+topic name, so the **byte** comparison needs no assumption about point layout. It
+is stable: six cell-B runs agree to within 0.30% and two cell-A runs to 0.35%, so
+this is not an artifact of cell B's runs being excluded (`gate:arm-failed`) —
+per-message size is a property of the sensor configuration, not of arming.
+
+**The cause is NOT established here and is deliberately not guessed at.** It is
+consistent with cell B emitting roughly half the points its registration predicts,
+or with the two publishers using different `point_step` layouts (CARLA's native
+publisher for A, the tier4 fork's for B). `point_step` was not determined for
+either cell, so neither reading is asserted. What IS established is that the
+registered parity claim does not hold on the wire, and that claim is the stated
+justification for `one_hop_wall_ms` and `lidar_to_ndt_sim_ms` — **two of the five
+duel margin metrics** — comparing like with like across the two cells. Whoever
+takes the `vlp16` remedy should confirm rig parity **on the wire**, not from the
+registry. `cells/tier4_autoware.sh` is cell B's launcher and its comment is left
+untouched here rather than silently rewritten; correcting it is Task 13/20's.
 
 ## How to run
 
