@@ -57,8 +57,6 @@ PINS = pathlib.Path(__file__).resolve().parents[1] / "pins.yaml"
 #
 # A directory absent from this table yields UNREGISTERED_BUNDLE, so adding a
 # new bundle is safe by default: it skips until someone pins it. The
-# tier4-native cells' bundle is deliberately absent -- Task 13 owns what they
-# mount, and preflight skips them for that reason rather than guessing.
 BUNDLE_REGISTRY: dict[str, tuple[str, ...]] = {
     "town10-shifted": ("town10_pcd_shifted", "town10_pcd_refit"),
     "town10-regen": ("town10_pcd_regen",),
@@ -77,13 +75,17 @@ BUNDLE_REGISTRY: dict[str, tuple[str, ...]] = {
 #   python-bridge  -> cells/python-bridge.sh's MAP_BUNDLE_HOST (kept in step by
 #                     tests/benchmarks/test_bundle_pin.py, which reads that
 #                     literal out of the launcher and compares against this)
-#   tier4-native   -> Task 13's $TIER4_DEMO; nothing here knows it yet
 #   calibration    -> no localization stack, so no bundle to attribute
 # `extension` is absent on purpose: it DOES use map_defaults.sh, so preflight
-# resolves it per map from that table.
+# resolves it per map from that table. So is `tier4-native`, SINCE TASK 13:
+# benchmarks/cells/tier4_autoware.sh sources that same table deliberately, so
+# cells A and B mount ONE Town10 bundle -- the condition benchmarks/README.md's
+# confound C4 turns on -- and so a family that spans two maps (B/B-hf/B45 on
+# Town10, D on Nishi-Shinjuku) is not squeezed into one per-approach string,
+# which is what a `"tier4-native": "town10-regen"` entry here would have done to
+# cell D. It was `None` here while Task 13's launcher did not exist.
 APPROACH_BUNDLE_DIR: dict[str, str | None] = {
     "python-bridge": "town10",
-    "tier4-native": None,
     "calibration": None,
 }
 

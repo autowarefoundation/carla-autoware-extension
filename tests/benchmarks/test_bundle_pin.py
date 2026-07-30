@@ -92,18 +92,23 @@ def test_an_unregistered_bundle_dir_is_a_separate_outcome_from_a_fault():
 
 def test_every_committed_cell_resolves_to_a_registered_or_skipped_bundle():
     """No cell in the matrix may land on the FAULT path merely by existing.
-    Each cell's bundle either resolves (extension via map_defaults.sh,
-    python-bridge via APPROACH_BUNDLE_DIR) or is deliberately unresolvable
-    (tier4-native pending Task 13, calibration having no localization stack).
+    Each cell's bundle either resolves (extension and tier4-native via
+    map_defaults.sh, python-bridge via APPROACH_BUNDLE_DIR) or is deliberately
+    unresolvable (calibration, having no localization stack).
+
+    tier4-native moved from the second branch to the first in Task 13, when
+    benchmarks/cells/tier4_autoware.sh started sourcing map_defaults.sh -- so
+    the B family's bundle is now VERIFIED per map instead of skipped, and the
+    A/B halves of the duel are held to the same bundle by construction.
     """
     defaults = (REPO / "scripts" / "e2e" / "map_defaults.sh").read_text()
     for cell in load_cells_doc()["cells"]:
         approach, map_name = cell["approach"], cell["map"]
         if map_name == "none":
             continue
-        if approach == "extension":
-            # The extension path reads map_defaults.sh, so every map it can be
-            # asked for must have an entry there AND be registered here.
+        if approach in ("extension", "tier4-native"):
+            # Both read map_defaults.sh, so every map either can be asked for
+            # must have an entry there AND be registered here.
             found = re.search(
                 rf"^\s+{re.escape(map_name)}\)(.*?)MAP_DEFAULT_DIR=(\S+)",
                 defaults,
@@ -133,6 +138,25 @@ def test_the_bridge_bundle_mapping_matches_what_its_launcher_mounts():
     found = re.search(r'^MAP_BUNDLE_HOST="\$HOME/autoware_map/([^"]+)"', launcher, re.M)
     assert found, "cells/python-bridge.sh no longer defines MAP_BUNDLE_HOST"
     assert APPROACH_BUNDLE_DIR["python-bridge"] == found.group(1)
+
+
+def test_the_tier4_launcher_resolves_its_bundle_through_map_defaults():
+    """The counterpart check for the B family, and the reason `tier4-native` is
+    absent from APPROACH_BUNDLE_DIR rather than mapped to a string.
+
+    preflight.sh resolves this approach's bundle through map_defaults.sh, which
+    is only correct while its launcher does the same. If tier4_autoware.sh ever
+    pins a bundle of its own, the manifest's `map_bundle_pin` would report the
+    extension cells' bundle as the B family's -- the exact wrong-provenance
+    record that put the E family in APPROACH_BUNDLE_DIR in the first place.
+    """
+    launcher = (REPO / "benchmarks" / "cells" / "tier4_autoware.sh").read_text()
+    assert "scripts/e2e/map_defaults.sh" in launcher
+    assert "carla_autoware_map_defaults" in launcher
+    assert 'MAP_DIR="${MAP_DIR:-$MAP_DEFAULT_DIR}"' in launcher
+    assert "tier4-native" not in APPROACH_BUNDLE_DIR
+    preflight = (REPO / "benchmarks" / "scripts" / "preflight.sh").read_text()
+    assert 'elif [ "$APPROACH" = "extension" ] || [ "$APPROACH" = "tier4-native" ]' in preflight
 
 
 def test_the_regen_bundle_is_the_one_the_town10_cells_are_registered_against():

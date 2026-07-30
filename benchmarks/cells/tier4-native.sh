@@ -9,17 +9,17 @@
 # engine's UnrealEditor binary pointed at this tree's .uproject, in -game
 # mode, with an explicitly pinned -carla-rpc-port.
 #
-# The AUTOWARE half is NOT written here. Task 13 ("tier4 demo harmonization
-# patch + B closed-loop gate") owns the patched autoware_demo.py and the
-# container launch that goes with it; nothing committed in this repo starts
-# the tier4 stack today. `plan` therefore REFUSES rather than inventing a
-# launch that would appear to work and produce a cell with no Autoware in it.
-# BENCH_TIER4_DEMO is the hook Task 13 fills in.
+# The AUTOWARE half lives in benchmarks/cells/tier4_autoware.sh -- the demo +
+# container launch Task 13 wrote into the BENCH_TIER4_DEMO hook this file used
+# to refuse on. BENCH_TIER4_DEMO still overrides it, and the refusal below is
+# still a refusal: it now fires only if that script is missing or has been
+# pointed somewhere that does not exist, never by defaulting to a launch with
+# no Autoware in it.
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_MAP:?}" "${BENCH_ARM:?}"
 : "${BENCH_RUN_DIR:?}" "${BENCH_LAUNCH_ENV:?}" "${BENCH_RPC_PORT:?}"
-: "${BENCH_CARLA_TREE:?}" "${BENCH_AUTOWARE_IMAGE:?}"
+: "${BENCH_CARLA_TREE:?}" "${BENCH_AUTOWARE_IMAGE:?}" "${BENCH_ROUTE_FILE:?}"
 
 MODE="${1:?usage: tier4-native.sh plan|up}"
 
@@ -29,6 +29,9 @@ UPROJECT="$BENCH_CARLA_TREE/Unreal/CarlaUnreal/CarlaUnreal.uproject"
 AW_CONTAINER=autoware
 LAUNCH_LOG="$BENCH_RUN_DIR/launch.log"
 CARLA_PID_FILE="$BENCH_RUN_DIR/carla.pid"
+# The host-side tick authority tier4_autoware.sh starts (autoware_demo.py).
+# Named here so launch.env and the hook invocation cannot disagree about it.
+TIER4_DEMO_PID_FILE="$BENCH_RUN_DIR/tier4_demo.pid"
 READY_TIMEOUT_S=420
 
 fail() { echo "LAUNCH FAIL (tier4-native/$BENCH_CELL): $*" >&2; exit 2; }
@@ -58,21 +61,26 @@ if [ ! -x "$GT_PYTHON" ] || ! "$GT_PYTHON" -c "import carla" >/dev/null 2>&1; th
   or point BENCH_GT_PYTHON at an interpreter that already has it."
 fi
 
-# The Autoware half. Task 13 dependency, made loud on purpose.
-TIER4_DEMO="${BENCH_TIER4_DEMO:-}"
-if [ -z "$TIER4_DEMO" ]; then
-  fail "the tier4 Autoware launch does not exist yet: Task 13 (tier4 demo
-  harmonization patch + B closed-loop gate) owns the patched autoware_demo.py
-  and the container launch. Set BENCH_TIER4_DEMO to the launch script once
-  Task 13 lands. The CARLA half of this cell IS implemented below and can be
-  booted independently for diagnostics."
-fi
+# The Autoware half (Task 13). Still checked, not assumed: an overridden or
+# deleted hook must fail here, in `plan`, and not after CARLA has booted.
+TIER4_DEMO="${BENCH_TIER4_DEMO:-$BENCH_REPO/benchmarks/cells/tier4_autoware.sh}"
 [ -x "$TIER4_DEMO" ] || [ -f "$TIER4_DEMO" ] ||
-  fail "BENCH_TIER4_DEMO=$TIER4_DEMO is not a file"
+  fail "BENCH_TIER4_DEMO=$TIER4_DEMO is not a file (the default is
+  benchmarks/cells/tier4_autoware.sh, which runs the fork's patched
+  autoware_demo.py plus the Autoware container)"
 
+# Patch 0003 gives the demo the sensor flags a sweep class needs
+# (--lidar-channels/--lidar-pps/--lidar-rotation-hz/--lidar-range plus the
+# camera ones), and tier4_autoware.sh passes BENCH_TIER4_SWEEP_ARGS straight
+# through to it -- but nothing DERIVES those arguments from a class id yet
+# (Task 26 owns the sweep arms), and a sweep run that quietly used the
+# baseline VLP16 rig would be filed as a 128ch measurement. Same refusal, and
+# the same reason, as cells/extension.sh's for BENCH_RUNNER_SWEEP_ARGS.
 if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_TIER4_SWEEP_ARGS:-}" ]; then
-  fail "--class $BENCH_CLASS_ID needs tier4-side sensor parameters (Task 13's
-  demo patch); supply BENCH_TIER4_SWEEP_ARGS explicitly to override."
+  fail "--class $BENCH_CLASS_ID needs the tier4-side sensor arguments spelled
+  out: patch 0003's flags exist, but nothing maps a class id onto them yet.
+  Supply BENCH_TIER4_SWEEP_ARGS explicitly (e.g. --lidar-channels 128
+  --lidar-pps 4600000)."
 fi
 
 cat >"$BENCH_LAUNCH_ENV" <<EOF
@@ -98,6 +106,11 @@ INJECTOR_ENABLED="1"
 ARM_ENABLED="1"
 EXTRA_CONTAINERS=""
 TIER4_DEMO="$TIER4_DEMO"
+# Declared for teardown.sh, which stops the demo BEFORE the editor: the demo
+# drives world.tick(), and a client left ticking a dead server hangs on actor
+# destroy. Written by the plan step too, so a launcher that dies half-way
+# through the up step still leaves teardown something to stop.
+TIER4_DEMO_PID_FILE="$TIER4_DEMO_PID_FILE"
 EOF
 
 if [ "$MODE" = "plan" ]; then exit 0; fi
@@ -147,11 +160,19 @@ echo "OK: tier4 CARLA up on port $BENCH_RPC_PORT"
 # was supplied (plan refuses otherwise), so this is a hook, not a stub: it
 # runs whatever Task 13 lands and fails if that fails.
 echo "starting the tier4 Autoware stack via $TIER4_DEMO"
+BENCH_REPO="$BENCH_REPO" \
 BENCH_CELL="$BENCH_CELL" \
 BENCH_MAP="$BENCH_MAP" \
+BENCH_ARM="$BENCH_ARM" \
 BENCH_RPC_PORT="$BENCH_RPC_PORT" \
+BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" \
+BENCH_CARLA_TREE="$BENCH_CARLA_TREE" \
 BENCH_AUTOWARE_IMAGE="$BENCH_AUTOWARE_IMAGE" \
 BENCH_AW_CONTAINER="$AW_CONTAINER" \
 BENCH_RUN_DIR="$BENCH_RUN_DIR" \
+BENCH_RMW="${BENCH_RMW:-}" \
+BENCH_DDS_PROFILE="${BENCH_DDS_PROFILE:-}" \
+BENCH_GT_PYTHON="$GT_PYTHON" \
+TIER4_DEMO_PID_FILE="$TIER4_DEMO_PID_FILE" \
   bash "$TIER4_DEMO"
 echo "OK: tier4 Autoware stack reported ready"

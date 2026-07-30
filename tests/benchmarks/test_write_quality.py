@@ -1105,15 +1105,21 @@ def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
     (0.824 m on `dy = -0.475`, 0.570 m on the `dy = -0.607` refit). See
     benchmarks/README.md's 2026-07-29 ladder amendment for the full record.
 
-    The B family is deliberately NOT listed: Task 11 measured a DIFFERENT
-    branch per Town10 bundle (regen -> absolute, rigid/unshifted ->
-    relative), so those cells cannot be registered until Task 13 wires one.
+    The B family's three TOWN10 cells joined that set on 2026-07-30, when Task
+    13 wired their bundle: benchmarks/cells/tier4_autoware.sh resolves the map
+    through scripts/e2e/map_defaults.sh -- the same table cells A/A-hf read --
+    so they localize against the SAME rung-2 bundle, and the branch is a
+    property of the bundle (README, "M5 definitions"), not of the approach.
+    Task 11 could not register them because the branch differs per Town10
+    bundle (regen -> absolute, rigid/unshifted -> relative) and nothing had yet
+    chosen one. Cell D runs that same launcher but stays UNSET, because its map
+    is Nishi-Shinjuku and that bundle's branch needs Task 15's live G1.
     Nishi-Shinjuku (C, D) is Task 15's, the E family measures its own bundle
     first, and the CAL cells have no localization stack. Every cell not
     listed must stay UNSET so the M5 gate keeps refusing it rather than
     gating on a guessed branch -- the property R3.3 added this test for.
     """
-    selected_absolute = {"A", "A-hf"}
+    selected_absolute = {"A", "A-hf", "B", "B-hf", "B45"}
     doc = load_cells_doc()
     for cell in (c["id"] for c in doc["cells"]):
         metrics = metrics_for(doc, cell)

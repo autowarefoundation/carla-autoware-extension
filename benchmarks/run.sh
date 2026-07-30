@@ -53,10 +53,11 @@ RPC_PORT=2000
 RMW="rmw_cyclonedds_cpp"
 SHM=""
 DDS_PROFILE=""
-# Whether --dds-profile was PASSED, as distinct from defaulted below. The
-# per-family default is corrected once the approach is known (step 1), and an
-# explicit operator choice must survive that correction.
+# Whether --dds-profile / --rmw were PASSED, as distinct from defaulted below.
+# The per-family default is corrected once the approach is known (step 1), and
+# an explicit operator choice must survive that correction.
 DDS_PROFILE_EXPLICIT=0
+RMW_EXPLICIT=0
 
 die() { echo "RUN FAIL: $*" >&2; exit 2; }
 
@@ -82,7 +83,7 @@ while [ $# -gt 0 ]; do
     --runs) RUNS="$2"; shift 2 ;;
     --no-observer) NO_OBSERVER=1; shift ;;
     --rpc-port) RPC_PORT="$2"; shift 2 ;;
-    --rmw) RMW="$2"; shift 2 ;;
+    --rmw) RMW="$2"; RMW_EXPLICIT=1; shift 2 ;;
     --shm) SHM="$2"; shift 2 ;;
     --dds-profile) DDS_PROFILE="$2"; DDS_PROFILE_EXPLICIT=1; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -211,6 +212,30 @@ do_run() {
     [ "$DDS_PROFILE_EXPLICIT" = "0" ] && [ "$DDS_PROFILE" != "none" ]; then
     echo "      dds_profile: $DDS_PROFILE -> none (registered for the $approach family)"
     DDS_PROFILE=none
+  fi
+
+  # The tier4-native family's transport is not a preference either, and unlike
+  # the bridge's it is not only the INSTRUMENT's: the fork announces SHM-only
+  # user-data locators that ROS 2 Humble's Fast-DDS 2.6.11 matches but cannot
+  # read, so on the harness default (Cyclone pinned to `lo`) the observer
+  # records nothing AND Autoware receives no sensing AND the fork receives no
+  # control -- all silently, with every endpoint matched. MEASURED both
+  # directions: benchmarks/patches/tier4-native/README.md's transport matrix
+  # (row 5 Cyclone/`lo`: no topic list, no echo, no rate; rows 2/4/9
+  # fastrtps + udp_only.xml: 10.006/10.071/10.070 Hz) and its control-ingress
+  # table (SHM on: ego never leaves rest; udp_only: 15.93 m/s). That README
+  # registers `--rmw rmw_fastrtps_cpp --shm off` as the invocation these cells
+  # MUST use, so correcting the default here is what makes `run.sh B --arm
+  # closed-loop` mean that -- rather than silently producing a run with an
+  # empty observer and a vehicle under no command. An EXPLICIT --rmw still
+  # wins, and cells/tier4_autoware.sh refuses anything but this pair, so a
+  # deliberate wrong choice fails loudly instead of being measured.
+  if [ "$approach" = "tier4-native" ] && [ "$RMW_EXPLICIT" = "0" ] &&
+    [ "$DDS_PROFILE_EXPLICIT" = "0" ]; then
+    RMW=rmw_fastrtps_cpp
+    SHM=off
+    DDS_PROFILE="$BENCH/observer/config/udp_only.xml"
+    echo "      transport: -> $RMW, shm $SHM, $DDS_PROFILE (required for the $approach family)"
   fi
   [ -n "$CLASS_ID" ] && echo "      class=$CLASS_ID $(json_field "$cell_json" points_per_second) pts/s"
 

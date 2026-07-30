@@ -166,8 +166,9 @@ def test_high_frequency_cells_register_no_rate_task_26_has_not_applied(doc, cell
     """Task 26 Step 2 configures both high-frequency cells end to end -- the
     world tick AND the sensor ticks, set explicitly and separately -- and it has
     not run (it is also owner-strikable, so it may never). No committed launcher
-    applies any of it: cells/extension.sh passes no fixed-delta and the tier4
-    launcher does not exist.
+    applies any of it: cells/extension.sh passes no fixed-delta, and Task 13's
+    cells/tier4_autoware.sh -- which DOES exist, since 2026-07-30 -- applies cell
+    B's harmonized 20 Hz tick, not B-hf's intended 100 Hz.
 
     The sensor rates are the subtle half. An earlier revision registered 20.0
     for A-hf's, reasoning that --fixed-delta moves only the world tick so the

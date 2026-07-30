@@ -134,12 +134,14 @@ EXIT_UNKNOWN_ID = 2
 # actually_null pins the null side; the task-number side has no
 # machine-checkable pin (no field carries it), so it stays a citation to
 # verify by hand against the dated log, not a value to trust from memory.
+# B, B45 and D LEFT this mapping on 2026-07-30: Task 13 registered their
+# tick_hz (20.0) from the launcher constant it landed, so a null tick_hz on one
+# of them is no longer a known pending dependency and must not be reported as
+# one. B-hf stays, now owned by Task 26 (its 100 Hz configuration), as does
+# A-hf; CAL-seam is Task 14's.
 TICK_HZ_PENDING_TASK = {
     "A-hf": 26,
-    "B": 13,
-    "D": 13,
     "B-hf": 26,
-    "B45": 13,
     "CAL-seam": 14,
 }
 

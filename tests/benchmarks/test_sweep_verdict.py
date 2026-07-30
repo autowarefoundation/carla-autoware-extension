@@ -645,7 +645,7 @@ def test_resolve_override_plain_flag_agreeing_with_registry_is_fine(flag, key):
 
 @pytest.mark.parametrize("flag,key", _OVERRIDE_FAMILIES)
 def test_resolve_override_plain_flag_fills_in_an_unregistered_binding(flag, key):
-    """registered=None (e.g. cell B's lidar_expected_hz pending Task 13, or
+    """registered=None (e.g. cell E's lidar_expected_hz pending Task 10/20, or
     cell B's tick_hz likewise): nothing to disagree with, so the plain
     flag legitimately supplies the missing value."""
     assert sweep_verdict._resolve_override(flag, key, None, "NEW", None) == "NEW"
@@ -806,8 +806,8 @@ def test_tick_hz_pending_task_entries_are_all_still_actually_null():
 
 
 def test_missing_lidar_expected_hz_fails_clearly(tmp_path):
-    """cell B's real registration: lidar_expected_hz is null pending Task
-    13. Must raise, never fall back to tick_hz or any other number."""
+    """A cell whose lidar_expected_hz is null (cell E's, pending Task 10/20)
+    must raise, never fall back to tick_hz or any other number."""
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
     _healthy_paced_point(run_dir)
@@ -844,13 +844,16 @@ def test_missing_tick_hz_on_unpaced_arm_fails_clearly(tmp_path):
 
 def test_missing_tick_hz_message_names_cell_and_pending_task(tmp_path):
     """The message must read as "known pending dependency", not "the tool
-    is broken": it names the missing binding (metrics.tick_hz), the cell,
-    and cell B's real owning task (13, per benchmarks/README.md's
-    2026-07-28 tick_hz amendment log) -- an operator hitting this mid-sweep
-    must be able to tell this apart from a bug in the tool at a glance."""
+    is broken": it names the missing binding (metrics.tick_hz), the cell, and
+    that cell's real owning task -- an operator hitting this mid-sweep must be
+    able to tell this apart from a bug in the tool at a glance.
+
+    Driven on B-hf/Task 26 since 2026-07-30: cell B's tick_hz was registered by
+    Task 13 and left TICK_HZ_PENDING_TASK, so B is no longer a cell this
+    message can fire for."""
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
-    _write_manifest(run_dir, arm="unpaced", approach="tier4-native", cell="B")
+    _write_manifest(run_dir, arm="unpaced", approach="tier4-native", cell="B-hf")
     wall = BASE + np.arange(1201) * 50_000_000
     _write_clock_csv(run_dir, wall)
     _write_observer_csv(run_dir, topic="/sensing/lidar/top/pointcloud_raw_ex")
@@ -868,8 +871,8 @@ def test_missing_tick_hz_message_names_cell_and_pending_task(tmp_path):
 
     message = str(exc_info.value)
     assert "metrics.tick_hz" in message
-    assert "'B'" in message
-    assert "Task 13" in message
+    assert "'B-hf'" in message
+    assert "Task 26" in message
     assert "not a defect in this tool" in message
 
 
@@ -998,14 +1001,19 @@ def test_main_resolves_the_bridges_own_topic_for_cell_e(tmp_path, capsys):
     assert "reasons" in out  # table rendered, i.e. no crash resolving the topic
 
 
-def test_main_on_cell_b_fails_clearly_when_lidar_expected_hz_is_unbound(tmp_path):
-    """The one thing the registration deliberately left open: cell B's
-    lidar_expected_hz is null pending Task 13 (metric-definitions-report.md
-    open question 1). main() must fail clearly end-to-end, not substitute
-    a plausible number (e.g. tick_hz, or A's value)."""
-    cell_dir = tmp_path / "B" / "run-001"
+def test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound(tmp_path):
+    """main() must fail clearly end-to-end on a cell whose lidar_expected_hz is
+    still null, not substitute a plausible number (e.g. tick_hz, or another
+    cell's value).
+
+    Driven on cell E since 2026-07-30: this test used cell B, whose
+    lidar_expected_hz Task 13 registered at 10.0 from the launcher constant it
+    landed. E's is still null (Task 10/20 re-grounds the bridge's own rig), so
+    the property under test is unchanged and is still exercised against a REAL
+    committed null rather than a synthetic one."""
+    cell_dir = tmp_path / "E" / "run-001"
     cell_dir.mkdir(parents=True)
-    _write_manifest(cell_dir, arm="paced", approach="tier4-native", cell="B")
+    _write_manifest(cell_dir, arm="paced", approach="python-bridge", cell="E")
     sample_ns = BASE + np.arange(60) * 1_000_000_000
     _write_resources_csv(cell_dir, sample_ns, np.full(60, 0.99))
     wall = BASE + np.arange(1201) * 50_000_000
@@ -1015,7 +1023,7 @@ def test_main_on_cell_b_fails_clearly_when_lidar_expected_hz_is_unbound(tmp_path
     _write_quality(cell_dir, gate_pass=True)
 
     with pytest.raises(ValueError, match="lidar_expected_hz"):
-        sweep_verdict.main(["B", "--class", "vlp16", "--results-root", str(tmp_path)])
+        sweep_verdict.main(["E", "--class", "vlp16", "--results-root", str(tmp_path)])
 
 
 def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):

@@ -218,9 +218,16 @@ fi
 #    cells/python-bridge.sh pins the unshifted ~/autoware_map/town10 for the E
 #    family. Resolving E through map_defaults.sh recorded the extension cells'
 #    bundle as E's -- a wrong provenance record the B family would have
-#    inherited. APPROACH_BUNDLE_DIR in bundle_pin.py holds the non-extension
-#    mappings: tier4-native resolves to nothing because Task 13 owns what it
-#    mounts, and calibration has no localization stack at all.
+#    inherited. APPROACH_BUNDLE_DIR in bundle_pin.py holds the mappings for the
+#    approaches that read neither table: calibration has no localization stack
+#    at all.
+#
+#    tier4-native reads map_defaults.sh TOO, since Task 13: its launcher
+#    (benchmarks/cells/tier4_autoware.sh) sources that same table on purpose, so
+#    that cells A and B localize against ONE bundle -- the condition
+#    benchmarks/README.md's confound C4 turns on. Before that launcher existed
+#    this family fell to the `unmapped-approach` skip and its bundle provenance
+#    was never recorded at all.
 # ---------------------------------------------------------------------------
 MAP_BUNDLE_PIN=""
 CELL_MAP="$(cell_field map)"
@@ -233,7 +240,7 @@ bundle_skip() {
 }
 if [ "$CELL_MAP" = "none" ]; then
   bundle_skip no-map "-"
-elif [ "$APPROACH" = "extension" ]; then
+elif [ "$APPROACH" = "extension" ] || [ "$APPROACH" = "tier4-native" ]; then
   # shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
   . "$REPO/scripts/e2e/map_defaults.sh"
   carla_autoware_map_defaults "$CELL_MAP"

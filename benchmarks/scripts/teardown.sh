@@ -154,7 +154,16 @@ case "${APPROACH:-}" in
     # is the fallback for the case where that trap did not run.
     stop_pidfile "${CARLA_PID_FILE:-}" "run_e2e.sh"
     ;;
-  tier4-native | python-bridge)
+  tier4-native)
+    # The demo BEFORE the editor, and the order is the point: the demo owns
+    # world.tick(), so it is this cell's tick authority, and a CARLA client
+    # left ticking a server that has just died hangs on actor destroy
+    # (CLAUDE.md's teardown gotcha). Stopping it first also puts the world
+    # back to a state the editor can exit from.
+    stop_pidfile "${TIER4_DEMO_PID_FILE:-}" "tier4 autoware_demo.py"
+    stop_pidfile "${CARLA_PID_FILE:-}" "carla"
+    ;;
+  python-bridge)
     stop_pidfile "${CARLA_PID_FILE:-}" "carla"
     ;;
 esac
@@ -190,11 +199,23 @@ fi
 #
 # Best-effort by design: no container, no log file, or a `docker cp` failure all
 # leave teardown otherwise unchanged.
+#
+# The tier4 cells' single launch log is here for the same reason: the B family
+# runs its stack inside a container this function is about to remove, and its
+# own launcher only copies the log out on ITS failure paths -- a failure after
+# the launcher returns (the arm, the post-engage probe, the smoke) would leave
+# no copy at all.
 if [ -n "${AW_CONTAINER:-}" ] && docker inspect "${AW_CONTAINER}" >/dev/null 2>&1; then
   for stage in 1 2; do
     if docker cp "${AW_CONTAINER}:/tmp/bridge-stage${stage}.log" \
       "$RUN_DIR/bridge-stage${stage}.log" >/dev/null 2>&1; then
       say "saved bridge-stage${stage}.log"
+    fi
+  done
+  for log in tier4-autoware tier4-concat-relay; do
+    if docker cp "${AW_CONTAINER}:/tmp/${log}.log" \
+      "$RUN_DIR/${log}.log" >/dev/null 2>&1; then
+      say "saved ${log}.log"
     fi
   done
 fi
