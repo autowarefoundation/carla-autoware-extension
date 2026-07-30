@@ -51,6 +51,30 @@ fail() { echo "LAUNCH FAIL (extension/$BENCH_CELL): $*" >&2; exit 2; }
 [ -f "$BENCH_ROUTE_FILE" ] ||
   fail "route file missing: $BENCH_ROUTE_FILE"
 [ -f "$COMPOSE" ] || fail "compose file missing: $COMPOSE"
+
+# The base_link anchor. This family's registered offset is 0.0 -- so gt.csv is an
+# exact identity -- and that is true ONLY because runner/ applies no
+# vehicle-frame shift. It once did: an uncompensated +wheelbase/2 biased NDT's
+# base_link and cost a 1.44 m G1 near-miss (docs/e2e-report.md issue #6), fixed
+# by DELETING base_link_to_vehicle_center / SAMPLE_VEHICLE_WHEELBASE /
+# ego_wheelbase(). Checked here because their return would silently re-bias every
+# cell-A pose_error by ~1.4 m while the registry still claimed 0.0 -- and G1/G2's
+# promoted numbers were measured under that 0.0 assumption.
+PYTHONPATH="$BENCH_REPO" python3 - "$BENCH_REPO/runner/kit.py" \
+  "$BENCH_REPO/runner/spawn.py" <<'ANCHORPY' || fail "the extension's base_link
+  anchor assumption no longer holds (see the message above).
+  benchmarks/analysis/gt_anchor.py registers 0.0 for approach extension; if
+  runner/ must reintroduce a vehicle-frame shift, register the new offset there
+  deliberately AND re-derive G1/G2, which were measured under 0.0."
+import sys
+
+from benchmarks.analysis.gt_anchor import offset_for_approach, verify_registered_offset
+
+text = "".join(open(p).read() for p in sys.argv[1:])
+verify_registered_offset("extension", text)
+print(f"OK: base_link anchor {offset_for_approach('extension'):+.8f} m (no vehicle shift)")
+ANCHORPY
+
 # The campaign-wide pose_initializer override this family mounts through
 # $COMPOSE. Checked as a FILE here rather than trusted, because `docker
 # compose` on a missing host path silently creates a DIRECTORY at the

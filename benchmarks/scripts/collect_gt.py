@@ -78,6 +78,7 @@ import sys
 import time
 from pathlib import Path
 
+from benchmarks.analysis.gt_anchor import base_link_from_actor_origin, offset_for_approach
 from benchmarks.analysis.publisher_counts import publisher_counts_doc
 from benchmarks.scripts.pick_route import carla_to_map_yaw
 from scripts.e2e.collect_gt import find_ego
@@ -97,14 +98,40 @@ EXIT_BAD_ARGS = 2
 
 
 def map_pose(
-    loc_x_m: float, loc_y_m: float, loc_z_m: float, yaw_deg: float, offset
+    loc_x_m: float,
+    loc_y_m: float,
+    loc_z_m: float,
+    yaw_deg: float,
+    offset,
+    anchor_offset_m: float = 0.0,
 ) -> tuple[float, float, float, float]:
     """CARLA PythonAPI pose (metres, degrees) -> map-frame (x, y, z, yaw_rad).
+
+    `anchor_offset_m` moves the recorded point from the CARLA actor origin to
+    where the RUNNING APPROACH puts `base_link` -- see
+    `benchmarks.analysis.gt_anchor`. It is not a constant of the campaign: it is
+    0.0 for the extension cells (which pin `base_link` to the actor origin, so
+    this is an exact identity there) and non-zero for the approaches that shift
+    it. Without it, `pose_error` compares an actor-origin ground truth against a
+    `base_link` NDT pose and reports the frame gap as localization error --
+    measured at 1.4879 m on cell B (results/B/run-006).
+
+    Applied HERE, at the single point that writes gt.csv, so `pose_error` and
+    the localization seed cannot drift apart: both read the same registry.
+
+    z is deliberately NOT adjusted. The shift is longitudinal in the ground
+    plane; both conventions put `base_link` at ground height (the demo's own
+    comment calls its target the "projection of the rear axis on the ground",
+    and runner/kit.py records the CARLA vehicle origin as sitting at base_link
+    height). yaw is unchanged because a longitudinal translation does not rotate
+    the body.
 
     Pure, so the frame conversion is unit-tested without a live CARLA.
     """
     x, y, z = world_m_to_mgrs_local(loc_x_m, loc_y_m, loc_z_m, offset)
-    return x, y, z, carla_to_map_yaw(yaw_deg)
+    yaw_rad = carla_to_map_yaw(yaw_deg)
+    x, y = base_link_from_actor_origin(x, y, yaw_rad, anchor_offset_m)
+    return x, y, z, yaw_rad
 
 
 def sim_ns_from_elapsed(elapsed_seconds: float) -> int:
@@ -242,6 +269,19 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - needs live
         print(f"GT FAIL: {exc}", file=sys.stderr)
         return EXIT_BAD_ARGS
 
+    # Same reasoning, same place: an approach with no registered base_link
+    # anchor must fail before a window is recorded, because the alternative is a
+    # gt.csv anchored at the CARLA actor origin whose pose_error silently
+    # carries the frame gap as if it were localization error.
+    try:
+        anchor_offset_m = offset_for_approach(args.approach)
+    except KeyError as exc:
+        print(f"GT FAIL: {exc}", file=sys.stderr)
+        return EXIT_BAD_ARGS
+    print(
+        f"gt base_link anchor: {anchor_offset_m:+.8f} m (body frame) for approach {args.approach!r}"
+    )
+
     import carla  # lazy: this module must import under bare pytest
 
     out_path = Path(args.out)
@@ -310,7 +350,12 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - needs live
                 arrival_ns = time.time_ns()
                 tf = ego.get_transform()
                 x, y, z, yaw = map_pose(
-                    tf.location.x, tf.location.y, tf.location.z, tf.rotation.yaw, offset
+                    tf.location.x,
+                    tf.location.y,
+                    tf.location.z,
+                    tf.rotation.yaw,
+                    offset,
+                    anchor_offset_m,
                 )
                 writer.writerow(
                     [

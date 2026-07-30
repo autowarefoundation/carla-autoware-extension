@@ -125,6 +125,29 @@ grep -q -- "--spawn-pose" "$DEMO" ||
   benchmarks/patches/tier4-native/0003-autoware-demo-params.patch in
   $BENCH_CARLA_TREE (git apply), then re-run."
 
+# The base_link anchor, checked against the DEMO'S OWN SOURCE rather than
+# trusted from the harness's registry. This family's demo spawns base_link
+# behind the actor origin, and both gt.csv (pose_error) and the localization
+# seed below correct for it. A stale registered value biases BOTH by the
+# difference and would read as a localization result rather than a harness bug,
+# so a drifting literal -- a fork edit, or a future patch that parameterizes
+# that spawn offset -- must abort the run instead of being measured. This is the
+# same defect class as the one it guards: docs/e2e-report.md issue #6, where an
+# uncompensated wheelbase/2 shift cost a 1.44 m G1 near-miss.
+PYTHONPATH="$BENCH_REPO" python3 - "$DEMO" <<'ANCHORPY' || fail "the tier4 demo's
+  base_link anchor no longer matches benchmarks/analysis/gt_anchor.py's
+  registered value for approach tier4-native (see the message above). Do NOT
+  edit the registry to silence this without quoting the new source line: it
+  anchors every pose_error and the localization seed for the whole B family."
+import sys
+
+from benchmarks.analysis.gt_anchor import offset_for_approach, verify_registered_offset
+
+text = open(sys.argv[1]).read()
+verify_registered_offset("tier4-native", text)
+print(f"OK: base_link anchor {offset_for_approach('tier4-native'):+.8f} m matches {sys.argv[1]}")
+ANCHORPY
+
 # The demo imports PyKDL (its IMU mount is a composed KDL frame chain). The
 # tier4 client wheel is cp313 and no distro PyKDL exists for that ABI, so this
 # is a one-time host prerequisite of the same kind as the wheel itself --
@@ -443,6 +466,10 @@ import os
 
 import carla
 
+from benchmarks.analysis.gt_anchor import (
+    base_link_from_actor_origin,
+    offset_for_approach,
+)
 from scripts.e2e.collect_gt import ego_map_xy, find_ego
 from scripts.e2e.verify_mgrs_handedness import offset_for_map
 
@@ -454,7 +481,16 @@ world.wait_for_tick()
 tf = find_ego(world).get_transform()
 x, y = ego_map_xy(tf.location.x, tf.location.y, offset)
 z = offset[2] + tf.location.z
-print(f"{x:.3f} {y:.3f} {z:.3f} {math.radians(-tf.rotation.yaw):.6f}")
+yaw = math.radians(-tf.rotation.yaw)
+# pose_initializer's contract is a BASE_LINK pose, and this family's demo puts
+# base_link BEHIND the actor origin, so the raw actor pose names the wrong point.
+# Same registry gt.csv uses (benchmarks.analysis.gt_anchor), so the seed and
+# pose_error cannot drift apart. MEASURED consequence of omitting it
+# (results/B/run-006): the service SUCCEEDED and NDT locked, then the seed's own
+# 1.0 m convergence check failed at 1.4879 m -- NDT had converged to the true
+# base_link while the target still named the actor origin.
+x, y = base_link_from_actor_origin(x, y, yaw, offset_for_approach("tier4-native"))
+print(f"{x:.3f} {y:.3f} {z:.3f} {yaw:.6f}")
 SEEDPY
 )" || fail_with_log "could not read the ego's ground-truth pose for the seed"
 echo "seeding localization at the ego's ground-truth map pose: $SEED"

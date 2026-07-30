@@ -898,10 +898,124 @@ the `vehicle.toyota.prius` pivot's actual placement versus mid-wheelbase.
 
 **This is a confound to correct or to subtract, not a localization error.** The
 localization in that run is unbiased in x once the convention is accounted for.
-Task 16 owes one of the two: offset `gt.csv` to `base_link` before computing
-`pose_error`, or state this offset beside every `pose_error` number. What it must
-NOT do is read ~1.4 m of constant offset as approach-dependent accuracy, which is
+Two remedies were available: offset `gt.csv` to `base_link` before computing
+`pose_error`, or state this offset beside every `pose_error` number. What neither
+may do is read ~1.4 m of constant offset as approach-dependent accuracy, which is
 exactly what the raw comparison invites.
+
+**RESOLVED 2026-07-30 (Task 13), before any P3 run — see the amendment below.**
+Originally assigned to Task 16; it landed in **Task 13** because it stopped being
+a reporting caveat and became a blocker on half the primary duel (cell B's
+closed-loop gate cannot pass without it). Landing it earlier than a registered
+deadline is not a pre-registration violation — that deadline bounds the LATEST
+legitimate edit — but it amends a metric definition (`pose_error`'s GT anchor),
+so it carries its reason here and landed in a dedicated commit. **Task 16 no
+longer owes this.**
+
+#### Amendment: the GT anchor is per-approach, not campaign-wide (2026-07-30)
+
+**The finding that forced the redesign, in three parts. The record is the
+deliverable, because the obvious fix is wrong.**
+
+1. **There is no missing shared transform.** Each approach _defines_ where
+   `base_link` sits, by where it attaches its sensors: Autoware's TF chain
+   carries no vehicle term, so NDT back-solves
+   `base_link = sensor_world − TF(base_link→sensor)` and lands on whatever
+   reference the rig was hung off. The harness's actor-origin ground truth is
+   therefore a correct `base_link` GT **exactly when the approach pins
+   `base_link` to the actor origin**. A uniform ~1.4 m correction would have
+   **broken the approach that is already correct** — measured, not argued:
+   applying the tier4 anchor to cell A's own retained G1 series turns `max_err`
+   from 0.089 m into **1.415 m**.
+2. **Cell B is reproducing the extension's own issue #6, inside the fork.** The
+   extension once applied a `+wheelbase/2` shift that Autoware's TF did not know
+   about; it biased NDT's `base_link` and cost a **1.44 m G1 near-miss**,
+   root-caused in `docs/e2e-report.md` (issue #6) and fixed by _deleting_
+   `base_link_to_vehicle_center`, `SAMPLE_VEHICLE_WHEELBASE` and
+   `ego_wheelbase()`. The tier4 demo does the same thing today
+   (`autoware_demo.py:405-416`). **This is a hard-fork maintenance finding**: a
+   defect fixed in one tree persists in the other, and nothing links them.
+3. **The direction is counterintuitive — do not "fix" cell A.** **Cell B follows
+   Autoware's real URDF convention** (`base_link` at the rear-axle ground
+   projection). **Cell A deliberately deviates**, pinning `base_link` to the
+   CARLA vehicle origin — `runner/kit.py`'s docstring says so outright. Cell A's
+   ground truth is correct _because of_ that deviation, and the extension's
+   removal of the shift is what made it true. A later reader who "restores"
+   Autoware's convention in the extension reintroduces issue #6.
+
+**What landed.** `benchmarks/analysis/gt_anchor.py` registers a per-approach
+body-frame longitudinal offset from the CARLA actor origin to that approach's
+`base_link`, and applies it — rotated by ego yaw — at the two sites that consume
+it: `benchmarks/scripts/collect_gt.py`'s `map_pose` (so `pose_error` is anchored)
+and `cells/tier4_autoware.sh`'s localization seed (so `pose_initializer` receives
+a `base_link` pose). One registry, both operands, both sites, so they cannot
+drift apart.
+
+| approach        | offset            | source of truth                                                            | `sample_vehicle` 2.79/2 |
+| --------------- | ----------------- | -------------------------------------------------------------------------- | ----------------------- |
+| `extension`     | **0.0**           | no vehicle-frame shift at all (`runner/kit.py`, `runner/spawn.py`)         | n/a                     |
+| `tier4-native`  | **−1.39706787 m** | hardcoded literal, "as measured in Unreal Editor" (`autoware_demo.py:410`) | 1.395 — **≠**           |
+| `python-bridge` | **−1.425 m**      | bridge `DEFAULT_WHEELBASE`/2 = 2.850/2                                     | 1.395 — **≠**           |
+| `calibration`   | 0.0               | no Autoware stack, no `pose_error`                                         | n/a                     |
+
+**Not derived from the vehicle model, deliberately.** An earlier plan computed
+the offset from the wheelbase. That is wrong for _both_ non-zero approaches, as
+the last column shows. The bridge's `−1.425` stays at the bridge's own 2.850,
+because **−1.425 is where the bridge actually puts `base_link`, which is what NDT
+solves for**; the 0.03 m disagreement against 2.79 remains the registered
+E-family confound recorded above — a real sensor-placement inconsistency, not an
+arithmetic error to round away.
+
+**Rotated, not subtracted.** The offset is constant in the _body_ frame, so in the
+map frame it rotates with yaw. "State the offset beside every number" is dead on a
+technical ground rather than a preference: a map-frame constant is correct at
+exactly one heading, and the committed Town10 route turns **169.4°**, over which
+the correction swings from −1.397 m to +1.373 m — **2.77 m** of error for a stated
+constant, against a 1.0 m goal gate.
+
+**Drift cannot reintroduce the bias silently.** A hardcoded copy of the fork's
+literal would be the same defect class as the one this fixes, so each launcher
+re-reads the approach's own source at bring-up and aborts on mismatch:
+`cells/tier4_autoware.sh` parses `pivot_to_base_link_transform` out of the demo and
+compares it against the registry; `cells/extension.sh` asserts the three issue-#6
+symbols are still absent from `runner/`. If patch 0003 ever parameterizes that
+spawn offset, or the fork's literal changes, the run **fails loudly** instead of
+being measured on a stale value.
+
+**The promoted cell-A evidence survives, and it is checked rather than asserted.**
+Cell A's offset is 0.0, so the transform short-circuits to an exact identity —
+verified over all 399 retained G1 GT samples (byte-identical output, identical
+float objects) — and both gates were re-derived through the amended path:
+
+| gate                                     | re-derived through the amendment   | promoted    |
+| ---------------------------------------- | ---------------------------------- | ----------- |
+| G1 (`evidence/g1-rung2-regen/`)          | `max_err=0.089 m -> PASS`          | **0.089 m** |
+| G2 (`evidence/g2-regen-repicked-route/`) | `closest_approach=0.244 m -> PASS` | **0.244 m** |
+
+**Rejected: patching the demo to remove its shift.** It would have needed owner
+sign-off as a third named patch exception, but the stronger objection is on the
+merits: it **patches the approach that follows Autoware's convention so it matches
+the one that deviates**. That would make the harness's GT assumption — rather than
+Autoware's URDF convention — the campaign's definition of correct, and it would
+delete a real interop difference. Recorded so the rejection keeps its reason.
+
+**Closed-loop geometry metrics: bounded, and no recomputation needed.** With the
+anchor applied, each cell's `gt.csv` reports _that approach's own_ `base_link` —
+the point its controller is driving — so lateral deviation and
+`goal_closest_approach` measure each approach's own tracking error, which is the
+like-for-like comparison. What remains is that the two put _different body points_
+on the centreline (A's vehicle origin, B's rear axle, 1.397 m apart), so through
+curvature they trace slightly different curves. That is bounded by
+`sqrt(R² + d²) − R ≈ d²/2R`; the committed Town10 route's tightest discrete radius
+is **41.38 m**, giving **0.0236 m** — 2.4% of the 1.0 m goal tolerance and 4.7% of
+the 0.5 m absolute pose gate. The along-track term shifts the scoring station band
+by 1.397 m out of 218.9 m (0.64%). Note also that **no duel margin reads a geometry
+metric at all**: `benchmarks/config/margins.yaml` registers only
+`one_hop_wall_ms`, `lidar_to_ndt_sim_ms`, `control_staleness_ms`,
+`carla_process_cpu_pct` and `achieved_rate_ratio`, so these two are M5 _gate
+thresholds_, not equivalence comparisons. At 2.4 cm the difference is immaterial
+to both, so the A-vs-B duel does **not** need them recomputed at a common
+reference point.
 
 A smaller, independent defect rides along in the E family only: the bridge's
 `DEFAULT_WHEELBASE = 2.850` disagrees with `sample_vehicle`'s
@@ -1177,6 +1291,31 @@ it could affect exists.
 zero, and neither approach's data-path, conversion or transport code is
 touched. No new file appears under `benchmarks/patches/`, so no approach's patch
 set grows and the patch policy's two named exceptions are unaffected.
+
+### `base_link` anchoring: a per-approach interop difference, normalized in the harness not patched (Task 13)
+
+**Added 2026-07-30 (Task 13), before any P3 run.** Same treatment as the
+`control_mode` gap below and the parked lateral velocity above: the harness
+normalizes so the metric compares like with like, the **difference itself is
+recorded**, and no approach is patched.
+
+| cell               | where the approach puts `base_link`                                                               | offset from the CARLA actor origin | follows Autoware's URDF convention?                        |
+| ------------------ | ------------------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------- |
+| A / A-hf / C       | the **CARLA vehicle origin** — sensors attach at raw `base_link` coordinates with no vehicle term | **0.0**                            | **No — deliberate deviation** (`runner/kit.py` states it)  |
+| B / B-hf / B45 / D | the **rear-axle ground projection** — an explicit `base_link` actor 1.397 m behind the pivot      | **−1.39706787 m**                  | **Yes**                                                    |
+| E / E0 / E-opt     | vehicle centre minus `DEFAULT_WHEELBASE`/2                                                        | **−1.425 m**                       | Yes, at a wheelbase that disagrees with `sample_vehicle`'s |
+
+**Why this is a finding and not a harness detail.** Where an integration anchors
+the ego pose it publishes is part of the interop completeness this campaign
+exists to compare, and the three approaches disagree. The **counterintuitive**
+part is the direction: the approach the harness's raw ground truth happened to
+suit (A) is the one that deviates from Autoware's convention, and the approach
+that looked broken (B) is the one that follows it. Normalizing without recording
+that would have converted a real difference into a harness detail — and worse,
+would have invited a later "fix" to the wrong side. The full reasoning, the
+drift guards, and the measured proof that the normalization is a strict no-op for
+cell A are in the amendment under "Ground truth is the CARLA actor origin"
+above.
 
 ### Host load during a run is unbounded, and it changes outcomes (Task 13)
 
