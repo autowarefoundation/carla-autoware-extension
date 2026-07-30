@@ -16,6 +16,13 @@
 # Retained per run: g2_dist.txt (the distance series measure_route.py consumes),
 # g2_hz.txt (the gated-control liveness capture, which is the evidence that the
 # vehicle was actually under command) and g2_summary.txt.
+#
+# The default lands in .gitignore'd reports/, which is right for routine runs.
+# A run whose number backs a PRE-REGISTERED DECISION belongs in the tracked
+# benchmarks/evidence/g2-<slug>/ instead, or it exists on one workstation only:
+#   G2_RUN_DIR=benchmarks/evidence/g2-<slug> \
+#     bash scripts/e2e/gate_g2_closed_loop.sh X Y
+# See benchmarks/evidence/README.md.
 set -euo pipefail
 export ROS_DOMAIN_ID=0
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

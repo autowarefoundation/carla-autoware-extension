@@ -115,8 +115,10 @@ cells:
       # NDT error 0.089 m over 400 static samples -- 411 mm inside the 0.5 m
       # gate, bias (dx, dy) = (+0.021, -0.038) m, per-axis jitter std 0.019 /
       # 0.013 m. Raw NDT + ground-truth series and the bundle's own sha256 are
-      # retained under reports/g1-rung2-regen/, so the number is recomputable
-      # rather than merely asserted.
+      # TRACKED under benchmarks/evidence/g1-rung2-regen/, so the number that
+      # selects this threshold is recomputable from the repo rather than merely
+      # asserted. (It previously cited the .gitignore'd reports/ path, where it
+      # existed on one workstation only and no fresh clone would have it.)
       #
       # The ladder was walked in order; the earlier rungs are kept because
       # they bound what re-registration alone can do:

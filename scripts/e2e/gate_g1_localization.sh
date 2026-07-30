@@ -20,9 +20,18 @@
 #
 # Retained per run: g1_ndt.txt, g1_gt.txt (the raw series measure_ndt.py
 # consumes) and g1_summary.txt (map, bundle + its sha256, window, sample
-# counts, verdict). reports/ is the natural home: docker/compose.yaml already
+# counts, verdict). reports/ is the default home: docker/compose.yaml already
 # bind-mounts it read-write and it is the one path in this tree runs are
 # expected to write to.
+#
+# BUT reports/ is .gitignore'd, which is right for routine runs and wrong for a
+# run whose number backs a PRE-REGISTERED DECISION -- that one exists on a
+# single workstation, in a path `git clean -fdx` removes. Point such a run at
+# the tracked benchmarks/evidence/g1-<slug>/ instead:
+#   G1_RUN_DIR=benchmarks/evidence/g1-<slug> \
+#     bash scripts/e2e/gate_g1_localization.sh
+# See benchmarks/evidence/README.md for what belongs there and why not
+# reports/ or benchmarks/results/.
 set -euo pipefail
 export ROS_DOMAIN_ID=0
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
