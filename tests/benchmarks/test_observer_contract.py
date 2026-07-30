@@ -29,7 +29,12 @@ import subprocess
 import numpy as np
 import pytest
 
-from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv
+from benchmarks.analysis.bench_io import (
+    read_clock_csv,
+    read_observer_csv,
+    read_pose_csv,
+    read_tf_csv,
+)
 from benchmarks.analysis.cadence import inter_arrival_stats
 
 pytestmark = pytest.mark.skipif(
@@ -99,8 +104,12 @@ def _assert_ok(result: subprocess.CompletedProcess, args_repr: str) -> None:
 
 def test_observer_contract(tmp_path):
     _assert_happy_path(tmp_path / "bench_observer_out")
+    _assert_typed_pose_and_tf_kinds(tmp_path / "typed_out")
     _assert_unwritable_out_dir_fails_loudly(tmp_path / "ro_out")
     _assert_malformed_spec_fails_loudly(tmp_path / "malformed_spec_out")
+    _assert_five_field_spec_fails_loudly(tmp_path / "five_field_out")
+    _assert_tf_without_a_child_frame_fails_loudly(tmp_path / "tf_no_arg_out")
+    _assert_two_tf_specs_on_one_topic_fail_loudly(tmp_path / "tf_dup_out")
 
 
 def _assert_happy_path(out_dir):
@@ -141,6 +150,149 @@ def _assert_happy_path(out_dir):
 
     stats = inter_arrival_stats(arrivals)
     assert stats.hz == pytest.approx(RATE_HZ, abs=1.0)
+
+
+# --- the typed `pose` and `tf` kinds --------------------------------------
+#
+# Driven by `ros2 topic pub` rather than a bench_pub-style C++ publisher: the
+# only thing the two kinds need on the wire is a real message of the right
+# type at a known stamp, and no Autoware node is invented to produce it. The
+# published values are chosen so a wrong implementation cannot pass:
+#
+#   * the pose's x/y are LARGE (Nishi-Shinjuku magnitudes) with 7 decimals, so
+#     std::ostream's default 6 SIGNIFICANT digits would record 81371.1 while
+#     the required fixed 4-decimal format records 81371.1235.
+#   * the /tf message carries TWO transforms, only one matching the registered
+#     child_frame_id, and the non-matching one's stamp is 999 s. A kind with no
+#     frame filter would record both (an aggregate rate) and a generic
+#     subscription's `stamp_from_cdr` would read the SEQUENCE LENGTH (2) at CDR
+#     byte 4 and record ~2e9 instead of the transform's own 7.125e9.
+POSE_TOPIC = "/localization/pose_estimator/pose_with_covariance"
+TF_TOPIC = "/tf"
+TF_CHILD = "base_link"
+TF_OTHER_CHILD = "velodyne_top"
+POSE_STAMP_NS = 12_250_000_000
+POSE_X_RECORDED = 81371.1235
+POSE_Y_RECORDED = 49912.7654
+TF_STAMP_NS = 7_125_000_000
+TF_OTHER_STAMP_NS = 999_000_000_000
+TF_SEQUENCE_LENGTH_AS_STAMP_NS = 2_000_000_000
+
+# Plain (non-f) strings: the ROS message YAML is all braces.
+_POSE_MSG = (
+    "{header: {stamp: {sec: 12, nanosec: 250000000}, frame_id: map}, "
+    "pose: {pose: {position: {x: 81371.1234567, y: 49912.7654321, z: 0.5}}}}"
+)
+_TF_MSG = (
+    "{transforms: ["
+    "{header: {stamp: {sec: 7, nanosec: 125000000}, frame_id: map}, "
+    "child_frame_id: base_link, transform: {translation: {x: 1.0, y: 2.0, z: 0.0}}}, "
+    "{header: {stamp: {sec: 999, nanosec: 0}, frame_id: base_link}, "
+    "child_frame_id: velodyne_top, transform: {translation: {x: 0.0, y: 0.0, z: 2.0}}}]}"
+)
+
+_TYPED_SCRIPT = f"""
+set -e
+{_SOURCE_ENV}
+"{_BIN}/bench_observer" --ros-args -p out_dir:=/out -p \
+  "topics:=[{POSE_TOPIC}|geometry_msgs/msg/PoseWithCovarianceStamped|pose,\
+{TF_TOPIC}|tf2_msgs/msg/TFMessage|tf|{TF_CHILD}]" &
+OBS_PID=$!
+sleep 3
+ros2 topic pub -r {RATE_HZ:g} {POSE_TOPIC} \
+  geometry_msgs/msg/PoseWithCovarianceStamped '{_POSE_MSG}' >/dev/null 2>&1 &
+POSE_PID=$!
+ros2 topic pub -r {RATE_HZ:g} {TF_TOPIC} \
+  tf2_msgs/msg/TFMessage '{_TF_MSG}' >/dev/null 2>&1 &
+TF_PID=$!
+sleep {RUN_SECONDS}
+kill -INT "$POSE_PID" "$TF_PID" "$OBS_PID" || true
+wait "$OBS_PID"
+"""
+
+
+def _assert_typed_pose_and_tf_kinds(out_dir):
+    out_dir.mkdir()
+    result = _docker_run(f"{out_dir}:/out", _TYPED_SCRIPT, timeout=120)
+    _assert_ok(result, "docker run (typed pose + tf kinds)")
+
+    poses = read_pose_csv(out_dir / "pose.csv")
+    assert POSE_TOPIC in poses, f"pose.csv recorded {sorted(poses)}"
+    pose = poses[POSE_TOPIC]
+    assert pose["header_stamp_ns"].size > 0
+    assert np.all(pose["header_stamp_ns"] == POSE_STAMP_NS)
+    # Exact equality at 4 decimals: the ostream default (6 significant digits)
+    # would have written 81371.1, which is 0.02 m away and would fail here.
+    np.testing.assert_allclose(pose["x_m"], POSE_X_RECORDED, atol=1e-9)
+    np.testing.assert_allclose(pose["y_m"], POSE_Y_RECORDED, atol=1e-9)
+
+    tf = read_tf_csv(out_dir / "tf.csv")
+    assert set(tf) == {(TF_TOPIC, TF_CHILD)}, (
+        f"tf.csv must hold ONLY the registered child frame; got {sorted(tf)}"
+    )
+    stamps = tf[(TF_TOPIC, TF_CHILD)]["header_stamp_ns"]
+    assert stamps.size > 0
+    assert np.all(stamps == TF_STAMP_NS), (
+        "the recorded stamp must be the MATCHING transform's own header stamp, "
+        f"not {TF_OTHER_STAMP_NS} (the other transform's) and not "
+        f"{TF_SEQUENCE_LENGTH_AS_STAMP_NS} (the CDR sequence length a generic "
+        "subscription would read at byte 4)"
+    )
+    assert tf[(TF_TOPIC, TF_CHILD)]["frame_ids"] == ("map",)
+
+    # Both typed kinds also emit an observer.csv row with the 0 size sentinel,
+    # exactly as the `odometry` kind does, and the tf rows there are the
+    # FILTERED ones -- one per matching transform, not one per message.
+    obs = read_observer_csv(out_dir / "observer.csv")
+    assert POSE_TOPIC in obs and TF_TOPIC in obs
+    assert np.all(obs[POSE_TOPIC]["size_bytes"] == 0)
+    assert np.all(obs[TF_TOPIC]["size_bytes"] == 0)
+    assert np.all(obs[TF_TOPIC]["header_stamp_ns"] == TF_STAMP_NS)
+    assert obs[TF_TOPIC]["header_stamp_ns"].size == stamps.size
+
+
+def _assert_five_field_spec_fails_loudly(out_dir):
+    """A fourth field is optional; a FIFTH is refused. The three-field parser
+    silently discarded any tail, so a misplaced filter would have produced an
+    unfiltered recording that looked filtered."""
+    out_dir.mkdir()
+    bad_spec = f"{TF_TOPIC}|tf2_msgs/msg/TFMessage|tf|{TF_CHILD}|extra"
+    script = (
+        f'{_SOURCE_ENV}; "{_BIN}/bench_observer" --ros-args '
+        f'-p out_dir:=/out -p "topics:=[{bad_spec}]"'
+    )
+    result = _docker_run(f"{out_dir}:/out", script, timeout=30)
+    assert result.returncode != 0
+    assert "malformed topic spec" in result.stderr
+
+
+def _assert_tf_without_a_child_frame_fails_loudly(out_dir):
+    """An unfiltered /tf recording is the failure this kind exists to prevent,
+    so a `tf` spec with no fourth field must not start."""
+    out_dir.mkdir()
+    script = (
+        f'{_SOURCE_ENV}; "{_BIN}/bench_observer" --ros-args '
+        f'-p out_dir:=/out -p "topics:=[{TF_TOPIC}|tf2_msgs/msg/TFMessage|tf]"'
+    )
+    result = _docker_run(f"{out_dir}:/out", script, timeout=30)
+    assert result.returncode != 0
+    assert "needs a child_frame_id" in result.stderr
+
+
+def _assert_two_tf_specs_on_one_topic_fail_loudly(out_dir):
+    """Two child frames on one topic would interleave in observer.csv under one
+    `topic` key, so a rate taken there would silently be their sum."""
+    out_dir.mkdir()
+    specs = (
+        f"{TF_TOPIC}|tf2_msgs/msg/TFMessage|tf|{TF_CHILD},"
+        f"{TF_TOPIC}|tf2_msgs/msg/TFMessage|tf|{TF_OTHER_CHILD}"
+    )
+    script = (
+        f'{_SOURCE_ENV}; "{_BIN}/bench_observer" --ros-args -p out_dir:=/out -p "topics:=[{specs}]"'
+    )
+    result = _docker_run(f"{out_dir}:/out", script, timeout=30)
+    assert result.returncode != 0
+    assert "two `tf` specs for topic" in result.stderr
 
 
 def _assert_unwritable_out_dir_fails_loudly(ro_dir):

@@ -23,6 +23,11 @@ PUBLISHED_COLS = ("source_header_ns", "published_ns")
 # verbatim, so a caller masks it deliberately instead of averaging it in.
 RESOURCE_INT_COLS = ("sample_system_ns", "rss_bytes", "vram_bytes")
 RESOURCE_FLOAT_COLS = ("cpu_pct", "gpu_util_pct", "rtf")
+# odometry.csv and pose.csv share one schema (`topic,header_stamp_ns,x_m,y_m`)
+# and one reader below. They stay SEPARATE FILES because they carry different
+# quantities -- the EKF-fused kinematic state versus the NDT pose estimate --
+# and benchmarks/README.md's M5 definitions score `pose_error` on the latter
+# only; see read_pose_csv.
 ODOM_INT_COLS = ("header_stamp_ns",)
 ODOM_FLOAT_COLS = ("x_m", "y_m")
 GT_INT_COLS = ("arrival_system_ns", "sim_ns")
@@ -74,8 +79,10 @@ def read_resources_csv(path) -> dict:
     }
 
 
-def read_odometry_csv(path) -> dict:
-    """odometry.csv grouped by topic; stamps int64, positions float64."""
+def _read_xy_csv(path) -> dict:
+    """`topic,header_stamp_ns,x_m,y_m` grouped by topic; stamps int64,
+    positions float64. Shared by odometry.csv and pose.csv, whose schemas
+    are identical (see ODOM_INT_COLS)."""
     grouped = defaultdict(lambda: {c: [] for c in ODOM_INT_COLS + ODOM_FLOAT_COLS})
     with open(Path(path), newline="") as f:
         for row in csv.DictReader(f):
@@ -90,6 +97,57 @@ def read_odometry_csv(path) -> dict:
             **{c: np.asarray(g[c], dtype=np.float64) for c in ODOM_FLOAT_COLS},
         }
         for t, g in grouped.items()
+    }
+
+
+def read_odometry_csv(path) -> dict:
+    """odometry.csv grouped by topic; stamps int64, positions float64."""
+    return _read_xy_csv(path)
+
+
+def read_pose_csv(path) -> dict:
+    """pose.csv grouped by topic; stamps int64, positions float64.
+
+    Written by bench_observer's typed `pose` subscription
+    (geometry_msgs/PoseWithCovarianceStamped) -- the NDT pose output. This is
+    the source M5's `pose_error_m` is defined on (benchmarks/README.md, "M5
+    definitions"): NDT pose minus CARLA ground truth (`gt.csv`), joined at
+    nearest sim-time stamp within 25 ms. It is NOT interchangeable with
+    odometry.csv's `/localization/kinematic_state`, which is the EKF-fused
+    pose -- scoring pose_error on that would mask NDT error behind
+    IMU/odometry fusion, which is why the two are separate files even though
+    their schemas match.
+    """
+    return _read_xy_csv(path)
+
+
+def read_tf_csv(path) -> dict:
+    """tf.csv grouped by (topic, child_frame_id); stamps int64.
+
+    Written by bench_observer's typed `tf` subscription
+    (tf2_msgs/TFMessage), one row per transform matching the child_frame_id
+    that cell's topic list registered. Returns
+    ``{(topic, child_frame_id): {"header_stamp_ns": ndarray,
+    "frame_ids": tuple}}``, where `frame_ids` is the sorted distinct set of
+    PARENT frames seen for that pair -- the filter is on the child only, so
+    the parent is recorded rather than assumed, and a consumer checking
+    map->base_link asserts `frame_ids == ("map",)` instead of trusting it.
+    A second parent appearing is then visible rather than folded into one
+    rate.
+    """
+    stamps: dict[tuple[str, str], list[int]] = defaultdict(list)
+    parents: dict[tuple[str, str], set[str]] = defaultdict(set)
+    with open(Path(path), newline="") as f:
+        for row in csv.DictReader(f):
+            key = (row["topic"], row["child_frame_id"])
+            stamps[key].append(int(row["header_stamp_ns"]))
+            parents[key].add(row["frame_id"])
+    return {
+        key: {
+            "header_stamp_ns": np.asarray(v, dtype=np.int64),
+            "frame_ids": tuple(sorted(parents[key])),
+        }
+        for key, v in stamps.items()
     }
 
 

@@ -5,6 +5,13 @@ find_package(rclcpp REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+# geometry_msgs (the typed `pose` kind's PoseWithCovarianceStamped) and
+# tf2_msgs (the typed `tf` kind's TFMessage) are declared EXPLICITLY even
+# though nav_msgs pulls geometry_msgs in transitively: a direct #include
+# needs a direct dependency, or the build breaks the moment that transitive
+# path changes.
+find_package(geometry_msgs REQUIRED)
+find_package(tf2_msgs REQUIRED)
 # PublishedTime's package on the pinned universe-devel-cuda base (verified
 # by build attempt: find_package(autoware_internal_debug_msgs) succeeds on
 # that image, but the package no longer carries PublishedTime -- it moved
@@ -15,7 +22,8 @@ find_package(autoware_internal_msgs QUIET)
 find_package(tier4_debug_msgs QUIET)
 
 add_executable(bench_observer src/bench_observer.cpp)
-ament_target_dependencies(bench_observer rclcpp rosgraph_msgs nav_msgs)
+ament_target_dependencies(bench_observer
+  rclcpp rosgraph_msgs nav_msgs geometry_msgs tf2_msgs)
 if(autoware_internal_msgs_FOUND)
   target_compile_definitions(bench_observer PRIVATE BENCH_PT_AUTOWARE_INTERNAL)
   ament_target_dependencies(bench_observer autoware_internal_msgs)

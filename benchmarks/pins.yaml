@@ -81,9 +81,26 @@ bench_observer_images:
   universe-devel:
     base: autoware_universe_devel.digest # built now (serves cells A/B/C/D/E/CAL)
     tag: bench-observer:universe-devel
-    local_digest: sha256:805d2e345d0b33a0a6dadfe06fa76d8caa99a737ebe94a3d4d9748ed190af54b
+    # REBUILT 2026-07-29 (R3), same base digest, new observer source:
+    # bench_observer.cpp gained the typed `pose` kind (the NDT pose ->
+    # pose.csv, without which M5's registered pose_error had no data source at
+    # all) and the typed `tf` kind (child_frame_id-filtered -> tf.csv), and it
+    # now writes odometry/pose positions in fixed 4-decimal notation instead of
+    # std::ostream's default 6 significant digits. The previous digest for this
+    # label was
+    # sha256:805d2e345d0b33a0a6dadfe06fa76d8caa99a737ebe94a3d4d9748ed190af54b;
+    # it writes neither new file, so no P3 measurement run may use it.
+    # MEASURED while re-pinning this: the local digest is NOT reproducible from
+    # the source alone even when every layer is a cache hit -- BuildKit stamps a
+    # fresh creation time and attestation into the manifest, so a second
+    # `docker build` of byte-identical content yields a different id. The value
+    # below is the image the contract test
+    # (BENCH_E2E=1 tests/benchmarks/test_observer_contract.py) was run green
+    # against; treat it as "which build a run used", never as a content hash.
+    local_digest: sha256:b78ec01af5c4229b2fe803abcb11be298699bed2eb1de7700f934c476d6a5385
     # bench-observer:045, base = autoware_045.digest, built in Task 21 once
-    # B45's disk is freed.
+    # B45's disk is freed. Task 21 builds it from THIS observer source, so it
+    # carries the two new kinds as well.
 # Cell B45: the tier4 native path is documented against Autoware 0.45.1 and
 # sensor_model:=awsim_sensor_kit. There is NO universe-devel-cuda-0.45.1 tag;
 # the newest CUDA-enabled 0.45.x is universe-devel-cuda-0.45.0, recorded below
