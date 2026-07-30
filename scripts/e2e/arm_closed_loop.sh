@@ -153,7 +153,16 @@ cx "$AW_ENV
   # benchmarks.injector.gen_tl_groups (Task 7), and a direct-path
   # invocation like this one does NOT put /work on sys.path on its own
   # (Python only adds the SCRIPT's own directory) -- only python3 -m would.
-  export PYTHONPATH=/work
+  #
+  # PREPENDED, never assigned bare. \$AW_ENV above sources the ROS and
+  # Autoware overlays, and those put rclpy on PYTHONPATH; a bare
+  # PYTHONPATH=/work DISCARDS them, so the injector dies on
+  # \`ModuleNotFoundError: No module named 'rclpy'\` and the preflight below
+  # reports only that it \"did not start\". MEASURED 2026-07-29 on a live
+  # Town10 arm: bare /work fails to import rclpy, /work:\$PYTHONPATH
+  # imports both rclpy AND benchmarks.injector.gen_tl_groups. Every other
+  # PYTHONPATH in this file already uses this prepend idiom.
+  export PYTHONPATH=/work\${PYTHONPATH:+:\$PYTHONPATH}
   if [ -f /tmp/dummy_perception.pid ]; then kill \"\$(cat /tmp/dummy_perception.pid)\" 2>/dev/null || true; sleep 1; fi
   nohup python3 /work/benchmarks/injector/dummy_perception.py --grid-center $GRID_XY $GRID_SIZE_ARG >/tmp/dummy_perception.log 2>&1 &
   echo \$! >/tmp/dummy_perception.pid

@@ -566,7 +566,8 @@ PY
     fi
     local grid_cx grid_cy grid_size
     read -r grid_cx grid_cy grid_size <<<"$grid"
-    show "${AW_EXEC:-<from launch.env>} bash -lc '<setup> PYTHONPATH=/work" \
+    show "${AW_EXEC:-<from launch.env>} bash -lc '<setup>" \
+      "PYTHONPATH=/work:\$PYTHONPATH" \
       "python3 /work/benchmarks/injector/dummy_perception.py" \
       "--tl-groups /work/benchmarks/config/tl_groups/$map_name.yaml" \
       "--grid-center $grid_cx $grid_cy --grid-size $grid_size'"
@@ -575,9 +576,16 @@ PY
       # working_dir and the container shell does not cd /work, so the module
       # form would not resolve. PYTHONPATH=/work is still needed for the
       # injector's own benchmarks.injector.gen_tl_groups import.
+      #
+      # PREPENDED, never assigned bare: $AW_SETUP sources the ROS and
+      # Autoware overlays, which are what put rclpy on PYTHONPATH, and a
+      # bare PYTHONPATH=/work DISCARDS them -- the injector then dies on
+      # ModuleNotFoundError: No module named 'rclpy' and this step reports
+      # only gate:injector-failed. MEASURED 2026-07-29 on a live Town10
+      # arm (same defect, same line, in scripts/e2e/arm_closed_loop.sh).
       # shellcheck disable=SC2086
       ${AW_EXEC} bash -lc "$AW_SETUP
-        export PYTHONPATH=/work
+        export PYTHONPATH=/work\${PYTHONPATH:+:\$PYTHONPATH}
         if [ -f /tmp/dummy_perception.pid ]; then kill \"\$(cat /tmp/dummy_perception.pid)\" 2>/dev/null || true; sleep 1; fi
         nohup python3 /work/benchmarks/injector/dummy_perception.py \
           --tl-groups /work/benchmarks/config/tl_groups/$map_name.yaml \
