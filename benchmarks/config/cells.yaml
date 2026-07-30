@@ -125,6 +125,9 @@ cells:
       #   dy = -0.475 (town10_pcd_shifted): max 0.824 m; 0.749 m on a second
       #     window.
       #   dy = -0.607 (town10_pcd_refit, rung 1's refit): max 0.570 m.
+      # Those three are TRACKED and recomputable too, under
+      # benchmarks/evidence/g1-ladder-rigid/ (see its PROVENANCE.md), so the
+      # FAIL rungs are checkable and not only the PASS.
       # Both MISSED the absolute gate; all three windows pass the relative
       # criteria. Rung 2 closed it, for a reason no rigid shift reproduces:
       # it rebuilds the cloud from ground-truth-registered sweeps, so it fixes
@@ -135,7 +138,9 @@ cells:
       # minimum-enclosing-circle centre -- the offset that actually minimises
       # the max) leaves max 0.5041 m, over the gate by 4 mm, on a statistic
       # whose same-bundle window-to-window spread was 0.075 m (0.824 vs
-      # 0.749). Rigid registration therefore came MARGINALLY short; it was
+      # 0.749) -- both derived from the refit series in
+      # benchmarks/evidence/g1-ladder-rigid/refit/, so recomputable.
+      # Rigid registration therefore came MARGINALLY short; it was
       # never shown to be decisively excluded. Two earlier claims here were
       # wrong and are corrected rather than quietly dropped: a 0.635 m "floor"
       # from centroid subtraction was an UPPER bound (a centroid minimises

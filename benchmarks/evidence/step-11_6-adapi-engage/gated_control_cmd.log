@@ -1,0 +1,5 @@
+gated /control/command/control_cmd: msgs=281 rate=20.07 Hz
+  velocity cmd   min=+4.170 max=+4.170 last=+4.170
+  accel cmd      min=+0.155 max=+0.275 last=+0.213
+  steer cmd      min=-0.0148 max=+0.0163
+  nonzero velocity commands: 281/281

@@ -1,0 +1,6 @@
+publishing #1: autoware_vehicle_msgs.msg.Engage(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), engage=True)
+
+--- operation mode after /autoware/engage ---
+mode: 2
+is_autoware_control_enabled: true
+is_autonomous_mode_available: false

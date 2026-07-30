@@ -1,0 +1,24 @@
+publisher: beginning loop
+publishing #1: autoware_vehicle_msgs.msg.Engage(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), engage=True)
+
+engaged; checking control_cmd liveness:
+average rate: 19.964
+	min: 0.049s max: 0.051s std dev: 0.00059s window: 21
+average rate: 19.971
+	min: 0.049s max: 0.051s std dev: 0.00048s window: 30
+average rate: 19.971
+	min: 0.049s max: 0.051s std dev: 0.00035s window: 30
+average rate: 19.966
+	min: 0.049s max: 0.051s std dev: 0.00050s window: 30
+average rate: 19.971
+	min: 0.049s max: 0.051s std dev: 0.00051s window: 30
+average rate: 19.975
+	min: 0.049s max: 0.051s std dev: 0.00062s window: 30
+average rate: 19.971
+	min: 0.049s max: 0.051s std dev: 0.00060s window: 30
+average rate: 19.972
+	min: 0.049s max: 0.051s std dev: 0.00053s window: 30
+average rate: 19.962
+	min: 0.049s max: 0.051s std dev: 0.00044s window: 30
+dist_rows=1198
+G2 route: samples=1198 closest_approach=142.599 m tol=1.0 m -> FAIL

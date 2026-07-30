@@ -716,9 +716,14 @@ computes it — excluding the last `APPROACH_SKIP_NODES = 15` polyline nodes
 (~30 m), the genuine final approach. An earlier revision of the Town10 row
 excluded only 5 nodes (~9 m) and so reported 11.3 m, which was **not**
 comparable to the Nishi row beside it and understated the route's own margin.
-Recomputed consistently: 33.468 m on the pre-re-pick Town10 route (matching the
-33.5 m in `reports/task-15-town10/pick_route.log`) and 33.181 m on the
-re-picked one.
+Recomputed consistently: 33.468 m on the pre-re-pick Town10 route and 33.181 m
+on the re-picked one. Both are recomputable from the tree — the re-picked route
+is the committed one, and the pre-re-pick route is retained at
+`benchmarks/evidence/route-town10-pre-repick/`, whose `PROVENANCE.md` carries
+the exact snippet. (An earlier revision cited
+`reports/task-15-town10/pick_route.log` for the 33.468 m, which is
+`.gitignore`d and therefore not checkable from a clone — the same defect this
+round fixed one directory over.)
 
 The Town10 row moved with the 2026-07-29 route re-pick; it previously read
 438.9 m / 250.9 m (57.2%) / 233.0° / 33.5 m. The re-picked route still clears
@@ -1582,12 +1587,21 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
     **0.824 m** over 400 static samples, and 0.749 m on a second window. The
     registered shift did work — the cross-track constant fell from the
     pre-shift +0.477 m to +0.005 m across an 8-seed sweep — but a residual
-    `(dx, dy) = (-0.32, +0.12)` m and within-lock jitter remained.
+    `(dx, dy) = (-0.32, +0.12)` m and within-lock jitter remained. The two
+    window maxima and that residual are recomputable from
+    `benchmarks/evidence/g1-ladder-rigid/`; **the 8-seed sweep's own output is
+    NOT retained** (it printed to a session transcript, and
+    `scripts/e2e/seed_sweep.py` writes no file), so every per-seed figure in
+    this entry — the +0.005 m mean, the +0.132 m converged-subset residual and
+    the 1.898 m across-seed x scatter — is reported without a recomputable
+    artifact. Re-running the script on the same bundle would reproduce the
+    method, not the numbers.
   - **Rung 1 (Refit): FIRED, FAILED.** The sweep's cleanly-converged seeds
-    still showed a clean +0.132 m cross-track residual (std 0.012), so the
-    precondition was met; re-shifting from source by that mean
-    (`dy = -0.607`, `pins.yaml` `town10_pcd_refit`) drove the bias to
-    `(-0.075, -0.029)` m and still measured max **0.570 m**.
+    still showed a clean +0.132 m cross-track residual (std 0.012 — from the
+    unretained sweep, as above), so the precondition was met; re-shifting from
+    source by that mean (`dy = -0.607`, `pins.yaml` `town10_pcd_refit`) drove
+    the bias to `(-0.075, -0.029)` m and still measured max **0.570 m**
+    (`benchmarks/evidence/g1-ladder-rigid/refit/`).
   - **Rung 2 (Regenerate): FIRED, and PASSED at max 0.089 m** — 411 mm inside
     the gate, bias `(+0.021, -0.038)` m, per-axis jitter std 0.019 / 0.013 m.
     `benchmarks/scripts/build_pcd_from_gt.py` rebuilt the pointcloud from
@@ -1669,14 +1683,24 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   report: **G2 completes on NEITHER rigid Town10 registration.** On both
   `town10_pcd_shifted` (142.599 m closest approach) and `town10_pcd_refit`
   (142.398 m) the ego halts ~292 m into the 438.9 m route at the same place —
-  two different registrations stopping within 0.2 m of each other, which is the
-  retained, recomputable part of this finding (see the two distance series under
-  `benchmarks/evidence/`). The mechanism observed live was `ndt_scan_matcher`
-  scoring below its 2.3 acceptance threshold, the EKF then rejecting the pose
-  and MRM stopping the vehicle; that chain came from container logs which were
-  not retained, so it is recorded as the observed explanation rather than as
-  evidence. Only the regenerated bundle drives a closed-loop route at all. This
-  is why the
+  two different registrations stopping within 0.2 m of each other.
+  **Neither figure is recomputable from this tree, and the evidence status of
+  the two differs:** 142.599 m is retained as the gate's own verbatim output
+  (`benchmarks/evidence/g2-rigid-committed-route/g2_gate_output.log`, carrying
+  the verdict line and `dist_rows=1198` but not the 1198-sample series behind
+  it), while **142.398 m is not retained at all** — it came from an ad-hoc
+  monitoring loop whose output went only to a session transcript. Both runs
+  predate the gate's per-run retention, when a fixed `/tmp/g2_dist.txt` was
+  overwritten by the next invocation. An earlier revision of this entry cited
+  "the two distance series under `benchmarks/evidence/`" in support; those two
+  series are both `town10_pcd_regen` runs and do not evidence the rigid
+  bundles at all. The mechanism observed live was `ndt_scan_matcher` scoring
+  below its 2.3 acceptance threshold, the EKF then rejecting the pose and MRM
+  stopping the vehicle; that chain came from container logs which were not
+  retained either, so it too is the observed explanation and not evidence.
+  Only the regenerated bundle drives a closed-loop route at all, and THAT is
+  fully recomputable (`g2-regen-committed-route/`, 1.929 m;
+  `g2-regen-repicked-route/`, 0.244 m). This is why the
   Town10 closed-loop arm depends on `town10_pcd_regen` specifically, and why a
   future full-route Town10 bundle needs a second collection pass over the
   stretch beyond station ~292 m.
@@ -1719,6 +1743,23 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
     with the launcher by a test that reads its literal.
     No threshold or margin changes; the tier4 cells resolve to nothing and skip,
     because Task 13 owns what they mount.
+- **2026-07-29** — registered as a standing rule for this document, after it was
+  broken three times in one day: **every quantitative claim in the committed
+  record either cites tracked, recomputable evidence, or is explicitly labelled
+  as not recomputable — there is no third state.** Tracked evidence lives in
+  `benchmarks/evidence/`, whose README carries the rule, a runnable
+  recomputation snippet per directory, and a table of the figures that are
+  deliberately NOT recomputable. Completeness: the first fix removed one
+  unbacked number and the same commit introduced two more — one citing
+  `.gitignore`d `reports/`, and one citing two distance series that belong to a
+  different bundle and therefore refute the claim they were attached to. Fixing
+  instances left the class intact. Promoted in consequence: the ladder's two
+  FAIL rungs (0.824 / 0.749 / 0.570 m), the pre-re-pick route (so the confound
+  table's superseded row stays checkable), the rigid-bundle G2 gate output, and
+  the step-11.6 engage captures. Labelled instead of promoted, because the
+  artifacts did not survive: the rigid halt distances, the 8-seed sweep's
+  per-seed figures, the withdrawn NDT-score breach distribution, and parts of
+  step 11.6. No threshold, margin or route bound changes with this entry.
 
 ## How to run
 

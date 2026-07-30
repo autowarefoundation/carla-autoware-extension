@@ -142,3 +142,40 @@ def test_the_regen_bundle_is_the_one_the_town10_cells_are_registered_against():
     cells.yaml must be revisited rather than silently inherited."""
     defaults = (REPO / "scripts" / "e2e" / "map_defaults.sh").read_text()
     assert "MAP_DEFAULT_DIR=/autoware_map/town10-regen" in defaults
+
+
+def test_every_evidence_directory_is_indexed_and_has_provenance():
+    """benchmarks/evidence/ is where the record's recomputable claims point, so
+    an unindexed directory is evidence nobody can find and an undocumented one
+    is bytes without provenance. Both defeat the purpose, and both are the kind
+    of drift that happens quietly as directories are added.
+
+    Each directory must be named in the index table of evidence/README.md and
+    carry either its own PROVENANCE.md or a gate-written *_summary.txt.
+    """
+    root = REPO / "benchmarks" / "evidence"
+    index = (root / "README.md").read_text()
+    for d in sorted(p for p in root.iterdir() if p.is_dir()):
+        assert f"`{d.name}/`" in index, f"{d.name} is not in evidence/README.md"
+        documented = (d / "PROVENANCE.md").is_file() or any(d.rglob("*_summary.txt"))
+        assert documented, f"{d.name} has neither PROVENANCE.md nor a *_summary.txt"
+
+
+def test_preflight_skip_reasons_are_a_closed_documented_set():
+    """The skip vocabulary is what makes a skipped bundle distinguishable from a
+    check that never ran, so it must stay closed and documented. If a new reason
+    is added to preflight.sh without documenting it, this fails.
+    """
+    pf = (REPO / "benchmarks" / "scripts" / "preflight.sh").read_text()
+    emitted = set(re.findall(r"bundle_skip (\S+) ", pf))
+    assert emitted == {
+        "no-map",
+        "unknown-map",
+        "unmapped-approach",
+        "no-host-copy",
+        "unregistered-dir",
+    }, emitted
+    # Every reason must also appear in the comment block that documents them,
+    # so the code and its own documentation cannot drift apart.
+    for reason in emitted:
+        assert re.search(rf"^#\s+{re.escape(reason)}\s", pf, re.M), reason
