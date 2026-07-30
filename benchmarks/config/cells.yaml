@@ -156,7 +156,10 @@ cells:
       # docs/e2e-report.md's ~20 Hz NDT measurement is from the Nishi-Shinjuku
       # e2e gate, i.e. THIS cell's map, and cell A inherits it as the same rig.
       ndt_expected_hz: 20.0
-      ladder_branch: # NOT Task 11's: that re-gate is Town10; this cell's Nishi bundle is unselected
+      # Task 15, not Task 11: Task 11's re-gate is Town10, and Task 15's
+      # Step 1 runs G1 + G2 live on Nishi for this cell's re-gate, which is
+      # the measurement a branch selection needs.
+      ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: D
     approach: tier4-native
@@ -173,7 +176,9 @@ cells:
       tick_hz: # Task 13, as cell B
       lidar_expected_hz: # Task 13, as cell B
       ndt_expected_hz: # Task 13, as cell B
-      ladder_branch: # unselected: the Nishi bundle, plus Task 13's map wiring
+      # Task 15, as cell C (the Nishi bundle), once Task 13 wires this
+      # cell's map.
+      ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E
     approach: python-bridge
@@ -203,7 +208,9 @@ cells:
       # on an unpatched run, which is a MEASUREMENT, not a target.
       lidar_expected_hz:
       ndt_expected_hz: # Task 10/20, with lidar_expected_hz
-      ladder_branch: # cell E's re-gate: which pcd variant E localizes against is MEASURED first
+      # cell E's re-gate: which pcd variant E localizes against is
+      # MEASURED first (README, M5 definitions).
+      ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E0
     approach: python-bridge
@@ -230,7 +237,9 @@ cells:
       tick_hz: 20.0
       lidar_expected_hz: # Task 10/20, as cell E
       ndt_expected_hz: # Task 10/20, as cell E
-      ladder_branch: # cell E's re-gate: which pcd variant E localizes against is MEASURED first
+      # cell E's re-gate: which pcd variant E localizes against is
+      # MEASURED first (README, M5 definitions).
+      ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E-opt
     approach: python-bridge
@@ -249,7 +258,9 @@ cells:
       tick_hz: 20.0
       lidar_expected_hz: # Task 10/20, as cell E
       ndt_expected_hz: # Task 10/20, as cell E
-      ladder_branch: # cell E's re-gate: which pcd variant E localizes against is MEASURED first
+      # cell E's re-gate: which pcd variant E localizes against is
+      # MEASURED first (README, M5 definitions).
+      ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: CAL-rmw
     approach: calibration

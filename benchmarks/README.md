@@ -12,19 +12,19 @@ pre-registered, regenerable evidence rather than one-off numbers.
 
 A future `bench_observer` must emit the following files for every run:
 
-| File                    | Columns / schema                                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `observer.csv`          | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                     | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                                                                               |
-| `clock.csv`             | `clock_ns,arrival_system_ns`                                                                                        | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `published_time.csv`    | `topic,source_header_ns,published_ns`                                                                               |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `resources.csv`         | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                            | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                                                                                     |
-| `odometry.csv`          | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size.                                                         |
-| `pose.csv`              | `topic,header_stamp_ns,x_m,y_m`                                                                                     | One row per NDT pose receipt (the cell's registered `ndt_topic`), written by bench_observer's typed `pose` subscription, with the same `size_bytes = 0` sentinel row in `observer.csv` as `odometry.csv`. A SEPARATE file from `odometry.csv` even though the schema is identical: that one carries the EKF-fused `/localization/kinematic_state`, a different quantity, and M5's `pose_error_m` is defined on the NDT pose alone. Read with `analysis/bench_io.py` `read_pose_csv`.            |
-| `tf.csv`                | `topic,frame_id,child_frame_id,header_stamp_ns`                                                                     | One row per `/tf` transform whose `child_frame_id` matches the one registered in that cell's topic list (kind `tf`, whose fourth spec field is that frame), written by bench_observer's typed `tf` subscription with the same `size_bytes = 0` sentinel row in `observer.csv`. The parent `frame_id` is recorded but NOT filtered on, so a map→base_link claim is verified rather than assumed. Read with `read_tf_csv`.                                                                        |
-| `gt.csv`                | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                      | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                                                                        |
-| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                       | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below. |
-| `manifest.json`         | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. Written by `benchmarks/scripts/write_quality.py`, run as `run.sh` step 13. ABSENT when the gate REFUSED to score the run (an unselected G1 ladder branch, a null `ndt_expected_hz`, a missing input): absence means not scored, never a pass.                                                                                    |
+| File                    | Columns / schema                                                                                                                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `observer.csv`          | `topic,header_stamp_ns,arrival_system_ns,arrival_steady_ns,clock_ns,size_bytes`                                                           | `clock_ns` is the latest `/clock` value seen at arrival; `-1` before the first clock is received.                                                                                                                                                                                                                                                                                                                                                                                               |
+| `clock.csv`             | `clock_ns,arrival_system_ns`                                                                                                              | One row per `/clock` receipt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `published_time.csv`    | `topic,source_header_ns,published_ns`                                                                                                     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `resources.csv`         | `sample_system_ns,process,cpu_pct,rss_bytes,gpu_util_pct,vram_bytes,rtf`                                                                  | One row per process per sample. `gpu_util_pct`/`vram_bytes` are `-1` for a process with no GPU context. `rtf` is the sim/wall rate at that instant (`-1` before the first `/clock`) and repeats across the processes sharing a `sample_system_ns`; it is the per-sample series `evaluate_ceiling` consumes.                                                                                                                                                                                     |
+| `odometry.csv`          | `topic,header_stamp_ns,x_m,y_m`                                                                                                           | One row per `/localization/kinematic_state` receipt, written by bench_observer's typed subscription. That same receipt also emits a row to `observer.csv` with `size_bytes = 0` — a typed (deserialized) subscription has no serialized-size handle, unlike the generic subscriptions used for pointcloud/camera topics. M2/M4 byte metrics only ever read those generic-kind topics, so the sentinel is never consumed as a real size.                                                         |
+| `pose.csv`              | `topic,header_stamp_ns,x_m,y_m`                                                                                                           | One row per NDT pose receipt (the cell's registered `ndt_topic`), written by bench_observer's typed `pose` subscription, with the same `size_bytes = 0` sentinel row in `observer.csv` as `odometry.csv`. A SEPARATE file from `odometry.csv` even though the schema is identical: that one carries the EKF-fused `/localization/kinematic_state`, a different quantity, and M5's `pose_error_m` is defined on the NDT pose alone. Read with `analysis/bench_io.py` `read_pose_csv`.            |
+| `tf.csv`                | `topic,frame_id,child_frame_id,header_stamp_ns`                                                                                           | One row per `/tf` transform whose `child_frame_id` matches the one registered in that cell's topic list (kind `tf`, whose fourth spec field is that frame), written by bench_observer's typed `tf` subscription with the same `size_bytes = 0` sentinel row in `observer.csv`. The parent `frame_id` is recorded but NOT filtered on, so a map→base_link claim is verified rather than assumed. Read with `read_tf_csv`.                                                                        |
+| `gt.csv`                | `arrival_system_ns,sim_ns,x_m,y_m,z_m,yaw_rad`                                                                                            | One row per CARLA world tick, written by `benchmarks/scripts/collect_gt.py`, the M5 ground-truth source.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `publisher_counts.json` | `{"schema": "publisher_counts/2", "topics": {<topic>: {"count": n, "sim_stamps_ns": [...]}}}`                                             | The M2 reconciliation's publisher-side term, written by `collect_gt.py --count-lidar` and read through `analysis/publisher_counts.py`. One SIM stamp per published message (`gt.csv`'s `sim_ns` domain and rounding), so the count can be windowed to the run's scoring window exactly as the expected and observed counts are. ABSENT by design on the python-bridge cells, where the bridge's own `sensor.listen` callback is the publish path — see "Reconciliation window and scope" below. |
+| `manifest.json`         | the `RunManifest` schema implemented in `benchmarks/analysis/manifest.py`                                                                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `quality.json`          | `dataclasses.asdict(analysis.quality.QualityStats)` plus `arm`, `window_sim_ns`, `goal_window_sim_ns`, `ladder_branch`, `expected_ndt_hz` | The M5 gate's recorded verdict for the run; `gate_pass` is the single field a consumer may treat as that verdict. See "M5 gate result (`quality.json`)" below. Written by `benchmarks/scripts/write_quality.py`, run as `run.sh` step 13. ABSENT when the gate REFUSED to score the run (an unselected G1 ladder branch, a null `ndt_expected_hz`, a missing input): absence means not scored, never a pass.                                                                                    |
 
 Results are laid out on disk as:
 
@@ -79,10 +79,11 @@ after a number is known.
 
 ### M5 definitions (pre-registered 2026-07-28)
 
-- `goal_closest_approach_m`: min distance ego-to-goal inside the scoring
+- `goal_closest_approach_m`: min distance ego-to-goal inside the GOAL
   window (the gate metric, threshold 1.0 m — continuity with P1's G2).
-- `goal_terminal_distance_m`: ego-to-goal at window end (reported next
-  to closest approach; distinguishes precise arrival from overshoot).
+- `goal_terminal_distance_m`: ego-to-goal at the goal window's end
+  (reported next to closest approach; distinguishes precise arrival from
+  overshoot).
 - `lateral_deviation_m`: distance from ego odometry to the committed
   route polyline (`config/routes/<map>.yaml`) — p95 over the window.
 - `pose_error_m`: NDT pose minus CARLA ground truth, joined at nearest
@@ -92,8 +93,9 @@ after a number is known.
   `/localization/kinematic_state`, which is the EKF-fused pose: scoring
   this metric on that would mask NDT error behind IMU/odometry fusion.
 - Per-cell validation gate (must pass before a cell's numbers count):
-  NDT output rate ≥ 90% of expected AND goal_closest_approach < 1.0 m
-  AND the localization criterion of the pre-registered G1 ladder, whose
+  NDT output rate ≥ 90% of expected AND — **on every arm except
+  `static`** — goal_closest_approach < 1.0 m AND the localization
+  criterion of the pre-registered G1 ladder, whose
   branch is a property of **the map bundle THAT CELL localized against**,
   not of whether a fix has landed somewhere in the campaign:
   (a) the cell localized against a bundle whose pcd is registered to the
@@ -103,6 +105,13 @@ after a number is known.
   (|mean of last 20% − mean of first 20%| < 0.2 m) and p95 − p50 < 0.3 m,
   with the constant bias reported. Which branch applied is recorded per
   cell (`quality.json`'s `ladder_branch`).
+  **On the `static` arm the two goal criteria do not apply at all**: a
+  parked ego has no goal approach, so the gate there is the NDT-rate
+  criterion plus the ladder criterion, and both goal fields are recorded
+  as `null` rather than as a distance that measures nothing. Every other
+  arm — including the sweep arms, which `run.sh` drives under either a
+  static or a closed-loop `window_arm` — gets the goal criterion, since
+  only the manifest's own `static` states that the ego was parked.
   Why it is keyed on the bundle: the Town10 pcd shift is registered to
   the UE5 world, so it applies to cells A/B; whether E's 0.9.15 world
   carries the same bundle-internal offset is MEASURED (E's static NDT
@@ -119,6 +128,28 @@ after a number is known.
 - Scoring windows: closed-loop = spatial gate between the route-station
   bounds in `config/routes/<map>.yaml` after a 20 s warm-up discard;
   static = wall window [t0 + 20 s, end].
+- Goal window (owner ruling 2026-07-29): the two goal metrics above are
+  computed over the **full armed span after the 20 s warm-up discard**
+  — `window.static_window` over the ego odometry's own first and last
+  SIM stamp — **warm-up-trimmed, NOT station-trimmed**, and recorded per
+  run as `quality.json`'s `goal_window_sim_ns`. `pose_error_m`,
+  `lateral_deviation_m` and the NDT rate stay on the scoring window
+  above. The split is not a convenience: the station window's registered
+  purpose (`analysis/window.py`'s own docstring) is that "every run
+  scores the same stretch of road regardless of small speed
+  differences", i.e. comparability of the rate/latency/resource metrics,
+  while the goal criterion's registered purpose is continuity with
+  P0/P1's G2 — which measured closest approach over the WHOLE run
+  (0.064 m). Both committed routes set `stations.end_m` at (route length
+  − 20 m) while their goal sits at the route's end, so the station
+  window's last possible sample is 19.772 m (Town10) / 20.039 m
+  (Nishi-Shinjuku) from the goal: scored there, the 1.0 m criterion
+  could not be met by any honest run, and "terminal distance at window
+  end" would not mean at end of run, which is what "distinguishes
+  precise arrival from overshoot" requires. `stations.end_m` was NOT
+  extended instead, deliberately: the paragraph below registers the same
+  window for all five margin-carrying duel metrics, so moving it would
+  move the campaign's headline equivalence measurement.
 
 ### Primary-duel metric definitions (pre-registered 2026-07-28)
 
@@ -568,10 +599,21 @@ into `manifest.json`:
 Schema: `dataclasses.asdict(analysis.quality.QualityStats)` verbatim —
 `pose_err_p50_m`, `pose_err_p95_m`, `pose_err_max_m`, `pose_bias_m`,
 `lateral_dev_p95_m`, `goal_closest_approach_m`, `goal_terminal_distance_m`,
-`ndt_rate_ratio`, `gate_pass` (bool), `reasons` (list of str) — plus four
+`ndt_rate_ratio`, `gate_pass` (bool), `reasons` (list of str) — plus five
 provenance keys the gate definition above requires to be interpretable:
-`arm`, `window_sim_ns` (`[lo, hi]`), `ladder_branch` (`"absolute"` |
-`"relative"`, the G1 branch that applied) and `expected_ndt_hz`.
+`arm`, `window_sim_ns` (`[lo, hi]`), `goal_window_sim_ns` (`[lo, hi]`, or
+`null` on an arm the goal criteria do not apply to), `ladder_branch`
+(`"absolute"` | `"relative"`, the G1 branch that applied) and
+`expected_ndt_hz`.
+
+`goal_closest_approach_m` and `goal_terminal_distance_m` are `null` — not
+a number — on the `static` arm, where the two goal criteria do not apply
+(see the M5 definitions above). `goal_window_sim_ns` is `null` on exactly
+those runs, so "the criteria did not apply" and "the ego never got near
+the goal" are distinguishable in the record rather than both reading as a
+bad number. The two goal metrics are computed over `goal_window_sim_ns`
+and the rest over `window_sim_ns`; a reader comparing a goal number
+against a scoring-window bound is comparing two different intervals.
 
 `expected_ndt_hz` is written from the cell's `metrics.ndt_expected_hz` binding
 and nothing else — it is `evaluate_quality`'s divisor for the "NDT rate ≥ 90%
@@ -1408,6 +1450,44 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   and silently DISCARDED any tail, so a typo'd or misplaced filter would have
   produced an unfiltered recording that looks like a filtered one — the same
   silent-wrong-number class the strict three-field check was added for.
+- **2026-07-29 — owner ruling** — the two goal metrics
+  (`goal_closest_approach_m`, `goal_terminal_distance_m`) are computed over a
+  **goal window** — the full armed span after the 20 s warm-up discard,
+  warm-up-trimmed and NOT station-trimmed — instead of over the run's scoring
+  window; `pose_error_m`, `lateral_deviation_m` and the NDT rate are
+  unchanged and stay on the scoring window. `quality.json` gained
+  `goal_window_sim_ns` as a fifth provenance key so the two numbers are
+  interpretable. Completeness, not accommodation: both committed routes set
+  `stations.end_m` at (route length − 20 m) while their goal sits at the
+  route's END, so the station window's last possible sample is 19.772 m
+  (Town10) / 20.039 m (Nishi-Shinjuku) from the goal — and the gate's own
+  registered criterion is `goal_closest_approach < 1.0 m`. As previously
+  registered the two could not both hold on either map, so EVERY honest
+  closed-loop run would have failed the gate for a reason that is an artifact
+  of the window rather than a property of the approach. The station window's
+  registered purpose (`analysis/window.py`'s docstring) is that "every run
+  scores the same stretch of road regardless of small speed differences", i.e.
+  comparability of the rate/latency/resource metrics; the goal criterion's is
+  continuity with P0/P1's G2, which measured closest approach over the whole
+  run (0.064 m). Applying the first to the second was the defect.
+  `stations.end_m` was NOT extended instead: the "Scoring window" paragraph
+  registers that same window for all five margin-carrying duel metrics, so
+  moving it would have moved the campaign's headline equivalence measurement.
+  No margin, threshold or route changes with this entry.
+- **2026-07-29 — owner ruling** — the per-cell validation gate is **arm-scoped**:
+  on the `static` arm the two goal criteria DO NOT APPLY, so that arm's gate is
+  the NDT-rate criterion plus the G1 ladder criterion, and both goal fields are
+  recorded as `null`. Every other arm — the sweep arms included, since `run.sh`
+  drives them under either a static or a closed-loop `window_arm` and only the
+  manifest's own `static` states that the ego was parked — is unchanged.
+  Completeness: the gate was registered as an unscoped conjunction including
+  `goal_closest_approach < 1.0 m`, which a parked ego can never satisfy, so the
+  static arm's gate was structurally unpassable and its `quality.json` would
+  have recorded `gate_pass: false` plus a meaningless distance on every run.
+  Recorded here, in the pre-registration document, rather than only in a commit
+  body and a test — this file is where the contradiction and its resolution
+  belong, following the precedent of the CAL-seam "open contradiction recorded"
+  block above.
 
 ## How to run
 
