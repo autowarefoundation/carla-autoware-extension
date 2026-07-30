@@ -603,13 +603,17 @@ publisher-side term. A reader must not assume the E family's wire numbers carry
 the same observer-loss correction B's do — they cannot, and no amount of
 re-running changes it.
 
-**And it is unmeasured for cell A as of Task 13**, for a different and fixable
-reason: `benchmarks/results/A/` does not exist, so cell A has never been run
-through this harness at all and has no `publisher_counts.json` either. Every
-cell-A number the campaign holds (G1 0.089 m, G2 0.244 m) came from
-`scripts/e2e/`, a different harness. Until a cell-A bench run exists the
-reconciliation has a publisher-side term for **exactly one cell**, so the A − B
-observer-loss asymmetry cannot be quantified.
+**It was unmeasured for cell A as of Task 13** — `benchmarks/results/A/` did not
+exist, so cell A had never been run through this harness at all and had no
+`publisher_counts.json` either, and every cell-A number the campaign held
+(G1 0.089 m, G2 0.244 m) came from `scripts/e2e/`, a different harness. **MEASURED
+2026-07-30 (Task 15b), so the A − B asymmetry is now quantified rather than
+open:** `results/A/run-001` and `run-002` both carry a `publisher_counts.json`,
+and cell A's `observer_loss_rate` is **0.0000** on both arms against cell B's
+0.2564 / 0.1715 below. The reconciliation now has a publisher-side term for both
+duel cells. See "Cell A's bench-harness control (Task 15b)" for the full tables,
+including the one static-arm case where `publisher_drop_rate` reads 0.0213 for a
+harness reason (a teardown-ordering coverage gap) rather than a real drop.
 
 **Measured on cell B, so the term's size is not hypothetical** (Task 13,
 `lidar_expected_hz: 10.0`, `/sensing/lidar/top/pointcloud_raw_ex`):
