@@ -1,19 +1,27 @@
-# tier4-native build patches (approach B)
+# tier4-native patches (approach B)
 
-Two minimal source changes are required to build
+Two minimal source changes are required to **build**
 `tier4/autoware-support` (the `carla-autoware-native` fork, remote name
-`tier4` in `~/src/carla`) against this host's UE5 toolchain. Both lived
-only as uncommitted working-tree edits in `~/src/carla-autoware-native`
-until now (P1 Verdict 3 flagged this as a patch-policy gap: the extension
-and python-bridge approaches both have their fixes under
-`benchmarks/patches/`, tier4-native did not). This directory closes that
-gap — apply both patches to reproduce the build.
+`tier4` in `~/src/carla`) against this host's UE5 toolchain, and one more
+to **drive** it reproducibly from the harness. All three lived only as
+uncommitted working-tree edits in `~/src/carla-autoware-native` until
+they were committed here (P1 Verdict 3 flagged this as a patch-policy
+gap: the extension and python-bridge approaches both have their fixes
+under `benchmarks/patches/`, tier4-native did not). This directory closes
+that gap — apply all three to reproduce a measurement run.
 
 ```bash
 cd ~/src/carla-autoware-native
 git apply /path/to/benchmarks/patches/tier4-native/0001-toolchain-libm.patch
 git apply /path/to/benchmarks/patches/tier4-native/0002-glibc-compat.patch
+git apply /path/to/benchmarks/patches/tier4-native/0003-autoware-demo-params.patch
 ```
+
+`0003` is a **PythonAPI-only** patch: it touches no C++ and needs no
+rebuild of anything. `benchmarks/cells/tier4_autoware.sh` refuses to
+launch a cell whose tree does not carry it (it greps the demo for
+`--spawn-pose`), so a tree that was reset cannot silently run with the
+demo's own defaults.
 
 ## Patch contents
 
@@ -46,6 +54,65 @@ diff - LibCarla/source/carla/GlibcCompat.c` — empty diff, exit 0).
   `libcarla-client.a` keeps unshimmed `isoc23` references. This is
   harmless while the client links against host glibc, but it is a live
   edge if a client is ever linked inside the UE sysroot.
+
+- **`0003-autoware-demo-params.patch`** — turns
+  `PythonAPI/examples/autoware_demo.py`'s hardcoded sensor literals, its
+  random ego placement and its substepping pair into argparse
+  parameters, so a benchmark run states its own configuration instead of
+  inheriting the demo's. Added flags: `--spawn-index`, `--spawn-pose`,
+  `--lidar-channels`, `--lidar-pps`, `--lidar-rotation-hz`,
+  `--lidar-range`, `--cameras`, `--camera-width`, `--camera-height`,
+  `--camera-tick`, `--substep-config`. `--hz_rate`, `--resync` and
+  `--mgrs_off` are untouched (they already existed); `--resync` stays OFF
+  in every cell, and `--load_map` already covers the map argument, so no
+  second `--map` flag was added.
+
+  **It is PURE parameterization, and that was verified rather than
+  asserted.** Every default reproduces the exact string the patched line
+  used to write. Checked by driving the ORIGINAL and the PATCHED module
+  through a recording fake blueprint library, with the patched side's
+  `argparse` defaults (captured by spying on `parse_args`, which is the
+  first statement after the parser is built, so `main()` reaches no side
+  effect):
+
+  ```text
+  lidar   {'channels': '16', 'range': '100.0', 'upper_fov': '10.0',
+           'lower_fov': '-20.0', 'points_per_second': '288000',
+           'sensor_tick': '0.1', 'ros_name': 'velodyne_top',
+           'ros_topic_name': '/sensing/lidar/top/pointcloud_raw_ex'}
+  camera0 {'fov': '90.0', 'image_size_x': '1920', 'image_size_y': '1080',
+           'sensor_tick': '0.1', 'post_process_profile': 'autoware_demo',
+           'ros_name': 'traffic_light_left_camera/camera_optical_link',
+           'ros_topic_name': '/sensing/camera/traffic_light'}
+  substep {'max_substep_delta_time': 0.001, 'max_substeps': 10}
+  ```
+
+  identical on both sides (the IMU and GNSS blueprints are not touched at
+  all). The three semantics worth stating because a reader would
+  otherwise assume otherwise:
+
+  - `--lidar-rotation-hz` sets **`sensor_tick = 1/HZ`**, not the
+    blueprint's `rotation_frequency`, which this demo has never set. The
+    identically-named extension-runner flag drives
+    `rotation_frequency`, so the two are NOT the same knob; on this demo
+    the publish period is the only rotation-rate control there is, and
+    its `points_per_second` comment derives from that period.
+  - `--cameras N` for `N > 1` gives cameras 1..N-1 the indexed name
+    `/sensing/camera/camera<i>/image_raw` (the extension runner's
+    convention) at the traffic-light camera's mount; camera 0 keeps the
+    traffic-light `ros_name`/topic verbatim. `N = 0` spawns none. Only
+    `N = 1` is a reproduction of previous behaviour — that is the
+    default.
+  - `--spawn-pose` is not in the task brief's flag list and was added
+    anyway, for a reason the brief's own acceptance needs: a committed
+    benchmark route's spawn pose is generally **not** a member of the
+    map's spawn-point list, so `--spawn-index` alone cannot start cell B
+    where cell A starts, and the goal/station window of a shared route
+    would not apply. It takes the same six CARLA-frame numbers
+    (`x y z roll pitch yaw`, degrees) that `cells/extension.sh` feeds the
+    extension runner as `--initial-pose`. Default `None` keeps
+    `random.choice(spawn_points)`, including its "No spawn points
+    available" refusal, so it is still pure parameterization.
 
 **Do NOT try `--sysroot=${UE_SYSROOT}` instead of the shim.** It was
 tried first and rejected on evidence: the flag lands on **439 compile

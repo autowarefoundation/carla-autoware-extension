@@ -255,11 +255,16 @@ tier4_carla_fork:
   path: ~/src/carla-autoware-native
   branch: tier4/autoware-support
   sha: 6315b856f
-  # Two build fixes tier4/autoware-support needs on this host; see
-  # benchmarks/patches/tier4-native/README.md for the full recipe.
+  # Two build fixes tier4/autoware-support needs on this host, plus the
+  # PythonAPI parameterization a measurement run needs (0003, added
+  # 2026-07-30 by Task 13: PythonAPI only, no rebuild). See
+  # benchmarks/patches/tier4-native/README.md for the full recipe and for
+  # 0003's verified default-by-default byte-equality.
   patches:
     - 0001-toolchain-libm.patch
     - 0002-glibc-compat.patch
+    - 0003-autoware-demo-params.patch
   patches_sha256:
     0001-toolchain-libm.patch: d6988200b7091d32405d2164a3adbb3be8aa0766a8388e1cda4ad1f0194b543c
     0002-glibc-compat.patch: bb28dbc408aec8c6f0579aa173d3b14f8aa806dd317b14187c4fa0cfcebff6fa
+    0003-autoware-demo-params.patch: 59aa46380133228a3ad4887cd34ac2e88e6e2e308bf1bbaf0fbbf8ae67b87774

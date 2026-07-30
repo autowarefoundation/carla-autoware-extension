@@ -1,0 +1,324 @@
+diff --git a/PythonAPI/examples/autoware_demo.py b/PythonAPI/examples/autoware_demo.py
+index c458f42..46de5b6 100644
+--- a/PythonAPI/examples/autoware_demo.py
++++ b/PythonAPI/examples/autoware_demo.py
+@@ -98,6 +98,12 @@ def deploy_postprocess_profile(profile_name, settings):
+         log_info(f"Deployed PostProcess profile: {profile_path}")
+ 
+ 
++# The physics-substepping values this script applied as literals in
++# synchronous mode before --substep-config existed. Kept as that flag's
++# defaults so a run without it is byte-identical to the previous behaviour.
++DEFAULT_SUBSTEP_CONFIG = {"max_substep_delta_time": 0.001, "max_substeps": 10}
++
++
+ def log_info(text):
+     print("[INFO]: %s" % text)
+ 
+@@ -188,25 +194,29 @@ def chain_transforms(transforms):
+     return ROS2.Transform.from_kdl(F)
+ 
+ 
+-def generate_vlp16_blueprint(blueprint_library):
++def generate_vlp16_blueprint(blueprint_library, args):
+     """Generates a blueprint for VLP16
+ 
+ 	The following assumptions were made based on the configuration in AWSIM:
+ 	- 10 Hz publish frequency
+-	- 0.2 deg horizontal resolution"""
++	- 0.2 deg horizontal resolution
++
++	channels / range / points_per_second / sensor_tick are taken from args
++	(--lidar-channels, --lidar-range, --lidar-pps, --lidar-rotation-hz).
++	Every default reproduces the literal that used to be written here."""
+ 
+     blueprint = blueprint_library.find("sensor.lidar.ray_cast")
+ 
+     # The following values are taken from VLP16 datasheet
+-    blueprint.set_attribute("channels", "16")
+-    blueprint.set_attribute("range", "100.0")
++    blueprint.set_attribute("channels", str(args.lidar_channels))
++    blueprint.set_attribute("range", str(args.lidar_range))
+     blueprint.set_attribute("upper_fov", "10.0")
+     blueprint.set_attribute("lower_fov", "-20.0")
+ 
+     # Calculated as: horizontal_fov / horizontal_resolution / sensor_tick * channels
+-    blueprint.set_attribute("points_per_second", "288000")
++    blueprint.set_attribute("points_per_second", str(args.lidar_pps))
+ 
+-    blueprint.set_attribute("sensor_tick", "0.1")
++    blueprint.set_attribute("sensor_tick", str(1.0 / args.lidar_rotation_hz))
+ 
+     # ROS settings
+     blueprint.set_attribute("ros_name", "velodyne_top")  # frame_id
+@@ -215,25 +225,38 @@ def generate_vlp16_blueprint(blueprint_library):
+     return blueprint
+ 
+ 
+-def generate_traffic_light_camera_blueprint(blueprint_library):
++def generate_traffic_light_camera_blueprint(blueprint_library, args, index=0):
+     """Generates a traffic light camera
+ 
+ 	The following assumptions were made based on the configuration in AWSIM:
+ 	- 10 Hz publish frequency
+ 	- 1920 x 1080 image resolution
+-	- 90 deg horizontal field of view"""
++	- 90 deg horizontal field of view
++
++	Resolution and rate are taken from args (--camera-width, --camera-height,
++	--camera-tick); the defaults reproduce the literals that used to be here.
++
++	index > 0 is only reachable with --cameras > 1 (the M4 camera-load arm):
++	camera 0 keeps the traffic-light frame_id and topic verbatim, and every
++	additional camera gets the indexed name the extension runner also uses
++	(/sensing/camera/camera<N>/image_raw), so a load arm can be driven on
++	either approach with matching topic shape."""
+ 
+     blueprint = blueprint_library.find("sensor.camera.rgb")
+ 
+     blueprint.set_attribute("fov", "90.0")
+-    blueprint.set_attribute("image_size_x", "1920")
+-    blueprint.set_attribute("image_size_y", "1080")
+-    blueprint.set_attribute("sensor_tick", "0.1")
++    blueprint.set_attribute("image_size_x", str(args.camera_width))
++    blueprint.set_attribute("image_size_y", str(args.camera_height))
++    blueprint.set_attribute("sensor_tick", str(args.camera_tick))
+     blueprint.set_attribute("post_process_profile", "autoware_demo")
+ 
+     # ROS settings
+-    blueprint.set_attribute("ros_name", "traffic_light_left_camera/camera_optical_link")  # frame_id
+-    blueprint.set_attribute("ros_topic_name", "/sensing/camera/traffic_light")
++    if index == 0:
++        blueprint.set_attribute("ros_name", "traffic_light_left_camera/camera_optical_link")  # frame_id
++        blueprint.set_attribute("ros_topic_name", "/sensing/camera/traffic_light")
++    else:
++        blueprint.set_attribute("ros_name", f"camera{index}/camera_optical_link")  # frame_id
++        blueprint.set_attribute("ros_topic_name", f"/sensing/camera/camera{index}/image_raw")
+ 
+     return blueprint
+ 
+@@ -289,9 +312,7 @@ def spawn_sensors(world, base_link, ego, args):
+ 
+     sensor_kit_blueprint = blueprint_library.find("util.actor.empty")
+     sensor_kit_blueprint.set_attribute("ros_name", "sensor_kit_base_link")
+-    vlp16_blueprint = generate_vlp16_blueprint(blueprint_library)
+-    traffic_light_camera_blueprint \
+-        = generate_traffic_light_camera_blueprint(blueprint_library)
++    vlp16_blueprint = generate_vlp16_blueprint(blueprint_library, args)
+     imu_blueprint = generate_imu_blueprint(blueprint_library)
+     gnss_receiver_blueprint = generate_gnss_blueprint(blueprint_library, args.mgrs_off)
+     vehicle_status_blueprint = blueprint_library.find("sensor.other.vehicle_status")
+@@ -315,15 +336,17 @@ def spawn_sensors(world, base_link, ego, args):
+         attach_to=sensor_kit)
+     lidar_top.enable_for_ros()
+ 
+-    # Spawn traffic light camera
++    # Spawn traffic light camera (and, with --cameras > 1, the extra cameras
++    # of the M4 camera-load arm at the same mount).
+     sensor_kit_to_traffic_light_left_camera_transform = ROS2.Transform(x=0.05,
+                                                                        y=0.0175,
+                                                                        z=-0.1)
+-    traffic_light_left_camera = world.spawn_actor(
+-        traffic_light_camera_blueprint,
+-        sensor_kit_to_traffic_light_left_camera_transform.to_carla(),
+-        attach_to=sensor_kit)
+-    traffic_light_left_camera.enable_for_ros()
++    for camera_index in range(args.cameras):
++        camera = world.spawn_actor(
++            generate_traffic_light_camera_blueprint(blueprint_library, args, camera_index),
++            sensor_kit_to_traffic_light_left_camera_transform.to_carla(),
++            attach_to=sensor_kit)
++        camera.enable_for_ros()
+ 
+     # Spawn IMU
+     # NOTE: IMU is mounted to Ego directly, because this is required for angular velocity to work
+@@ -430,7 +453,8 @@ def get_current_map_name(client):
+     return world.get_map().name.split('/')[-1]
+ 
+ 
+-def apply_world_settings(client, time_step_info, map_name=None, force_map_reload=False):
++def apply_world_settings(client, time_step_info, map_name=None, force_map_reload=False,
++                         substep_config=None):
+     """
+ 	Stores all settings related to the simulation world.
+ 	\nDefault: applies synchronous mode + fixed time-step.
+@@ -440,9 +464,14 @@ def apply_world_settings(client, time_step_info, map_name=None, force_map_reload
+ 	:param time_step_info: Instance of TimeStepData.
+ 	:param map_name: Map to load and apply settings to.
+ 	:param force_map_reload: Forces map to be reloaded. Reload action cleans up the scene.
++	:param substep_config: {max_substep_delta_time, max_substeps}; None keeps
++		DEFAULT_SUBSTEP_CONFIG, i.e. the values this function hardcoded before
++		--substep-config existed.
+ 
+ 	:returns: world instance (possibly new) after loading a map
+ 	"""
++    if substep_config is None:
++        substep_config = DEFAULT_SUBSTEP_CONFIG
+ 
+     # Get current world reference
+     world = client.get_world()
+@@ -480,8 +509,8 @@ def apply_world_settings(client, time_step_info, map_name=None, force_map_reload
+     if time_step_info.is_pure_step_execution_enabled():
+         settings.substepping = False
+     elif time_step_info.synchronous_mode:
+-        settings.max_substep_delta_time = 0.001  # max 1 ms per physics substep, swap to 0.01 if no need of extreme physics realism
+-        settings.max_substeps = 10
++        settings.max_substep_delta_time = substep_config["max_substep_delta_time"]  # default 0.001: max 1 ms per physics substep, swap to 0.01 if no need of extreme physics realism
++        settings.max_substeps = substep_config["max_substeps"]
+         settings.substepping = settings.fixed_delta_seconds <= settings.max_substep_delta_time * settings.max_substeps  # carla condition
+     else:
+         settings.substepping = time_step_info.phys_substepping
+@@ -573,6 +602,70 @@ def run_sync_simulation_loop(world,
+         world.apply_settings(settings)
+ 
+ 
++def resolve_spawn_point(world, args):
++    """The ego spawn transform.
++
++	--spawn-pose x y z roll pitch yaw (CARLA frame, degrees for the rotation)
++	is exact and is what a committed benchmark route needs: its spawn pose is
++	generally NOT a member of the map's spawn-point list, and the extension
++	runner takes the same six numbers as --initial-pose, so both approaches
++	consume one route file identically.
++	--spawn-index picks the n-th entry of the map's own list (deterministic
++	instead of random, without pinning coordinates).
++	Neither given: random.choice over that list, exactly as before -- so the
++	default behaviour, including the "No spawn points available" refusal, is
++	unchanged."""
++
++    if args.spawn_pose is not None:
++        x, y, z, roll, pitch, yaw = args.spawn_pose
++        return carla.Transform(carla.Location(x=x, y=y, z=z),
++                               carla.Rotation(roll=roll, pitch=pitch, yaw=yaw))
++
++    try:
++        spawn_points = world.get_ego_spawn_points()
++    except AttributeError:
++        # Fallback when get_ego_spawn_points is not available (e.g. standard carla package)
++        spawn_points = world.get_map().get_spawn_points()
++    if not spawn_points:
++        raise RuntimeError("No spawn points available. Load a map that provides spawn points.")
++
++    if args.spawn_index is not None:
++        if not 0 <= args.spawn_index < len(spawn_points):
++            raise RuntimeError(
++                f"--spawn-index {args.spawn_index} is out of range: this map has "
++                f"{len(spawn_points)} spawn points."
++            )
++        return spawn_points[args.spawn_index]
++
++    return random.choice(spawn_points)
++
++
++def load_substep_config(path):
++    """Read {max_substep_delta_time, max_substeps} from a YAML file.
++
++	The harness passes benchmarks/config/physics.yaml -- the same file the
++	extension runner's own --substep-config reads -- which is what makes the
++	two approaches' physics substepping comparable rather than coincidental.
++	BOTH keys are required: a partial file would silently leave one of the
++	pair at this script's default and report a parity that does not hold."""
++
++    import yaml  # only needed with --substep-config
++
++    with open(path) as handle:
++        doc = yaml.safe_load(handle) or {}
++    config = {}
++    for key, cast in (("max_substep_delta_time", float), ("max_substeps", int)):
++        value = doc.get(key)
++        if value is None:
++            raise RuntimeError(
++                f"--substep-config {path}: '{key}' is missing or null. It needs "
++                "both max_substep_delta_time and max_substeps, or omit the flag "
++                "to keep this script's own defaults."
++            )
++        config[key] = cast(value)
++    return config
++
++
+ def parse_hz_rate(value):
+     if value.lower() in ("none", ''):
+         return None
+@@ -632,6 +725,51 @@ def main():
+     argparser.add_argument(
+         '--list_maps', action='store_true',
+         help='Lists only available maps and exit. Omit applying world setting and ego spawn.')
++    # --- Reproducible ego placement -------------------------------------
++    argparser.add_argument(
++        '--spawn-index', type=int, default=None, metavar='N',
++        help='Spawn the ego at the N-th of this map\'s spawn points instead of a '
++             'random one (default: random, as before).')
++    argparser.add_argument(
++        '--spawn-pose', nargs=6, type=float, default=None,
++        metavar=('X', 'Y', 'Z', 'ROLL', 'PITCH', 'YAW'),
++        help='Spawn the ego at this exact CARLA-frame pose (metres; rotation in '
++             'degrees). Takes precedence over --spawn-index. Default: random, as before.')
++    # --- Sensor parameters (M4 sweep classes) ---------------------------
++    argparser.add_argument(
++        '--lidar-channels', type=int, default=16, metavar='N',
++        help='Top LiDAR channels (default: 16, the VLP16 value).')
++    argparser.add_argument(
++        '--lidar-pps', type=int, default=288000, metavar='N',
++        help='Top LiDAR points_per_second (default: 288000).')
++    argparser.add_argument(
++        '--lidar-rotation-hz', type=float, default=10.0, metavar='HZ',
++        help='Top LiDAR publish rate; sets sensor_tick = 1/HZ (default: 10.0, '
++             'i.e. the sensor_tick 0.1 this script used to hardcode). It does NOT '
++             'set the blueprint\'s rotation_frequency attribute, which this '
++             'script has never set.')
++    argparser.add_argument(
++        '--lidar-range', type=float, default=100.0, metavar='M',
++        help='Top LiDAR range in metres (default: 100.0).')
++    argparser.add_argument(
++        '--cameras', type=int, default=1, metavar='N',
++        help='Number of RGB cameras to spawn (default: 1, the traffic-light '
++             'camera). 0 spawns none; N > 1 adds indexed cameras at the same mount.')
++    argparser.add_argument(
++        '--camera-width', type=int, default=1920, metavar='PX',
++        help='Camera image_size_x (default: 1920).')
++    argparser.add_argument(
++        '--camera-height', type=int, default=1080, metavar='PX',
++        help='Camera image_size_y (default: 1080).')
++    argparser.add_argument(
++        '--camera-tick', type=float, default=0.1, metavar='S',
++        help='Camera sensor_tick in seconds (default: 0.1).')
++    # --- Physics substepping parity -------------------------------------
++    argparser.add_argument(
++        '--substep-config', default=None, metavar='PATH',
++        help='YAML file carrying max_substep_delta_time and max_substeps, applied '
++             'in synchronous mode instead of this script\'s own defaults '
++             f'({DEFAULT_SUBSTEP_CONFIG}).')
+     args = argparser.parse_args()
+ 
+     # Deploy PostProcess profiles before connecting to server
+@@ -652,10 +790,13 @@ def main():
+                                   phys_substepping=args.substepping)
+ 
+     # Apply Settings
++    substep_config = (load_substep_config(args.substep_config)
++                      if args.substep_config else DEFAULT_SUBSTEP_CONFIG)
+     world = apply_world_settings(client=client,
+                                  time_step_info=time_step_info,
+                                  map_name=args.load_map,
+-                                 force_map_reload=args.force_reload)
++                                 force_map_reload=args.force_reload,
++                                 substep_config=substep_config)
+     log_info(
+         f"Applied settings:\n"
+         f"\tsynchronous mode: {time_step_info.synchronous_mode}\n"
+@@ -668,14 +809,7 @@ def main():
+ 
+ 
+     # Spawn Ego
+-    try:
+-        spawn_points = world.get_ego_spawn_points()
+-    except AttributeError:
+-        # Fallback when get_ego_spawn_points is not available (e.g. standard carla package)
+-        spawn_points = world.get_map().get_spawn_points()
+-    if not spawn_points:
+-        raise RuntimeError("No spawn points available. Load a map that provides spawn points.")
+-    spawn_point = random.choice(spawn_points)
++    spawn_point = resolve_spawn_point(world, args)
+     ego = spawn_ego_with_sensors(world, spawn_point, args)
+ 
+     world.tick()  # tick to process the changes (settings, ego + sensors spawn)
