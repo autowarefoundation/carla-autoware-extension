@@ -987,6 +987,51 @@ and must not present `CAL-rmw` as bounding it. Quantifying the DUT-side
 part would need a calibration cell that runs the same Autoware stack twice
 under two middlewares, which the campaign does not have.
 
+### `control_mode` reporting (R4): a per-approach interop gap, recorded not patched
+
+Step 11.6 (`benchmarks/evidence/step-11_6-adapi-engage/`) found that on cell A —
+a control that demonstrably drives — the AD-API `change_to_autonomous` service
+refused for a full 60 s ("The target mode is not available", ~30 retries,
+`adapi_change_to_autonomous.log`) while `set_route_points` had already
+succeeded and localization/trajectory were healthy. Seconds later, in the
+SAME state, the legacy `/autoware/engage` publish engaged instead:
+`is_autoware_control_enabled: true`, and the gated `/control/command/control_cmd`
+running at 20.07 Hz commanding +4.170 m/s on 281/281 samples
+(`gated_control_cmd.log`) — while `is_autonomous_mode_available` stayed
+`false` throughout (`legacy_autoware_engage.log`). The decisive fact is that
+last one: **which interface consults the flag differs; the vehicle state does
+not.** Root cause is localized (inferred, not measured — caveat below) to
+`/vehicle/status/control_mode` reporting `4` (MANUAL), so the operation-mode
+transition manager never marks autonomous available while `/autoware/engage`
+bypasses that gate entirely. That specific reading was taken interactively
+and is **not retained** (`benchmarks/evidence/README.md`'s step-11_6 row).
+
+**This is recorded as a per-approach finding, not fixed.** Two remedies were
+available: make each approach publish `control_mode = AUTONOMOUS`, or arm
+through the proven `/autoware/engage` path in the harness. R4 took the
+second. Patching every approach's reported `control_mode` would erase
+whether an approach reports its own control mode correctly — itself part of
+the interop completeness this campaign exists to compare — and would
+silently convert a genuine finding into a harness detail.
+`benchmarks/injector/arm_and_goal.py` (R4) now attempts `change_to_autonomous`
+on every cell and logs its outcome specifically so this observation keeps
+getting made per approach, then unconditionally falls back to the proven
+`/autoware/engage` publish so a refusal never blocks arming.
+
+**Status: measured on cell A only; unmeasured elsewhere.** Cells B, B45, D
+and the E family have not been observed. Task 13 (cell B's closed-loop
+gate) and Task 15 (cell C's re-gate) must record their own
+`change_to_autonomous` outcome here, in this same form: which cell, refused
+or succeeded, with the evidence (arm_and_goal.py logs `change_to_autonomous:
+SUCCEEDED` or `did not succeed`, retained per run under that run's own
+`launch.log`).
+
+**Caveat carried forward from step 11.6:** the link from `control_mode =
+MANUAL` to the transition manager's refusal is inferred, not measured — the
+alternative candidate is the `control_mode_request` handshake. The
+observation that the two engage paths consult different state holds either
+way, but this has not been upgraded to a measurement.
+
 ## Pre-registration
 
 The git history of this directory is the pre-registration record: metric
