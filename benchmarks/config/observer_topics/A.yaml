@@ -7,32 +7,81 @@
 # actually sends, NOT /control/trajectory_follower/control_cmd, the raw
 # planner output that flows even while the gate suppresses everything.
 #
-# PublishedTime: STILL NOT LISTED, and Task 13 deliberately did NOT add it --
-# TASK 20 owes it, on cell A's own live stack. Recorded here 2026-07-30 with
-# what is now known, so the gap is a decision rather than an omission.
+# PublishedTime: DISCOVERED LIVE 2026-07-30 (Task 15b), on THIS cell's own
+# running stack -- `ros2 topic list --no-daemon | grep published_time` inside
+# docker/compose.yaml's `autoware` container during results/A/run-002, the
+# first cell-A run ever filed through benchmarks/run.sh. This is the LAST
+# pre-registration edit to this file. It closes the gap Task 13 deliberately
+# left: Task 13 had the names, but from CELL B's stack, and cell B runs
+# pins.yaml's universe-devel-cuda DIGEST while cell A runs
+# `ghcr.io/autowarefoundation/autoware:universe-devel` -- topic existence at
+# run time is a property of the image's own launch configuration, so a name
+# observed on one image is not a measurement of the other. Registering B's
+# names as A's would have filed a claim as a check. They are now measured
+# here, on A, and they agree.
 #
-# Task 13 discovered the real names LIVE, but on CELL B's stack: seven
-# `<topic>/debug/published_time` topics, the control one being
-# /control/command/control_cmd/debug/published_time, of type
-# autoware_internal_msgs/msg/PublishedTime -- refuting the plan's
-# autoware_internal_debug_msgs assumption. observer_topics/B.yaml carries the
-# full list and states which part of it is measured and which inferred.
+# MEASURED, twice, at two RUN PHASES -- and the phase turned out to matter,
+# which is itself the finding:
 #
-# WHY THAT IS NOT ENOUGH FOR THIS CELL: cell B runs pins.yaml's
-# universe-devel-cuda DIGEST, cell A runs docker/compose.yaml's
-# `ghcr.io/autowarefoundation/autoware:universe-devel` -- a different image.
-# Which topics exist at run time is a property of the image's own launch
-# configuration, so a name observed on one is not a measurement of the other.
-# SUPPORTING, not sufficient: the four packages that decide these names carry
-# identical versions in both images -- autoware_universe_utils 0.50.0,
-# autoware_vehicle_cmd_gate 0.50.0, autoware_pointcloud_preprocessor 0.50.0,
-# autoware_internal_msgs 1.12.1 (read from each image's own package.xml,
-# 2026-07-30) -- so the names are very likely identical. Task 20 confirms it on
-# a live cell-A stack and appends the row then; registering it here off B's
-# observation would file an unmeasured claim as a checked one.
+#   BEFORE the ego was armed (probe 1, immediately after `launch_autoware.sh`
+#   reported the stack up and /autoware_carla_interface fired-and-died) --
+#   SIX topics, and NOT the control one:
+#     /sensing/lidar/top/self_cropped/pointcloud_ex/debug/published_time
+#     /sensing/lidar/top/mirror_cropped/pointcloud_ex/debug/published_time
+#     /sensing/lidar/top/pointcloud_before_sync/debug/published_time
+#     /localization/util/measurement_range/pointcloud/debug/published_time
+#     /localization/util/voxel_grid_downsample/pointcloud/debug/published_time
+#     /localization/util/downsample/pointcloud/debug/published_time
 #
-# The appended line will read:
-#   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
+#   AFTER arming (probe 2, right after arm_and_goal.py reported ARMED) --
+#   SIXTEEN, the six above plus:
+#     /control/command/control_cmd/debug/published_time          <- registered
+#     /control/trajectory_follower/control_cmd/debug/published_time
+#     /planning/trajectory/debug/published_time
+#     /planning/scenario_planning/lane_driving/trajectory/debug/published_time
+#     /planning/scenario_planning/scenario_selector/trajectory/debug/
+#       published_time
+#     /planning/scenario_planning/velocity_smoother/trajectory/debug/
+#       published_time
+#     /planning/scenario_planning/lane_driving/behavior_planning/path/debug/
+#       published_time
+#     /planning/scenario_planning/lane_driving/behavior_planning/
+#       path_with_lane_id/debug/published_time
+#     /planning/scenario_planning/lane_driving/motion_planning/path_optimizer/
+#       trajectory/debug/published_time
+#     /planning/scenario_planning/lane_driving/motion_planning/path_smoother/
+#       path/debug/published_time
+#
+# So a PublishedTime topic's existence is a function of RUN PHASE, not of the
+# image alone: the ten that appear only after arming are the planning/control
+# chain's, and they do not exist while the ego is parked with no route. A probe
+# taken before arming would have recorded the control topic as ABSENT for this
+# cell and left control_staleness_ms unregisterable -- which is exactly what
+# probe 1 alone would have concluded. Recorded so the next probe is timed
+# rather than lucky.
+#
+# The TYPE was read off the wire for the registered topic itself, not inferred:
+# `ros2 topic info --no-daemon /control/command/control_cmd/debug/
+# published_time` returned `Type: autoware_internal_msgs/msg/PublishedTime`,
+# `Publisher count: 1`, on this cell's own image -- independently confirming
+# Task 13's refutation of the plan's `autoware_internal_debug_msgs` assumption.
+# The other fifteen carry the same type by INFERENCE (one
+# PublishedTimePublisher implementation emits all of them), not by a second
+# measurement -- the same distinction B.yaml draws.
+#
+# ONE row is added -- the control one -- because it is the only PublishedTime
+# topic a registered metric reads: control_staleness_ms (M1b) keys
+# published_time.csv by metrics.control_published_time_topic. The other fifteen
+# are recorded above rather than subscribed; each would be another observer
+# subscription on the measured host, feeding a number nothing computes.
+#
+# STILL OWED, and NOT done here: cells.yaml's cell-A
+# `control_published_time_topic` binding is still null and is TASK 20's
+# (cells.yaml names it). This file now records the observation that unblocks
+# it, but until that binding is filled `control_staleness_ms` stays UNAVAILABLE
+# for cell A -- and therefore for the WHOLE A-vs-B duel row, since
+# duel_verdict.build_verdict_table reports a metric unavailable when either
+# side is unbound.
 #
 # One construction FINDING already applies to this cell as much as to B: the
 # injection topic /sensing/lidar/top/pointcloud_raw_ex has NO PublishedTime
@@ -59,3 +108,4 @@
       - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|pose
       - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
       - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic
+      - /control/command/control_cmd/debug/published_time|autoware_internal_msgs/msg/PublishedTime|published_time
