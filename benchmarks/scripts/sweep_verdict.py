@@ -354,12 +354,15 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     registered as the single field a consumer may treat as the verdict, so
     this reads exactly that field and nothing else from the wider schema.
 
-    No writer for `quality.json` exists yet (the M5 gate step is a
-    separate, not-yet-landed task). On the ablation arm (publish disabled,
-    no closed loop, so no M5 measurement is possible) a missing file
-    defaults to True with a note. On every other arm a missing file is a
-    hard error: silently assuming a pass on an arm that IS supposed to be
-    closing the loop is exactly the failure mode this campaign guards
+    The writer is `scripts/write_quality.py`, run as `run.sh` step 13. It
+    REFUSES to write the file (naming the reason, exiting non-zero) rather
+    than writing a defaulted verdict whenever it cannot score the run -- an
+    unselected G1 ladder branch, a null `ndt_expected_hz`, a missing input --
+    so an ABSENT file means "not scored", never "passed". On the ablation arm
+    (publish disabled, no closed loop, so no M5 measurement is possible) a
+    missing file defaults to True with a note. On every other arm a missing
+    file is a hard error: silently assuming a pass on an arm that IS supposed
+    to be closing the loop is exactly the failure mode this campaign guards
     against.
     """
     path = run_dir / "quality.json"

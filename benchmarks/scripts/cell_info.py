@@ -140,8 +140,8 @@ def merge(doc: dict, cell_id: str, class_id: str | None = None) -> dict:
     # Step 7 must therefore not start the clock watchdog (it would report "no
     # /clock rows at all" after its grace and mark EVERY run of that cell
     # excluded as stall:clock -- quietly, under a legitimate-looking
-    # pre-registered reason), step 13 must not act on such a marker, and step
-    # 14 cannot use the sim/wall clock fit the generic renderer needs.
+    # pre-registered reason), step 14 must not act on such a marker, and step
+    # 15 cannot use the sim/wall clock fit the generic renderer needs.
     merged["has_sim_clock"] = str(merged.get("carla", "none")) != "none"
     if class_id:
         cls = class_entry(doc, class_id)

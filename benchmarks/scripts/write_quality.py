@@ -6,8 +6,9 @@ directory and write its `quality.json`.
 
 `quality.json` is the M5 gate's recorded verdict for a run, pre-registered in
 `benchmarks/README.md` ("M5 gate result"): `dataclasses.asdict(QualityStats)`
-verbatim plus four provenance keys (`arm`, `window_sim_ns`, `ladder_branch`,
-`expected_ndt_hz`). It is a recorded FACT of the run, written once at run time
+verbatim plus five provenance keys (`arm`, `window_sim_ns`,
+`goal_window_sim_ns`, `ladder_branch`, `expected_ndt_hz`). It is a recorded
+FACT of the run, written once at run time
 by `run.sh`, not recomputed by each consumer -- so the verdict is tied to the
 analysis code the manifest's `harness_git_sha` names, and two consumers cannot
 disagree about it. `gate_pass` is the single field a consumer may treat as the
@@ -27,8 +28,13 @@ the run's own committed files:
   * `gt.csv` -- the CARLA ground truth, joined to the NDT series at nearest
     sim stamp within `quality.JOIN_TOL_NS`.
   * `odometry.csv` rows for `/localization/kinematic_state` -- the ego track
-    the goal and lateral-deviation metrics are computed on, and the series
-    the closed-loop spatial window is resolved against.
+    the goal and lateral-deviation metrics are computed on, the series the
+    closed-loop spatial window is resolved against, and the series the goal
+    window is resolved over. TWO windows are resolved per run, per the
+    2026-07-29 owner ruling: the registered scoring window for
+    `pose_error`/`lateral_deviation`/the NDT rate, and the warm-up-trimmed
+    full armed span for the two goal metrics (see
+    `resolve_goal_window_sim_ns`).
   * `config/routes/<map>.yaml` -- the committed route polyline, its station
     bounds, and the goal pose.
   * `cells.yaml`'s per-cell `metrics:` block (via `cell_info.metrics_for`):
@@ -214,6 +220,35 @@ def load_route(map_name: str) -> tuple[np.ndarray, float, float, np.ndarray]:
         raise GateRefused(f"route file {path} is missing a required field: {exc}") from exc
 
 
+def resolve_goal_window_sim_ns(manifest: RunManifest, odom: dict) -> tuple[int, int] | None:
+    """The window the TWO GOAL metrics are scored over, or None when they do
+    not apply to this run (2026-07-29 owner ruling, registered in README).
+
+    It is the full armed span after the warm-up discard -- `static_window`
+    over the ego odometry's own first and last SIM stamp -- and it is
+    deliberately NOT station-trimmed. The station window's purpose is that
+    every run scores the same stretch of road; the goal criterion's purpose is
+    continuity with P0/P1's G2, which measured closest approach over the whole
+    run. Either committed route's `stations.end_m` sits ~20 m short of its own
+    goal, so a station-trimmed goal metric could never satisfy the gate's own
+    1.0 m criterion on any honest run.
+
+    None on the STATIC arm: a parked ego has no goal approach, so the two goal
+    criteria do not apply and `evaluate_quality` records both as null rather
+    than a meaningless distance. Every other arm gets the window, the sweep
+    arms included -- `run.sh` drives those under a static OR a closed-loop
+    window_arm, and only the manifest's own `static` says the ego was parked.
+    """
+    if manifest.arm == "static":
+        return None
+    stamps = odom["header_stamp_ns"]
+    try:
+        lo, hi = static_window(int(stamps[0]), int(stamps[-1]), WARMUP_NS)
+    except (IndexError, ValueError) as exc:
+        raise GateRefused(f"cannot resolve the goal window over the ego odometry: {exc}") from exc
+    return int(lo), int(hi)
+
+
 def resolve_window_sim_ns(
     run_dir: Path, manifest: RunManifest, odom: dict, route_xy, start_m: float, end_m: float
 ) -> tuple[int, int]:
@@ -335,6 +370,7 @@ def build_quality(run_dir: Path, *, cells_yaml: str | None = None) -> dict:
 
     route_xy, start_m, end_m, goal_xy = load_route(manifest.map_name)
     lo, hi = resolve_window_sim_ns(run_dir, manifest, odom, route_xy, start_m, end_m)
+    goal_window = resolve_goal_window_sim_ns(manifest, odom)
 
     # A ValueError out of the scorer is a real "this run does not support the
     # measurement" (too few NDT<->GT pairs in the window, an empty ego track),
@@ -352,6 +388,7 @@ def build_quality(run_dir: Path, *, cells_yaml: str | None = None) -> dict:
             route_xy=route_xy,
             goal_xy=goal_xy,
             window=(lo, hi),
+            goal_window=goal_window,
             expected_ndt_hz=float(expected_ndt_hz),
             abs_pose_gate_m=abs_gate,
         )
@@ -368,6 +405,11 @@ def build_quality(run_dir: Path, *, cells_yaml: str | None = None) -> dict:
     doc = dataclasses.asdict(stats)
     doc["arm"] = manifest.arm
     doc["window_sim_ns"] = [lo, hi]
+    # The goal metrics are scored over their OWN window, so the record has to
+    # carry it or those two numbers are uninterpretable. `null` says the two
+    # goal criteria did not apply to this run at all (the static arm), which
+    # is a different statement from "the ego never got near the goal".
+    doc["goal_window_sim_ns"] = list(goal_window) if goal_window is not None else None
     doc["ladder_branch"] = branch
     doc["expected_ndt_hz"] = float(expected_ndt_hz)
     return doc

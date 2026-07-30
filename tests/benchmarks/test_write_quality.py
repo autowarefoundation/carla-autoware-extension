@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -32,6 +35,10 @@ ODOM_TOPIC = "/localization/kinematic_state"
 MAP = "SyntheticStraight"
 ROUTE_LEN_M = 200.0
 N_SAMPLES = 3000  # 150 s at 20 Hz, so the 20 s warm-up leaves plenty
+
+# The repo root, for the subprocess-level CLI test and for reading run.sh.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REAL_ROUTES_DIR = REPO_ROOT / "benchmarks" / "config" / "routes"
 
 
 # --- fixtures -------------------------------------------------------------
@@ -139,7 +146,9 @@ def _write_clock_csv(path, sim_ns, rtf=1.0):
     path.write_text("".join(lines))
 
 
-def _write_manifest(run_dir, *, arm="closed-loop", cell="A", excluded=False, reason=""):
+def _write_manifest(
+    run_dir, *, arm="closed-loop", cell="A", excluded=False, reason="", map_name=MAP
+):
     """Write the manifest through `dataclasses.asdict`, not `save()`.
 
     `save()` validates `cell` and `map_name` against the REAL cells.yaml,
@@ -151,7 +160,7 @@ def _write_manifest(run_dir, *, arm="closed-loop", cell="A", excluded=False, rea
     manifest = RunManifest(
         cell=cell,
         approach="extension",
-        map_name=MAP,
+        map_name=map_name,
         run_index=1,
         arm=arm,
         harness_git_sha="abc",
@@ -287,12 +296,37 @@ def test_unrecognised_ladder_branch_is_refused(tmp_path, monkeypatch):
         build_quality(run_dir, cells_yaml=cells)
 
 
-def test_ladder_branch_is_written_from_the_registry(tmp_path, monkeypatch):
-    """`ladder_branch` must come from the binding, never be inferred from
-    `abs_pose_gate_m is None` -- inference is what makes an unselected cell
-    read as a deliberate relative-branch scoring."""
-    run_dir, cells = _run(tmp_path, monkeypatch, ladder_branch="relative", ndt_bias=0.05)
-    assert build_quality(run_dir, cells_yaml=cells)["ladder_branch"] == "relative"
+def test_the_ladder_cross_check_keeps_branch_and_threshold_equivalent():
+    """What is falsifiable about `ladder_branch`'s provenance, in place of a
+    test that was not.
+
+    An earlier revision of this file asserted that `quality.json`'s
+    `ladder_branch` "comes from the registry, not from `abs_pose_gate_m is
+    None`". That assertion CANNOT FAIL: `resolve_ladder` refuses both
+    inconsistent combinations, so `gate is not None` and `branch ==
+    "absolute"` agree on every reachable input and the rejected inference
+    yields the identical value. Mutating the writer to infer leaves the whole
+    suite green -- verified by applying the mutant.
+
+    So the honest pin is the INVARIANT that makes the inference harmless: for
+    every state `resolve_ladder` accepts, the biconditional holds. If either
+    half of the cross-check is ever relaxed -- which is what would let an
+    unselected cell read as a deliberate relative-branch scoring -- this test
+    fails, and `test_absolute_branch_with_no_threshold_is_refused` /
+    `test_relative_branch_with_a_threshold_is_refused` pin the two halves
+    themselves.
+    """
+    accepted = []
+    for branch in (None, "absolute", "relative", "strict"):
+        for gate in (None, 0.5):
+            metrics = {"ladder_branch": branch, "abs_pose_gate_m": gate}
+            try:
+                accepted.append(write_quality.resolve_ladder(metrics, "A"))
+            except GateRefused:
+                continue
+    assert accepted == [("absolute", 0.5), ("relative", None)], accepted
+    for resolved_branch, resolved_gate in accepted:
+        assert (resolved_gate is not None) == (resolved_branch == "absolute")
 
 
 # --- the other two gate criteria ------------------------------------------
@@ -460,8 +494,8 @@ def test_the_join_tolerance_is_enforced(tmp_path, monkeypatch, offset_ns, pairs)
 
 def test_closed_loop_uses_the_spatial_window_not_the_static_one(tmp_path, monkeypatch):
     """The ego is PARKED at station 0 for the first 60 s, so the two candidate
-    windows disagree by ~40 s: the registered spatial window opens only once
-    the ego passes station 20 m, while a static window would open at
+    windows disagree by 49 s: the registered spatial window opens only once the
+    ego passes station 20 m (69.0 s here), while a static window would open at
     t0 + 20 s. A test whose fixture starts moving immediately cannot tell the
     two apart, which is exactly how a "uses the spatial window" test passes
     under a static one."""
@@ -479,6 +513,58 @@ def test_closed_loop_uses_the_spatial_window_not_the_static_one(tmp_path, monkey
     assert lo == pytest.approx(69_000_000_000, abs=DT_NS)
     assert lo > 20_000_000_000 + 40_000_000_000, "a static window would open at t0 + 20 s"
     assert hi == (N_SAMPLES - 1) * DT_NS
+
+
+def test_the_spatial_window_applies_the_warm_up_discard(tmp_path, monkeypatch):
+    """The 20 s discard on the SPATIAL branch, pinned on its own.
+
+    The default fixture crawls 200 m in 150 s, so it clears station 20 m at
+    15.0 s -- BEFORE the warm-up boundary at 20.0 s, which is what then sets
+    the window's lower bound. Drop `warmup_ns` on that branch and the window
+    opens at 15.0 s instead: 5 s earlier here, and in a real run (where the ego
+    clears 20 m in ~4 s) inside the engage transient, silently shifting every
+    M5 number. The parked-ego fixture above cannot see this, because there the
+    station bound dominates the warm-up bound.
+    """
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    lo, hi = build_quality(run_dir, cells_yaml=cells)["window_sim_ns"]
+    assert lo == 20_000_000_000, "the warm-up discard sets this bound, not station 20 m"
+    assert hi == (N_SAMPLES - 1) * DT_NS
+
+
+@pytest.mark.parametrize("arm", ["paced", "unpaced", "ablation"])
+def test_sweep_arms_take_the_static_window_branch(tmp_path, monkeypatch, arm):
+    """README registers the spatial window for the `closed-loop` arm and the
+    clock-based one for EVERY other arm -- `static`, `paced`, `unpaced`,
+    `ablation`. The sweep arms are the only ones that mechanically consume
+    quality.json (`sweep_verdict`), and no test used them, so widening the
+    branch test to `arm != "static"` left the suite green.
+
+    The parked-ego fixture separates the two branches by 49 s, so this asserts
+    the clock-derived bound (20.0 s) and would fail on the spatial one (69.0 s).
+    Failure scenario the widening produces: at a heavy sweep class the ego never
+    clears station 20 m, the gate refuses, and `sweep_verdict` dies
+    FileNotFoundError -- blaming a missing gate instead of the load under test.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        arm=arm,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        hold_n=1200,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["arm"] == arm
+    assert doc["window_sim_ns"][0] == pytest.approx(20_000_000_000, abs=1_000_000)
+    # The goal criteria DO apply on the sweep arms: only the manifest's own
+    # `static` says the ego was parked. run.sh drives a sweep arm under either
+    # window_arm, so exempting them would silently drop the criterion.
+    assert doc["goal_window_sim_ns"] is not None
+    assert doc["goal_closest_approach_m"] is not None
 
 
 def test_static_arm_window_is_the_clock_window_converted_into_sim(tmp_path, monkeypatch):
@@ -519,6 +605,34 @@ def test_a_missing_route_file_is_refused(tmp_path, monkeypatch):
     )
     (tmp_path / "routes" / f"{MAP}.yaml").unlink()
     with pytest.raises(GateRefused, match="no route file"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_a_route_file_missing_its_stations_is_refused(tmp_path, monkeypatch):
+    """A route file that parses but lacks a field the window needs must name
+    the file and the field, not raise a bare KeyError out of an unattended
+    step."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    route = tmp_path / "routes" / f"{MAP}.yaml"
+    doc = yaml.safe_load(route.read_text())
+    del doc["stations"]
+    route.write_text(yaml.safe_dump(doc))
+    with pytest.raises(GateRefused, match="missing a required field"):
+        build_quality(run_dir, cells_yaml=cells)
+
+
+def test_odometry_without_the_registered_topic_is_refused(tmp_path, monkeypatch):
+    """odometry.csv carries whatever the observer's `odometry`-kind lines
+    registered; without `/localization/kinematic_state` there is no ego track,
+    so neither window nor the goal/lateral metrics exist."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    rows = (run_dir / "odometry.csv").read_text().replace(ODOM_TOPIC, "/some/other/odom")
+    (run_dir / "odometry.csv").write_text(rows)
+    with pytest.raises(GateRefused, match="odometry.csv"):
         build_quality(run_dir, cells_yaml=cells)
 
 
@@ -570,9 +684,137 @@ def test_schema_is_exactly_the_registered_keys(tmp_path, monkeypatch):
     )
     doc = build_quality(run_dir, cells_yaml=cells)
     stat_keys = [f.name for f in dataclasses.fields(QualityStats)]
-    assert list(doc) == stat_keys + ["arm", "window_sim_ns", "ladder_branch", "expected_ndt_hz"]
+    assert list(doc) == stat_keys + [
+        "arm",
+        "window_sim_ns",
+        "goal_window_sim_ns",
+        "ladder_branch",
+        "expected_ndt_hz",
+    ]
     assert doc["arm"] == "static"
     assert isinstance(doc["window_sim_ns"], list) and len(doc["window_sim_ns"]) == 2
+
+
+def test_static_arm_records_no_goal_metrics(tmp_path, monkeypatch):
+    """2026-07-29 owner ruling: the two goal criteria do not apply to the
+    static arm at all. Both fields are null, `goal_window_sim_ns` is null, no
+    goal reason is recorded, and the gate can still PASS on the NDT-rate and
+    ladder criteria alone. Before the ruling this arm's gate was structurally
+    unpassable -- a parked ego can never be within 1.0 m of the goal."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        arm="static",
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["goal_window_sim_ns"] is None
+    assert doc["goal_closest_approach_m"] is None
+    assert doc["goal_terminal_distance_m"] is None
+    assert doc["gate_pass"] is True, doc["reasons"]
+    assert not any("goal" in r for r in doc["reasons"])
+
+
+def test_the_goal_window_is_not_station_trimmed(tmp_path, monkeypatch):
+    """The two windows are resolved separately, and this fixture forces them
+    apart: `end_m` stops the SCORING window at station 100 m of a 200 m track,
+    while the goal sits at the route's end.
+
+    Scored on the station window (the pre-ruling behaviour) closest approach is
+    ~100 m and the gate FAILS; scored on the warm-up-trimmed armed span it is
+    ~0 m and the gate passes. The recorded windows differ, and the goal window
+    runs to the last odometry sample.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        route_kwargs={"end_m": 100.0},
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["window_sim_ns"][1] < doc["goal_window_sim_ns"][1]
+    assert doc["goal_window_sim_ns"] == [20_000_000_000, (N_SAMPLES - 1) * DT_NS]
+    assert doc["goal_closest_approach_m"] == pytest.approx(0.0, abs=1e-6)
+    assert doc["goal_terminal_distance_m"] == pytest.approx(0.0, abs=1e-6)
+    assert doc["gate_pass"] is True, doc["reasons"]
+
+
+def test_the_goal_window_applies_the_warm_up_discard(tmp_path, monkeypatch):
+    """Warm-up-trimmed, not raw: the goal window opens 20 s after the ego
+    odometry's first stamp, so the engage transient is out of both windows."""
+    run_dir, cells = _run(
+        tmp_path, monkeypatch, ladder_branch="absolute", abs_pose_gate_m=0.5, ndt_bias=0.05
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["goal_window_sim_ns"][0] == 20_000_000_000
+
+
+def test_a_goal_never_approached_still_fails_the_gate(tmp_path, monkeypatch):
+    """The ruling widens the goal window; it does not weaken the criterion. A
+    goal 500 m off the track is still a failure, over the wider window."""
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        route_kwargs={"goal": (0.0, 500.0)},
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is False
+    assert len(doc["reasons"]) == 1
+    assert "goal closest approach" in doc["reasons"][0]
+
+
+@pytest.mark.parametrize(("offset_m", "passes"), [(0.8, True), (1.2, False)])
+def test_the_goal_threshold_is_pinned_at_one_metre(tmp_path, monkeypatch, offset_m, passes):
+    """The registered 1.0 m goal threshold, bracketed.
+
+    The 500 m fixture above pins only that the criterion exists at all: it
+    still fails under a threshold relaxed to 100 m. Straddling 1.0 m from both
+    sides is what pins the NUMBER, so neither a relaxation nor a tightening
+    passes unnoticed. The goal sits `offset_m` beside the track's end point, so
+    the closest approach IS that offset.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        route_kwargs={"goal": (ROUTE_LEN_M, offset_m)},
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["goal_closest_approach_m"] == pytest.approx(offset_m, abs=1e-3)
+    assert doc["gate_pass"] is passes, doc["reasons"]
+
+
+@pytest.mark.parametrize(("expected_hz", "passes"), [(21.0, True), (23.0, False)])
+def test_the_ndt_rate_threshold_is_pinned_at_ninety_percent(
+    tmp_path, monkeypatch, expected_hz, passes
+):
+    """The registered "NDT rate >= 90% of expected" threshold, bracketed.
+
+    The 20 Hz series is held fixed and the registered expectation moved
+    instead, so the ratio lands at 0.952 (pass) and 0.870 (fail) -- either side
+    of 0.9, with no other criterion changed. `test_ndt_rate_gate_fires`'s 0.25
+    ratio pins only that the criterion exists; it survives a threshold relaxed
+    to 0.1.
+    """
+    run_dir, cells = _run(
+        tmp_path,
+        monkeypatch,
+        ladder_branch="absolute",
+        abs_pose_gate_m=0.5,
+        ndt_bias=0.05,
+        ndt_expected_hz=expected_hz,
+    )
+    doc = build_quality(run_dir, cells_yaml=cells)
+    assert doc["gate_pass"] is passes, (doc["ndt_rate_ratio"], doc["reasons"])
 
 
 def test_written_file_round_trips_through_sweep_verdicts_reader(tmp_path, monkeypatch):
@@ -606,11 +848,62 @@ def test_main_writes_the_file_and_exits_zero(tmp_path, monkeypatch, capsys):
 
 
 def test_main_names_the_refusal_on_stderr(tmp_path, monkeypatch, capsys):
+    """The status is asserted as the LITERAL 2, not as
+    `write_quality.EXIT_REFUSED`. Comparing against the constant is
+    tautological: setting `EXIT_REFUSED = 0` satisfies it, and `run.sh`'s
+    `if ! (...)` guard then never fires, so a refusal becomes invisible in the
+    live log -- the one thing that step's own comment calls load-bearing."""
     run_dir, cells = _run(tmp_path, monkeypatch, ndt_bias=0.05)  # ladder unset
-    assert main(["--run-dir", str(run_dir), "--cells-yaml", cells]) == write_quality.EXIT_REFUSED
+    assert main(["--run-dir", str(run_dir), "--cells-yaml", cells]) == 2
+    assert write_quality.EXIT_REFUSED == 2
     err = capsys.readouterr().err
     assert "QUALITY GATE FAIL" in err
     assert "ladder_branch is null" in err
+
+
+def test_the_cli_exits_non_zero_so_run_sh_can_see_a_refusal(tmp_path, monkeypatch):
+    """The PROCESS-level contract `run.sh` step 13 depends on, exercised as a
+    real subprocess rather than through `main`'s return value: a refusal must
+    leave a non-zero exit status, a named reason on stderr and no file."""
+    run_dir, cells = _run(tmp_path, monkeypatch, ndt_bias=0.05)  # ladder unset
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "benchmarks.scripts.write_quality",
+            "--run-dir",
+            str(run_dir),
+            "--cells-yaml",
+            cells,
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2, proc.stderr
+    assert "QUALITY GATE FAIL" in proc.stderr
+    assert not (run_dir / "quality.json").exists()
+
+
+def test_run_sh_warns_when_the_gate_refuses():
+    """The other half of the same contract, on the `run.sh` side.
+
+    Asserted against the script's text because executing step 13 in isolation
+    needs a whole run directory produced by steps 1-12; what matters is the
+    structure, and the structure is what a well-meaning edit breaks. Pinned
+    here: the gate is step 13, it sits between finalize_rtf (12) and the
+    exclusion step (14) -- the ordering the ruling and the excluded-run refusal
+    both depend on -- its invocation is guarded by `if !` so a non-zero exit is
+    seen at all, and a WARN naming the run directory follows inside the guard.
+    """
+    text = (REPO_ROOT / "benchmarks" / "run.sh").read_text()
+    step12 = text.index('step 12 "finalize_rtf')
+    step13 = text.index('step 13 "M5 gate')
+    step14 = text.index('step 14 "exclusions')
+    assert step12 < step13 < step14
+    block = text[step13:step14]
+    assert 'if ! (cd "$REPO" && python3 -m benchmarks.scripts.write_quality' in block
+    assert 'echo "WARN: the M5 gate did not score $run_dir' in block
 
 
 # --- the committed registry ----------------------------------------------
@@ -628,25 +921,25 @@ def test_committed_cells_yaml_leaves_every_ladder_slot_unset():
         assert metrics["abs_pose_gate_m"] is None, cell
 
 
-def test_committed_route_window_cannot_reach_the_goal_criterion():
-    """A REGISTRATION FINDING, pinned rather than fixed.
+def test_committed_route_stations_stop_short_of_the_goal():
+    """The arithmetic the 2026-07-29 owner ruling rests on, pinned on the
+    COMMITTED route files.
 
-    Both committed routes set `stations.end_m` 20 m short of their own length,
-    and their goal sits at the route's END. The closed-loop scoring window is
-    the spatial gate between those stations, so every in-window odometry
-    sample is at least ~18 m from the goal -- while the gate's registered
-    goal criterion is `goal_closest_approach < 1.0 m`. As registered, those
-    two cannot both hold, on either map.
+    Both routes set `stations.end_m` 20 m short of their own length while their
+    goal sits at the route's END, so the station-trimmed window's last possible
+    sample is ~20 m from the goal -- against the gate's registered
+    `goal_closest_approach < 1.0 m`. That is why the ruling scores the two goal
+    metrics over the warm-up-trimmed armed span instead, and why it did NOT
+    move `end_m`: README registers the SAME window for all five
+    margin-carrying duel metrics, so extending it would move the headline
+    equivalence measurement itself.
 
-    R3 implements the registration verbatim (window from the route's stations,
-    `evaluate_quality` untouched) and does NOT relax a pre-registered
-    threshold or station bound to make the gate passable. This test records
-    the arithmetic so the inconsistency is visible in the suite until an owner
-    rules on it.
+    If a future change alters either route's stations or its goal, this test
+    fails and the ruling has to be revisited rather than silently invalidated.
     """
     from benchmarks.analysis.window import _cum_arclen, project_station_m
 
-    for map_name, min_gap_m in (("Town10HD_Opt", 15.0), ("NishishinjukuMap", 15.0)):
+    for map_name, expected_gap_m in (("Town10HD_Opt", 19.772), ("NishishinjukuMap", 20.039)):
         doc = yaml.safe_load((write_quality.ROUTES_DIR / f"{map_name}.yaml").read_text())
         poly = np.asarray(doc["polyline"], dtype=np.float64)
         goal = np.asarray([doc["goal"]["x"], doc["goal"]["y"]], dtype=np.float64)
@@ -654,9 +947,48 @@ def test_committed_route_window_cannot_reach_the_goal_criterion():
         end_m = float(doc["stations"]["end_m"])
         # The goal is the route's own end point, so its station is the length.
         assert project_station_m(poly, goal[None, :])[0] == pytest.approx(cum[-1], abs=1e-6)
-        # Interpolate the point AT end_m and measure how far the window's last
-        # possible sample is from the goal.
         at_end = np.array([np.interp(end_m, cum, poly[:, 0]), np.interp(end_m, cum, poly[:, 1])])
         gap = float(np.linalg.norm(at_end - goal))
-        assert gap > min_gap_m, f"{map_name}: expected a large goal gap, got {gap:.3f} m"
-        assert gap > 1.0, f"{map_name}: the 1.0 m goal criterion is unreachable in-window"
+        assert gap == pytest.approx(expected_gap_m, abs=0.01), f"{map_name}: {gap:.3f} m"
+        assert gap > 1.0, f"{map_name}: a station-trimmed goal metric cannot clear 1.0 m"
+
+
+def test_the_ruling_makes_the_committed_town10_route_gateable(tmp_path, monkeypatch):
+    """End to end on the REAL `config/routes/Town10HD_Opt.yaml`: an ego that
+    drives the committed route to its goal now PASSES the gate.
+
+    This is the ruling's whole point, on the real file rather than a synthetic
+    straight line. The recorded windows differ exactly as the arithmetic above
+    says they must -- the scoring window closes ~19.8 m short of the goal while
+    the goal window runs to the last odometry sample -- so scoring the goal
+    metrics on the scoring window would report ~19.8 m and fail.
+    """
+    monkeypatch.setattr(write_quality, "ROUTES_DIR", REAL_ROUTES_DIR)
+    doc = yaml.safe_load((REAL_ROUTES_DIR / "Town10HD_Opt.yaml").read_text())
+    poly = np.asarray(doc["polyline"], dtype=np.float64)
+    goal = np.asarray([doc["goal"]["x"], doc["goal"]["y"]], dtype=np.float64)
+
+    from benchmarks.analysis.window import _cum_arclen
+
+    cum = _cum_arclen(poly)
+    t = np.arange(N_SAMPLES, dtype=np.int64) * DT_NS
+    station = np.linspace(0.0, float(cum[-1]), N_SAMPLES)
+    xy = np.column_stack([np.interp(station, cum, poly[:, 0]), np.interp(station, cum, poly[:, 1])])
+
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    _write_manifest(run_dir, map_name="Town10HD_Opt")
+    _write_gt_csv(run_dir / "gt.csv", t, xy)
+    _write_xy_csv(run_dir / "odometry.csv", ODOM_TOPIC, t, xy)
+    _write_xy_csv(run_dir / "pose.csv", NDT_TOPIC, t, xy + [0.0, 0.05])
+    _write_clock_csv(run_dir / "clock.csv", t)
+    cells = _cells_yaml(tmp_path, ladder_branch="absolute", abs_pose_gate_m=0.5)
+
+    q = build_quality(run_dir, cells_yaml=cells)
+    assert q["gate_pass"] is True, q["reasons"]
+    assert q["goal_closest_approach_m"] < 1.0
+    assert q["window_sim_ns"][1] < q["goal_window_sim_ns"][1]
+    # The ego at the scoring window's end is ~19.8 m from the goal: the number
+    # the pre-ruling definition would have recorded and failed on.
+    at_window_end = xy[np.searchsorted(t, q["window_sim_ns"][1])]
+    assert float(np.linalg.norm(at_window_end - goal)) == pytest.approx(19.8, abs=0.5)

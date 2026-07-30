@@ -4,6 +4,24 @@ Definitions are pre-registered in benchmarks/README.md (M5 definitions).
 `abs_pose_gate_m` selects the G1 ladder branch: a float applies the
 absolute gate (pcd fix landed); None applies the relative gate (no
 drift, bounded spread) and reports the constant bias instead.
+
+TWO windows, per the 2026-07-29 owner ruling registered in README:
+
+* `window` -- the run's registered scoring window (on the closed-loop
+  arm, the spatial gate between route stations). `pose_error`,
+  `lateral_deviation` and the NDT rate are computed over it, because
+  its stated purpose is that "every run scores the same stretch of
+  road regardless of small speed differences".
+* `goal_window` -- the full armed span after the warm-up discard,
+  station-UNtrimmed. The two goal metrics are computed over this one
+  instead, because their registered purpose is continuity with
+  P0/P1's G2, which measured closest approach over the whole run.
+  Either committed route's station window ends ~20 m short of its own
+  goal, so scoring them there could never satisfy the gate's 1.0 m
+  criterion. `goal_window=None` means the two goal criteria DO NOT
+  APPLY to this run (the static arm: a parked ego has no goal
+  approach), and both goal fields are then None rather than a
+  meaningless distance.
 """
 
 from __future__ import annotations
@@ -24,8 +42,11 @@ class QualityStats:
     pose_err_max_m: float
     pose_bias_m: float
     lateral_dev_p95_m: float
-    goal_closest_approach_m: float
-    goal_terminal_distance_m: float
+    # None on an arm the goal criteria do not apply to (the static arm).
+    # A parked ego's distance to the goal is not a measurement of arrival,
+    # and writing one would put misleading evidence in the record.
+    goal_closest_approach_m: float | None
+    goal_terminal_distance_m: float | None
     ndt_rate_ratio: float
     gate_pass: bool
     reasons: list = field(default_factory=list)
@@ -53,6 +74,7 @@ def evaluate_quality(
     route_xy,
     goal_xy,
     window: tuple[int, int],
+    goal_window: tuple[int, int] | None,
     expected_ndt_hz: float,
     abs_pose_gate_m: float | None,
 ) -> QualityStats:
@@ -88,12 +110,24 @@ def evaluate_quality(
             reasons.append(f"pose_error p95-p50 {spread:.3f} >= 0.3")
 
     ot = np.asarray(odom_stamp_ns, dtype=np.int64)
-    ow = (ot >= lo) & (ot <= hi)
-    op = np.asarray(odom_xy, dtype=np.float64)[ow]
-    goal_d = np.linalg.norm(op - np.asarray(goal_xy, dtype=np.float64), axis=1)
-    closest, terminal = float(goal_d.min()), float(goal_d[-1])
-    if closest >= 1.0:
-        reasons.append(f"goal closest approach {closest:.3f} >= 1.0")
+    oxy = np.asarray(odom_xy, dtype=np.float64)
+    op = oxy[(ot >= lo) & (ot <= hi)]
+    if op.size == 0:
+        raise ValueError("no odometry sample inside the scoring window")
+
+    # The two goal metrics take the goal window, not the scoring window
+    # (see the module docstring); `None` means they do not apply here.
+    closest: float | None = None
+    terminal: float | None = None
+    if goal_window is not None:
+        g_lo, g_hi = goal_window
+        gp = oxy[(ot >= g_lo) & (ot <= g_hi)]
+        if gp.size == 0:
+            raise ValueError("no odometry sample inside the goal window")
+        goal_d = np.linalg.norm(gp - np.asarray(goal_xy, dtype=np.float64), axis=1)
+        closest, terminal = float(goal_d.min()), float(goal_d[-1])
+        if closest >= 1.0:
+            reasons.append(f"goal closest approach {closest:.3f} >= 1.0")
 
     # lateral deviation = distance to the route polyline itself; shares
     # the projection pass with window.project_station_m (same argmin

@@ -124,7 +124,7 @@ def _write_publisher_counts(run_dir, topic, count):
 
 def _write_quality(run_dir, gate_pass=True, reasons=None, **extra):
     # Registered schema (benchmarks/README.md "M5 gate result"):
-    # dataclasses.asdict(QualityStats) verbatim plus four provenance keys.
+    # dataclasses.asdict(QualityStats) verbatim plus five provenance keys.
     # `gate_pass` is the only field a consumer may treat as the verdict, so
     # these defaults are otherwise arbitrary placeholders -- present so the
     # fixture matches the registered SHAPE, not because sweep_verdict reads
@@ -142,6 +142,7 @@ def _write_quality(run_dir, gate_pass=True, reasons=None, **extra):
         "reasons": reasons or [],
         "arm": "closed-loop",
         "window_sim_ns": [0, 5_000_000_000],
+        "goal_window_sim_ns": [0, 5_000_000_000],
         "ladder_branch": "absolute",
         "expected_ndt_hz": 10.0,
     }

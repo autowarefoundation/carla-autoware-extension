@@ -133,7 +133,7 @@ docker run -d --name "$PUB_CONTAINER" --net=host --ipc=host \
 # running. `docker run -d` returns before the node has constructed, so a
 # publisher that throws in its constructor can still be observed Running for
 # one poll -- and then the whole 60 s scoring window is spent recording
-# silence, with the failure surfacing only at step 14. `ros2 topic hz` inside
+# silence, with the failure surfacing only at step 15. `ros2 topic hz` inside
 # the same container sees the real publisher on the real RMW.
 deadline=$((SECONDS + READY_TIMEOUT_S))
 while :; do
