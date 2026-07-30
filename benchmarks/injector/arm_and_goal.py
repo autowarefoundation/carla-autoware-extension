@@ -46,18 +46,22 @@ Sequence:
         (arm_closed_loop.sh --disarm calls BOTH the AD-API change_to_stop
         service AND publishes /autoware/engage false), so this function
         does not assume (a) alone is ever sufficient. The gated control_cmd
-        window is reset here (see verify_control_flowing): only traffic
-        from this moment on can prove the engage.
-     c. Verify BOTH, per review round 1: AUTHORITY --
-        /api/operation_mode/state reports is_autoware_control_enabled, the
-        exact flag step 11.6 used to tell an engaged stack from a refused
-        one -- AND LIVENESS -- the GATED `/control/command/control_cmd`
-        (not /control/trajectory_follower/control_cmd, the raw planner
-        output) sustains >= CONTROL_CMD_MIN_HZ. Rate alone is not enough:
-        benchmarks/results/E/run-008 measured 8.52 Hz on this exact topic
-        with 0.0000 m net displacement and the ego never engaged, and
-        cell A measures ~19.93 Hz of zero-velocity commands PRE-engage
-        while in STOP mode (see CONTROL_CMD_MIN_HZ's comment) -- either one
+        window, and the operation-mode state below, are both reset here
+        (see verify_control_flowing): only state and traffic from this
+        moment on can prove the engage.
+     c. Verify BOTH, per review round 2: AUTHORITY -- /api/operation_mode/
+        state reports mode == OperationModeState.AUTONOMOUS (NOT
+        is_autoware_control_enabled: that flag reports WHO drives, not
+        WHICH mode, and some vehicle interfaces report it true in STOP
+        mode too -- it is recorded, logged for R4.3, but does not gate)
+        -- AND LIVENESS -- the GATED `/control/command/control_cmd` (not
+        /control/trajectory_follower/control_cmd, the raw planner output)
+        sustains >= CONTROL_CMD_MIN_HZ. Rate alone is not enough:
+        benchmarks/results/E/run-008's real trace clears any threshold
+        calibrated near 1.30 Hz while never having engaged (see
+        CONTROL_CMD_MIN_HZ's comment for what is and is not retained
+        evidence for that run), and cell A measures ~19.93 Hz of
+        zero-velocity commands PRE-engage while in STOP mode -- either one
         alone would let verify_control_flowing() return True on a stack
         that never armed. engage() returns this check's result, not (a)'s
         or (b)'s reported success, so a near-silent OR not-actually-engaged
@@ -119,18 +123,28 @@ SERVICE_RETRY_PERIOD_S = 2.0
 # deadlines computed against it.
 SPIN_SLICE_S = 0.1
 
-# R4.2 -- the gated control topic. Measured reference points (recomputable
-# from benchmarks/evidence/step-11_6-adapi-engage/ and
-# benchmarks/results/E/run-007|run-008/observer.csv):
+# R4.2 -- the gated control topic. Measured reference points, one
+# inference, and one run with no retained arm evidence at all:
 #   ~1.30 Hz (n=109, max 11 samples in any trailing 3 s window) --
-#     benchmarks/results/E/run-007/observer.csv. change_to_autonomous was
-#     refused for 60 s on this run; it never engaged.
+#     benchmarks/results/E/run-007/observer.csv. This is the ONLY thing
+#     retained about run-007's arm attempt: its launch.log contains zero
+#     mentions of change_to_autonomous, /autoware/engage or
+#     operation_mode (case-insensitive grep), and it has no
+#     bridge-stage*.log at all. Its original gate:arm-failed exclusion
+#     (superseded by harness:092dc9a) is the only other surviving fact --
+#     HOW it failed to arm is not retained, and is not asserted here.
 #   8.52 Hz (n=588, max 70 samples in any trailing 3 s window) --
-#     benchmarks/results/E/run-008/observer.csv. Also never engaged (same
-#     refusal), yet clears a rate threshold set anywhere near the 1.30 Hz
-#     figure alone -- ground truth for both runs shows 0.0000 m net
-#     displacement and 0.0000 m path length (task-10-review.md). RATE ALONE
-#     THEREFORE CANNOT DISTINGUISH AN ENGAGED STACK FROM run-008's STATE.
+#     benchmarks/results/E/run-008/observer.csv. Ground truth for both
+#     runs recomputes to 0.0000 m net displacement and 0.0000 m path
+#     length from their own gt.csv, so RATE ALONE CANNOT DISTINGUISH AN
+#     ENGAGED STACK FROM EITHER RUN'S STATE. run-008's own
+#     bridge-stage2.log retains 78 occurrences of change_to_autonomous's
+#     "target mode is not available" refusal (24 tagged "status code 1"
+#     by service_log_checker) and ZERO /autoware/engage publications,
+#     over a harness_git_sha (4557e5c) that predates 092dc9a -- so
+#     run-008 never engaged is an INFERENCE from that log, not a direct
+#     capture of /api/operation_mode/state (neither run's
+#     observer_topics.yaml lists that topic).
 #   ~19.9 Hz -- gate_g2_closed_loop.sh's header claims the same gated topic
 #     publishes this fast PRE-engage, in STOP mode, carrying zero-velocity
 #     commands. NOT RETAINED as tracked evidence (benchmarks/evidence/
@@ -145,29 +159,35 @@ SPIN_SLICE_S = 0.1
 # pre-engage figures show a threshold on rate ALONE cannot be calibrated to
 # separate "engaged" from "not engaged" -- 8.52 Hz sits above it and ~19.9 Hz
 # sits far above it, both while genuinely not commanding. That is why
-# verify_control_flowing() below requires is_autoware_control_enabled
-# (AUTHORITY) in addition to this rate (LIVENESS), and resets the rate
-# window at the engage call so pre-engage traffic cannot satisfy it. Kept as
-# a real, if now secondary, requirement: an approach that reports itself
-# engaged (authority true) but is not actually commanding would still be a
-# false ARMED without it, which is the ORIGINAL cell-E defect this task
-# started from. recent_count's closed-interval convention (`now - t <=
-# window_s`) means a perfectly steady stream needs ~4.67 Hz, not exactly
-# 5.0 Hz, to reach the 15-sample count this threshold checks for over a 3 s
-# window (14/3 = 4.667; the same approximation pre-exists for
-# LOCALIZED_MIN_HZ). CONTROL_CMD_MIN_HZ/CONTROL_CMD_WINDOW_S are engineering
-# judgment, not independently measured constants.
+# verify_control_flowing() below requires mode ==
+# OperationModeState.AUTONOMOUS (AUTHORITY) in addition to this rate
+# (LIVENESS), and resets BOTH at the engage call so pre-engage state and
+# traffic cannot satisfy them. Kept as a real, if now secondary,
+# requirement: an approach that reports itself autonomous but is not
+# actually commanding would still be a false ARMED without it, which is
+# the ORIGINAL cell-E defect this task started from. recent_count's
+# closed-interval convention (`now - t <= window_s`) means a perfectly
+# steady stream needs ~4.67 Hz, not exactly 5.0 Hz, to reach the
+# 15-sample count this threshold checks for over a 3 s window
+# (14/3 = 4.667; the same approximation pre-exists for LOCALIZED_MIN_HZ).
+# CONTROL_CMD_MIN_HZ/CONTROL_CMD_WINDOW_S are engineering judgment, not
+# independently measured constants.
 CONTROL_CMD_TOPIC = "/control/command/control_cmd"
 CONTROL_CMD_MIN_HZ = 5.0
 CONTROL_CMD_WINDOW_S = 3.0
 
-# R4.2 (review round 1, C1/C3) -- the AUTHORITY half of the compound check.
-# /api/operation_mode/state's is_autoware_control_enabled is the exact flag
-# benchmarks/evidence/step-11_6-adapi-engage/legacy_autoware_engage.log used
-# to show cell A was actually engaged (true, alongside mode=2) when the
-# AD-API's own is_autonomous_mode_available stayed false. Approach-agnostic:
-# every cell runs the same AD-API operation-mode layer regardless of which
-# vehicle interface backs it.
+# R4.2 (review round 2, NEW-1) -- the AUTHORITY half of the compound check.
+# mode == OperationModeState.AUTONOMOUS is the exact flag
+# benchmarks/evidence/step-11_6-adapi-engage/legacy_autoware_engage.log's
+# single post-engage snapshot states a value for (mode: 2). Deliberately
+# NOT is_autoware_control_enabled, true in that same snapshot: that flag
+# reports WHO drives, not WHICH mode, and some vehicle interfaces report
+# it true in STOP mode too -- gating on it could pass a stationary,
+# un-engaged ego on a stack whose engage never took (rebuilding C1/C3
+# through a different door). Kept as a recorded, non-gating observation
+# instead (self._control_enabled, logged in engage() for R4.3).
+# Approach-agnostic: every cell runs the same AD-API operation-mode layer
+# regardless of which vehicle interface backs it.
 OPERATION_MODE_STATE_TOPIC = "/api/operation_mode/state"
 
 # R4.1 -- the AD-API attempt is bounded far below --timeout's default (60 s)
@@ -221,28 +241,34 @@ def sustained_rate_ok(timestamps, now: float, window_s: float, min_hz: float) ->
 
     Rate alone is NOT sufficient to decide an arm (review round 1, C1):
     benchmarks/results/E/run-008 clears any threshold set near the 1.30 Hz
-    figure this was originally calibrated against (8.52 Hz, never engaged,
-    0.0000 m net displacement) -- see CONTROL_CMD_MIN_HZ's comment. Kept as
-    the liveness half of armed_ok, not the whole decision.
+    figure this was originally calibrated against -- 8.52 Hz, 0.0000 m net
+    displacement (recomputed from its own gt.csv); that it never engaged is
+    an INFERENCE from its bridge-stage2.log (78 refusals, 0
+    /autoware/engage publications), not a direct measurement -- see
+    CONTROL_CMD_MIN_HZ's comment. Kept as the liveness half of armed_ok,
+    not the whole decision.
     """
     return recent_count(timestamps, now, window_s) >= min_hz * window_s
 
 
-def armed_ok(control_enabled: bool, timestamps, now: float, window_s: float, min_hz: float) -> bool:
+def armed_ok(autonomous_mode: bool, timestamps, now: float, window_s: float, min_hz: float) -> bool:
     """The compound R4.2 decision verify_control_flowing() polls each
-    iteration: AUTHORITY (control_enabled, from
-    /api/operation_mode/state's is_autoware_control_enabled) AND LIVENESS
+    iteration: AUTHORITY (autonomous_mode, from /api/operation_mode/state's
+    mode == OperationModeState.AUTONOMOUS -- NOT is_autoware_control_enabled,
+    which reports WHO drives rather than WHICH mode and could read true in
+    STOP mode; see OPERATION_MODE_STATE_TOPIC's comment) AND LIVENESS
     (sustained_rate_ok on the gated control_cmd). Pure and separate from
     sustained_rate_ok so both halves -- and specifically that authority is
     load-bearing, not vestigial -- are unit-testable without rclpy.
 
     This is the fix for a rate-only guard passing benchmarks/results/E/
-    run-008 (8.52 Hz, never engaged): tests/benchmarks/test_arm_and_goal.py
+    run-008 (8.52 Hz on its real trace, inferred never engaged -- see
+    sustained_rate_ok's docstring): tests/benchmarks/test_arm_and_goal.py
     replays run-008's own retained observer.csv arrivals with
-    control_enabled=False (its actual, measured state) and asserts this
-    returns False throughout, even though sustained_rate_ok alone would not.
+    autonomous_mode=False and asserts this returns False throughout, even
+    though sustained_rate_ok alone would not.
     """
-    return control_enabled and sustained_rate_ok(timestamps, now, window_s, min_hz)
+    return autonomous_mode and sustained_rate_ok(timestamps, now, window_s, min_hz)
 
 
 def yaw_to_quaternion_zw(yaw_rad: float) -> tuple[float, float]:
@@ -263,9 +289,12 @@ class ArmAndGoal(Node):
         # satisfy the post-engage liveness check. See engage()'s reset.
         self._control_cmd_times: collections.deque[float] = collections.deque()
         self.create_subscription(Control, CONTROL_CMD_TOPIC, self._on_control_cmd, 10)
-        # AUTHORITY half of armed_ok. Starts False like a fresh stack's
-        # actual state; only a delivered OperationModeState message can
-        # ever set it True.
+        # AUTHORITY half of armed_ok (mode == AUTONOMOUS). Starts False
+        # like a fresh stack's actual state; reset again at the engage
+        # call (engage()), same reasoning as _control_cmd_times.
+        self._autonomous_mode: bool = False
+        # RECORDED, NOT GATING (review round 2, NEW-1): logged for R4.3's
+        # per-approach finding, never used in an arming decision.
         self._control_enabled: bool = False
         self.create_subscription(
             OperationModeState,
@@ -281,6 +310,7 @@ class ArmAndGoal(Node):
         self._control_cmd_times.append(time.monotonic())
 
     def _on_operation_mode_state(self, msg: OperationModeState) -> None:
+        self._autonomous_mode = msg.mode == OperationModeState.AUTONOMOUS
         self._control_enabled = bool(msg.is_autoware_control_enabled)
 
     def _spin_for(self, duration_s: float) -> None:
@@ -343,26 +373,30 @@ class ArmAndGoal(Node):
         )
 
     def verify_control_flowing(self, timeout_s: float) -> bool:
-        """R4.2 (revised, review round 1): block until BOTH hold -- AUTHORITY
-        (self._control_enabled, from /api/operation_mode/state) AND
-        LIVENESS (the GATED CONTROL_CMD_TOPIC sustains >= CONTROL_CMD_MIN_HZ
-        over a trailing CONTROL_CMD_WINDOW_S window) -- or timeout_s
-        elapses. Neither alone was sufficient: rate alone passes
-        benchmarks/results/E/run-008 (8.52 Hz, never engaged) and passes
-        vacuously pre-engage on cell A (~19.9 Hz zero-velocity in STOP
-        mode); authority alone would not catch a stack that reports itself
-        engaged but is not actually commanding -- the original cell-E
-        defect. See CONTROL_CMD_MIN_HZ's and armed_ok's comments.
+        """R4.2 (revised, review round 2): block until BOTH hold -- AUTHORITY
+        (self._autonomous_mode, mode == OperationModeState.AUTONOMOUS from
+        /api/operation_mode/state -- NOT is_autoware_control_enabled, see
+        OPERATION_MODE_STATE_TOPIC's comment) AND LIVENESS (the GATED
+        CONTROL_CMD_TOPIC sustains >= CONTROL_CMD_MIN_HZ over a trailing
+        CONTROL_CMD_WINDOW_S window) -- or timeout_s elapses. Neither alone
+        was sufficient: rate alone passes benchmarks/results/E/run-008's
+        real trace (8.52 Hz; inferred never engaged, see
+        sustained_rate_ok's docstring) and passes vacuously pre-engage on
+        cell A (~19.9 Hz zero-velocity in STOP mode); authority alone would
+        not catch a stack that reports itself autonomous but is not
+        actually commanding -- the original cell-E defect. See
+        CONTROL_CMD_MIN_HZ's and armed_ok's comments.
 
-        engage() clears self._control_cmd_times immediately before calling
-        this, so the window here can only be satisfied by traffic that
-        postdates the engage call (review round 1, C3)."""
+        engage() clears self._control_cmd_times AND self._autonomous_mode
+        immediately before calling this, so this can only be satisfied by
+        mode/traffic that postdates the engage call (review round 1 C3,
+        round 2 NEW-1)."""
         return self._wait_for_condition(
             self._control_cmd_times,
             CONTROL_CMD_WINDOW_S,
             timeout_s,
             lambda ts, now: armed_ok(
-                self._control_enabled, ts, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ
+                self._autonomous_mode, ts, now, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ
             ),
         )
 
@@ -479,14 +513,26 @@ class ArmAndGoal(Node):
         adapi_budget = min(ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S, timeout_s)
         self.try_adapi_engage(adapi_budget)
         self.legacy_engage()
-        # Reset the liveness window AT the engage moment (review round 1,
-        # C3): without this, a control_cmd stream that predates the engage
-        # (e.g. cell A's own ~19.9 Hz zero-velocity STOP-mode traffic) could
-        # satisfy verify_control_flowing() on its very first iteration,
-        # regardless of whether the engage took.
+        # Reset BOTH terms AT the engage moment (review round 1 C3, round 2
+        # NEW-1): without this, a control_cmd stream or an operation-mode
+        # state that predates the engage (e.g. cell A's own ~19.9 Hz
+        # zero-velocity STOP-mode traffic) could satisfy
+        # verify_control_flowing() on its very first iteration, regardless
+        # of whether the engage took.
         self._control_cmd_times.clear()
+        self._autonomous_mode = False
+        self._control_enabled = False
         remaining = max(0.0, timeout_s - (time.monotonic() - start))
-        return self.verify_control_flowing(remaining)
+        armed = self.verify_control_flowing(remaining)
+        # is_autoware_control_enabled is RECORDED here, not gating (NEW-1):
+        # log its final observed value alongside the gating mode flag so
+        # Task 13/15 can capture it for R4.3's per-approach finding.
+        self.get_logger().info(
+            f"post-engage state: mode_autonomous={self._autonomous_mode} "
+            f"is_autoware_control_enabled={self._control_enabled} "
+            "(R4.3 observation; only mode_autonomous gates ARMED)"
+        )
+        return armed
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -554,11 +600,13 @@ def main(argv: list[str] | None = None) -> int:
 
         if not node.engage(args.timeout):
             print(
-                f"ARM FAIL: {OPERATION_MODE_STATE_TOPIC} never reported "
-                f"is_autoware_control_enabled together with {CONTROL_CMD_TOPIC} "
-                f"sustaining {CONTROL_CMD_MIN_HZ:.0f} Hz, within {args.timeout:.0f} s "
-                "after engage (see step-11_6-adapi-engage and R4.2 -- neither a "
-                "service reporting success nor rate alone is enough)"
+                f"ARM FAIL: {OPERATION_MODE_STATE_TOPIC} never reported mode == "
+                f"AUTONOMOUS together with {CONTROL_CMD_TOPIC} sustaining "
+                f"~{CONTROL_CMD_MIN_HZ:.2f} Hz nominal (~4.67 Hz effective over "
+                f"a closed {CONTROL_CMD_WINDOW_S:.0f} s window), within "
+                f"{args.timeout:.0f} s after engage (see step-11_6-adapi-engage "
+                "and R4.2 -- neither a service reporting success nor rate alone "
+                "is enough)"
             )
             return EXIT_TIMEOUT
 

@@ -18,13 +18,17 @@ decision predicates those methods poll, and the argument parser.
 
 Review round 1 found that a rate-only guard, calibrated only from a
 1.30 Hz / 20.07 Hz pair using synthetic steady arrivals, passed
-benchmarks/results/E/run-008 (8.52 Hz, real trace, ego never engaged). The
-"real trace" tests below load that same retained observer.csv (and
-run-007's) through benchmarks.analysis.bench_io.read_observer_csv --
-tracked, recomputable evidence, not a synthetic generator that can only
-emit steady arrivals -- specifically because a steady generator cannot
-reproduce the burstiness or the over-threshold rate that hid the original
-gap.
+benchmarks/results/E/run-008 (8.52 Hz, real trace, 0.0000 m net
+displacement AND path length -- see the section comment below for exactly
+what is measured vs inferred vs not retained per run). The "real trace"
+tests below load that same retained observer.csv (and run-007's) through
+benchmarks.analysis.bench_io.read_observer_csv -- tracked, recomputable
+evidence, not a synthetic generator that can only emit steady arrivals --
+specifically because a steady generator cannot reproduce the burstiness or
+the over-threshold rate that hid the original gap. Review round 2 then
+found the authority term itself gated on the wrong field
+(is_autoware_control_enabled instead of mode == AUTONOMOUS) and that the
+liveness term was unpinned; both are fixed and pinned below.
 """
 
 from __future__ import annotations
@@ -185,13 +189,22 @@ def test_actually_engaged_control_cmd_passes_the_arm_20_07_hz():
 # ---------------------------------------------------------------------------
 # R4.2 regression pin, driven from the RETAINED real traces (review round 1,
 # I4: a synthetic steady-arrival generator cannot reproduce run-008's real,
-# over-threshold rate, nor run-007's real burstiness). Cell E's original
-# false conclusion came from an engage() that trusted a service response;
-# review round 1 found the REPLACEMENT rate-only guard then passed
-# run-008 -- 8.52 Hz on the gated topic, but the ego never engaged
-# (0.0000 m net displacement, task-10-review.md). armed_ok's authority term
-# is the fix; these tests pin that it is load-bearing, not vestigial, using
-# both runs' own recorded arrival timestamps.
+# over-threshold rate, nor run-007's real burstiness). Evidence status
+# differs per run -- stated precisely, not blurred into one claim:
+#   run-008: 0.0000 m net displacement AND 0.0000 m path length, recomputed
+#     from its own gt.csv. That change_to_autonomous was refused (so
+#     mode never reached AUTONOMOUS) is an INFERENCE from
+#     run-008/bridge-stage2.log (78 "target mode is not available"
+#     refusals, zero /autoware/engage publications) -- neither run's
+#     observer_topics.yaml captured /api/operation_mode/state directly.
+#   run-007: NO arm-attempt evidence is retained at all (its launch.log
+#     has zero mentions of change_to_autonomous, /autoware/engage or
+#     operation_mode; it has no bridge-stage*.log). Only its 1.30 Hz rate
+#     is retained. `False`/non-autonomous below is the REGRESSION-RELEVANT
+#     assumption a compound check must correctly reject under, not a
+#     claim about what this run's real state was.
+# armed_ok's authority term is the fix for run-008's rate-only escape;
+# these tests pin that it is load-bearing, not vestigial.
 # ---------------------------------------------------------------------------
 
 
@@ -212,10 +225,10 @@ def _rate_ever_sustained(timestamps, window_s: float, min_hz: float) -> bool:
     return any(sustained_rate_ok(timestamps, t, window_s, min_hz) for t in timestamps)
 
 
-def _armed_ever(control_enabled: bool, timestamps, window_s: float, min_hz: float) -> bool:
+def _armed_ever(autonomous_mode: bool, timestamps, window_s: float, min_hz: float) -> bool:
     """Same scan as _rate_ever_sustained, through the compound armed_ok
     predicate instead of sustained_rate_ok alone."""
-    return any(armed_ok(control_enabled, timestamps, t, window_s, min_hz) for t in timestamps)
+    return any(armed_ok(autonomous_mode, timestamps, t, window_s, min_hz) for t in timestamps)
 
 
 def test_run_007_real_trace_never_reaches_the_rate_threshold():
@@ -230,19 +243,25 @@ def test_run_007_real_trace_never_reaches_the_rate_threshold():
 
 def test_run_008_real_trace_passes_on_rate_alone():
     # 8.52 Hz, n=588, max 70 samples in any trailing 3 s window -- clears
-    # the rate threshold easily despite the ego never having engaged. This
-    # documents C1 directly: it must stay green, because "fixing" it by
+    # the rate threshold easily despite the ego never having moved
+    # (0.0000 m net displacement AND path length, run-008/gt.csv). This
+    # documents C1 directly and must stay green: "fixing" it by
     # recalibrating the rate threshold higher would just chase one number
     # (cell A's own pre-engage traffic runs at ~19.9 Hz, above any such
-    # threshold too) instead of adding the authority term that actually
-    # discriminates -- tested next.
+    # threshold too). It also plays two mechanical roles, not just
+    # documentation: it bounds CONTROL_CMD_MIN_HZ from ABOVE on real data
+    # (mutating it to 25.0 makes THIS test fail, since 8.52 Hz no longer
+    # clears it), and it is the non-vacuity guard for the round-2 pin
+    # below -- without a real trace that passes on rate alone, that pin
+    # could stay green for the wrong reason (nothing to distinguish).
     ts = _control_cmd_arrival_times_s(RUN_008_OBSERVER)
     assert _rate_ever_sustained(ts, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ) is True
 
 
-def test_armed_ok_rejects_run_007_with_its_real_measured_authority_state():
-    # change_to_autonomous was refused for 60 s on this run
-    # (task-10-report.md); is_autoware_control_enabled was never true.
+def test_armed_ok_rejects_run_007_with_no_retained_authority_evidence():
+    # See the section comment above: run-007 retains no arm-attempt
+    # evidence at all. `False` (mode never AUTONOMOUS) is the
+    # regression-relevant assumption, not a measured fact about this run.
     ts = _control_cmd_arrival_times_s(RUN_007_OBSERVER)
     assert _armed_ever(False, ts, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ) is False
 
@@ -250,20 +269,35 @@ def test_armed_ok_rejects_run_007_with_its_real_measured_authority_state():
 def test_armed_ok_rejects_run_008_despite_its_rate_clearing_the_threshold():
     # THE round-2 regression pin: run-008's rate alone passes (previous
     # test), so this fails unless armed_ok's authority term is genuinely
-    # load-bearing in the AND, not vestigial. Ground truth for this run is
-    # the same as run-007's -- refused engage, control never enabled.
+    # load-bearing in the AND, not vestigial. `False` here is an inference
+    # from run-008/bridge-stage2.log (78 refusals, zero /autoware/engage
+    # publications) -- see the section comment above, not a direct
+    # capture of /api/operation_mode/state.
     ts = _control_cmd_arrival_times_s(RUN_008_OBSERVER)
     assert _armed_ever(False, ts, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ) is False
 
 
 def test_armed_ok_would_accept_run_008_if_authority_had_been_true():
     # Confirms the authority term is doing real work rather than always
-    # returning False: control_enabled=True is NOT run-008's actual
-    # measured state (a hypothetical), but with it forced true the same
-    # real trace passes, because its rate was always sufficient. Guards
-    # against `and` silently becoming `or not` or similar.
+    # returning False: autonomous_mode=True is NOT run-008's inferred
+    # state (a hypothetical), but with it forced true the same real trace
+    # passes, because its rate was always sufficient. Guards against
+    # `and` silently becoming `or` or similar.
     ts = _control_cmd_arrival_times_s(RUN_008_OBSERVER)
     assert _armed_ever(True, ts, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ) is True
+
+
+def test_armed_ok_requires_liveness_even_with_authority_true():
+    # NEW-2 (review round 2): the liveness term itself was unpinned --
+    # `return autonomous_mode` (dropping the rate check entirely) or
+    # weakening it to "any sample at all" both left every previous test
+    # green, since they only ever forced authority FALSE to prove
+    # rejection. Force authority TRUE here (not run-007's real/assumed
+    # state -- a hypothetical, like the run-008 test above) against
+    # run-007's real trace, which never reaches the rate threshold: if
+    # armed_ok ever ignored or weakened liveness, this would flip to True.
+    ts = _control_cmd_arrival_times_s(RUN_007_OBSERVER)
+    assert _armed_ever(True, ts, CONTROL_CMD_WINDOW_S, CONTROL_CMD_MIN_HZ) is False
 
 
 # ---------------------------------------------------------------------------
