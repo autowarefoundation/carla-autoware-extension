@@ -630,15 +630,20 @@ PY
     echo "      (nothing to arm for this cell)"
   fi
 
-  # arm_and_goal.py engages via the AD API's change_to_autonomous service,
-  # which DIVERGES from the repo's only live-gated engage path
-  # (gate_g2_closed_loop.sh publishes /autoware/engage). That divergence is
-  # unresolved, so a successful service response is not evidence the vehicle
-  # is under command: check the GATED output -- /control/command/control_cmd,
-  # what vehicle_cmd_gate actually sends -- rather than
-  # /control/trajectory_follower/control_cmd, which flows even while the gate
-  # suppresses everything. A silent gate is a bring-up gate failure
-  # (exclusions.md criterion 2), recorded, not hidden.
+  # R4: arm_and_goal.py now engages via the SAME proven /autoware/engage
+  # publish gate_g2_closed_loop.sh uses (not change_to_autonomous alone --
+  # that AD-API call is attempted and logged as a per-approach observation,
+  # benchmarks/README.md's control_mode finding, but never trusted on its
+  # own), and it already verifies the GATED control_cmd sustains >= 5 Hz
+  # before step 9 reports success. So by the time execution reaches here,
+  # a successful step 9 already means the gate was flowing at arm time --
+  # this second check is a redundant, independent sanity probe (a fresh CLI
+  # read, not the rclpy subscription arm_and_goal.py used), not the
+  # harness's only liveness gate. It still checks the GATED output --
+  # /control/command/control_cmd, what vehicle_cmd_gate actually sends --
+  # rather than /control/trajectory_follower/control_cmd, which flows even
+  # while the gate suppresses everything. A silent gate here is still
+  # recorded, not hidden (exclusions.md criterion 2).
   #
   # --no-daemon is load-bearing here. MEASURED 2026-07-29 (Task 10): a
   # `ros2 topic echo --once` answered out of a stale `ros2cli` daemon cache
@@ -660,9 +665,11 @@ PY
         echo "      OK: /control/command/control_cmd is flowing"
       else
         CONTROL_SILENT=1
-        echo "      WARNING: /control/command/control_cmd is SILENT after a successful" >&2
-        echo "      change_to_autonomous. The AD-API engage path may not be sufficient;" >&2
-        echo "      gate_g2_closed_loop.sh's /autoware/engage publish is the fallback." >&2
+        echo "      WARNING: /control/command/control_cmd is SILENT even though" >&2
+        echo "      arm_and_goal.py (step 9) already reported ARMED. That means a" >&2
+        echo "      regression between arm time and here -- or this probe's own" >&2
+        echo "      stale-daemon failure mode (see the comment above); investigate," >&2
+        echo "      do not assume either without checking." >&2
       fi
     fi
   fi

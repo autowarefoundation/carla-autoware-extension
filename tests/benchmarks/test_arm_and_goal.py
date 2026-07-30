@@ -1,17 +1,20 @@
 """Unit tests for arm_and_goal.py's pure pieces: the localization-rate rule,
-the yaw-only quaternion convention, the CLI surface, and the documented exit
-codes (Task 7's Produces line: "exit 0 armed / 2 timeout").
+the R4.2 control_cmd-liveness rule, the yaw-only quaternion convention, the
+CLI surface, and the documented exit codes (Task 7's Produces line: "exit 0
+armed / 2 timeout").
 
 ``benchmarks.injector.arm_and_goal`` imports rclpy and the AD API message
 packages at module scope, and CI has none of them -- same situation as
 tests/e2e/test_dummy_perception.py, and stubbed the same way with
 ``setdefault`` so a real ROS environment still uses the real modules. The
-service-calling methods on ArmAndGoal (wait_localized/set_route/engage) are
-not covered here: they need a live rclpy executor and AD API services, which
-is exactly what running only inside the Autoware container buys -- the same
-reason scripts/e2e/reseed_localization.py, the closest existing precedent,
-has no dedicated test file either. What IS covered is everything that does
-not need rclpy to be real: the arithmetic and the argument parser.
+service-calling / rclpy-spinning methods on ArmAndGoal (wait_localized,
+set_route, try_adapi_engage, legacy_engage, verify_control_flowing, engage)
+are not covered here: they need a live rclpy executor and AD API services,
+which is exactly what running only inside the Autoware container buys -- the
+same reason scripts/e2e/reseed_localization.py, the closest existing
+precedent, has no dedicated test file either. What IS covered is everything
+that does not need rclpy to be real: the arithmetic, including the R4.2
+decision predicate those methods poll, and the argument parser.
 """
 
 from __future__ import annotations
@@ -36,16 +39,23 @@ for _name in (
     "rclpy.node",
     "autoware_adapi_v1_msgs",
     "autoware_adapi_v1_msgs.srv",
+    "autoware_control_msgs",
+    "autoware_control_msgs.msg",
+    "autoware_vehicle_msgs",
+    "autoware_vehicle_msgs.msg",
     "nav_msgs",
     "nav_msgs.msg",
 ):
     sys.modules.setdefault(_name, _StubModule(_name))
 
 from benchmarks.injector.arm_and_goal import (  # noqa: E402
+    CONTROL_CMD_MIN_HZ,
+    CONTROL_CMD_WINDOW_S,
     EXIT_ARMED,
     EXIT_TIMEOUT,
     build_arg_parser,
     recent_count,
+    sustained_rate_ok,
     yaw_to_quaternion_zw,
 )
 
@@ -70,6 +80,79 @@ def test_recent_count_is_zero_for_empty_timestamps():
 def test_recent_count_includes_the_boundary_sample():
     # exactly window_s old must still count (<=, not <).
     assert recent_count([5.0], now=10.0, window_s=5.0) == 1
+
+
+# ---------------------------------------------------------------------------
+# sustained_rate_ok: the shared "sustained >= min_hz over a trailing window"
+# decision behind BOTH wait_localized and verify_control_flowing (R4.2).
+# ---------------------------------------------------------------------------
+
+
+def _periodic_timestamps(hz: float, span_s: float, now: float) -> list[float]:
+    """Synthetic arrival times at a steady `hz`, ending at `now`, covering
+    the trailing `span_s` seconds -- models what a real rclpy subscription's
+    timestamp deque holds, without needing a live one."""
+    period = 1.0 / hz
+    times = []
+    t = now
+    while t >= now - span_s:
+        times.append(t)
+        t -= period
+    return times
+
+
+def test_sustained_rate_ok_true_when_the_window_is_full():
+    ts = _periodic_timestamps(hz=10.0, span_s=5.0, now=100.0)
+    assert sustained_rate_ok(ts, now=100.0, window_s=5.0, min_hz=5.0) is True
+
+
+def test_sustained_rate_ok_false_when_nothing_has_arrived():
+    # Models a timeout: the deque a real wait loop polls never fills.
+    assert sustained_rate_ok([], now=100.0, window_s=5.0, min_hz=5.0) is False
+
+
+def test_sustained_rate_ok_false_just_under_the_count():
+    # 5 Hz * 5 s = 25 required; 24 samples in the window must not pass.
+    ts = [100.0 - i * (5.0 / 24) for i in range(24)]
+    assert sustained_rate_ok(ts, now=100.0, window_s=5.0, min_hz=5.0) is False
+
+
+def test_sustained_rate_ok_true_at_exactly_the_count():
+    ts = [100.0 - i * (5.0 / 25) for i in range(25)]
+    assert sustained_rate_ok(ts, now=100.0, window_s=5.0, min_hz=5.0) is True
+
+
+# ---------------------------------------------------------------------------
+# R4.2 regression pin. Cell E's false conclusion came from an engage() that
+# reported success while the gated control_cmd was near-silent. These two
+# tests replay the campaign's own measured figures --
+# benchmarks/evidence/step-11_6-adapi-engage/gated_control_cmd.log (20.07 Hz,
+# engaged) and benchmarks/results/E/run-007/observer.csv (~1.30 Hz, n=109,
+# not engaged) -- through the REAL CONTROL_CMD_MIN_HZ / CONTROL_CMD_WINDOW_S
+# constants verify_control_flowing() polls sustained_rate_ok() with, not a
+# synthetic threshold. If either constant regresses in a way that lets a
+# near-silent gate read as flowing, this fails.
+# ---------------------------------------------------------------------------
+
+
+def test_near_silent_control_cmd_must_fail_the_arm_1_30_hz():
+    # run-007 (cell E, engage() reported success; nothing drove): ~1.30 Hz,
+    # n=109 over 83.3 s.
+    ts = _periodic_timestamps(hz=1.30, span_s=CONTROL_CMD_WINDOW_S, now=100.0)
+    assert (
+        sustained_rate_ok(ts, now=100.0, window_s=CONTROL_CMD_WINDOW_S, min_hz=CONTROL_CMD_MIN_HZ)
+        is False
+    )
+
+
+def test_actually_engaged_control_cmd_passes_the_arm_20_07_hz():
+    # step 11.6's legacy /autoware/engage capture: 20.07 Hz, 281/281 samples
+    # nonzero.
+    ts = _periodic_timestamps(hz=20.07, span_s=CONTROL_CMD_WINDOW_S, now=100.0)
+    assert (
+        sustained_rate_ok(ts, now=100.0, window_s=CONTROL_CMD_WINDOW_S, min_hz=CONTROL_CMD_MIN_HZ)
+        is True
+    )
 
 
 # ---------------------------------------------------------------------------
