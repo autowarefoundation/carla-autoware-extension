@@ -3,7 +3,8 @@
 #
 #   bash benchmarks/run.sh <cell> --arm static|closed-loop [--class <id>]
 #        [--unpaced] [--runs N] [--no-observer] [--rpc-port N] [--rmw NAME]
-#        [--shm on|off] [--dds-profile PATH|none] [--duel] [--dry-run]
+#        [--shm on|off] [--dds-profile PATH|none] [--duel]
+#        [--check-args] [--dry-run]
 #
 # Every measurement in P3 and P4 comes from here. Each invocation produces
 # either a complete, contract-valid benchmarks/results/<cell>/run-<NNN>/ or a
@@ -58,6 +59,18 @@ RPC_PORT=2000
 # the default points this way (a forgotten flag must under-count loudly, not
 # contaminate silently).
 DUEL=0
+# --check-args: resolve the invocation and print it, then exit -- steps 1-2
+# only, so it touches NO host state at all (no preflight, no /dev/shm sweep, no
+# docker, no results/ write, nothing booted). It exists so the fail-closed
+# `duel_admissible` default and the per-family transport correction are pinned
+# by a test that runs THIS parser, rather than by a test that scans this file's
+# text. A text scan is not a pin: inserting `DUEL=1` after the parse loop flips
+# the default on with the whole suite green, which is how the sixth
+# text-assertion defect in this campaign was found -- in the guard protecting
+# the primary duel from contamination, of all places. Unlike --dry-run, which
+# deliberately DOES run preflight (host load, BuildId) and so cannot run on a
+# machine without the CARLA trees, this is hermetic and therefore testable.
+CHECK_ARGS=0
 RMW="rmw_cyclonedds_cpp"
 SHM=""
 DDS_PROFILE=""
@@ -70,9 +83,11 @@ RMW_EXPLICIT=0
 die() { echo "RUN FAIL: $*" >&2; exit 2; }
 
 usage() {
-  # The usage block is the file's own header comment (lines 4-6), printed
-  # with the comment markers stripped, so there is one copy of it.
-  sed -n '4,6p' "$BENCH/run.sh" | sed 's/^# \?//'
+  # The usage block is the file's own header comment (lines 4-7), printed
+  # with the comment markers stripped, so there is one copy of it. The range
+  # MUST track that block: it grew to four lines when --check-args was added,
+  # and a stale range silently truncates the flag list `usage` prints.
+  sed -n '4,7p' "$BENCH/run.sh" | sed 's/^# \?//'
   exit 2
 }
 
@@ -95,6 +110,7 @@ while [ $# -gt 0 ]; do
     --shm) SHM="$2"; shift 2 ;;
     --dds-profile) DDS_PROFILE="$2"; DDS_PROFILE_EXPLICIT=1; shift 2 ;;
     --duel) DUEL=1; shift ;;
+    --check-args) CHECK_ARGS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h | --help) usage ;;
     *) die "unknown argument $1" ;;
@@ -378,6 +394,26 @@ do_run() {
   run_dir="$(printf '%s/run-%03d' "$cell_results" "$next_idx")"
   echo "      $run_dir"
 
+  # --check-args stops HERE: the last point before anything touches the host.
+  # Everything above is resolution and read-only lookup (cells.yaml, the config
+  # files, pins.yaml, compose.yaml, a directory listing of results/); step 3
+  # sweeps /dev/shm and shells out to docker. Placed as LATE as it can be so a
+  # mutation anywhere in the argument handling, the transport correction or the
+  # arm check is caught, not just one in the parse loop.
+  #
+  # KEY=VALUE, one per line, so a test asserts on a resolved VALUE rather than
+  # on the presence of a word somewhere in prose.
+  if [ "$CHECK_ARGS" = "1" ]; then
+    echo "cell=$CELL"
+    echo "approach=$approach"
+    echo "arm=$effective_arm"
+    echo "rmw=$RMW"
+    echo "shm=$SHM"
+    echo "duel_admissible=$([ "$DUEL" = "1" ] && echo true || echo false)"
+    echo "run_dir=$run_dir"
+    exit 0
+  fi
+
   # In a dry run nothing may touch the results tree, so the launcher's plan
   # output goes to a scratch directory instead -- the resolution and the
   # prerequisite checks are identical either way.
@@ -448,14 +484,20 @@ for line in os.environ.get("PF_KV", "").splitlines():
 print(json.dumps(placement, sort_keys=True))
 PY
   )"
-  # --duel is appended as an ARRAY element rather than interpolated into the
-  # command string, so an empty value cannot become a stray argument.
-  local duel_args=()
-  [ "$DUEL" = "1" ] && duel_args+=(--duel)
+  # --duel travels to the REAL call as an array element, so an empty value can
+  # never become a stray argument. The PRINTED form is a separate string that
+  # is simply empty when the flag is off: passing "${duel_args[*]}" as its own
+  # `show` argument appended a trailing empty word to every non-duel run's
+  # echoed command line, i.e. a (cosmetic) misstatement of the command that ran.
+  local duel_args=() duel_show=""
+  if [ "$DUEL" = "1" ]; then
+    duel_args+=(--duel)
+    duel_show=" --duel"
+  fi
   show "python3 -m benchmarks.scripts.write_manifest --run-dir $run_dir --cell $CELL" \
     "--arm $effective_arm --rmw $RMW --shm $SHM --dds-profile $DDS_PROFILE" \
-    "--carla-version $carla_kind --autoware-image $autoware_image --placement-json '<json>'" \
-    "${duel_args[*]}"
+    "--carla-version $carla_kind --autoware-image $autoware_image" \
+    "--placement-json '<json>'$duel_show"
   if [ "$DUEL" = "1" ]; then
     echo "      duel_admissible=true (--duel): this run WILL feed the primary" \
       "duel's equivalence verdict"

@@ -25,6 +25,7 @@ inline where it matters (D1, D7).
 
 import json
 import math
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -1031,23 +1032,118 @@ def test_reconciliation_row_says_why_it_has_no_runs_when_all_were_gate_runs(tmp_
     assert "1 run(s) not duel-admissible" in row.notes
 
 
+# ---------------------------------------------------------------------------
+# BEHAVIOURAL pins for the fail-closed default: these RUN the real scripts.
+#
+# CAMPAIGN RULE (2026-07-30, owner ruling, binding from here on): a substring
+# or text-scan assertion is NOT a pin. It may stand as a cheap secondary
+# signal, but every safety property needs at least one test that exercises the
+# real code path and fails when the property is NEUTRALISED -- not merely when
+# the text is deleted. This block is that test for `duel_admissible`'s
+# fail-closed default, and it exists because the text-scan versions below do
+# NOT catch the weakest operator that breaks the property: inserting `DUEL=1`
+# AFTER run.sh's parse loop flips the default on while every text assertion
+# still passes, with the whole suite green. That was the SIXTH instance of this
+# defect class in this campaign, and it sat in the guard protecting the primary
+# duel from contamination.
+#
+# `--check-args` is what makes this hermetic: it resolves the invocation and
+# exits before preflight, so no CARLA tree, no docker and no host load are
+# needed, and nothing under benchmarks/results/ is written. (`--dry-run` cannot
+# serve here -- it deliberately DOES run preflight, including the engine
+# BuildId, so it cannot run on a machine without the CARLA trees.)
+# ---------------------------------------------------------------------------
+
+_RUN_SH = _REPO_ROOT / "benchmarks" / "run.sh"
+_DUEL_SH = _REPO_ROOT / "benchmarks" / "scripts" / "duel.sh"
+
+
+def _resolved(*args: str) -> dict[str, str]:
+    """Run `run.sh … --check-args` for real; parse its KEY=VALUE lines.
+
+    Indented lines are the ordinary step output and are skipped, so this
+    reads only the resolution block --check-args prints.
+    """
+    proc = subprocess.run(
+        ["bash", str(_RUN_SH), *args, "--check-args"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=_REPO_ROOT,
+    )
+    assert proc.returncode == 0, f"run.sh --check-args failed: {proc.stderr}"
+    out = {}
+    for line in proc.stdout.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and not line.startswith(" "):
+            out[key] = value
+    return out
+
+
+def test_run_sh_really_resolves_duel_admissible_false_without_the_flag():
+    """THE behavioural pin. Drives run.sh's own argument handling and
+    asserts the RESOLVED value, so it fails when the default is flipped by
+    any means -- including a `DUEL=1` inserted after the parse loop, which
+    every text-scan assertion in this file passes straight over."""
+    assert _resolved("A", "--arm", "static")["duel_admissible"] == "false"
+
+
+def test_run_sh_really_resolves_duel_admissible_true_with_the_flag():
+    """The other direction, so the pin above cannot be satisfied by a
+    resolver hardwired to `false` -- which would break the duel instead of
+    contaminating it, and would be just as invisible."""
+    assert _resolved("A", "--arm", "closed-loop", "--duel")["duel_admissible"] == "true"
+
+
+def test_duel_sh_really_produces_duel_admissible_invocations_end_to_end():
+    """`duel.sh` -> `run.sh` -> resolved `duel_admissible`, run for real.
+
+    This is the chain the primary duel's n depends on, and the text scan
+    below only approximates it. `--check-args` passes through duel.sh's
+    PASSTHROUGH, so each ordered run resolves and exits without touching
+    the host; BOTH cells must come back declared as duel data. Dropping
+    --duel from duel.sh makes both lines read `false` here.
+    """
+    proc = subprocess.run(
+        ["bash", str(_DUEL_SH), "A", "B", "--arm", "static", "--pairs", "1", "--check-args"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=_REPO_ROOT,
+    )
+    assert proc.returncode == 0, f"duel.sh failed: {proc.stderr}"
+    declared = [ln for ln in proc.stdout.splitlines() if ln.startswith("duel_admissible=")]
+    # One per cell in the pair, and BOTH true -- not "at least one".
+    assert declared == ["duel_admissible=true", "duel_admissible=true"], declared
+    assert "duel complete: A 1 ok / 0 failed, B 1 ok / 0 failed" in proc.stdout
+
+
+def test_check_args_writes_nothing_under_results():
+    """The premise that makes the three tests above safe to keep in the
+    suite: --check-args must not create a run directory, or every test run
+    would consume a real run index in the campaign's results tree."""
+    results = _REPO_ROOT / "benchmarks" / "results"
+    before = sorted(str(p) for p in results.glob("*/run-*"))
+    resolved = _resolved("A", "--arm", "static")
+    assert sorted(str(p) for p in results.glob("*/run-*")) == before
+    # It still reports the directory it WOULD have used, unwritten.
+    assert not Path(resolved["run_dir"]).exists()
+
+
 def test_duel_sh_declares_every_run_it_orders_as_duel_data():
-    """`duel.sh` is the only caller that KNOWS a run is part of an
-    interleaved pair, and `duel_admissible` defaults false, so the duel
-    path depends on this script passing --duel. An edit that dropped it
-    would silently take the primary duel's n to zero -- a table of
-    insufficient-data rows with no defect visible anywhere else -- so the
-    dependency is pinned here rather than discovered three hours into a
-    duel session."""
-    duel_sh = (_REPO_ROOT / "benchmarks" / "scripts" / "duel.sh").read_text()
-    assert 'run.sh" "$cell" --duel' in duel_sh
+    """SECONDARY SIGNAL, not the pin -- see the block comment above, and
+    `test_duel_sh_really_produces_duel_admissible_invocations_end_to_end`
+    for the behavioural version. Kept because it names the exact line a
+    reader should look for, and because it is instant."""
+    assert 'run.sh" "$cell" --duel' in _DUEL_SH.read_text()
 
 
 def test_run_sh_has_a_duel_flag_and_does_not_set_it_by_default():
-    """The other half of the same dependency: run.sh must expose --duel
-    AND must default it off, or every bring-up run made through the
-    campaign's single measurement entry point becomes duel data again."""
-    run_sh = (_REPO_ROOT / "benchmarks" / "run.sh").read_text()
+    """SECONDARY SIGNAL, not the pin (see above). This is the assertion
+    that MISSED the post-parse `DUEL=1` insertion, and it is kept, with
+    that limitation stated, rather than deleted: it still catches the
+    cruder edit of removing the flag outright."""
+    run_sh = _RUN_SH.read_text()
     assert "--duel) DUEL=1; shift ;;" in run_sh
     assert "\nDUEL=0\n" in run_sh
 
