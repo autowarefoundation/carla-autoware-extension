@@ -2146,7 +2146,8 @@ and is **not retained** (`benchmarks/evidence/README.md`'s step-11_6 row).
 > left standing on purpose.** Rewriting a registration so it reads as though it
 > had always said the new thing is record destruction (Task 15a), so the
 > refutation is a pointer, not an edit: see **the cell-C block below**, the
-> 2026-07-30 amendment in `## Amendments made so far`, and the captures in
+> 2026-07-30 amendment in the `Amendments made so far:` list under
+> `## Pre-registration`, and the captures in
 > `benchmarks/evidence/task-15-adapi-engage-cellc/`. In short: AD-API
 > `change_to_autonomous` was measured **ACCEPTED** on cell C with
 > `/vehicle/status/control_mode` reading `4` (MANUAL) — the very condition
@@ -2310,29 +2311,48 @@ armed (route SET, trajectory live, MRM suppressed) and stopped: accepted on the
 **first** call, `success=True, code=0, message=''`, with retries at 2 s
 intervals then returning `code=60001 'The mode is the same as the current.'`;
 operation mode went `1` → `2`, `is_autoware_control_enabled` `false` → `true`,
-and the ego drove the full pre-registered route closed-loop to **0.109 m** of
-the goal — **with no `/autoware/engage` publish anywhere in the sequence**.
-Retained as a tracked console capture,
+and `/vehicle/status/velocity_status` measured the ego at **4.1498 m/s** under
+that mode 20 s later. Retained as a tracked console capture,
 `benchmarks/evidence/task-15-adapi-engage-cellc/adapi_change_to_autonomous.log`,
-so it clears this file's evidence rule rather than resting on a bare claim.
+so it clears this file's evidence rule rather than resting on a bare claim — and
+those lines are sufficient for the conclusion on their own.
+
+**Bounded to what is retained:** that the drive covered the **full** route (it
+reached **0.109 m** of the goal) and that **no** `/autoware/engage` publish
+occurred anywhere in the sequence are **attested, not retained** — the retained
+distance series for that drive starts 12.827 m out, and nothing observed the
+topic's publisher count. Neither is load-bearing above.
 
 Two consequences for the rows above, neither of which rewrites them:
 
-- **Cell A's `4` (MANUAL) reading is now corroborated on the same approach and
-  RETAINED.** Cell C is the extension approach too and read `mode: 4` while
-  parked and armed; the table above marks cell A's identical value "not
-  retained", and this closes that gap for the approach even though cell A's own
-  session output stays unretained.
+- **The `4` (MANUAL) value is now backed by a RETAINED capture on the same
+  approach — cell A's own reading stays unretained.** Cell C is the extension
+  approach too and read `mode: 4` while parked and armed. The sentence two
+  paragraphs up marks cell A's identical value "not retained" by pointing at
+  `benchmarks/evidence/README.md`'s deliberately-absent table; that remains
+  true of cell A's session output, and what changes is only that the _value_ is
+  no longer attested-only for this approach.
 - **But the inferred link from that value to a refusal does not survive it.**
   `control_mode` read `4` in exactly the state where the transition was
   ACCEPTED, and the capture shows the field FOLLOWS the engage (`4` → `1` at
   engage, `benchmarks/evidence/task-15-adapi-engage-cellc/legacy_autoware_engage.log`),
-  so it is an output of arming rather than a precondition of it. Relatedly,
-  `is_autonomous_mode_available` is a **live engage-availability flag**, not a
-  static capability: `true` while stopped and armed, `false` from the first
-  moving sample, `true` again once stopped, with mode staying `2` throughout —
-  so step 11.6's decisive `false`-while-driving is that moving-state value and
-  says nothing about cell A's pre-engage state.
+  so it is an output of arming rather than a precondition of it.
+- **Relatedly, `is_autonomous_mode_available` is not a static capability** — and
+  this is stated at exactly the strength the artifacts carry. What is MEASURED is
+  that the flag takes both values on cell C in one boot: `true` in the pre-engage
+  armed-and-stopped state (`adapi_change_to_autonomous.log:17`), `true` again at
+  `mode: 2` while stopped after arrival (`legacy_autoware_engage.log:20`), and
+  `false` while driving. That pair alone is what neutralizes step 11.6's decisive
+  `false`-while-driving as evidence about cell A's **pre-engage** state. What is
+  only DERIVED is the transition point and the "engage-availability" reading of
+  it: the log's velocity column is the **commanded** value from
+  `/control/command/control_cmd`, sampled every 2 s, not measured ego motion, and
+  the flag is still `true` on the first row carrying a non-zero command
+  (`legacy_autoware_engage.log:5`, `00:01:45Z`, 0.25 m/s) and `false` on the next
+  (`:6`, 1.97 m/s) — so the flip is bounded to that ~5 s interval and no closer.
+  The transition manager's speed-match / deviation check (candidate 1 for cell A's
+  refusal, below) predicts the same flips, so this observation is **not** evidence
+  against that candidate.
 
 **Still unobserved, and stated so it is not read as closed:** cell C's outcome
 was taken with a direct `ros2 service call`, **not** through
@@ -3611,8 +3631,11 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   cross-track), so branch (a)'s precondition is met directly. Raw series, the
   bundle digest and the boot's engine BuildId / fork SHA / extension `.so`
   digest are tracked under `benchmarks/evidence/g1-nishi-bundle/`; the same
-  boot's closed-loop certification (closest approach **0.046 m** over the 222 m
-  pre-registered route) is under `benchmarks/evidence/g2-nishi-cellc/`. It is
+  boot's closed-loop certification (closest approach **0.046 m** on the
+  **230.5 m** pre-registered route — `config/routes/NishishinjukuMap.yaml`'s own
+  recorded total length; the retained distance series opens at 222.110 m, i.e.
+  ~5.2 m after engage, because the gate's `control_cmd` liveness check precedes
+  collection) is under `benchmarks/evidence/g2-nishi-cellc/`. It is
   **not** the historical 0.078 m in `docs/e2e-report.md`, which stands but is
   not what the threshold rests on, and cell A's 0.089 m stays **not directly
   comparable** for the self-registration reason already recorded (confound
@@ -3635,15 +3658,25 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   observed the same path live on cell C, armed (route SET, trajectory live, MRM
   suppressed) and stopped, and it was **ACCEPTED on the first call**
   (`success=True, code=0`; attempts 2-6 returned `code=60001 'The mode is the
-same as the current.'`) and drove the full pre-registered route closed-loop to
-  0.109 m of the goal **with no `/autoware/engage` publish anywhere in the
-  sequence**. `/vehicle/status/control_mode` read `4` (MANUAL) in exactly that
+same as the current.'`), after which `/vehicle/status/velocity_status` measured
+  the ego at **4.1498 m/s** under that mode. That it drove the **full** route
+  (reaching 0.109 m of the goal) and that **no** `/autoware/engage` publish
+  occurred anywhere in the sequence are **attested, not retained** — the retained
+  series for that drive starts 12.827 m out and no publisher count was observed —
+  and neither is load-bearing.
+  `/vehicle/status/control_mode` read `4` (MANUAL) in exactly that
   accepting state, and the capture shows it FOLLOWS the engage (`4` → `1`), so
-  it is an output of arming and not a precondition; `is_autonomous_mode_available`
-  is a live engage-availability flag, `true` while stopped and armed, `false`
-  from the first moving sample, `true` again once stopped — so step 11.6's
-  decisive `false` **while driving** is that moving-state value and does not
-  establish what cell A's PRE-ENGAGE state was. Captures:
+  it is an output of arming and not a precondition. On
+  `is_autonomous_mode_available`, at the strength the artifacts carry: MEASURED is
+  that it takes both values on cell C in one boot — `true` pre-engage while armed
+  and stopped, `true` again at `mode: 2` while stopped after arrival, `false`
+  while driving — and that pair alone is what makes step 11.6's decisive `false`
+  **while driving** fail to establish cell A's PRE-ENGAGE state. DERIVED, not
+  measured, is the transition point and the "engage-availability" reading: the
+  log's velocity column is the **commanded** value sampled every 2 s, not ego
+  motion, and the flag is still `true` on the first row carrying a non-zero
+  command, so the flip is bounded to one ~5 s interval; candidate 1 below
+  predicts the same flips, so this is not evidence against it. Captures:
   `benchmarks/evidence/task-15-adapi-engage-cellc/`. **Bounded deliberately:**
   cell A was not re-run, so **why cell A refused is NOT diagnosed** — two
   untested candidates (the transition manager's lateral/yaw/speed
@@ -3657,6 +3690,32 @@ same as the current.'`) and drove the full pre-registered route closed-loop to
   is all `gate_g2_closed_loop.sh` publishes. No margin, threshold, tolerance,
   metric or cell definition changes; `config/margins.yaml` and
   `config/exclusions.md` byte-identical.
+- **2026-07-30 (OWNER RULING) — cell E's arming path becomes a MEASUREMENT, and
+  both branches are pre-registered now.** The entry above left cell E's
+  PROVISIONAL "static-only" classification un-adjudicated because the AD-API
+  refutation reopened whether E failed on a harness-path difference rather than a
+  property of the bridge. The owner's decision: **Task 20 arms cell E through
+  BOTH paths and records which one E actually needs; the "static-only"
+  classification stays PROVISIONAL until that run.** Rationale: Task 20 runs the E
+  family anyway, and all eight filed E runs are already `excluded: true`
+  (`gate:arm-failed`, `crash:cell-launch` ×3, `harness:*` ×4), so there is no
+  measured data to reclassify — this converts an adjudication into a measurement.
+  Per this campaign's standing rule that a mechanically discriminable question
+  gets BOTH branches pre-registered rather than one, and registered before the
+  run so neither can be chosen after seeing the result:
+  - **(a) If E arms through the AD-API path**, its earlier refusal was a per-run
+    or state condition rather than a path property, and E's classification follows
+    **that run's own outcome** — not the current provisional label, and not cell
+    C's result.
+  - **(b) If E requires the legacy `/autoware/engage` fallback**, its step-(c)
+    verification failure is reclassified `harness:<commit>` under
+    `config/exclusions.md` criterion 3, and the static-only classification is
+    **superseded by the re-gate** rather than confirmed by it.
+    Nothing is reclassified now and **cell E's `cells.yaml` entry values are
+    untouched** — this registers the branches and the owner's ruling, no more. No
+    work is added for struck cells (E-opt stays struck). `config/margins.yaml` and
+    `config/exclusions.md` byte-identical; criterion 3 is cited as it already
+    stands, not amended.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

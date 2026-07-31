@@ -32,11 +32,16 @@ Sequence:
         WHAT IS ESTABLISHED, corrected 2026-07-30 (Task 15). This path
         DOES arm, on at least one cell: it was measured ACCEPTED on cell C
         on the FIRST call (success=True, code=0; the retries then returned
-        code 60001 "The mode is the same as the current."), after which
-        the ego drove the full pre-registered route closed-loop to 0.109 m
-        of the goal with NO /autoware/engage publish anywhere in the
-        sequence -- benchmarks/evidence/task-15-adapi-engage-cellc/. Step
-        11.6 (benchmarks/evidence/step-11_6-adapi-engage/) measured the
+        code 60001 "The mode is the same as the current."), operation mode
+        went 1 -> 2, and /vehicle/status/velocity_status then measured the
+        ego at 4.1498 m/s under that mode -- all retained in
+        benchmarks/evidence/task-15-adapi-engage-cellc/ and sufficient for
+        this conclusion on their own. (That the drive covered the FULL
+        route and that NO /autoware/engage publish occurred anywhere in
+        the sequence are ATTESTED, not retained: that drive's retained
+        series starts 12.827 m out, and nothing observed the topic's
+        publisher count. Neither is needed here.) Step 11.6
+        (benchmarks/evidence/step-11_6-adapi-engage/) measured the
         opposite on cell A: refused for a full 60 s, ~30 retries, "The
         target mode is not available". BOTH are retained.
 
@@ -50,11 +55,21 @@ Sequence:
             exactly the state where the transition was ACCEPTED, and the
             cell-C capture shows it FOLLOWS the engage (4 -> 1 at
             engage), so it is an output of arming, not a precondition of
-            it. Relatedly, is_autonomous_mode_available is a LIVE
-            engage-availability flag rather than a static capability:
-            true while stopped and armed, false from the first moving
-            sample, true again once stopped, with mode staying 2
-            throughout.
+            it. Relatedly, is_autonomous_mode_available is NOT a static
+            capability of the stack. MEASURED: on cell C it reads true
+            pre-engage while armed and stopped, true again at mode 2
+            while stopped after arrival, and false while driving -- that
+            pair of trues is the whole reason step 11.6's
+            false-while-driving says nothing about cell A's PRE-ENGAGE
+            state. DERIVED, not measured: calling it an
+            "engage-availability" flag, and where exactly it flips. The
+            capture's velocity column is the COMMANDED value sampled
+            every 2 s, not ego motion, and the flag is still true on the
+            first row carrying a non-zero command, so the flip is bounded
+            to one ~5 s interval and no closer. The transition manager's
+            speed-match / deviation check -- candidate 1 for cell A's
+            refusal in that directory's PROVENANCE.md -- predicts the
+            same flips, so none of this argues against it.
 
         WHY cell A refused is NOT diagnosed. Cell A was not re-measured
         and no reading here observes Town10, so the campaign's

@@ -55,15 +55,18 @@ produced them, and reconstructing them would be fabrication.
 
 ### What is deliberately absent, and where it is declared
 
-| Claim                                                           | Status                                                                              |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Rigid-bundle G2 halt at 142.599 m                               | gate output retained, series overwritten — `g2-rigid-committed-route/PROVENANCE.md` |
-| Rigid-bundle G2 halt at 142.398 m                               | **not retained** — same file                                                        |
-| 8-seed sweep figures (+0.005, +0.132, 1.898 m)                  | **not retained** — declared in `README.md`'s ladder amendment                       |
-| NDT-score breach distribution                                   | **not retained**, claim withdrawn — `g2-rigid-committed-route/PROVENANCE.md`        |
-| Pre-engage 19.93 Hz, control_mode = MANUAL, ground-truth speeds | **not retained** — `step-11_6-adapi-engage/PROVENANCE.md`                           |
-| Cell C's AD-API-engaged drive, its first ~209 m                 | **not retained** (arrival half is) — `task-15-adapi-engage-cellc/PROVENANCE.md`     |
-| Why cell A refused `change_to_autonomous`                       | **not diagnosed**, two untested candidates named — same file                        |
+| Claim                                                                       | Status                                                                              |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Rigid-bundle G2 halt at 142.599 m                                           | gate output retained, series overwritten — `g2-rigid-committed-route/PROVENANCE.md` |
+| Rigid-bundle G2 halt at 142.398 m                                           | **not retained** — same file                                                        |
+| 8-seed sweep figures (+0.005, +0.132, 1.898 m)                              | **not retained** — declared in `README.md`'s ladder amendment                       |
+| NDT-score breach distribution                                               | **not retained**, claim withdrawn — `g2-rigid-committed-route/PROVENANCE.md`        |
+| Pre-engage 19.93 Hz, control_mode = MANUAL, ground-truth speeds             | **not retained** — `step-11_6-adapi-engage/PROVENANCE.md`                           |
+| Cell C's AD-API-engaged drive, all but its final 12.827 m                   | **not retained** (the arrival is) — `task-15-adapi-engage-cellc/PROVENANCE.md`      |
+| That drive covered the FULL route; that no `/autoware/engage` was published | **attested, not retained** — same file                                              |
+| G2's teleport-back reset (the landing pose)                                 | **attested, not retained** — `g2-nishi-cellc/PROVENANCE.md`                         |
+| G1's loadavg 1.35, cadence rates, "no reseed"                               | **attested, not retained** — `g1-nishi-bundle/PROVENANCE.md`                        |
+| Why cell A refused `change_to_autonomous`                                   | **not diagnosed**, two untested candidates named — same file                        |
 
 ## How to write here
 
@@ -91,8 +94,8 @@ that names the decision, not the date — the artifacts carry their own timestam
 | `step-11_6-adapi-engage/`     | The AD-API-vs-legacy engage discriminator: `change_to_autonomous` refusing for 60 s, the legacy publish succeeding in the same state, and the gated output at 20.07 Hz commanding +4.170 m/s on 281/281 samples. Its root-cause attribution (`control_mode == MANUAL`) is REFUTED by `task-15-adapi-engage-cellc/`; both are kept.                                                                                                   |
 | `b-closed-loop-stopcheck/`    | Cell B's closed-loop gate **FAIL** (Task 13): localization never initializes because `pose_initializer`'s stop check reads a twist carrying **2.17 mm/s of lateral velocity** from the fork's parked ego, so every initialization request is refused 'The vehicle is not stopped.' Contains the run console log, the refusal lines, the stop-check input measurement and the probe scripts, with retention status stated per figure. |
 | `g1-nishi-bundle/`            | Selects the G1 ladder's **absolute** branch, `abs_pose_gate_m: 0.5`, for cell C: max NDT error **0.062 m** against the 0.5 m gate on the `map_defaults.sh` Nishi-Shinjuku bundle, 400 static samples, bias 21 mm. Raw series plus the bundle digest and the build provenance of the boot.                                                                                                                                            |
-| `g2-nishi-cellc/`             | Cell C's live closed-loop certification (Task 15): closest approach **0.046 m** over the full 222 m pre-registered route, armed through the legacy `/autoware/engage` path. Records the teleport-back reset the run used and the closest-vs-terminal split (terminal 4.137 m).                                                                                                                                                       |
-| `task-15-adapi-engage-cellc/` | The arming-path discriminator re-observed live on cell C: AD-API `change_to_autonomous` **ACCEPTED** (`code=0`) with `control_mode` reading MANUAL, driving the route closed-loop with no `/autoware/engage` publish. Refutes step 11.6's root cause; does NOT diagnose why cell A refused, and says so.                                                                                                                             |
+| `g2-nishi-cellc/`             | Cell C's live closed-loop certification (Task 15): closest approach **0.046 m** on the **230.5 m** pre-registered route, armed through the legacy `/autoware/engage` path. Keeps three distances apart (route polyline 230.5 m, straight-line start→goal 227.30 m, first retained sample 222.110 m ≈ 5.2 m after engage) and states that the teleport-back reset is attested, not retained.                                          |
+| `task-15-adapi-engage-cellc/` | The arming-path discriminator re-observed live on cell C: AD-API `change_to_autonomous` **ACCEPTED** (`code=0`) with `control_mode` reading MANUAL, and the ego measured driving at 4.1498 m/s under it with no `/autoware/engage` publish. Refutes step 11.6's root cause; does NOT diagnose why cell A refused, and marks the route-completion and no-publish claims as attested rather than retained.                             |
 
 Each `*_summary.txt` records the map, the bundle's own pcd `sha256`, the window
 and the verdict, so a reader can confirm which bytes produced which number

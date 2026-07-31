@@ -5,8 +5,10 @@ state: **closest approach 0.046 m** against the 1.0 m tolerance over 1198
 ground-truth samples in the 120 s window — PASS. Same boot as
 `g1-nishi-bundle/` (G1 PASS, max 0.062 m) and `task-15-adapi-engage-cellc/`.
 
-`g2_summary.txt` is the gate's output. This file records the two things a reader
-of the series needs that the summary does not carry.
+`g2_summary.txt` is the gate's output. This file records what a reader of the
+series needs and the summary does not carry: which arming path drove the PASS, the
+teleport-back reset and its retention status, the three distances that must not be
+conflated, and the closest-vs-terminal split.
 
 ## Which arming path this PASS was driven through
 
@@ -34,8 +36,35 @@ the repo's documented reset (`docs/e2e-report.md`, "New operational gotchas";
 4. `gate_g2_closed_loop.sh 81571.616 50019.827`
 
 The teleport is a reset of the vehicle's position, not a change to any gate,
-threshold or harness file. `g2_dist.txt` starts at 222.110 m from the goal, which
-is the full route, and is the direct check that the reset did what it claims.
+threshold or harness file.
+
+### What checks the reset — and the three distances that must not be conflated
+
+An earlier revision of this file claimed `g2_dist.txt`'s first sample "is the full
+route, and is the direct check that the reset did what it claims". **Both halves
+were wrong**, and they are corrected here rather than quietly replaced, because
+this is exactly the kind of conflation that propagates:
+
+| Quantity                                         | Value         | Source                                                                                                                                    |
+| ------------------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Route POLYLINE length (the pre-registered route) | **230.5 m**   | `benchmarks/config/routes/NishishinjukuMap.yaml`'s own recorded `total length: 230.5 m`; recomputes to 230.54 m from that file's polyline |
+| Straight-line start → goal                       | **227.30 m**  | same file records 227.3 m for polyline[0] → goal; 227.298 m from the landing pose in step 2 above                                         |
+| First RETAINED sample in `g2_dist.txt`           | **222.110 m** | this directory                                                                                                                            |
+
+So the series begins about **5.2 m after engage**, not at the start pose — and it
+structurally cannot begin there: `scripts/e2e/gate_g2_closed_loop.sh` publishes
+`/autoware/engage` and then spends up to 10 s inside
+`timeout 10 ros2 topic hz /control/command/control_cmd` before `collect_gt` is
+started. The series' own opening confirms it: consecutive deltas
+0.2099 / 0.2139 / 0.2179 / 0.2219 m at the collector's 10 Hz sampling, i.e. the
+ego is already at **2.10 m/s and accelerating in sample 0**.
+
+**The reset therefore rests on the landing pose recorded in step 2, which is
+operator-attested prose and is NOT retained as an artifact** — no host-side
+capture of the `set_transform` result was written to a file. What the series
+supports on its own is weaker and still sufficient for the gate: the drive was
+under way at least 222.110 m from the goal, which is inconsistent with a run
+starting from where the previous AD-API drive ended (4.099 m out).
 
 ## Closest approach vs terminal distance
 
@@ -61,8 +90,10 @@ boot (`config/exclusions.md` criterion 5). Engine BuildId, fork SHA, extension
 `g2_hz.txt` is the gated-control liveness capture: `/control/command/control_cmd`
 at 19.96–20.03 Hz. Per that gate's own header the rate is a precondition, not
 evidence of authority — the command CONTENT for this boot is in
-`task-15-adapi-engage-cellc/legacy_autoware_engage.log` (gated velocity ramping
-0.25 → 1.97 → 4.17 m/s at engage) and the distance series here is what decides G2.
+`task-15-adapi-engage-cellc/legacy_autoware_engage.log` (COMMANDED velocity
+ramping 0.25 → 1.97 → 4.17 m/s at engage — that column is
+`/control/command/control_cmd`'s command, not measured ego motion), and the
+distance series here is what decides G2.
 
 ## Recomputing
 

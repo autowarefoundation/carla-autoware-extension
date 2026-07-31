@@ -316,8 +316,12 @@ cells:
       # engine BuildId / fork SHA / extension .so digest are TRACKED under
       # benchmarks/evidence/g1-nishi-bundle/, so this threshold's selecting
       # number is recomputable from the repo. The same boot's G2 is
-      # benchmarks/evidence/g2-nishi-cellc/ (closest approach 0.046 m over
-      # the 222 m route).
+      # benchmarks/evidence/g2-nishi-cellc/ (closest approach 0.046 m on the
+      # 230.5 m pre-registered route -- config/routes/NishishinjukuMap.yaml's
+      # own recorded total length. The retained distance series OPENS at
+      # 222.110 m, ~5.2 m after engage, because the gate's control_cmd
+      # liveness check runs before collection starts; that PROVENANCE.md
+      # keeps the three distances apart.)
       #
       # NOT the historical figure: docs/e2e-report.md records 0.078 m on this
       # map and cell A's comment above cites that number. Both are static

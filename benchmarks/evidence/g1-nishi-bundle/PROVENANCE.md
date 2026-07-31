@@ -59,6 +59,19 @@ preflight (criterion 6 aborts at ≥ 8).
   `/localization/pose_estimator/pose` 19.97 Hz,
   `/localization/kinematic_state` 19.96 Hz
 
+**Retention status of this section, since this directory's rule is
+recomputable-or-declared.** The digests above ARE checkable: the two SHAs against
+`pins.yaml`, the `.so` and image digests by re-hashing, and the bundle pcd digest
+from `g1_summary.txt`. Everything else here is **operator-attested prose and is
+NOT retained** — specifically the 1.35 loadavg, the four cadence rates, and the
+"static ego / GNSS-initialised lock / no reseed" conditions. They were read from a
+live session whose console output was never written to a file. This matters most
+for the loadavg, because criterion-6 non-applicability is a **run-validity
+claim**, so that claim rests on attestation rather than on an artifact; the same
+holds for "no reseed", under which the 0.0616 m is a _static_ max. Criterion 8's
+non-applicability is the exception — it rests on the BuildId comparison above,
+which is recomputable. None of these gaps is reconstructed.
+
 The same boot produced `g2-nishi-cellc/` (G2 PASS) and
 `task-15-adapi-engage-cellc/` (the arming-path discriminator).
 

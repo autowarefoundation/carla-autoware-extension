@@ -34,19 +34,32 @@ closest approach 0.046 m).
 
 ## What each file shows
 
-| File                             | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `adapi_change_to_autonomous.log` | Cell C armed (route SET, trajectory live, MRM suppressed), NOT engaged. Pre-attempt `is_autonomous_mode_available: true` with `/vehicle/status/control_mode` `mode: 4` (MANUAL). Attempt 1 returns `success=True, code=0, message=''`; attempts 2-6 return `code=60001 'The mode is the same as the current.'`. Operation mode goes `1` -> `2` and the ego is measured at `longitudinal_velocity: 4.14978551864624` m/s 20 s later. No `/autoware/engage` was published at any point in this capture. |
-| `adapi_arrival_dist.txt`         | Ego-to-goal ground-truth distance for the tail of that AD-API-engaged drive: closest approach **0.1087 m**, terminal 4.0989 m, against the pre-registered Nishi goal (81571.616, 50019.827) and the gate's 1.0 m tolerance. It is the SAME route, goal and tolerance `gate_g2_closed_loop.sh` uses.                                                                                                                                                                                                   |
-| `legacy_autoware_engage.log`     | The legacy `/autoware/engage` path, sampled every ~2 s across `gate_g2_closed_loop.sh`'s own window after a disarm + teleport-back + re-arm. Pre-engage rows: `op_mode 1`, `ctrl_enabled false`, `auton_avail true`, `ctrl_mode 4`, gated velocity `0.0`. At engage: `op_mode 2`, `ctrl_enabled true`, `ctrl_mode 4 -> 1`, gated velocity ramping `0.25 -> 1.97 -> 4.17` m/s, then `0.0` on arrival.                                                                                                  |
+| File                             | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `adapi_change_to_autonomous.log` | Cell C armed (route SET, trajectory live, MRM suppressed), NOT engaged. Pre-attempt `is_autonomous_mode_available: true` with `/vehicle/status/control_mode` `mode: 4` (MANUAL). Attempt 1 returns `success=True, code=0, message=''`; attempts 2-6 return `code=60001 'The mode is the same as the current.'`. Operation mode goes `1` -> `2` and the ego is measured at `longitudinal_velocity: 4.14978551864624` m/s 20 s later. The capture contains no `/autoware/engage` publish, but it only records the calls made _in_ it -- that none occurred outside it in this window is attested, not retained (no publisher count was observed). |
+| `adapi_arrival_dist.txt`         | Ego-to-goal ground-truth distance for the tail of that AD-API-engaged drive: closest approach **0.1087 m**, terminal 4.0989 m, against the pre-registered Nishi goal (81571.616, 50019.827) and the gate's 1.0 m tolerance. It is the SAME route, goal and tolerance `gate_g2_closed_loop.sh` uses.                                                                                                                                                                                                                                                                                                                                             |
+| `legacy_autoware_engage.log`     | The legacy `/autoware/engage` path, sampled every ~2 s across `gate_g2_closed_loop.sh`'s own window after a disarm + teleport-back + re-arm. Pre-engage rows: `op_mode 1`, `ctrl_enabled false`, `auton_avail true`, `ctrl_mode 4`, commanded velocity `0.0`. At engage: `op_mode 2`, `ctrl_enabled true`, `ctrl_mode 4 -> 1`, commanded velocity ramping `0.25 -> 1.97 -> 4.17` m/s, then `0.0` on arrival. The last column is `/control/command/control_cmd`'s COMMANDED velocity, NOT measured ego motion -- nothing in this file measures ego speed.                                                                                        |
 
 ## What this establishes, stated no wider than the evidence
 
-1. **The AD-API path armed cell C.** `change_to_autonomous` was accepted on the
-   first call and the ego drove the full pre-registered route closed-loop to
-   0.1087 m of the goal with no `/autoware/engage` publish anywhere in the
-   sequence. So "the AD-API arming path does not arm" is FALSE as a
-   cell-independent statement.
+1. **The AD-API path armed cell C.** Fully retained, and sufficient on its own:
+   `change_to_autonomous` was accepted on the first call
+   (`adapi_change_to_autonomous.log:23`, `success=True, code=0, message=''`), the
+   retries then reported the mode as already current (`code=60001`, five times),
+   `/api/operation_mode/state` went `mode: 1` → `mode: 2` with
+   `is_autoware_control_enabled` `false` → `true` (`:13`, `:14` vs `:44`, `:45`),
+   and `/vehicle/status/velocity_status` measured the ego at
+   **4.14978551864624 m/s** under that mode 20 s later (`:58`). So "the AD-API
+   arming path does not arm" is FALSE as a cell-independent statement — that
+   conclusion needs nothing beyond the lines just cited.
+   **ATTESTED, NOT RETAINED, and not load-bearing above:** that it drove the
+   _full_ pre-registered route, and that _no_ `/autoware/engage` publish occurred
+   anywhere in the sequence. The retained distance series starts 12.827 m out
+   (see "What is NOT established"), and nothing observed the topic's publisher
+   count or subscriber traffic — the no-publish claim rests on the operator
+   having issued no such publish in that window, which is prose. Neither is
+   needed for the refutation; both are recorded so the stronger phrasing an
+   earlier revision used is not read as measured.
 2. **`control_mode == MANUAL` is not what blocks the transition.**
    `/vehicle/status/control_mode` read `mode: 4` (MANUAL) in exactly the
    pre-engage state where the transition was accepted. `legacy_autoware_engage.log`
@@ -54,15 +67,48 @@ closest approach 0.046 m).
    output of arming, not a precondition of it. Step 11.6's root-cause attribution
    is therefore refuted, and is left in that directory with this file naming what
    refutes it.
-3. **`is_autonomous_mode_available` is a live engage-availability flag, not a
-   static capability.** In `legacy_autoware_engage.log` it is `true` while the ego
-   is stopped and armed, flips `false` from the first moving sample
-   (`00:01:50Z`), and returns to `true` at `00:02:58Z` once the ego has stopped
-   again — operation mode staying `2` throughout. Step 11.6's decisive detail,
-   `is_autonomous_mode_available: false` **while driving**, is that same
-   moving-state value; on cell C it coexists with `true` in the pre-engage state.
-   So that observation does not establish the flag was false in cell A's
-   PRE-ENGAGE state.
+3. **`is_autonomous_mode_available` is not a static capability of the stack.**
+   Split deliberately into what is measured and what is inferred, because an
+   earlier revision of this file asserted the mechanism as measured and the
+   artifacts do not carry it.
+
+   **MEASURED, and it is what does all the work here.** The flag takes BOTH
+   values on cell C within one boot:
+   - `true` in the pre-engage **armed and stopped** state
+     (`adapi_change_to_autonomous.log:17`), and
+   - `true` again at `mode: 2` while stopped after arrival
+     (`legacy_autoware_engage.log:20`), against
+   - `false` while the stack is driving (`adapi_change_to_autonomous.log:48`,
+     `legacy_autoware_engage.log:6`).
+
+   That pair alone is the conclusion this directory needs: a flag that reads
+   `true` on cell C in exactly the state step 11.6 inferred it must have been
+   `false` in on cell A cannot be a static property of the AD-API layer. So step
+   11.6's decisive detail — `is_autonomous_mode_available: false` **while
+   driving** — is a value this stack also shows while driving, and it therefore
+   **establishes nothing about cell A's PRE-ENGAGE state**.
+
+   **DERIVED, not measured: the transition point and the mechanism.** The
+   `gated_vel_mps` column of `legacy_autoware_engage.log` is the **COMMANDED**
+   velocity from `/control/command/control_cmd`, not measured ego motion, and the
+   rows are 2 s apart. The flip is bounded to one interval and no closer: at
+   `:5` (`00:01:45Z`, commanded 0.25 m/s) the flag is still **`true`**; at `:6`
+   (`00:01:50Z`, commanded 1.97 m/s) it is `false`. Nothing retained measures ego
+   speed inside that ~5 s window, and the command ramp implies motion had already
+   begun by `:5` — so "flips false from the first moving sample", as an earlier
+   revision put it, names a quantity these artifacts do not record. Calling the
+   flag "engage-availability" is therefore a 2 s-sampled correlation with
+   commanded velocity, not a measured mechanism.
+
+   **And a competing explanation is not excluded — it is candidate 1 below.** The
+   transition manager's speed-match / deviation check, named in "What is NOT
+   established" as the leading candidate for cell A's refusal, predicts exactly
+   these flips: a check that stops being satisfiable once the ego is moving would
+   drive this flag `false` at precisely this point. So this observation must NOT
+   be read as evidence against that candidate; the two are consistent, and
+   distinguishing them needs the transition manager's own availability inputs,
+   which were not captured.
+
 4. **Which path cell C's certified G2 armed through: the legacy
    `/autoware/engage` topic.** `g2-nishi-cellc/`'s PASS is `gate_g2_closed_loop.sh`
    output, and that script publishes `/autoware/engage {engage: true}` and
@@ -92,9 +138,15 @@ call, not this directory's.
 `adapi_arrival_dist.txt` starts 12.827 m from the goal because the host-side
 collector was started after that drive was already underway — the arming
 sequence itself was what the capture was aimed at. The retained half is the
-arrival; the earlier ~209 m of that drive is not recomputable. The canonical
-full-route series for this boot is `g2-nishi-cellc/g2_dist.txt` (starts at
-222.110 m).
+arrival only — everything before its final 12.827 m is not recomputable, and no
+derived "distance covered" figure is asserted for it, since the artifact bounds
+the retained part and not the missing part. The canonical
+series for this boot is `g2-nishi-cellc/g2_dist.txt`, which itself opens at
+222.110 m — ~5.2 m after engage rather than at the start pose, for the reason
+that directory's `PROVENANCE.md` records. The pre-registered route is **230.5 m**
+(`benchmarks/config/routes/NishishinjukuMap.yaml`'s own recorded total length);
+neither 222.110 m nor the 227.30 m straight-line separation is that number, and
+all three are kept apart there.
 
 **`legacy_autoware_engage.log`'s gated velocity is a ~2 s sample, not a
 per-message distribution.** It shows command CONTENT (which is the point step
