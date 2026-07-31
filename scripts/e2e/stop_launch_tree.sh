@@ -114,7 +114,13 @@
 # On the bench side that is the EXTENSION family only:
 # benchmarks/cells/extension.sh:192 is the sole cell launcher that starts
 # run_e2e.sh, and benchmarks/config/cells.yaml gives `approach: extension` to
-# cells A and C. The tier4-native family never comes through here. Cell B
+# THREE cells, not two -- A (cells.yaml:122-123), C (:290-291) and A-hf
+# (:571-572). All three are covered. Only A and C are exercised by the reduced
+# campaign: A-hf carries `dropped: owner-time-budget-2026-07-30`
+# (cells.yaml:585) from the owner's 2026-07-30 core-duel scope cut, and that
+# key is a SCOPE marker, not a prohibition -- run.sh:240-249 WARNs and runs the
+# cell anyway, deliberately, so an un-drop needs nothing from this script.
+# The tier4-native family never comes through here. Cell B
 # starts its own `ros2 launch` inside its own container and records the pid in
 # its own container-side pid file (benchmarks/cells/tier4_autoware.sh:389-395;
 # AW_PIDFILE=/tmp/tier4-autoware.pid at tier4_autoware.sh:41), and nothing
