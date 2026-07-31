@@ -183,6 +183,12 @@ compose_exec '
     simulator_type:=carla launch_vehicle_interface:=false use_sim_time:=true \
     perception:=false rviz:=false >"$AW_LOG" 2>&1 &
   echo $! >"$AW_PIDFILE"
+  # Sidecar for stop_launch_tree.sh pid-reuse guard: the command line this pid
+  # was recorded WITH. A pid names a process only until it exits, and --stop
+  # KEEPS the pid file when it could not clear a tree, so a later --stop in a
+  # long-lived container could otherwise sweep a strangers subtree. Best
+  # effort: a missing sidecar only means the guard is skipped.
+  tr "\0" " " </proc/$(cat "$AW_PIDFILE")/cmdline >"$AW_PIDFILE.cmd" 2>/dev/null || true
   echo "autoware launch pid $(cat "$AW_PIDFILE")"'
 
 # Block until the stack is up AND carla_interface has fired-and-died. Two conditions,
@@ -213,6 +219,7 @@ while [ "$elapsed" -lt "$READY_TIMEOUT_S" ]; do
         source /opt/ros/humble/setup.bash 2>/dev/null; export ROS_DOMAIN_ID=0
         nohup ros2 run topic_tools relay "$RELAY_IN" "$RELAY_OUT" >/tmp/e2e-concat-relay.log 2>&1 &
         echo $! >"$RELAY_PIDFILE"
+        tr "\0" " " </proc/$(cat "$RELAY_PIDFILE")/cmdline >"$RELAY_PIDFILE.cmd" 2>/dev/null || true
         echo "concat relay pid $(cat "$RELAY_PIDFILE")"'
       exit 0
     fi

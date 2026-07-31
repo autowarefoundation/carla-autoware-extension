@@ -57,6 +57,8 @@ STOP_SCRIPT = REPO / "scripts" / "e2e" / "stop_launch_tree.sh"
 #   sigint_ignored SIGINT ignored, SIGTERM default -- the disposition the real
 #                  `nohup ros2 launch &` was measured to have
 #   stubborn       SIGINT and SIGTERM both ignored, so only SIGKILL ends it
+#   zombie_child   like `stubborn`, plus one extra child that exits at once and
+#                  is never reaped, so the tree contains a live zombie
 SUPERVISOR_SRC = """
 import os
 import signal
@@ -72,6 +74,16 @@ kids = [
     )
     for _ in range(n)
 ]
+
+# One EXTRA child that exits at once and is never reaped -- this process holds
+# its Popen and never calls wait(), so it stays a zombie for as long as this
+# process lives. `kill -0` succeeds on it; only the /proc state field says it
+# is gone. Its pid goes on the last line of the pid list.
+if mode == "zombie_child":
+    dead = subprocess.Popen([sys.executable, "-c", ""], start_new_session=True)
+    kids.append(dead)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 if mode == "graceful":
 
@@ -165,8 +177,10 @@ def supervisor(tmp_path):
         )
         assert _wait_until(pidfile.is_file), "supervisor never recorded its pid"
         assert int(pidfile.read_text()) == proc.pid
+        # `zombie_child` starts one EXTRA, immediately-exiting child.
+        expected = n_children + (1 if mode == "zombie_child" else 0)
         kids = _children_of(proc.pid)
-        assert len(kids) == n_children, f"expected {n_children} children, got {kids}"
+        assert len(kids) == expected, f"expected {expected} children, got {kids}"
         started.append((proc.pid, kids))
         return pidfile, proc.pid, kids
 
@@ -246,6 +260,63 @@ def test_stop_clears_a_tree_whose_root_ignores_sigint_and_sigterm(supervisor):
     assert not _alive(root)
     assert [pid for pid in kids if _alive(pid)] == []
     assert "0 survivor(s)" in result.stdout
+
+
+def test_stop_kills_nothing_outside_the_recorded_tree(supervisor, tmp_path):
+    """The bound the whole design rests on -- "kills only what it launched" --
+    pinned by asserting the FORBIDDEN behaviour does not happen. An unrelated
+    process runs alongside the recorded tree, is not a descendant of the
+    recorded pid, and must be untouched."""
+    pidfile, root, kids = supervisor("sigint_ignored")
+    bystander = subprocess.Popen(
+        [sys.executable, "-c", "import time\nwhile True: time.sleep(0.05)"],
+        start_new_session=True,
+    )
+    try:
+        assert _alive(bystander.pid)
+
+        result = _run_stop(pidfile)
+
+        assert result.returncode == 0, result.stderr
+        assert not _alive(root)
+        assert [pid for pid in kids if _alive(pid)] == []
+        assert _alive(bystander.pid), "the sweep killed a process it never launched"
+        assert str(bystander.pid) not in result.stdout
+    finally:
+        bystander.kill()
+        bystander.wait(timeout=5)
+
+
+def test_a_zombie_in_the_tree_is_not_counted_as_a_survivor(supervisor):
+    """`alive()` reads /proc's state field instead of using `kill -0`, because
+    `kill -0` succeeds on an unreaped child forever. That fix was made for a
+    MEASURED false alarm (a fully dead 9-process tree reported as 8 survivors),
+    and it needs a zombie to exercise -- which a host test can produce, since
+    the zombie's parent here is the supervisor and not init.
+
+    Discriminating on the rung line rather than the final count: the tree is a
+    stubborn root plus one live child plus one zombie, so the survivor set is
+    TWO. Under `kill -0` semantics it would be three, and the zombie would be
+    signalled at every rung."""
+    pidfile, root, kids = supervisor("zombie_child", n_children=1)
+    # Identified by STATE, never by creation order: /proc iteration order is
+    # not creation order, so indexing into `kids` would be a coin flip.
+    assert _wait_until(lambda: any(_proc_state(k) == "Z" for k in kids)), "no zombie was produced"
+    zombie = next(k for k in kids if _proc_state(k) == "Z")
+    live_kid = next(k for k in kids if k != zombie)
+    assert _alive(live_kid)
+    # The premise: the zombie is indistinguishable from a live process to the
+    # test the previous implementation used.
+    os.kill(zombie, 0)
+
+    result = _run_stop(pidfile)
+
+    assert result.returncode == 0, result.stderr
+    assert "2 of pid %d's tree still up" % root in result.stdout, result.stdout
+    assert "3 of pid %d's tree still up" % root not in result.stdout
+    assert "0 survivor(s)" in result.stdout
+    assert not _alive(root)
+    assert not _alive(live_kid)
 
 
 def test_stop_reports_an_absent_pidfile_without_refusing(tmp_path):

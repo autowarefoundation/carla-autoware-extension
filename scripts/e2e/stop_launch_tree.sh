@@ -63,6 +63,26 @@
 # REPORTED instead -- including the container's own post-stop process count,
 # so the caller sees an observation rather than a success message.
 #
+# WHAT THAT BOUND RESTS ON, since "not one process further" is only as good as
+# the pid file. A recorded pid identifies a process only until it EXITS; after
+# that the kernel may hand the number to something unrelated, and this script
+# would sweep that stranger AND ITS WHOLE SUBTREE. The window is real, not
+# theoretical: the WARN path below deliberately KEEPS the pid file so a second
+# --stop can retry, and the container it runs in is long-lived. `survivors()`
+# cannot catch it either -- it re-tests liveness by pid alone, which a reused
+# pid passes.
+#
+# So the pid is checked against the COMMAND LINE recorded beside it.
+# launch_autoware.sh writes `<pidfile>.cmd` from /proc/<pid>/cmdline at launch;
+# if that file exists and no longer matches, this script REPORTS the mismatch
+# and SKIPS that pid file. Exact, so it cannot fire on a healthy teardown: the
+# comparison is against the recorded string, never a guessed pattern -- a
+# heuristic like "does the cmdline contain ros2" would be a blocking check in
+# disguise, and its false positive would skip a REAL teardown. When the sidecar
+# is ABSENT (an older launch, or a pid file written by something else) the
+# check is skipped rather than failed, so nothing that works today stops
+# working.
+#
 # KNOWN LIMIT, stated rather than papered over: processes orphaned by an
 # EARLIER SIGTERM-only teardown are descendants of nothing this script has a
 # pid for, so it cannot claim them. `docker compose down` remains the
@@ -213,8 +233,27 @@ stop_one() {
   esac
   if ! alive "$pid"; then
     echo "stop: pid $pid ($pf) is already gone"
-    rm -f "$pf"
+    rm -f "$pf" "$pf.cmd"
     return 0
+  fi
+
+  # Pid-reuse guard. Compares against the cmdline RECORDED at launch, never a
+  # guessed pattern, and only when that sidecar exists -- see the header. A
+  # mismatch means the recorded pid now belongs to something else, so the only
+  # safe action is to touch nothing and say so. Reported on STDOUT and exit
+  # stays 0: this is not a refusal of the teardown, it is the teardown
+  # declining to kill a stranger's process tree.
+  if [ -f "$pf.cmd" ]; then
+    local want got
+    want="$(cat "$pf.cmd" 2>/dev/null)"
+    got="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)"
+    if [ -n "$want" ] && [ "$want" != "$got" ]; then
+      echo "stop: SKIPPING $pf -- pid $pid was REUSED. Recorded at launch as"
+      echo "stop:   '$want'"
+      echo "stop:   but pid $pid is now '$got'. Nothing was signalled; the"
+      echo "stop:   process this pid file named is already gone. Pid file kept."
+      return 0
+    fi
   fi
 
   # Snapshot FIRST: after the root dies its children reparent to pid 1.
@@ -237,7 +276,12 @@ stop_one() {
 
   # 2-4. Escalate, but only over the snapshotted set. Each rung is applied to
   #      whoever is still alive, so a process that already exited is never
-  #      signalled and a pid that got reused cannot be hit by a later rung.
+  #      signalled again. Note what this does NOT give: `survivors()` re-tests
+  #      liveness by PID, so a pid that exited and was reused mid-ladder would
+  #      still be signalled. The cmdline guard above closes that for the
+  #      recorded ROOT, which is the pid that persists in a file; a descendant
+  #      pid is snapshotted and swept within seconds, so its reuse window is
+  #      the ladder's own duration rather than an unbounded one.
   local sig wait_s
   for sig in INT TERM KILL; do
     case "$sig" in
@@ -260,10 +304,20 @@ stop_one() {
   TOTAL_LEFT=$((TOTAL_LEFT + ${#left[@]}))
   if [ "${#left[@]}" -eq 0 ]; then
     echo "stop: pid $pid tree gone"
-    rm -f "$pf"
+    rm -f "$pf" "$pf.cmd"
   else
     # Reported, never fatal, and the pid file is KEPT so a second --stop can
     # try again against the same recorded root.
+    #
+    # STDOUT, not stderr, and that is deliberate. The only in-repo caller is
+    # scripts/e2e/run_e2e.sh:254, `... --stop 2>/dev/null || true` -- so on the
+    # real teardown path stderr is DISCARDED, and a survivor list written there
+    # reaches nobody. The count already survives via the summary line at the
+    # end; the pids are the half an operator needs to go and look, so they go
+    # where the caller can actually see them. Still duplicated to stderr for an
+    # interactive run, where stderr is what is being watched.
+    echo "stop: WARN ${#left[@]} process(es) of pid $pid's tree SURVIVED" \
+      "SIGKILL: ${left[*]}"
     echo "stop: WARN ${#left[@]} process(es) of pid $pid's tree SURVIVED" \
       "SIGKILL: ${left[*]}" >&2
   fi
