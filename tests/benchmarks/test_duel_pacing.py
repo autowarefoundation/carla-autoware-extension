@@ -41,6 +41,16 @@ WHAT IS FAITHFUL, and what is not, about the `run.sh` stand-in below:
   tests pin the PACING (the wait's real duration, its ceiling behaviour, the
   record it leaves), not run.sh's own preflight refusing a hot host -- that
   is preflight.sh's own concern and is untouched by this task.
+
+A fourth pin (`test_check_args_skips_pacing_entirely`) was added after this
+task's own verification pass caught a real regression: pacing between
+`--check-args` invocations broke the pre-existing, previously-instant,
+side-effect-free `--check-args` contract that
+tests/benchmarks/test_duel_verdict.py depends on. It is not one of the
+four pacing properties in duel.sh's own design-rationale comment, but it
+is pinned here for the same reason those four are: it is a real behaviour
+this change must keep, verified against the real code path, not a
+text-scan.
 """
 
 from __future__ import annotations
@@ -100,15 +110,21 @@ def _parse_run_log(path: Path) -> list[float]:
     return times
 
 
-def _run_duel(tmp_path: Path, fake_repo: Path, **pace_env) -> subprocess.CompletedProcess:
+def _run_duel(
+    tmp_path: Path,
+    fake_repo: Path,
+    extra_args: tuple[str, ...] = (),
+    proc_timeout: float = 30,
+    **pace_env,
+) -> subprocess.CompletedProcess:
     duel = fake_repo / "benchmarks" / "scripts" / "duel.sh"
     env = {**os.environ, **pace_env}
     return subprocess.run(
-        ["bash", str(duel), "cellA", "cellB", "--arm", "static", "--pairs", "1"],
+        ["bash", str(duel), "cellA", "cellB", "--arm", "static", "--pairs", "1", *extra_args],
         capture_output=True,
         text=True,
         env=env,
-        timeout=30,
+        timeout=proc_timeout,
         check=False,
     )
 
@@ -251,3 +267,53 @@ def test_recorded_wait_is_emitted(tmp_path, fake_repo):
     assert topup in (0, 1), fields
     assert int(fields["total_wait_s"]) == 2 + topup
     assert float(fields["loadavg_end"]) < 6
+
+
+# --- D4 pin 4 (found during this task's own verification, not in the -----
+# --- original brief): --check-args must skip pacing entirely -------------
+
+
+def test_check_args_skips_pacing_entirely(tmp_path, fake_repo):
+    """Found by running the pre-existing, real
+    tests/benchmarks/test_duel_verdict.py::
+    test_duel_sh_really_produces_duel_admissible_invocations_end_to_end
+    after adding the pacing above: that test chains TWO real `duel.sh` ->
+    `run.sh --check-args` invocations, and `--check-args` exits run.sh
+    before preflight ever runs (see run.sh's own --check-args block and
+    that test's block comment: "nothing under benchmarks/results/ is
+    written"). Pacing between --check-args runs has no gate to help clear
+    and silently broke that documented, previously-instant, side-effect-
+    free contract -- turning it into a 120s-floor call that ALSO appended
+    to the real benchmarks/results/duel-pacing.log on every test run. This
+    pins the fix: pacing must be skipped entirely whenever --check-args is
+    among the passthrough args, not merely bounded or made faster.
+
+    floor is set enormous (30s) and the subprocess timeout tight (8s) on
+    purpose: if the --check-args skip is neutralised, this test does not
+    merely run slower, it blows the subprocess timeout and fails with
+    TimeoutExpired -- a real, not textual, signal."""
+    loadavg_file = tmp_path / "loadavg"
+    loadavg_file.write_text("1.0 1.0 1.0 1/200 12345\n")
+    run_log = tmp_path / "fake-run.log"
+    pace_log = tmp_path / "pacing.log"
+
+    result = _run_duel(
+        tmp_path,
+        fake_repo,
+        extra_args=("--check-args",),
+        proc_timeout=8,
+        FAKE_RUN_LOG=str(run_log),
+        DUEL_PACE_LOG=str(pace_log),
+        DUEL_LOADAVG_SRC=str(loadavg_file),
+        DUEL_PACE_FLOOR_S="30",
+        DUEL_PACE_CEILING_S="0",
+        DUEL_PACE_POLL_S="1",
+        DUEL_PACE_TARGET_LOADAVG="6",
+    )
+    assert result.returncode == 0, result.stderr
+
+    times = _parse_run_log(run_log)
+    assert len(times) == 2, f"expected 2 run.sh invocations, got {times}"
+    gap = times[1] - times[0]
+    assert gap < 2.0, f"--check-args did not skip pacing (gap={gap:.3f}s)"
+    assert not pace_log.exists(), "--check-args run must write no pacing record"

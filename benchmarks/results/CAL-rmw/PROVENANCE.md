@@ -69,7 +69,7 @@ frozen value: the 2.0 floor binds for any `|Δ| ≤ 1.0 ms` and the measured
 `|Δ|` is 0.4152 ms.
 
 **And this cell is the exception, not the campaign's practice.** The primary
-duel's driver DOES counterbalance: `benchmarks/scripts/duel.sh:226-235` runs
+duel's driver DOES counterbalance: `benchmarks/scripts/duel.sh:237-246` runs
 odd-numbered pairs as A,B and even-numbered pairs as B,A, on its own stated
 rationale that "interleaving alone still gives one cell every odd slot and the
 other every even slot, so a per-pair effect … lands entirely on one cell"

@@ -99,7 +99,7 @@ neither fix was attempted.
 ## 2. What the runs are, and why there are only two of them
 
 Filed by `bash benchmarks/scripts/duel.sh A B --arm static --pairs 10`, which
-passes `--duel` on every `run.sh` invocation it makes (`duel.sh:213`) so the runs
+passes `--duel` on every `run.sh` invocation it makes (`duel.sh:224`) so the runs
 carry `duel_admissible=true`. Runs filed by this task are exactly:
 
 | run         | arm    | `excluded` | `duel_admissible` | M5 `gate_pass` |
@@ -113,7 +113,7 @@ first cell-B **static** arm ever attempted (`B/run-001…012` are all
 closed-loop and all excluded — see `benchmarks/results/B/PROVENANCE.md`).
 
 **The duel stopped after pair 1**, at `duel.sh`'s 2-consecutive-failure abort
-(`duel.sh:220-222`). Neither failure was a cell failure: both were
+(`duel.sh:231-233`). Neither failure was a cell failure: both were
 `preflight.sh` refusals on **`hostload:`** (26.52, then 24.55) because
 `duel.sh` starts the next `run.sh` immediately and the 1-min loadavg left by
 the previous run has not decayed below the gate's 8 (`preflight.sh:28,67-69`).
@@ -164,7 +164,7 @@ instead.
   1789-1797`).
 - The live abort this task's predecessor hit: `hostload:26.52`, then
   `hostload:24.55`, two consecutive preflight refusals (§2 above,
-  `duel.sh:220-222` for the abort itself).
+  `duel.sh:231-233` for the abort itself).
 - The post-run decay Task 18 measured by hand from that same host: 24.55 →
   13.74 after 38 s → 1.92 after 162 s, i.e. roughly 70–95 s of idle clears the
   gate from a freshly-completed run. This series is **not committed to this

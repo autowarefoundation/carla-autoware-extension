@@ -199,9 +199,20 @@ pace_between_runs() {
 one_run() {
   local cell="$1" pair="$2"
   RUN_COUNT=$((RUN_COUNT + 1))
+  # --check-args makes run.sh resolve its args and exit BEFORE preflight, so
+  # no host-load gate ever runs for it to help clear -- pacing ahead of it
+  # would be pure dead time. It is also documented (see
+  # tests/benchmarks/test_duel_verdict.py's --check-args block comment) to
+  # write nothing under benchmarks/results/; pacing would break that
+  # contract by both delaying and by appending to duel-pacing.log. Skip
+  # pacing entirely whenever --check-args is passed through.
+  local check_args_only=0
+  for arg in "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"; do
+    [ "$arg" = "--check-args" ] && check_args_only=1
+  done
   # Skip only the very first run of the whole invocation -- see the "NOT
   # applied before the FIRST run" note in the pacing block above for why.
-  if [ "$RUN_COUNT" -gt 1 ]; then
+  if [ "$RUN_COUNT" -gt 1 ] && [ "$check_args_only" -eq 0 ]; then
     pace_between_runs "$cell" "$pair"
   fi
   echo
