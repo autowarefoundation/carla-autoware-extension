@@ -88,6 +88,42 @@
 # pid for, so it cannot claim them. `docker compose down` remains the
 # documented recovery for that state (CLAUDE.md; benchmarks/README.md).
 #
+# SECOND KNOWN LIMIT -- WHICH CELLS THIS COVERS, and it is not all of them.
+# Nothing reaches this script except `launch_autoware.sh --stop` (a documented
+# standalone entry point too -- docs/running-e2e.md), and the only HARNESS
+# caller of that is run_e2e.sh's cleanup() at scripts/e2e/run_e2e.sh:254.
+# On the bench side that is the EXTENSION family only:
+# benchmarks/cells/extension.sh:192 is the sole cell launcher that starts
+# run_e2e.sh, and benchmarks/config/cells.yaml gives `approach: extension` to
+# cells A and C. The tier4-native family never comes through here. Cell B
+# starts its own `ros2 launch` inside its own container and records the pid in
+# its own container-side pid file (benchmarks/cells/tier4_autoware.sh:389-395;
+# AW_PIDFILE=/tmp/tier4-autoware.pid at tier4_autoware.sh:41), and nothing
+# outside that launcher ever reads it -- benchmarks/scripts/teardown.sh's
+# `tier4-native` branch (teardown.sh:157-165) stops the demo and CARLA and not
+# the Autoware launch tree. The python-bridge family has the same shape
+# (/tmp/bridge-stage1.pid, /tmp/bridge-stage2.pid --
+# benchmarks/cells/python-bridge.sh:330,369).
+#
+# WHAT THAT DOES AND DOES NOT MEAN, because the difference matters and the
+# stronger claim does not survive checking. On the HAPPY path cell B's stack is
+# cleared by removing its container outright: cells/tier4-native.sh:110 sets
+# AW_COMPOSE="", so teardown.sh:227-231 takes the `docker rm -f "$AW_CONTAINER"`
+# branch, and the launcher re-creates the container fresh next run
+# (tier4_autoware.sh:323,326). So the measured accumulation defect -- survivors
+# piling up inside a container that OUTLIVES the launch, which is exactly the
+# run_e2e.sh shape -- does not reproduce there run over run. What cell B does
+# NOT have is any graceful, recorded-tree shutdown at all: its launch tree dies
+# with the container, with no signal ladder and no exit handlers, and if a run
+# is interrupted before teardown reaches that step the whole tree survives with
+# nothing holding a pid for it. Recovery is again `docker rm -f` /
+# `docker compose down`.
+#
+# DELIBERATELY NOT FIXED HERE. Extending the recorded-tree teardown to the B
+# path is outside Task 16's scope and is sequenced separately, to land before
+# Task 18 (the primary duel) so that duel's cell-B runs are torn down the same
+# way its cell-A runs are.
+#
 # /proc is read directly. `pgrep`/`pkill -f` self-match this script's own
 # command line, a documented project gotcha that has cost live runs.
 set -u
