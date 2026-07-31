@@ -385,6 +385,30 @@ have failed and the run would have been filed under criterion 3,
 worked perfectly. That did not happen, and the criteria may not be edited
 after the first P3 measurement run, so it is noted rather than fixed.
 
+## Each run's `report.md` is a SMOKE RECEIPT, not scorer output
+
+Recorded 2026-07-31 because a reader opening a run directory and finding a
+`report.md` will reasonably assume it holds that run's scored result. It does
+not. All fifteen are one line of this shape:
+
+```text
+# run-001: 624 observer rows, 130 resource samples (no sim clock; CAL rendering is Task 16's cal_report.py)
+```
+
+It is printed by `benchmarks/run.sh:996-997` — the `BENCH_HAS_SIM_CLOCK != 1`
+branch of step 15's smoke — whose stdout `benchmarks/run.sh:940-943` redirects
+into `<run>/report.md`. On a cell that publishes no `/clock` that branch
+deliberately does NOT call `report.py`'s renderer; it asserts only that rows
+were recorded, and exits non-zero if none were.
+
+**Where the scored numbers actually live**, and it is two places only: the p50
+table in the next section of this file, and the frozen value with its full
+derivation in `benchmarks/config/margins.yaml`'s `one_hop_wall_ms` block.
+`benchmarks/scripts/cal_report.py` — the CAL renderer that stub names — was run
+to produce the unwindowed column of that table, but **its output is not
+committed as a file anywhere**, so nothing under `results/CAL-rmw/` is
+`cal_report.py` output.
+
 ## Derived: one-hop wall latency and the frozen margin
 
 Percentiles are **derived**, not recorded by the harness. Two bases, both
