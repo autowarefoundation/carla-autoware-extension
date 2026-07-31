@@ -2630,6 +2630,23 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   than the one
   it was applied to. Testing the data instead of the attribute makes the
   rule correct whichever way Task 14 resolves the contradiction.
+
+  **Finding narrowed 2026-07-31 (Task 16).** One half of the entry above is
+  SUPERSEDED, and it is quoted rather than rewritten in place: "**against
+  evidence scoped to a different cell than the one it was applied to**". That
+  conclusion followed from the PRE-correction reading of `cal_report.py` as
+  "the **CAL-seam** tool specifically". Once the same 2026-07-31 scope
+  correction restated that premise as "about a CAL run generally", the evidence
+  is no longer scoped to a different cell and the clause no longer follows —
+  yet the entry still states it as the finding. **What survives is sufficient
+  on its own:** the rule had been keyed on an attribute (`cells.yaml`'s
+  `carla:` field) that does not determine fittability. That alone is why
+  testing the run's own `clock.csv` instead of the attribute is the correct
+  fix, and it is unaffected by which cell the `cal_report.py` citation covers.
+  Nothing about the branch, the margin, any threshold or any measured value
+  changes; this is a correction to a RATIONALE that a prior correction of this
+  task's own making rendered false.
+
 - **2026-07-28** — `config/cells.yaml`: `tick_hz` set to `null` on the
   tier4 cells (`B`, `D`, `B-hf`, `B45`) and on `CAL-seam`, naming
   Tasks 13 and 14. Completeness: those values were transcribed from an
