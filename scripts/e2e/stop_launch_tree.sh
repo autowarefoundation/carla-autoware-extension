@@ -120,9 +120,9 @@
 # (cells.yaml:585) from the owner's 2026-07-30 core-duel scope cut, and that
 # key is a SCOPE marker, not a prohibition -- run.sh:240-249 WARNs and runs the
 # cell anyway, deliberately, so an un-drop needs nothing from this script.
-# The tier4-native family never comes through here. Cell B
-# starts its own `ros2 launch` inside its own container and records the pid in
-# its own container-side pid file (benchmarks/cells/tier4_autoware.sh:389-395;
+# The tier4-native family never comes through here. Cell B starts its own
+# `ros2 launch` inside its own container and records the pid in its own
+# container-side pid file (benchmarks/cells/tier4_autoware.sh:389-395;
 # AW_PIDFILE=/tmp/tier4-autoware.pid at tier4_autoware.sh:41), and nothing
 # outside that launcher ever reads it -- benchmarks/scripts/teardown.sh's
 # `tier4-native` branch (teardown.sh:157-165) stops the demo and CARLA and not
