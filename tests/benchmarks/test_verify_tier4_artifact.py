@@ -116,10 +116,26 @@ def tree(tmp_path: Path) -> Path:
 
 def run_gate(tree: Path, patch_dir: Path | None = None, **env_extra: str):
     env = {**os.environ, "TIER4_TREE": str(tree)}
+    # TIER4_STALE_ACK is read as "set or not set", and set-but-empty is itself a
+    # refusal, so an export leaking in from the developer's shell would change
+    # what most of these tests measure. Only a test that names it gets it.
+    env.pop("TIER4_STALE_ACK", None)
     if patch_dir is not None:
         env["TIER4_PATCH_DIR"] = str(patch_dir)
     env.update(env_extra)
     return subprocess.run(["bash", str(GATE)], capture_output=True, text=True, env=env)
+
+
+def make_stale(tree: Path, rel: str = "LibCarla/source/carla/ros2/ROS2.cpp") -> None:
+    """Push one scanned source past both artifacts -- what check 3 refuses on."""
+    os.utime(tree / rel, (ART_EPOCH + 60, ART_EPOCH + 60))
+
+
+def write_patch(patch_dir: Path, name: str, *paths: str) -> None:
+    """A patch file carrying only the `+++ b/<path>` lines the gate actually reads."""
+    patch_dir.mkdir(parents=True, exist_ok=True)
+    body = "".join(f"--- /dev/null\n+++ b/{p}\n" for p in paths)
+    (patch_dir / name).write_text(body)
 
 
 def kv(stdout: str) -> dict[str, str]:
@@ -137,11 +153,16 @@ def test_fresh_artifacts_pass_and_record_the_trees_identity(tree):
         "tier4_git_sha",
         "tier4_worktree",
         "tier4_worktree_paths_sha256",
+        "tier4_worktree_content_sha256",
+        "tier4_source_sha256",
         "tier4_plugin_sha256",
         "tier4_ros2_native_sha256",
         "tier4_plugin_mtime",
         "tier4_ros2_native_mtime",
         "tier4_newest_source_mtime",
+        "tier4_stale_ack",
+        "tier4_stale_ack_reason",
+        "tier4_stale_ack_artifacts",
     }
     head = subprocess.run(
         ["git", "-C", str(tree), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
@@ -149,6 +170,12 @@ def test_fresh_artifacts_pass_and_record_the_trees_identity(tree):
     assert got["tier4_git_sha"] == head
     assert got["tier4_plugin_mtime"] == str(ART_EPOCH)
     assert got["tier4_newest_source_mtime"] == str(SRC_EPOCH)
+    # Emitted unconditionally, exactly as preflight.sh emits map_bundle_pin: an
+    # omitted key would make "no acknowledgement was needed" and "this gate is an
+    # older version with no acknowledgement at all" the same manifest.
+    assert got["tier4_stale_ack"] == "none"
+    assert got["tier4_stale_ack_reason"] == "-"
+    assert got["tier4_stale_ack_artifacts"] == "-"
 
 
 def test_stdout_carries_key_value_lines_and_nothing_else(tree):
@@ -215,6 +242,109 @@ def test_a_build_input_outside_libcarla_source_also_counts(tree):
     assert "Toolchain.cmake" in r.stderr
 
 
+# --- the acknowledgement: a refusal must never be unresolvable -------------
+#
+# Check 3 compares MTIMES over whole directory trees, and mtime moves without
+# content moving: `git apply` of the registered patches
+# (benchmarks/patches/tier4-native/README.md:15-17 writes CMake/Toolchain.cmake,
+# LibCarla/CMakeLists.txt and LibCarla/source/carla/GlibcCompat.c, all three
+# under the scanned roots), a git checkout, a stash pop, an editor save. The one
+# remedy the gate first named was a rebuild, which the campaign forbids
+# mid-campaign -- so a false refusal had no resolution at all. These tests pin
+# both halves of the fix and the thing that must NOT be possible.
+
+
+def test_an_acknowledged_staleness_warns_records_and_does_not_block(tree):
+    make_stale(tree)
+    r = run_gate(tree, TIER4_STALE_ACK="re-applied registered patches; content unchanged")
+    assert r.returncode == 0, r.stderr
+    # Loud: the WARN still names the check, and still names the stale artifact.
+    assert "WARN" in r.stderr
+    assert "tier4-artifact-stale" in r.stderr
+    assert "libUnrealEditor-Carla.so" in r.stderr
+    # Recorded: the condition travels in THIS run's own manifest, so no reader of
+    # the filed data can meet the number without meeting the acknowledgement.
+    got = kv(r.stdout)
+    assert got["tier4_stale_ack"] == "applied"
+    assert got["tier4_stale_ack_reason"] == "re-applied registered patches; content unchanged"
+    assert set(got["tier4_stale_ack_artifacts"].split(",")) == {
+        "libUnrealEditor-Carla.so",
+        "libcarla-ros2-native.so",
+    }
+
+
+@pytest.mark.parametrize("reason", ["", "   ", "\n\t "])
+def test_an_unexplained_acknowledgement_cannot_pass(tree, reason):
+    """No reason, no acknowledgement. Set-but-empty is the shape a typo and an
+    unset shell lookup both take, and an acknowledgement nobody can read later is
+    indistinguishable from having hidden the condition. Refused BY NAME, and
+    refused whether or not anything is actually stale, so a misconfigured
+    acknowledgement can never be silently ignored."""
+    make_stale(tree)
+    r = run_gate(tree, TIER4_STALE_ACK=reason)
+    assert r.returncode == 2
+    assert "tier4-stale-ack-unexplained" in r.stderr
+    assert r.stdout == ""
+
+
+def test_an_unexplained_acknowledgement_is_refused_even_on_a_fresh_tree(tree):
+    r = run_gate(tree, TIER4_STALE_ACK="")
+    assert r.returncode == 2
+    assert "tier4-stale-ack-unexplained" in r.stderr
+
+
+def test_an_acknowledgement_that_was_not_needed_is_recorded_as_unused(tree):
+    """Loud in the other direction too: a leftover export is armed for the next
+    run, and `unused` in the manifest distinguishes that from `none`."""
+    r = run_gate(tree, TIER4_STALE_ACK="left over from yesterday")
+    assert r.returncode == 0, r.stderr
+    assert kv(r.stdout)["tier4_stale_ack"] == "unused"
+    assert kv(r.stdout)["tier4_stale_ack_reason"] == "left over from yesterday"
+    assert "WARN" in r.stderr
+
+
+def test_a_multiline_reason_stays_a_single_key_value_line(tree):
+    """preflight.sh forwards this stdout verbatim and run.sh:481 splits on the
+    first `=` PER LINE, so a reason carrying a newline would become a second,
+    junk placement key on every affected run."""
+    make_stale(tree)
+    r = run_gate(tree, TIER4_STALE_ACK="  first line\nsecond\tline  ")
+    assert r.returncode == 0, r.stderr
+    assert len([line for line in r.stdout.splitlines() if line.startswith("tier4_stale_ack")]) == 3
+    assert kv(r.stdout)["tier4_stale_ack_reason"] == "first line second line"
+
+
+def test_the_source_digest_is_unchanged_by_an_mtime_only_touch(tree):
+    """The other half of the fix. The acknowledgement is the operator ASSERTING
+    that content did not move; tier4_source_sha256 is what makes the assertion
+    checkable against the last run that passed without one."""
+    before = kv(run_gate(tree).stdout)["tier4_source_sha256"]
+    make_stale(tree)
+    after = kv(run_gate(tree, TIER4_STALE_ACK="mtime only").stdout)["tier4_source_sha256"]
+    assert after == before
+
+
+def test_the_source_digest_changes_when_a_scanned_source_changes(tree):
+    """...and it is a real content digest, so an acknowledgement cannot paper over
+    an edit: the digest moves and the difference is in both manifests."""
+    before = kv(run_gate(tree).stdout)["tier4_source_sha256"]
+    (tree / "LibCarla/source/carla/ros2/ROS2.cpp").write_text("// actually edited\n")
+    _stamp(tree)
+    assert kv(run_gate(tree).stdout)["tier4_source_sha256"] != before
+
+
+def test_the_head_staleness_check_cannot_be_acknowledged(tree):
+    """Scoped to check 3 on purpose: check 4 can only fire when HEAD MOVED, which
+    is a real content change and not mtime drift."""
+    _write(tree, "LibCarla/source/carla/ros2/Newer.cpp", "// newer\n")
+    _git(tree, "add", "-A")
+    _git(tree, "commit", "-q", "-m", "upstream moves on", commit_epoch=ART_EPOCH + 3600)
+    _stamp(tree)
+    r = run_gate(tree, TIER4_STALE_ACK="please do not block me")
+    assert r.returncode == 2
+    assert "tier4-artifact-older-than-head" in r.stderr
+
+
 def test_an_artifact_older_than_head_is_refused(tree):
     """Cell A's own check, kept for parity. Reached by committing on top of the
     built artifacts, which is what a fast-forward onto newer upstream without a
@@ -255,6 +385,59 @@ def test_a_missing_tree_is_refused(tmp_path):
     r = run_gate(tmp_path / "nope")
     assert r.returncode == 2
     assert "tier4-tree" in r.stderr
+
+
+def test_a_tree_nested_inside_another_repository_is_refused(tmp_path):
+    """`git rev-parse --git-dir` WALKS UP, so a $TIER4_TREE that is merely a
+    subdirectory of another repository answers with the ENCLOSING repo's git dir
+    and every recorded identity would be that repo's. A wrong identity is worse
+    than a missing one: nothing downstream can tell that it is wrong."""
+    outer = tmp_path / "outer"
+    _write(outer, "README.md", "outer repo\n")
+    _git(outer, "init", "-q")
+    _git(outer, "add", "-A")
+    _git(outer, "commit", "-q", "-m", "outer")
+    nested = outer / "nested"
+    _write(nested, EDITOR_SO, "editor plugin bytes\n")
+    _write(nested, ROS2_SO, "ros2 native bytes\n")
+    _write(nested, "CMake/Toolchain.cmake", "// tc\n")
+    _stamp(nested)
+    r = run_gate(nested)
+    assert r.returncode == 2
+    assert "tier4-tree" in r.stderr
+    assert str(outer) in r.stderr
+
+
+def test_a_tree_with_no_commit_is_refused_by_name(tmp_path):
+    """Reached at check 4. A bare `COMMIT_EPOCH="$(git show ... HEAD)"` would abort
+    here under `set -e` with git's own message and NO named check, while both
+    callers go on to print "named reason above"."""
+    t = tmp_path / "no-commits"
+    _write(t, EDITOR_SO, "editor plugin bytes\n")
+    _write(t, ROS2_SO, "ros2 native bytes\n")
+    _write(t, "CMake/Toolchain.cmake", "// tc\n")
+    _git(t, "init", "-q")
+    _stamp(t)
+    r = run_gate(t)
+    assert r.returncode == 2
+    assert "PREFLIGHT FAIL: tier4-tree" in r.stderr
+
+
+def test_a_tree_identity_failure_still_names_a_check(tree, tmp_path):
+    """Every exit path owes a named check, including the ones nothing raises
+    deliberately: both callers print "named reason above" on any non-zero exit, so
+    a bare python traceback sends the operator hunting for a line that was never
+    printed. Triggered here with a `*.patch` that is a DIRECTORY, which is a
+    deterministic IsADirectoryError inside the identity reader."""
+    patch_dir = tmp_path / "broken-patches"
+    write_patch(patch_dir, "0001-fine.patch", "CMake/Toolchain.cmake")
+    (patch_dir / "0002-broken.patch").mkdir()
+    r = run_gate(tree, patch_dir=patch_dir)
+    assert r.returncode == 2
+    assert "PREFLIGHT FAIL: tier4-identity" in r.stderr
+    # python's own traceback is kept, ahead of the named line, because only
+    # stdout is captured from the block.
+    assert "IsADirectoryError" in r.stderr
 
 
 def test_an_unset_tree_is_refused_before_anything_else():
@@ -318,6 +501,83 @@ def test_the_worktree_digest_tracks_the_dirty_path_set(tree):
     _stamp(tree)
     after = kv(run_gate(tree).stdout)["tier4_worktree_paths_sha256"]
     assert before != after
+
+
+def test_the_worktree_content_digest_moves_where_the_paths_digest_cannot(tree):
+    """tier4_worktree_paths_sha256 hashes only the sorted PATH list, so an edit to
+    an ALREADY-dirty file left it unchanged -- including an edit to
+    PythonAPI/examples/autoware_demo.py, registered patch 0003, the file that sets
+    --lidar-pps and --lidar-rotation-hz. That reproduced, for the sensor
+    configuration, the exact "a path is not an identity" gap this gate exists to
+    close, which is why the content digest exists beside it."""
+    (tree / "PythonAPI/examples/autoware_demo.py").write_text("# --lidar-pps 288000\n")
+    _stamp(tree)
+    first = kv(run_gate(tree).stdout)
+    (tree / "PythonAPI/examples/autoware_demo.py").write_text("# --lidar-pps 1152000\n")
+    _stamp(tree)
+    second = kv(run_gate(tree).stdout)
+    assert first["tier4_worktree_paths_sha256"] == second["tier4_worktree_paths_sha256"]
+    assert first["tier4_worktree_content_sha256"] != second["tier4_worktree_content_sha256"]
+
+
+def test_the_worktree_content_digest_covers_untracked_file_content(tree):
+    """Untracked files are absent from `git diff HEAD`, so they are appended by
+    content -- otherwise patch 0002's GlibcCompat.c, which is untracked in the real
+    tree, would be identity-free."""
+    _write(tree, "LibCarla/source/carla/GlibcCompat.c", "// v1\n")
+    _stamp(tree)
+    first = kv(run_gate(tree).stdout)["tier4_worktree_content_sha256"]
+    (tree / "LibCarla/source/carla/GlibcCompat.c").write_text("// v2\n")
+    _stamp(tree)
+    assert kv(run_gate(tree).stdout)["tier4_worktree_content_sha256"] != first
+
+
+def test_an_untracked_registered_path_in_a_new_directory_is_not_diverged(tree, tmp_path):
+    """`git status --porcelain` defaults to -unormal, which COLLAPSES a wholly
+    untracked directory to one `dir/` entry -- so a registered patch creating files
+    in a NEW directory would compare `dir/` against `+++ b/dir/file` and report a
+    spurious `diverged:` on every run. -uall is what makes this pass. The reason
+    -unormal happened to work is narrow: patch 0002's GlibcCompat.c lands in an
+    already-tracked directory."""
+    patch_dir = tmp_path / "patches"
+    write_patch(patch_dir, "0001-new-dir.patch", "LibCarla/source/carla/newdir/Shim.c")
+    _write(tree, "LibCarla/source/carla/newdir/Shim.c", "// new, untracked, new dir\n")
+    _stamp(tree)
+    # The collapsing this guards against, asserted rather than assumed.
+    collapsed = subprocess.run(
+        ["git", "-C", str(tree), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert collapsed.strip() == "?? LibCarla/source/carla/newdir/"
+    r = run_gate(tree, patch_dir=patch_dir)
+    assert r.returncode == 0, r.stderr
+    assert kv(r.stdout)["tier4_worktree"] == "registered-patches"
+
+
+def test_a_staged_rename_is_reported_by_its_new_path(tree, tmp_path):
+    """The `R  <old> -> <new>` branch of the porcelain parser. The NEW path is the
+    one that describes the tree as it stands, so that is what has to land in
+    placement -- reporting `old -> new` verbatim would make the whole entry
+    unmatchable against any registered patch's `+++ b/` path."""
+    patch_dir = tmp_path / "patches"
+    write_patch(patch_dir, "0001-noop.patch", "LibCarla/CMakeLists.txt")
+    _git(tree, "mv", "CMake/Toolchain.cmake", "CMake/Toolchain2.cmake")
+    _stamp(tree)
+    porcelain = subprocess.run(
+        ["git", "-C", str(tree), "status", "--porcelain", "-uall"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert porcelain.strip().startswith("R  CMake/Toolchain.cmake -> CMake/Toolchain2.cmake")
+    r = run_gate(tree, patch_dir=patch_dir)
+    assert r.returncode == 0, r.stderr
+    state = kv(r.stdout)["tier4_worktree"]
+    extra = state.split(":+", 1)[1].split(":-", 1)[0].split(",")
+    assert extra == ["CMake/Toolchain2.cmake"]
+    assert "->" not in state
 
 
 # --- wiring: a gate nothing calls is a comment ------------------------------

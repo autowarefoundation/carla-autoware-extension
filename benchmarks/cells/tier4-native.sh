@@ -45,18 +45,26 @@ fail() { echo "LAUNCH FAIL (tier4-native/$BENCH_CELL): $*" >&2; exit 2; }
 # The B family's counterpart to cell A's editor-artifact gate, which cell A
 # reaches through cells/extension.sh -> run_e2e.sh:126. Nothing stood here
 # before Task 17b: this launcher boots the shared engine against the tier4
-# tree's plugin (line ~147 below) and a stale .so publishes a different wire
+# tree's plugin (line ~175 below) and a stale .so publishes a different wire
 # format from the source the record cites, silently.
 #
 # Called on BOTH `plan` and `up` (this block runs before the mode switch), and
 # called AGAIN even though preflight.sh section 7 already ran it under run.sh:
 # a launcher invoked directly -- the documented entry point at the top of this
 # file -- never passes through preflight, and the tree it would boot is
-# $BENCH_CARLA_TREE, which is what is checked here. The duplicate costs one
-# `find` over two source roots (~20 ms measured) and removes a way to boot an
-# unverified binary. Its KEY=VALUE stdout is the manifest's business, not this
-# script's, so it is discarded here; the named refusal and the OK/WARN prose
-# both go to stderr and are what an operator sees.
+# $BENCH_CARLA_TREE, which is what is checked here. The duplicate costs the
+# whole gate a second time -- a `find` over four source roots plus the content
+# digests, 0.06-0.07 s measured 2026-07-30 on the real tree -- and removes a way
+# to boot an unverified binary. Its KEY=VALUE stdout is the manifest's business,
+# not this script's, so it is discarded here; the named refusal and the OK/WARN
+# prose both go to stderr and are what an operator sees.
+#
+# The gate's mtime staleness check can be ACKNOWLEDGED rather than only rebuilt
+# away: `export TIER4_STALE_ACK="<reason>"` before this launcher (or before
+# run.sh) turns the refusal into a loud WARN and records the reason in the run's
+# manifest. It is inherited straight through both call sites, so nothing here
+# forwards it explicitly. See the gate's own "STALENESS ACKNOWLEDGEMENT" block
+# for why an mtime refusal can otherwise be unresolvable mid-campaign.
 TIER4_GATE="$BENCH_REPO/benchmarks/scripts/verify_tier4_artifact.sh"
 [ -f "$TIER4_GATE" ] || fail "tier4 plugin-artifact gate missing: $TIER4_GATE"
 TIER4_TREE="$BENCH_CARLA_TREE" bash "$TIER4_GATE" >/dev/null ||
