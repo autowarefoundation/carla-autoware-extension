@@ -86,10 +86,47 @@ admissible.
 | `run-015` | fastdds-udp |   53 |       0.852 |      0.085 |
 
 **MEASURED: at 921 600 B/msg, Cyclone DDS delivers every message and Fast DDS
-delivers ~1–14% of them.** Cyclone is at the 10 Hz target to within 0.01%
-in all five runs; both Fast DDS arms lose the overwhelming majority of
-samples, with run-to-run swings of ~30× (`run-003`'s 6 messages against
-`run-009`'s 177).
+delivers ~1–14% of them.** Cyclone is at the 10 Hz target to within 0.01% in
+all five runs (**624 messages, 10.000–10.001 Hz**); both Fast DDS arms lose
+**86–99%** of samples (**6–177 messages**), with run-to-run swings of ~30×
+(`run-003`'s 6 against `run-009`'s 177).
+
+> ### Read this before using the fastdds-udp p50
+>
+> **The `fastdds-udp` p50 rests on roughly 1% of the offered messages, under
+> load not comparable with the cyclonedds arm's, and it is therefore a WEAK
+> loopback-parity number.** Median delivery on that arm is 53 messages against
+> 624 offered; per run only 4–130 rows survive the 20 s warm-up. The cyclonedds
+> arm carried ~10 msg/s and the fastdds-udp arm ~0.85 msg/s, so the two p50s
+> were not measured under comparable queueing pressure, and a nearly idle
+> transport can look faster per delivered message. Anyone reaching for "the
+> loopback-parity transport term" should treat this as a bound on evidential
+> weight, not as a characterisation of Fast DDS at this size.
+>
+> **No registered exclusion criterion covers this condition**, and that absence
+> is part of the record rather than something to paper over.
+> `config/exclusions.md`'s ten criteria cover crashes, bring-up gates, harness
+> defects, clock stalls, warm-up, host load, port collisions, BuildId
+> mismatches, recorder crashes and a capped unpaced window — none is "the
+> transport under test delivered almost nothing". Had a Fast DDS run recorded
+> ZERO observer rows (`run-003` came within 6), `run.sh` step 15's smoke would
+> have failed and the run would have been filed under criterion 3,
+> `harness:<commit>` — a harness-defect label for a run in which the harness
+> worked perfectly. **A criterion is deliberately NOT being added**: writing an
+> exclusion rule after seeing the data it would exclude is textbook post-hoc
+> exclusion, and those criteria may not be edited after the first P3
+> measurement run either way. Owner ruling 2026-07-31: retain all fifteen runs
+> as produced, with no exclusions, and disclose.
+>
+> **Why the frozen margin nonetheless stands.** The margin is
+> `max(2.0, ceil_to_0.5(2 × |delta|))`, and `ceil_to_0.5(x)` exceeds the 2.0
+> floor only once `x` does — so the floor binds for any `|delta| ≤ 1.0 ms`. The
+> measured `|delta|` is **0.4152 ms**. For the weak arm to move the frozen
+> value the true delta would have to exceed 1.0 ms, i.e. the measurement would
+> have to be wrong by a factor of **~2.4**; equivalently, with `p50_cyclonedds`
+> at 0.684 ms the true `p50_fastdds-udp` would have to exceed ~1.68 ms against
+> the measured 1.099 ms. The conclusion is insensitive to the weak arm rather
+> than resting on it.
 
 Independently corroborated at bring-up: `cells/calibration.sh:160-165`'s
 readiness probe is a separate `ros2 topic hz` subscriber (rclpy, in the
@@ -121,6 +158,72 @@ sample on this Fast DDS configuration; **this task did not bisect it**, and
 `benchmarks/patches/tier4-native/README.md:342`'s 10.006 Hz for
 fastrtps + `udp_only.xml` is consistent with the smaller size rather than in
 conflict with the measurement above.
+
+### BOUNDED HYPOTHESIS — NOT ESTABLISHED: does this explain cell B's `observer_loss_rate`?
+
+The campaign has already measured an instrument asymmetry it has not explained,
+and this result is a candidate mechanism for it. Recorded here as a
+**hypothesis**, explicitly **not established**, because if it were true the
+asymmetry would be a property of the INSTRUMENT rather than of the approach —
+and that distinction bears directly on the primary duel.
+
+What is already measured (`benchmarks/README.md:619-631`): cell A's
+`observer_loss_rate` is **0.0000** on both arms, against cell B's **0.2564**
+(`results/B/run-008`: 930 expected, 940 published, 699 observed) and **0.1715**
+(`results/B/run-009`: 798 expected, 799 published, 662 observed), with
+`publisher_drop_rate` **0.0000** in both — i.e. the fork published and the
+OBSERVER did not see it. And the observers differ by transport, not by
+approach: cell A's observer runs `rmw_cyclonedds_cpp` on
+`docker/cyclonedds.xml`, cell B's runs `rmw_fastrtps_cpp` +
+`observer/config/udp_only.xml` (`benchmarks/README.md:1332-1334`).
+
+The hypothesis: the same Fast DDS large-sample fragmentation loss measured
+above is what cell B's observer suffers, so its `observer_loss_rate` is a fact
+about the recorder's transport rather than about the tier4-native approach.
+
+**Bounded in both directions, because it does not transfer directly.**
+
+- AGAINST it, and this is the strong objection: cell B's LiDAR messages are
+  ~242 KB (241 754 B mean over `run-008`'s 699 rows, 241 918 B over
+  `run-009`'s 662) against this cell's 921 600 B — a **~3.8× gap**. This
+  document says elsewhere that cell B "delivers" at its own size, and that
+  remains the honest reading: nothing measured here shows Fast DDS losing
+  anything at ~242 KB. A ~25% loss and a ~99% loss are also different
+  phenomena, not the same one scaled.
+- FOR it: the loss is on the observer's subscription while the publisher's own
+  count is complete, the two cells' observers differ exactly in the transport
+  this cell just showed to be size-sensitive, and 242 KB is still far above any
+  single-datagram threshold — roughly 170 UDP fragments per sample against
+  ~640 here.
+- NOT KNOWN, and not to be assumed: whether Autoware's own subscription in
+  cell B lost the same clouds. If it did not, the loss is instrument-only; if
+  it did, it is not. Nothing in the committed data was checked for this.
+
+**What would settle it, cheapest first. NOT RUN — scheduling is the owner's.**
+
+1. **Zero new runs.** Cell B's committed `observer.csv` files already contain
+   SMALL topics recorded over the same transport in the same runs —
+   `run-008` holds 1704 `/localization/kinematic_state` rows, 110
+   `/localization/pose_estimator/pose_with_covariance` and 1011
+   `/control/command/control_cmd` beside its 699 LiDAR rows (`run-009`: 1529 /
+   111 / 20 / 662). Those are raw row counts, NOT loss rates: turning them into
+   loss rates needs the registered reconciliation
+   (`analysis/publisher_counts.py` + `cadence.reconcile_drops`), which was not
+   run here. If the small topics reconcile to ~0 loss while only the 242 KB
+   PointCloud2 loses, size-dependent fragmentation is implicated; if every
+   topic loses alike, it is refuted and the cause is elsewhere.
+2. **One CAL-rmw round at cell B's size**, 2 runs, ~3 minutes:
+   `BENCH_PUB_POINTS=7558` (7558 × 32 B = 241 856 B, 0.008% above cell B's
+   measured mean of 241 836 B across `run-008`/`run-009`) on `cyclonedds` and
+   on `fastdds-udp`. This measures the
+   transport directly at the size in question. It must be filed as a labelled
+   probe, never as duel-feeding data, and it does NOT invalidate
+   `cells.yaml:525`'s `lidar_expected_hz: 10.0` binding, whose own comment
+   scopes that hazard to `BENCH_PUB_RATE_HZ` — which such a run must leave
+   alone.
+
+Neither was run, and nothing in cell B's data, `config/observer_topics/` or any
+cell's transport configuration was touched by this task.
 
 ### Consequence for the pre-registered synthetic size
 
@@ -205,15 +308,22 @@ value it replaces.** The frozen value and its full derivation are in the
   (`cells/calibration.sh:136-142` and `run.sh:605-607`), and each manifest
   records it as `placement.run_mode: container-only`. The natives' publisher
   is a host process, so the calibration's publisher placement is not the
-  duel's. **Citation correction, checked rather than repeated:** Task 16's
-  brief describes this as "a disclosed approximation recorded in the README",
-  and that wording is NOT in `benchmarks/README.md` — the word
-  "approximation" does not occur in that file at all. What the README does
-  record is the narrower fact at line 1348, "both inside the one observer
-  image", together with lines 1347-1361's statement that CAL-rmw bounds the
-  **instrument** difference only and says nothing about the DUT side. That is
-  the substantive disclosure; the "approximation" framing is this document's,
-  not the README's.
+  duel's (`run_mode: editor-game` there). It bounds the observer-side
+  difference between two RMW configurations — placement is identical in both
+  CAL arms, so it cancels out of the delta the margin is frozen from — and it
+  does NOT bound any native cell's absolute one-hop latency.
+
+  **Now disclosed in the README as well, and the history is kept because this
+  is the error class the campaign records rather than smooths.** Task 16's
+  dispatch asserted this was "a disclosed approximation already recorded in
+  the README" and it was NOT: the word "approximation" did not occur anywhere
+  in that file, and its only placement statement was the narrower "both inside
+  the one observer image" in the CAL-rmw bounds list. The owner confirmed the
+  dispatch statement was wrong and inherited unchecked, and ruled the
+  disclosure in; it is now `benchmarks/README.md`'s **"DISCLOSED
+  APPROXIMATION: publisher PLACEMENT is not the duel's"** bullet, in that same
+  bounds list beside "What `CAL-rmw` bounds" and "What `CAL-rmw` does not
+  bound".
 - **32-ch / 128-ch sizes were NOT run.** The campaign was cut to the core duel
   on 2026-07-30 and the margin formula consumes only the duel size, so the
   3 840 000 B and 14 720 000 B points were not measured. If the `32ch` class is
