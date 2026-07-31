@@ -267,3 +267,209 @@ Also for the record: `A/run-003`'s own `placement.loadavg` is `0.27` — this
 duel started from an already-quiescent host, the "operator starts a duel from
 a host they already know is quiescent" case `duel.sh`'s pacing-block comment
 gives as the reason the floor is not applied before a duel's first run either.
+
+---
+
+## 4. The static arm completed: n = 10 per cell, and what those runs do and do not support
+
+**Written 2026-07-31 by Task 18**, resuming after Task 18a cleared the pacing
+blocker. §2 above described the state at `289196e`, when the abort had left
+n = 1; that section is left as written and this one supersedes its `n` figures.
+
+`bash benchmarks/scripts/duel.sh A B --arm static --pairs 9` filed pairs 2–10:
+**A 9 ok / 0 failed, B 9 ok / 0 failed**, no preflight refusal, no exclusion, no
+abort. With pair 1 the static arm now holds:
+
+| cell | filed | non-excluded | M5 `gate_pass` = true | M5 unscoreable |
+| ---- | ----- | ------------ | --------------------- | -------------- |
+| A    | 10 (`run-003…012`) | **10** | **10** | 0 |
+| B    | 10 (`run-013…022`) | **10** | **1** (`run-013`) | 1 (`run-019`) |
+
+Every one of the twenty is `duel_admissible=true`, has a valid manifest, has no
+watchdog stall marker, and renders through `report.py`'s strict path.
+
+### 4.1 Cell B's nine gate-failing runs are retained, unexcluded, and disclosed
+
+Nine cell-B static runs fail the M5 gate, and all nine fail it on the **same
+named reason**: `ndt rate ratio <r> < 0.9`, with `r` between **0.257 and 0.850**
+against cell B's registered `ndt_expected_hz` of 10.0. The tenth,
+`run-019`, could not be scored at all — `write_quality` refused, loudly and by
+name, at `run.sh` step 13:
+
+```
+QUALITY GATE FAIL: evaluate_quality could not score run-019 over the window
+[50207676168, 99905759634] sim ns: fewer than 10 NDT<->GT stamp pairs in the
+window (found 2)
+WARN: the M5 gate did not score .../B/run-019 (named reason above);
+      no quality.json is written, so its consumers fail loudly
+```
+
+That is the harness working as designed, not a harness defect: it declined to
+write a `quality.json` it could not justify, said why, and let step 15's smoke
+still verify the run renders. `run-019` therefore carries **no** `quality.json`,
+and any consumer that needs one will fail loudly rather than read a fabricated
+score. The named reason is quoted here because it is otherwise only on the duel
+driver's console.
+
+**The proximate measurement is observer-side message count, not window length.**
+All ten windows span 49.3–51.7 s, i.e. uniform; what differs is how many
+`/localization/pose_estimator/pose_with_covariance` rows the observer recorded
+inside them — **63 to 695** across the ten runs (`run-016`: 63; `run-013`: 695).
+A ~50 s window at 10 Hz offers ~500. So the loss is in delivery, not in
+windowing or in the gate's arithmetic.
+
+**This is the condition the campaign has already registered, and its handling is
+already ruled on.** Cell B's transport is `rmw_fastrtps_cpp` with
+shared memory **off** (`benchmarks/observer/config/udp_only.xml`), and:
+
+- `benchmarks/README.md:3824-3849` registers the A-side instrument-asymmetry
+  bound — cell A loses **0.0000** where cell B loses **0.2564 / 0.1715** — and
+  concludes "the loss is a property of cell B's SHM-off Fast-DDS transport",
+  corroborated three independent ways (Autoware's own `PublishedTime`, Task 9's
+  transport matrix, and cell A's zero loss on a different transport).
+- `benchmarks/results/CAL-rmw/PROVENANCE.md:151-165` states that **"No
+  registered exclusion criterion covers this condition, and that absence is part
+  of the record rather than something to paper over"**, that **"A criterion is
+  deliberately NOT being added"**, and carries **Owner ruling 2026-07-31: retain
+  all fifteen runs as produced, with no exclusions, and disclose.** Its
+  independent bring-up corroboration at
+  `benchmarks/results/CAL-rmw/PROVENANCE.md:176-181` measures the same transport
+  at **0.333–6.156 Hz** against cyclonedds' **10.008–10.010 Hz**, from a second
+  rclpy subscriber on the same RMW.
+
+**Task 18 applied that ruling unchanged.** The nine gate-failing runs and the
+one unscoreable run are **retained as produced, with no exclusions**. No
+exclusion reason was invented, no criterion was added or edited, and the M5
+gate's 0.9 threshold was not touched. The losses here (down to a ratio of
+0.257) run **worse** than the 0.17–0.26 the README bounds, so the disclosure is
+that the registered condition is present in the primary duel's cell-B static
+data **at a larger magnitude than the bound anticipated** — not that a new
+condition was found.
+
+**What this means for reading the data — stated, not resolved:** three of the
+five pre-registered duel margin metrics are observer-derived
+(`README.md:3838-3841`), and `achieved_rate_ratio`'s margin is 0.02 against a
+loss here of up to 0.74. Whether cell B's static runs can carry an equivalence
+verdict on the observer-derived metrics is **not** decided here — Task 22 owns
+the verdict, and this section exists so that it decides with the condition in
+view. No verdict, delta, median or A-vs-B comparison was computed by Task 18.
+
+### 4.2 Reading `duel-pacing.log`: its pair numbers are per-invocation
+
+`benchmarks/results/duel-pacing.log` holds **17 lines**, one per paced run, and
+is committed as evidence. Two cautions, both of which will silently mislead:
+
+- **`before_pair=`/`before_cell=` name the run the wait PRECEDES**, not the run
+  that just finished (`duel.sh`'s own note at the log write).
+- **The pair numbers are the numbers of the *invocation*, not of the duel.**
+  These 17 lines come from a `--pairs 9` invocation that filed the duel's pairs
+  **2–10**, so a line reading `before_pair=1` precedes the duel's **pair 2**.
+  The duel's pair 1 (`A/run-003`, `B/run-013`) is **absent** from this log
+  entirely: it predates the pacing (§3), and its gap is the ~31.5 s
+  reconstruction in §3, not a recorded line. Join on `ts` against each
+  manifest's `started_at_ns` rather than trusting `before_pair`.
+
+Recorded behaviour, for whoever checks whether the top-up ever fired: floor
+120 s on all 17 gaps; **top-up fired on 5 of 17** (5, 10, 15, 15, 20 s);
+**the 300 s ceiling was never reached**; `loadavg_end` 0.53–5.72, always under
+the target of 6; total pacing wait **2105 s ≈ 35.1 min**. §3 expected the
+typical top-up to be zero, and it was zero on 12 of 17 gaps — but it is **not**
+uniformly zero, so §3's "insurance that is not expected to fire" is correct as a
+central tendency and wrong as an absolute.
+
+### 4.3 One design property the abort cost, disclosed
+
+`duel.sh` alternates which cell takes a pair's first slot so that neither cell
+always pays the cold-cache cost (`duel.sh:14-22`). Within a single `--pairs 10`
+invocation that splits 5/5. Because the duel was filed as `--pairs 10`
+(aborted after pair 1) plus `--pairs 9`, and every invocation starts its own
+pair 1 with cell A, the realised split over the ten static pairs is **A first in
+6, B first in 4** — not 5/5. It is a one-slot imbalance introduced by the abort,
+not by a design change, and it could not be corrected afterwards without
+re-running filed pairs. Recorded so it is not mistaken for the balanced design.
+
+---
+
+## 5. LIVE DEFECT FOUND: the cell-B recorded-tree teardown silently skipped the whole Autoware stack on 5 of 10 runs
+
+**Found 2026-07-31 by Task 18** during brief §F1's live verification — the
+verification Task 16 and Task 17c both deferred because neither could run
+against a real stack. This is what it was for.
+
+### 5.1 What happened
+
+On **5 of the 10** cell-B static runs, `scripts/e2e/stop_launch_tree.sh`
+signalled **nothing** for the Autoware launch tree and left **56 processes
+running inside the container**, while reporting **`0 survivor(s)`**:
+
+| runs | recorded tree | survivors reported | container after the stop |
+| ---- | ------------- | ------------------ | ------------------------ |
+| `run-013`, `014`, `015`, `016`, `018` | **55** processes | 0 | **3 running**, 3–4 defunct |
+| `run-017`, `019`, `020`, `021`, `022` | **2** processes | 0 | **56 running**, 2 defunct |
+
+`0 survivor(s)` is technically true and materially misleading: survivors are
+counted against the *recorded* tree, and on the bad runs the recorded tree was
+only the 2-process concat relay. **The `container now:` count is the only thing
+that reveals it** — the count Task 17c deliberately put in that message. It
+earned its place today.
+
+### 5.2 Root cause: a racy sidecar write makes the pid-reuse guard misfire
+
+The guard is correct; the data it is given is not. From `run-022`'s own
+`tier4-stop-launch-tree.log`:
+
+```
+stop: SKIPPING /tmp/tier4-autoware.pid -- pid 121 was REUSED. Recorded at launch as
+stop:   'nohup ros2 launch autoware_launch e2e_simulator.launch.xml ... '
+stop:   but pid 121 is now '/usr/bin/python3 /opt/ros/humble/bin/ros2 launch autoware_launch e2e_simulator.launch.xml ... '
+stop:   Nothing was signalled; the process this pid file named is already gone. Pid file kept.
+```
+
+Those two cmdlines are the **same process before and after `ros2`'s own exec**,
+not a reused pid. `benchmarks/cells/tier4_autoware.sh:402-408` launches
+`nohup ros2 launch …`, records `$!`, and then writes the sidecar by reading
+`/proc/$pid/cmdline` on the very next line. That read **races the exec**: `ros2`
+replaces the `nohup ros2 launch …` image with
+`/usr/bin/python3 /opt/ros/humble/bin/ros2 launch …` in place, keeping the pid.
+
+- Sidecar read loses the race → post-exec cmdline recorded → matches at
+  teardown → tree stopped (55 processes).
+- Sidecar read wins the race → **pre-exec** cmdline recorded → mismatches at
+  teardown → `stop_launch_tree.sh:329-341`'s guard declares pid reuse, returns
+  0 without signalling, and the stack is left up.
+
+A tight race, which is why it split 5/5. The guard itself
+(`stop_launch_tree.sh:323-341`) behaves exactly as its comment says it should
+given a mismatching sidecar; the defect is at the write site, not the read site.
+
+### 5.3 Blast radius: real, bounded, and it did NOT invalidate any run
+
+Stated precisely, because §F1 warns that a teardown which does not clear the
+tree invalidates later runs in the session, and **here it did not**:
+
+- **No measurement was affected.** Teardown runs after the scoring window
+  closes, so a stack left up at teardown cannot touch the run's own data.
+- **No leak across runs.** `teardown.sh` removes the Autoware container
+  (`docker rm -f`) immediately after, which kills all 56. Verified after
+  `run-022` (a bad run): container absent, `ros2 node list` **0 nodes**, no
+  CARLA/UE processes, port 2000 free.
+- **No downstream refusal.** Every subsequent run's preflight passed; no run in
+  the session was refused on `hostload:` or filed with any exclusion.
+- **What was actually lost** is the graceful shutdown: on those 5 runs the
+  SIGINT ladder never ran and a 56-process Autoware stack was SIGKILLed by
+  container removal — precisely the ungraceful shutdown `stop_launch_tree.sh`
+  exists to prevent, on the family Task 17c wired it into.
+
+### 5.4 Not fixed here, and independent of §4.1
+
+**No fix was attempted.** The defect is in a launcher (`tier4_autoware.sh`) that
+files every cell-B run in the campaign; changing how a run is launched
+mid-measurement changes the measured configuration, and this task's remit was to
+verify the teardown, not to re-cut it. Reported for the owner to schedule.
+
+**It does not explain §4.1's NDT loss and is not correlated with it.** The
+gate-failing runs span both groups (bad-teardown group ratios 0.383–0.818 and
+one unscoreable; good-teardown group 0.257–0.989), and the single passing run
+(`run-013`, 0.989) is in the good-teardown group alongside the worst failure
+(`run-016`, 0.257). Two independent findings, and neither is evidence for the
+other.
