@@ -52,6 +52,33 @@ a between-arm comparison (the primary duel is pre-registered as interleaved for
 exactly this reason). The transport of every run is recorded in its own
 manifest, so attribution is exact regardless of order.
 
+**INTERLEAVED BUT NOT COUNTERBALANCED — the limitation of that order,
+disclosed 2026-07-31.** Every block runs the three transports in the same
+sequence, so each transport holds a fixed POSITION within its block:
+cyclonedds always first, fastdds-shm always second, fastdds-udp always third.
+Interleaving removes drift that is a function of WALL TIME; it does not remove
+an effect that is a function of position within a block — a cache, thermal or
+DDS-segment state that depends on "first / second / third run since the
+previous block" rather than on the hour. Any such effect is therefore
+confounded with transport here, and it bears on the frozen quantity directly,
+because the delta is taken between position 1 and position 3. Only alternating
+the order across blocks would remove it. **Nothing here measures such an effect
+and none is asserted** — the design simply cannot exclude one, which is why it
+is disclosed. Like the load mismatch recorded below, it does not move the
+frozen value: the 2.0 floor binds for any `|Δ| ≤ 1.0 ms` and the measured
+`|Δ|` is 0.4152 ms.
+
+**And this cell is the exception, not the campaign's practice.** The primary
+duel's driver DOES counterbalance: `benchmarks/scripts/duel.sh:87-96` runs
+odd-numbered pairs as A,B and even-numbered pairs as B,A, on its own stated
+rationale that "interleaving alone still gives one cell every odd slot and the
+other every even slot, so a per-pair effect … lands entirely on one cell"
+(`benchmarks/scripts/duel.sh:14-18`). So the limitation above is LOCAL to
+CAL-rmw and must not be read across to the duel. (`benchmarks/README.md:3469`
+describes the duel as "interleaved A,B,A,B pairs", whose literal reading is the
+UNcounterbalanced order; the committed driver is the authority and it
+alternates.)
+
 ## Host quiescence — this cell's dominant validity risk
 
 Transport latency is load-sensitive in a way pose accuracy is not, so the
