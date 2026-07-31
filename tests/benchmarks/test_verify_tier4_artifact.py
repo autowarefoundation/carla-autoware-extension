@@ -422,21 +422,40 @@ def test_the_staleness_refusal_hands_over_the_digest_a_binding_needs(tree):
     """Ergonomics, and it is load-bearing: a false refusal must have a remedy, and
     a rebuild is forbidden mid-campaign. The binding digest therefore has to be
     obtainable from the refusal itself -- on a stale tree there is no passing run
-    to read it off. Pinned by taking the digest ONLY out of the refusal's stderr
-    and showing that it binds."""
+    to read it off. Pinned for BOTH shapes a stale tree can be met in, since the
+    name above promises the general case, not one path: the PLAIN
+    tier4-artifact-stale refusal an operator meets first (gate:437, its remedy at
+    gate:446), and tier4-stale-ack-unbound, met once an unbound TIER4_STALE_ACK is
+    already exported. Each digest is taken ONLY out of that refusal's own stderr,
+    and each is shown to actually bind, not merely to look like a digest."""
+
+    def digest_from(stderr: str) -> str:
+        quoted = [
+            word
+            for word in stderr.replace("=", " ").split()
+            if len(word) == 64 and all(c in "0123456789abcdef" for c in word)
+        ]
+        assert quoted, stderr
+        return quoted[0]
+
     make_stale(tree)
-    refused = run_gate(tree, TIER4_STALE_ACK="content unchanged")
-    assert named_check(refused.stderr) == "tier4-stale-ack-unbound"
-    quoted = [
-        word
-        for word in refused.stderr.replace("=", " ").split()
-        if len(word) == 64 and all(c in "0123456789abcdef" for c in word)
-    ]
-    assert quoted, refused.stderr
+
+    plain = run_gate(tree)
+    assert named_check(plain.stderr) == "tier4-artifact-stale"
     r = run_gate(
         tree,
         TIER4_STALE_ACK="content unchanged",
-        TIER4_STALE_ACK_SOURCE_SHA256=quoted[0],
+        TIER4_STALE_ACK_SOURCE_SHA256=digest_from(plain.stderr),
+    )
+    assert r.returncode == 0, r.stderr
+    assert kv(r.stdout)["tier4_stale_ack"] == "applied"
+
+    unbound = run_gate(tree, TIER4_STALE_ACK="content unchanged")
+    assert named_check(unbound.stderr) == "tier4-stale-ack-unbound"
+    r = run_gate(
+        tree,
+        TIER4_STALE_ACK="content unchanged",
+        TIER4_STALE_ACK_SOURCE_SHA256=digest_from(unbound.stderr),
     )
     assert r.returncode == 0, r.stderr
     assert kv(r.stdout)["tier4_stale_ack"] == "applied"

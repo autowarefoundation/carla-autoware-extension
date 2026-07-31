@@ -52,12 +52,12 @@
 # EMPTY stderr -- find's own message went to a `2>/dev/null` that has since
 # been dropped -- and no named check whatsoever, which is worse than the
 # python-traceback case this comment was written about. It is now
-# tier4-source-scan. The bare substitutions that REMAIN are unreachable by
-# construction, and are named here rather than wrapped so that the claim above
-# stays checkable rather than merely broad: `stat -c %Y` on the two artifacts,
-# which check 2 has just proved are regular files. TIER4_STALE_ACK is
-# normalised by parameter expansion alone, spawning nothing, for the same
-# reason.
+# tier4-source-scan. The bare substitutions that remain are unreachable by
+# construction, not exhaustively listed here -- a per-line list goes stale the
+# moment this comment moves. `stat -c %Y` on the two artifacts (check 2 proved
+# they are regular files) is one instance; every other reads this script's own
+# location or state a prior check validated. TIER4_STALE_ACK is normalised by
+# parameter expansion alone, spawning nothing, for the same reason.
 #
 # ENV. TIER4_TREE is required; the other three are optional:
 #   TIER4_PATCH_DIR  the registered patch set the worktree is compared against
