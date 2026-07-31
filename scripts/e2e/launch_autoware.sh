@@ -80,24 +80,55 @@ compose_exec() {
     autoware bash -lc "$1"
 }
 
-# --stop: tear the launch down (kill the recorded container-side ros2-launch PID). Uses the
-# PID file, NEVER pkill -f, which self-matches the exec's own command line (project gotcha).
+# Run a HOST script inside the container by piping it in on stdin
+# (`bash -s --`), so no bind mount has to exist for it to work.
+# docker/compose.yaml does mount ../scripts read-only at /work/scripts, but
+# --stop is the one path that must still work against a container started
+# from an older compose file, and a teardown that could not find its own
+# helper would silently leave the stack up -- the very failure this replaces.
+compose_exec_script() {
+  local script="$1"
+  shift
+  docker compose -f "$COMPOSE" exec -T -e ROS_DOMAIN_ID=0 \
+    autoware bash -s -- "$@" <"$script"
+}
+
+# --stop: tear the launch down. Uses the recorded container-side PIDs, NEVER
+# pkill -f, which self-matches the exec's own command line (project gotcha).
+#
+# MEASURED DEFECT this now fixes (Task 15, 2026-07-30). The previous form
+# SIGTERMed the recorded `ros2 launch` PID, waited 20 s, SIGKILLed it, and
+# printed "autoware launch + concat relay stopped" unconditionally. It did
+# NOT stop the stack. Ten minutes after such a teardown, with CARLA gone and
+# port 2000 free: `ros2 node list --no-daemon` -> 169 nodes, container
+# `ps -e` -> 74 processes, /proc/loadavg -> 42.16 26.66 13.45 (they spin hard
+# because /clock no longer advances). `docker compose down` cleared it and the
+# host settled to 2.44.
+#
+# ROOT CAUSE, measured 2026-07-31 against a real `ros2 launch` started by
+# THIS script's own `nohup ... &` pattern -- and it is worse than "launch
+# orphans on SIGTERM". That launch has SigIgn 0x1001007 (SIGHUP, SIGINT and
+# SIGQUIT all ignored, because a shell without job control sets exactly those
+# to SIG_IGN for a background job, and SIG_IGN survives exec) and SigCgt with
+# NO signal 1-31 caught, so launch's own handlers never install. SIGINT is a
+# verified no-op; SIGTERM kills it by default action with no launch code
+# running at all -- not even launch_service.py's own "using SIGTERM ... can
+# result in orphaned processes" warning appears -- and its children keep
+# running. No signal sent to the recorded PID can both reach it and take its
+# children with it.
+#
+# So stop_launch_tree.sh signals the CHILDREN: it snapshots the recorded PID's
+# own descendants BEFORE the first signal and escalates
+# SIGINT -> SIGINT -> SIGTERM -> SIGKILL over that set and nothing wider. It
+# never refuses and never exits non-zero -- a teardown that blocks a
+# legitimate measurement is worse than one that under-reports -- and it prints
+# the container's post-stop running/defunct counts, so this is a reported
+# observation rather than an unconditional claim. See that file's header for
+# the full measurement, for the launch-side change deliberately NOT made here,
+# and for the one case it cannot claim (processes already orphaned by an
+# earlier SIGTERM-only stop).
 if [ "${1:-}" = "--stop" ]; then
-  # $AW_PIDFILE/$RELAY_PIDFILE/$pid are expanded IN THE CONTAINER (compose_exec passes them via
-  # -e); the single quotes are deliberate so the host does not expand them first.
-  # shellcheck disable=SC2016
-  compose_exec '
-    for pf in "$RELAY_PIDFILE" "$AW_PIDFILE"; do
-      [ -f "$pf" ] || continue
-      pid="$(cat "$pf")"
-      if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-        for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
-      fi
-      rm -f "$pf"
-    done
-    echo "autoware launch + concat relay stopped"'
+  compose_exec_script "$HERE/stop_launch_tree.sh" "$RELAY_PIDFILE" "$AW_PIDFILE"
   exit 0
 fi
 
