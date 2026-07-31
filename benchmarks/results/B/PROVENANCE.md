@@ -491,7 +491,14 @@ Task 18.
   `benchmarks/cells/tier4-native.sh`, before the editor boots, on both `plan`
   and `up`.
 - **Tested** in `tests/benchmarks/test_verify_tier4_artifact.py`, host-only, no
-  docker and nothing booted: 47 executing tests as of 2026-07-31.
+  docker and nothing booted: 47 executing tests as of 2026-07-31, on a
+  non-root runner. That count is **host-dependent**: two of the 47 are marked
+  `@requires_unprivileged`
+  (`tests/benchmarks/test_verify_tier4_artifact.py:117-120`, an
+  `os.geteuid() == 0` skip applied at `:661` and `:689`) and skip as root, so a
+  root runner executes **45**. The two properties those tests carry —
+  `tier4-source-scan` and `tier4-source-digest` — then rest on reading rather
+  than on a test, exactly like the `onerror` property disclosed below.
 
   **Mutation coverage, per property.** This table replaces a claim that this
   document made and did not establish. On 2026-07-30 the wording was narrow and
@@ -508,8 +515,10 @@ Task 18.
 
   Every mutation was applied to a **copy** of the repo layout in a scratch
   directory, never to the tracked tree, and the module was run against the copy.
-  Failure counts are out of the 47 tests. A mutation is reported with the test
-  that carries the property, plus the count of everything it took down with it.
+  Failure counts are out of the 47 tests on a non-root runner (45 on a root
+  runner — see the host-dependence note above). A mutation is reported with
+  the test that carries the property, plus the count of everything it took
+  down with it.
 
   | property | mutation | result | test that fails |
   | -------- | -------- | ------ | --------------- |
@@ -560,8 +569,19 @@ tier4_stale_ack_source_sha256=-
 tier4_stale_ack_artifacts=-
 ```
 
-All seven digests and both mtimes are byte-for-byte what the gate emitted before
-the acknowledgement binding was added, `tier4_source_sha256` included: moving that
+The block above carries **six** digest values (`tier4_git_sha`,
+`tier4_worktree_paths_sha256`, `tier4_worktree_content_sha256`,
+`tier4_source_sha256`, `tier4_plugin_sha256`, `tier4_ros2_native_sha256`) plus
+one digest-named key that is a placeholder on this tree —
+`tier4_stale_ack_source_sha256=-`, unset because no acknowledgement is in
+effect here. It carries **no mtimes at all**: the gate also emits three
+(`tier4_plugin_mtime`, `tier4_ros2_native_mtime`, `tier4_newest_source_mtime`),
+wall-clock values that move on every rebuild even when content does not, so
+they are not part of what this block claims stays comparable — a reader should
+not go looking for them here.
+
+All six digests are byte-for-byte what the gate emitted before the
+acknowledgement binding was added, `tier4_source_sha256` included: moving that
 digest out of the identity reader and into check 3 changed **where** it is
 computed, not **what** it covers. That is the check that the reordering was
 behaviour-preserving, and it is the only reason the block above can still be
