@@ -1359,8 +1359,9 @@ than the `observer_env` row it shows up in:
   in two containers from the ONE observer image, `--net=host --ipc=host`
   (`cells/calibration.sh:136-142`, `run.sh:605-607`), and every CAL-rmw
   manifest records it as `placement.run_mode: container-only`. In the native
-  cells the publisher is a HOST process (the CARLA fork; `run_mode:
-  editor-game`), and only the observer is containerised. So the calibration
+  cells the publisher is a HOST process — the CARLA fork, whose manifests
+  record `editor-game` — and only the observer is containerised. So the
+  calibration
   measures a container-to-container hop where the duel has a host-to-container
   one. **What that does bound:** the observer-side transport difference
   between two RMW configurations, since both CAL arms share the identical
@@ -3351,6 +3352,7 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   docstring and `tests/benchmarks/test_cal_report.py`'s carried the same wrong
   scope and are corrected with it. Nothing about the PUBLISHERS changes — they
   remain committed and never run.
+
 - **2026-07-30 — registered loss: no hard-fork-maintenance finding (`B45`).**
   This cell existed to measure what it costs to carry the tier4 CARLA fork
   against a **different** Autoware release (`pins.yaml` `autoware_045`,
