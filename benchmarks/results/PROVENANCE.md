@@ -99,7 +99,7 @@ neither fix was attempted.
 ## 2. What the runs are, and why there are only two of them
 
 Filed by `bash benchmarks/scripts/duel.sh A B --arm static --pairs 10`, which
-passes `--duel` on every `run.sh` invocation it makes (`duel.sh:224`) so the runs
+passes `--duel` on every `run.sh` invocation it makes (`duel.sh:283`) so the runs
 carry `duel_admissible=true`. Runs filed by this task are exactly:
 
 | run         | arm    | `excluded` | `duel_admissible` | M5 `gate_pass` |
@@ -113,7 +113,7 @@ first cell-B **static** arm ever attempted (`B/run-001…012` are all
 closed-loop and all excluded — see `benchmarks/results/B/PROVENANCE.md`).
 
 **The duel stopped after pair 1**, at `duel.sh`'s 2-consecutive-failure abort
-(`duel.sh:231-233`). Neither failure was a cell failure: both were
+(`duel.sh:290-292`). Neither failure was a cell failure: both were
 `preflight.sh` refusals on **`hostload:`** (26.52, then 24.55) because
 `duel.sh` starts the next `run.sh` immediately and the 1-min loadavg left by
 the previous run has not decayed below the gate's 8 (`preflight.sh:28,67-69`).
@@ -126,12 +126,16 @@ directly — `A/run-004` and `B/run-014` do not exist, and the next runs filed
 will take those indices.
 
 This is a harness-pacing defect, not a property of either approach, and it was
-**unresolved** as of this commit. `n` was therefore **1 per cell on the static
-arm and 0 on the closed-loop arm**, far below the pre-registered `n >= 10`.
-**Any equivalence verdict computed over this data would be computed at n = 1.**
-**Amended 2026-07-31 (Task 18a): fixed** — see §3 below for the pacing that
-Task 18a added to `duel.sh` so the duel can chain runs at all, and for pair
-1's own inter-run gap, reconstructed after the fact since it predates the fix.
+**unresolved** as of this commit. `n` **is** therefore **1 per cell on the
+static arm and 0 on the closed-loop arm**, far below the pre-registered
+`n >= 10`. **Any equivalence verdict computed over this data would be
+computed at n = 1.**
+**Amended 2026-07-31 (Task 18a): the pacing defect is fixed** — see §3 below
+for the pacing `duel.sh` gained so future duels can chain runs at all, and for
+pair 1's own inter-run gap, reconstructed after the fact since it predates the
+fix. **This amendment does not change `n`**: Task 18a filed no runs, so `n`
+remains exactly as stated above — 1 per cell on the static arm, 0 on the
+closed-loop arm — until a future task files more.
 
 See `task-18-report.md` (outside this repo, with the campaign's other task
 records) for the session preamble, the per-run integrity pass, the live
@@ -164,7 +168,7 @@ instead.
   1789-1797`).
 - The live abort this task's predecessor hit: `hostload:26.52`, then
   `hostload:24.55`, two consecutive preflight refusals (§2 above,
-  `duel.sh:231-233` for the abort itself).
+  `duel.sh:290-292` for the abort itself).
 - The post-run decay Task 18 measured by hand from that same host: 24.55 →
   13.74 after 38 s → 1.92 after 162 s, i.e. roughly 70–95 s of idle clears the
   gate from a freshly-completed run. This series is **not committed to this
@@ -172,20 +176,47 @@ instead.
   (see the campaign's other task records), not here, so it is cited as such
   rather than given a false in-repo line number.
 
-**The 120 s floor.** Fixed above the measured 95 s upper end of the decay
-band, plus margin, so the common case never even reaches preflight before the
-host has cleared the gate. A floor alone would still leave a run refused
-outright on a worse-than-typical host (the measured peak, 50.05, is roughly
-double the mean the 70–95 s figure came from), so `duel.sh` polls loadavg down
-to a target under the gate (with its own margin, since the 1-min average can
-still tick up between this script's read and preflight's own re-read moments
-later) for up to a further bounded ceiling, and — this is the part that must
-never regress — **proceeds regardless of whether the ceiling is reached**.
+**The 120 s floor is the uniform component.** Fixed above the **interpolated**
+95 s upper end of the decay band (read off the two measured points above;
+neither reading lands exactly at the gate value of 8, so 95 s is derived
+between them, not itself a measured figure) plus margin, so the common case
+never even reaches preflight before the host has cleared the gate. It applies
+identically before every run after the first, regardless of which cell just
+finished — the load-independent half of this amendment.
+
+**The top-up that follows the floor is NOT uniform, and that is deliberate —
+a correction to this section's first cut, which claimed the whole wait was
+load-independent.** A floor alone would still leave a run refused outright on
+a worse-than-typical host (the measured peak, 50.05, is roughly double the
+mean the 70–95 s figure came from), so `duel.sh` polls loadavg — load-
+TRIGGERED by construction, so its length can differ with which cell just ran
+— down to a target under the gate (with its own margin, since the 1-min
+average can still tick up between this script's read and preflight's own
+re-read moments later) for up to a further bounded ceiling, and — this is the
+part that must never regress — **proceeds regardless of whether the ceiling
+is reached**. `duel.sh:7-22`'s own drift argument is about host state
+(thermals, page cache, accumulated DDS shared memory), not clock time as
+such, and host state at run start is exactly what `preflight.sh`'s gate
+measures — equalising that is closer to the design's intent than equalising
+idle seconds would be, so the residual is accepted as a bounded, disclosed,
+per-run-recorded (`topup_s`) trade rather than removed. On the cited decay it
+is expected to be **zero** in the typical case: 24.55·e^(−120/60) ≈ 3.3,
+already under the target of 6 — so the wait actually paid in the typical case
+is the uniform floor alone, and the top-up is insurance that is not expected
+to fire. Because `topup_s` is recorded per run, a later analysis can check
+whether it ever fired and whether it correlates with the preceding cell: a
+disclosed, bounded, measured residual is a covariate, not a confound.
+
 This campaign has six recorded cases of a correctness check refusing a
 legitimate measurement; a pacing script that itself refuses, fails, or aborts
-a run would be a seventh, self-inflicted this time. `preflight.sh` alone
-judges whether a run may start. Full derivation and every knob:
-`benchmarks/scripts/duel.sh:42-126`.
+a run would be a seventh, self-inflicted this time. That holds on the ceiling
+path by construction (it `break`s a poll loop, it never `die`s), and — after
+this amendment's own fix round — on the I/O paths too: an unreadable loadavg
+source or an unwritable pacing log are pacing-infrastructure faults, not run
+failures, and now warn to stderr and proceed rather than tripping `set -e`
+into an abort that would otherwise masquerade as this script's own "some runs
+failed" exit-1 status (§2 above). `preflight.sh` alone judges whether a run
+may start. Full derivation and every knob: `benchmarks/scripts/duel.sh:42-161`.
 
 **Pair 1 predates this amendment.** `A/run-003` and `B/run-013` were filed by
 a `duel.sh` with no pacing at all — the version at commit `289196e`. Their

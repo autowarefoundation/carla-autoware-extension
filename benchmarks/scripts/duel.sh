@@ -64,32 +64,67 @@ MAX_CONSECUTIVE_FAILURES=2
 # clear the gate (that decay series is not itself committed to this repo --
 # see this task's own report for where it is recorded).
 #
-# UNIFORM, NOT LOAD-TRIGGERED. The wait below applies identically before
-# EVERY run, regardless of which cell just finished -- see one_run's call
-# site below. A wait whose length depended on the PRECEDING cell would make
-# host-idle time itself a cell-dependent measurement condition inside the
-# primary duel: cell B's own stack leaves a much hotter host than cell A's
-# (the 25.80/50.05 figures above are cell B's), so a load-triggered wait
-# would systematically shortchange whichever cell follows cell A and
-# lengthen whichever follows cell B -- reintroducing, inside pacing meant to
-# fix a chaining defect, exactly the asymmetry :7-22 exists to spread evenly.
+# THE FLOOR IS UNIFORM; THE TOP-UP IS NOT -- AND THAT IS A DELIBERATE TRADE.
+# (An earlier cut of this comment claimed the whole wait was load-independent;
+# it was not, and the correction below -- and the arithmetic that motivates
+# it -- is recorded in Task 18a's fix-round report and PROVENANCE.md
+# section 3.) The 120 s floor applies identically before every run after the
+# first (see "NOT applied before the FIRST run" below), regardless of which
+# cell just finished -- that part IS uniform and load-independent. The
+# top-up poll that follows it is NOT: it is load-TRIGGERED by construction,
+# so its length can differ depending on which cell just ran.
+#
+# That is a real departure from strict uniformity, and it is the right one.
+# :7-22's own drift argument is about HOST STATE (thermals, page cache,
+# accumulated DDS shared memory), not clock time as such -- and host state at
+# run start is exactly what preflight.sh's loadavg gate measures. Equalising
+# host-state-at-start is therefore closer to that design intent than
+# equalising idle seconds would be: the trade is uniform-idle-time (what a
+# floor-only design gives) versus uniform-host-state-at-start (what floor +
+# top-up gives), and the latter is chosen deliberately, because a load-
+# triggered top-up that never fires is free, while a floor alone that proves
+# insufficient reproduces the exact preflight-refusal defect this amendment
+# exists to remove.
+#
+# The residual is bounded (never past PACE_CEILING_S) and recorded per run as
+# topup_s (pace_between_runs' own log write, below), precisely so Task 22 can
+# check whether it ever fired at all and whether it correlates with the
+# preceding cell: a disclosed, bounded, measured residual is a covariate Task
+# 22 can account for; an undisclosed one would have been a confound.
+#
+# And on the cited decay the top-up is expected to be EXACTLY ZERO in the
+# typical case: 24.55 * e^(-120/60) ~= 3.3, already under
+# PACE_TARGET_LOADAVG's default of 6, so after the 120 s floor the poll
+# usually finds the target already met on its first read and returns without
+# sleeping again. In the measured typical case, then, the wait actually paid
+# IS the uniform 120 s floor alone -- the top-up is insurance that is not
+# expected to fire, not a routine load-dependent tax.
 #
 # FLOOR then a BOUNDED TOP-UP, never a bare wait and never an unbounded poll.
-# PACE_FLOOR_S is fixed above the measured worst case (95 s) plus margin: a
-# floor alone is what a fixed number that turns out insufficient would make
-# it -- a bare preflight refusal -- so after the floor this polls the
-# loadavg down to PACE_TARGET_LOADAVG (a margin under preflight's own gate of
-# 8, so a reading taken here is not stale by the time run.sh's OWN preflight
-# re-reads moments later -- the 1-min average can still tick up while
-# decaying overall) but bounded by PACE_CEILING_S, because this script must
-# NEVER itself refuse, fail, or abort a run (six recorded cases in this
-# campaign of a correctness check blocking a legitimate measurement). If the
-# ceiling is reached, pace_between_runs proceeds anyway, unchanged, and lets
-# `run.sh`'s own preflight be the ONLY thing that may refuse. 300 s is sized
-# against the measured PEAK (50.05, over 2x the 25.80 mean the floor is
-# sized from): a host that hot needs longer than the mean case to clear the
-# gate, and the ceiling gives it room the floor alone does not, while
-# remaining a small fraction of a single run's own multi-minute duration.
+# PACE_FLOOR_S is fixed above the interpolated worst case (~95 s, read off
+# the two measured decay points above -- neither lands exactly at the gate,
+# so 95 s itself is interpolated, not measured) plus margin: a floor alone is
+# what a fixed number that turns out insufficient would make it -- a bare
+# preflight refusal -- so after the floor this polls the loadavg down to
+# PACE_TARGET_LOADAVG (a margin under preflight's own gate of 8, so a reading
+# taken here is not stale by the time run.sh's OWN preflight re-reads moments
+# later -- the 1-min average can still tick up while decaying overall) but
+# bounded by PACE_CEILING_S, because this script must NEVER itself refuse,
+# fail, or abort a run (six recorded cases in this campaign of a correctness
+# check blocking a legitimate measurement). If the ceiling is reached,
+# pace_between_runs proceeds anyway, unchanged, and lets `run.sh`'s own
+# preflight be the ONLY thing that may refuse. 300 s is sized against the
+# measured PEAK (50.05, over 2x the 25.80 mean the floor is sized from): a
+# host that hot needs longer than the mean case to clear the gate, and the
+# ceiling gives it room the floor alone does not, while remaining a small
+# fraction of a single run's own multi-minute duration.
+#
+# NEITHER wait is failure-isolated from the other's I/O: an unreadable
+# loadavg source or an unwritable pacing log are infrastructure faults, not
+# run failures, and must never turn into this script's own abort or into
+# `duel.sh`'s documented "some runs failed" exit-1 status -- see
+# pace_between_runs' own error handling below for how each is kept
+# non-fatal.
 #
 # NOT applied before the FIRST run of a `duel.sh` invocation (one_run's
 # RUN_COUNT check below). Argument for including it anyway: uniformity,
@@ -167,7 +202,15 @@ pace_between_runs() {
 
   local topup_start=$SECONDS
   local loadavg topup
-  loadavg="$(current_loadavg)"
+  # current_loadavg's read is isolated from set -e (F1): an unreadable
+  # $LOADAVG_SRC is a PACING infrastructure fault, not a run failure, and
+  # must never abort the duel -- that would masquerade as this script's own
+  # documented "some runs failed" exit-1 status. An empty/unparseable
+  # reading already takes the safe branch below: awk coerces "" to 0 in a
+  # numeric comparison, which is under any real PACE_TARGET_LOADAVG, so the
+  # poll falls straight through as if the target were already met -- never a
+  # busy-wait, never a hang.
+  loadavg="$(current_loadavg 2>/dev/null || true)"
   while awk -v l="$loadavg" -v t="$PACE_TARGET_LOADAVG" 'BEGIN { exit !(l >= t) }'; do
     topup=$((SECONDS - topup_start))
     if [ "$topup" -ge "$PACE_CEILING_S" ]; then
@@ -177,7 +220,7 @@ pace_between_runs() {
       break
     fi
     sleep "$PACE_POLL_S"
-    loadavg="$(current_loadavg)"
+    loadavg="$(current_loadavg 2>/dev/null || true)"
   done
   topup=$((SECONDS - topup_start))
   local total=$((PACE_FLOOR_S + topup))
@@ -186,14 +229,30 @@ pace_between_runs() {
     "(floor ${PACE_FLOOR_S}s + top-up ${topup}s), loadavg now $loadavg"
   # Recorded per run so Task 22's analysis can see the inter-run gap for
   # every run, not just infer it from wall-clock gaps between manifests.
-  mkdir -p "$(dirname "$PACE_LOG")"
-  {
-    printf 'ts=%s pair=%s cell=%s floor_s=%s topup_s=%s total_wait_s=%s' \
+  # before_pair/before_cell (F5) name the run this wait PRECEDES, not the run
+  # that just finished -- read them that way, not the reverse. There is no
+  # run id here (this line is written before run.sh allocates one) and no
+  # duel-invocation id, so two separate duel.sh invocations can both log
+  # before_pair=1 before_cell=B; the only disambiguator is this line's own
+  # `ts` (1s resolution) joined against the next manifest's started_at_ns.
+  #
+  # A write failure here is likewise a PACING fault, not a run failure (F1):
+  # warn to stderr and proceed, the same non-fatal treatment as the loadavg
+  # read above, rather than letting mkdir/the redirect's exit status trip
+  # set -e and abort the duel.
+  if ! mkdir -p "$(dirname "$PACE_LOG")" 2>/dev/null; then
+    echo "duel: WARNING: could not create $(dirname "$PACE_LOG")," \
+      "pacing record for $cell (pair $pair) lost, proceeding anyway" >&2
+  elif ! {
+    printf 'ts=%s before_pair=%s before_cell=%s floor_s=%s topup_s=%s' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pair" "$cell" \
-      "$PACE_FLOOR_S" "$topup" "$total"
-    printf ' loadavg_end=%s target=%s ceiling_s=%s\n' \
-      "$loadavg" "$PACE_TARGET_LOADAVG" "$PACE_CEILING_S"
-  } >>"$PACE_LOG"
+      "$PACE_FLOOR_S" "$topup"
+    printf ' total_wait_s=%s loadavg_end=%s target=%s ceiling_s=%s\n' \
+      "$total" "$loadavg" "$PACE_TARGET_LOADAVG" "$PACE_CEILING_S"
+  } >>"$PACE_LOG" 2>/dev/null; then
+    echo "duel: WARNING: could not append to $PACE_LOG," \
+      "pacing record for $cell (pair $pair) lost, proceeding anyway" >&2
+  fi
 }
 
 one_run() {

@@ -51,6 +51,12 @@ four pacing properties in duel.sh's own design-rationale comment, but it
 is pinned here for the same reason those four are: it is a real behaviour
 this change must keep, verified against the real code path, not a
 text-scan.
+
+A fifth pin (`test_two_consecutive_failures_still_pace_and_abort_with_real_
+exit_code`) was added in fix round 1 (finding F6): the pre-existing
+test_duel_verdict.py exit-status tests all pass --check-args, so once that
+mode skips pacing (the fourth pin above), duel.sh's own 2-consecutive-
+failure abort was left with no test exercising it while pacing is active.
 """
 
 from __future__ import annotations
@@ -255,8 +261,11 @@ def test_recorded_wait_is_emitted(tmp_path, fake_repo):
     assert len(lines) == 1, lines
     fields = dict(kv.split("=", 1) for kv in lines[0].split())
 
-    assert fields["cell"] == "cellB"
-    assert fields["pair"] == "1"
+    # before_cell/before_pair (F5) name the run this wait PRECEDES, not the
+    # one that just finished -- pair 1's B-then-A order (see the counter-
+    # balancing loop) means the paced wait precedes cellB.
+    assert fields["before_cell"] == "cellB"
+    assert fields["before_pair"] == "1"
     assert fields["floor_s"] == "2"
     assert fields["target"] == "6"
     assert fields["ceiling_s"] == "0"
@@ -317,3 +326,125 @@ def test_check_args_skips_pacing_entirely(tmp_path, fake_repo):
     gap = times[1] - times[0]
     assert gap < 2.0, f"--check-args did not skip pacing (gap={gap:.3f}s)"
     assert not pace_log.exists(), "--check-args run must write no pacing record"
+
+
+# --- fix-round F6: the 2-consecutive-failure abort path is unpinned with ---
+# --- pacing active, and it must still exit and pace correctly -------------
+
+
+def test_two_consecutive_failures_still_pace_and_abort_with_real_exit_code(tmp_path, fake_repo):
+    """F6 (fix round 1): the pre-existing test_duel_verdict.py exit-status
+    tests all pass --check-args, so after the check-args fix above they no
+    longer traverse pacing at all -- duel.sh's own 2-consecutive-failure
+    abort (MAX_CONSECUTIVE_FAILURES, the mechanism that stopped Task 18's own
+    duel) had no test exercising it WITH pacing active. --pairs 1 makes
+    exactly two chained runs (cellA then cellB, pair 1 is odd); FAKE_RUN_EXIT
+    fails both, so the second failure trips the abort. This asserts the real
+    exit code (2, from duel.sh's own `die`) AND that pacing still genuinely
+    ran before the second, ultimately-failing, run -- neutralising either the
+    abort or the pacing-still-runs property changes a measured effect (exit
+    code or wall-clock gap), not a substring."""
+    loadavg_file = tmp_path / "loadavg"
+    loadavg_file.write_text("1.0 1.0 1.0 1/200 12345\n")
+    run_log = tmp_path / "fake-run.log"
+    pace_log = tmp_path / "pacing.log"
+
+    result = _run_duel(
+        tmp_path,
+        fake_repo,
+        FAKE_RUN_LOG=str(run_log),
+        FAKE_RUN_EXIT="1",
+        DUEL_PACE_LOG=str(pace_log),
+        DUEL_LOADAVG_SRC=str(loadavg_file),
+        DUEL_PACE_FLOOR_S="2",
+        DUEL_PACE_CEILING_S="0",
+        DUEL_PACE_POLL_S="1",
+        DUEL_PACE_TARGET_LOADAVG="6",
+    )
+
+    # duel.sh's own die() exits 2; a refusal-shaped or hung pacing defect
+    # would not reproduce this exact code.
+    assert result.returncode == 2, result.stderr
+    assert "2 consecutive failed runs; stopping the duel" in result.stderr
+
+    # Both fake runs still fired (the abort happens AFTER the second run,
+    # not instead of it) -- and pacing still elapsed a real gap before the
+    # second, doomed run: the abort must not short-circuit pacing.
+    times = _parse_run_log(run_log)
+    assert len(times) == 2, f"expected 2 run.sh invocations, got {times}"
+    gap = times[1] - times[0]
+    assert gap >= 1.9, f"pacing did not run before the failing 2nd run (gap={gap:.3f}s)"
+
+    # The wait is recorded even though the run it preceded went on to fail --
+    # pacing's own record-keeping is not conditional on the run's outcome.
+    assert pace_log.exists(), "pacing record missing even though pacing ran"
+    lines = [ln for ln in pace_log.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1, lines
+
+
+# --- fix-round F1: pacing's own I/O faults must not abort the duel --------
+
+
+def test_unreadable_loadavg_source_does_not_abort_the_duel(tmp_path, fake_repo):
+    """F1 (fix round 1): under set -euo pipefail, an unreadable
+    $LOADAVG_SRC used to propagate awk's own exit 2 straight out of
+    pace_between_runs and abort the WHOLE duel before the second run ever
+    fired -- a pacing infrastructure fault masquerading as a run failure.
+    DUEL_LOADAVG_SRC below points at a path that is never created, so every
+    read of it fails; if the isolation (`2>/dev/null || true`) were removed,
+    duel.sh would exit 2 here and run 2 would never be invoked, which the
+    length and exit-code assertions below both catch."""
+    missing_loadavg = tmp_path / "does-not-exist" / "loadavg"
+    run_log = tmp_path / "fake-run.log"
+
+    result = _run_duel(
+        tmp_path,
+        fake_repo,
+        FAKE_RUN_LOG=str(run_log),
+        DUEL_PACE_LOG=str(tmp_path / "pacing.log"),
+        DUEL_LOADAVG_SRC=str(missing_loadavg),
+        DUEL_PACE_FLOOR_S="1",
+        DUEL_PACE_CEILING_S="1",
+        DUEL_PACE_POLL_S="1",
+        DUEL_PACE_TARGET_LOADAVG="6",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "duel complete" in result.stdout
+    times = _parse_run_log(run_log)
+    assert len(times) == 2, f"expected 2 run.sh invocations, got {times}"
+
+
+def test_unwritable_pace_log_does_not_abort_the_duel(tmp_path, fake_repo):
+    """F1 (fix round 1): an unwritable pacing-log path used to make
+    `mkdir -p`'s own non-zero exit trip set -e and abort the duel with exit
+    1 -- duel.sh's own documented "some runs failed" status, even though no
+    run actually failed. DUEL_PACE_LOG is pointed inside a REGULAR FILE
+    (not a directory), so `mkdir -p "$(dirname ...)"` genuinely fails every
+    time; if the isolation around it were removed, this would surface as a
+    non-zero exit code instead of the warning-and-proceed asserted below."""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory\n")
+    unwritable_log = blocker / "nested" / "pacing.log"
+    loadavg_file = tmp_path / "loadavg"
+    loadavg_file.write_text("1.0 1.0 1.0 1/200 12345\n")
+    run_log = tmp_path / "fake-run.log"
+
+    result = _run_duel(
+        tmp_path,
+        fake_repo,
+        FAKE_RUN_LOG=str(run_log),
+        DUEL_PACE_LOG=str(unwritable_log),
+        DUEL_LOADAVG_SRC=str(loadavg_file),
+        DUEL_PACE_FLOOR_S="1",
+        DUEL_PACE_CEILING_S="0",
+        DUEL_PACE_POLL_S="1",
+        DUEL_PACE_TARGET_LOADAVG="6",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "duel complete" in result.stdout
+    assert "WARNING" in result.stderr
+    assert not unwritable_log.exists()
+    times = _parse_run_log(run_log)
+    assert len(times) == 2, f"expected 2 run.sh invocations, got {times}"
