@@ -1361,18 +1361,17 @@ than the `observer_env` row it shows up in:
   manifest records it as `placement.run_mode: container-only`. In the native
   cells the publisher is a HOST process — the CARLA fork, whose manifests
   record `editor-game` — and only the observer is containerised. So the
-  calibration
-  measures a container-to-container hop where the duel has a host-to-container
-  one. **What that does bound:** the observer-side transport difference
-  between two RMW configurations, since both CAL arms share the identical
-  placement and it therefore cancels out of the cyclonedds-vs-fastdds delta
-  the `one_hop_wall_ms` margin is frozen from. **What it does NOT bound:** the
-  absolute one-hop wall latency of a native cell, because a host-process
-  publisher crossing into a container is a different path — namespace
-  boundaries, `--ipc=host` segment ownership and scheduling all differ — and
-  this campaign never measured that path with the publisher on the host.
-  Nothing corrects for it and the delta is not adjusted; it is stated so a
-  reader does not transfer a CAL absolute onto a native cell. **Registered
+  calibration measures a container-to-container hop where the duel has a
+  host-to-container one. **What that does bound:** the observer-side transport
+  difference between two RMW configurations, since both CAL arms share the
+  identical placement and it therefore cancels out of the cyclonedds-vs-fastdds
+  delta the `one_hop_wall_ms` margin is frozen from. **What it does NOT
+  bound:** the absolute one-hop wall latency of a native cell, because a
+  host-process publisher crossing into a container is a different path —
+  namespace boundaries, `--ipc=host` segment ownership and scheduling all
+  differ — and this campaign never measured that path with the publisher on the
+  host. Nothing corrects for it and the delta is not adjusted; it is stated so
+  a reader does not transfer a CAL absolute onto a native cell. **Registered
   2026-07-31 (Task 16)**: this approximation had been asserted in that task's
   dispatch as "already recorded in the README" and it was NOT — the word
   "approximation" did not occur in this file at all — so it is recorded here
@@ -2627,9 +2626,8 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   generic calibration one"; scope corrected 2026-07-31, Task 16 — see the
   amendment of that date) — so the rule was keyed on an attribute that does
   not determine fittability, against evidence scoped to a different cell
-  than the one
-  it was applied to. Testing the data instead of the attribute makes the
-  rule correct whichever way Task 14 resolves the contradiction.
+  than the one it was applied to. Testing the data instead of the attribute
+  makes the rule correct whichever way Task 14 resolves the contradiction.
 
   **Finding narrowed 2026-07-31 (Task 16).** One half of the entry above is
   SUPERSEDED, and it is quoted rather than rewritten in place: "**against
@@ -3351,15 +3349,15 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   (`extension/test/test_bench_cloud_publisher.cpp`,
   `tests/benchmarks/test_cal_report.py`'s seam-topic fixtures). **None of it
   will ever run in a measurement**, and its presence must not be read as
-  evidence that the seam was measured — so the disclosure is written into the artifacts themselves
-  (`BenchCloudPublisher.h`'s header, `cal_report.py`'s docstring, and
-  `patches/extension/README.md`'s spec section, whose fork-side twin was never
-  written and now will not be) as well as here. **Deliberately NOT deleted**:
-  the code is unit-tested and green, it costs a production run nothing (the
-  `$CARLA_BENCH_SEAM_CLOUD` gate leaves an unset environment byte-identical to
-  today), and a later campaign reviving C1(a) inherits both the instrument and
-  the spec. No engine relink and no behaviour change: the edits are comments and
-  documentation only.
+  evidence that the seam was measured — so the disclosure is written into the
+  artifacts themselves (`BenchCloudPublisher.h`'s header, `cal_report.py`'s
+  docstring, and `patches/extension/README.md`'s spec section, whose fork-side
+  twin was never written and now will not be) as well as here. **Deliberately
+  NOT deleted**: the code is unit-tested and green, it costs a production run
+  nothing (the `$CARLA_BENCH_SEAM_CLOUD` gate leaves an unset environment
+  byte-identical to today), and a later campaign reviving C1(a) inherits both
+  the instrument and the spec. No engine relink and no behaviour change: the
+  edits are comments and documentation only.
 
   **Scope corrected 2026-07-31 (Task 16).** This entry's dead-code list also
   named `benchmarks/scripts/cal_report.py`, and that module is NOT dead: Task

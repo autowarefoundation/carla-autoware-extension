@@ -196,11 +196,12 @@ messages are **~242 KB**, not 921 KB — mean `size_bytes` 241 782 B over its
 626 `…/pointcloud_raw_ex` rows in `results/B/run-011/observer.csv` and
 241 859 B over 699 such rows in `results/B/run-012/observer.csv`, arriving at
 8.94 and 8.99 Hz. Cell A's are ~513 KB (513 245 B mean over its 1383 LiDAR
-rows, `results/A/run-001/observer.csv`, at 19.96 Hz) on Cyclone. So the collapse sits somewhere between ~242 KB and ~922 KB per
-sample on this Fast DDS configuration; **this task did not bisect it**, and
-`benchmarks/patches/tier4-native/README.md:342`'s 10.006 Hz for
-fastrtps + `udp_only.xml` is consistent with the smaller size rather than in
-conflict with the measurement above.
+rows, `results/A/run-001/observer.csv`, at 19.96 Hz) on Cyclone. So the
+collapse sits somewhere between ~242 KB and ~922 KB per sample on this Fast
+DDS configuration; **this task did not bisect it**, and
+`benchmarks/patches/tier4-native/README.md:342`'s 10.006 Hz for fastrtps +
+`udp_only.xml` is consistent with the smaller size rather than in conflict
+with the measurement above.
 
 ### BOUNDED HYPOTHESIS — NOT ESTABLISHED: does this explain cell B's `observer_loss_rate`?
 
