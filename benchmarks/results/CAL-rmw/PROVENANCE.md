@@ -190,18 +190,106 @@ about the recorder's transport rather than about the tier4-native approach.
   remains the honest reading: nothing measured here shows Fast DDS losing
   anything at ~242 KB. A ~25% loss and a ~99% loss are also different
   phenomena, not the same one scaled.
+- AGAINST it, and this document previously filed it as unknown: **a second,
+  unrelated subscriber loses the same clouds.** `benchmarks/README.md:634-639`
+  reports that on `results/B/run-010`, measured from inside the Autoware
+  container, Autoware's own subscription receives
+  `/sensing/lidar/top/pointcloud_raw_ex` at **8.47 Hz** (339 samples over a
+  40.05 s window after a 20 s discovery settle —
+  `benchmarks/README.md:2086-2092`), and that passage reads two unrelated
+  subscribers losing alike as the loss being **real on the wire** rather than
+  an instrument artifact. That defeats the hypothesis's PAYLOAD — "the
+  asymmetry is a property of the INSTRUMENT rather than of the approach" —
+  because cell B's transport is forced by the fork rather than chosen for the
+  recorder (`benchmarks/README.md:1336-1346`) and Autoware's own subscription
+  runs it too (`benchmarks/README.md:1334`). It does not by itself settle the
+  MECHANISM; the next bullet is about that.
+  **Two qualifications, derived here rather than taken on trust.** (i) The
+  8.53 Hz the README pairs with the 8.47 is `results/B/run-009`'s WHOLE-RUN
+  observer rate, not `run-010`'s — `benchmarks/README.md:636` says "on the
+  comparable run" and this is what that means. Derived from `run-009`'s
+  `observer.csv`: 662 LiDAR rows spanning 77.45 s of `arrival_system_ns` =
+  8.534 Hz. (ii) On `run-010` ITSELF the bench observer read **8.84–9.04 Hz**
+  over every 40.05 s window (361 rows = 9.01 Hz over the window opening 20 s
+  in; 659 rows over 74.03 s = 8.888 Hz whole-run), so the same-run gap between
+  the two subscribers is ~4–6%, not the ~0.7% the cross-run pairing suggests —
+  and it points the other way: on `run-010` AUTOWARE saw fewer clouds than the
+  recorder did. Both qualifications strengthen this objection rather than
+  weaken it, since the recorder is not the lossiest subscriber on that run.
+- AGAINST it, on mechanism: `benchmarks/README.md:2076-2078` already
+  attributes this deficit to **host CPU starvation, not UDP fragmentation**,
+  and records that as a change of reading forced by Task 9's transport matrix —
+  `benchmarks/patches/tier4-native/README.md:342,344,349` measure
+  10.006 / 10.071 / 10.070 Hz on this exact `fastrtps` + `udp_only.xml`
+  transport, rows 8–11 of that matrix running in the same pinned Autoware image
+  cell B launches from.
+  **One caveat, measured here and not previously recorded anywhere:** the
+  corroborating stock-`bench_observer` acceptance check in that same file
+  (`benchmarks/patches/tier4-native/README.md:473-478` — 243 rows in 24 s =
+  10.1 Hz) records its `size_bytes` as **64–76 KB**, roughly 3.4× below the
+  ~242 KB the committed `run-008`/`run-009` observer CSVs carry, and the matrix
+  rows record no cloud size at all. That corroboration is therefore not at cell
+  B's measured message size, and on its own it cannot close a SIZE-dependent
+  mechanism.
 - FOR it: the loss is on the observer's subscription while the publisher's own
   count is complete, the two cells' observers differ exactly in the transport
   this cell just showed to be size-sensitive, and 242 KB is still far above any
   single-datagram threshold — roughly 170 UDP fragments per sample against
   ~640 here.
-- NOT KNOWN, and not to be assumed: whether Autoware's own subscription in
-  cell B lost the same clouds. If it did not, the loss is instrument-only; if
-  it did, it is not. Nothing in the committed data was checked for this.
+- STILL OPEN, and narrower than this document previously claimed. This bullet
+  used to read: "NOT KNOWN, and not to be assumed: whether Autoware's own
+  subscription in cell B lost the same clouds. If it did not, the loss is
+  instrument-only; if it did, it is not. Nothing in the committed data was
+  checked for this." **It had been checked** — by the `run-010` in-container
+  measurement above, which sits eight lines below a block this document already
+  cites. What genuinely remains open is the PER-MESSAGE question on the two
+  runs the loss rates come from: `run-010` is a different run and a RATE
+  comparison, so it constrains the hypothesis without closing it. Closing it
+  means the registered reconciliation (`analysis/publisher_counts.py` +
+  `cadence.reconcile_drops`) run on `run-008`/`run-009` themselves, per topic.
+  Their own `published_time.csv` cannot substitute: each holds only
+  `/control/command/control_cmd/debug/published_time` rows (980 on `run-008`,
+  18 on `run-009`) and no LiDAR-stage PublishedTime, so nothing in those two
+  run directories records what Autoware's LiDAR subscription received.
+
+**Weighed, not inverted: DISFAVOURED WITH REASON.** Two independent lines — a
+second subscriber losing alike on `run-010`, and the CPU-starvation attribution
+the transport matrix forced — point away from the instrument-only reading, and
+neither is a per-message test on `run-008`/`run-009`. The hypothesis stays in
+the record, marked disfavoured: not deleted, and not asserted refuted.
+
+**OPEN INCONSISTENCY IN THE RECORD, named rather than reconciled: ~460 KB
+against ~242 KB.** `benchmarks/README.md:639` (and `:2104`, `:2121`) describes
+cell B's clouds as **~460 KB**. Measured here from the committed evidence, the
+same topic in the same runs is **~242 KB**: mean `size_bytes` over
+`/sensing/lidar/top/pointcloud_raw_ex` rows is 241 754 B (`run-008`, 699 rows),
+241 918 B (`run-009`, 662), 241 861 B (`run-010`, 659), 241 782 B (`run-011`,
+626) and 241 859 B (`run-012`, 699). Those two cannot both be measurements of
+the same thing. The ratio is ~1.9 — the order of a `point_step` 16-vs-32
+difference, i.e. a doubled per-point payload against unchanged message overhead
+— which is the SHAPE of the gap and not a diagnosis of it.
+`benchmarks/README.md` is frozen and its figure is recorded as a
+measured/derived value, so it is NOT changed here and NEITHER figure is
+asserted correct. **Task 17b** (cell B binary-vs-pinned-source provenance) is
+where this gets settled. A third figure sits beside them and is noted so a
+reader does not treat it as a tie-breaker: the wire-visibility acceptance check
+at `benchmarks/patches/tier4-native/README.md:476` records 64–76 KB on the same
+topic; whether that is a different sensor configuration or a third reading of
+this one is not stated there.
 
 **What would settle it, cheapest first. NOT RUN — scheduling is the owner's.**
+Revised 2026-07-31: the list used to open at item 2 below, and it had missed
+that the record ALREADY holds a cheaper discriminator than either of them.
 
-1. **Zero new runs.** Cell B's committed `observer.csv` files already contain
+1. **Already paid — zero runs and zero analysis.** The `run-010` in-container
+   measurement (`benchmarks/README.md:2086-2092`, and the reading drawn from it
+   at `:634-639`) is exactly the discriminator this section was asking for:
+   Autoware's own subscription, on cell B's own transport, in its own
+   container. It answers the question by RATE on ONE run, which is why the
+   items below are still worth running — but it is already in the record and
+   costs nothing to consult, so nothing should be scheduled without reading it
+   first.
+2. **Zero new runs.** Cell B's committed `observer.csv` files already contain
    SMALL topics recorded over the same transport in the same runs —
    `run-008` holds 1704 `/localization/kinematic_state` rows, 110
    `/localization/pose_estimator/pose_with_covariance` and 1011
@@ -212,18 +300,22 @@ about the recorder's transport rather than about the tier4-native approach.
    run here. If the small topics reconcile to ~0 loss while only the 242 KB
    PointCloud2 loses, size-dependent fragmentation is implicated; if every
    topic loses alike, it is refuted and the cause is elsewhere.
-2. **One CAL-rmw round at cell B's size**, 2 runs, ~3 minutes:
+3. **One CAL-rmw round at cell B's size**, 2 runs, ~3 minutes:
    `BENCH_PUB_POINTS=7558` (7558 × 32 B = 241 856 B, 0.008% above cell B's
    measured mean of 241 836 B across `run-008`/`run-009`) on `cyclonedds` and
-   on `fastdds-udp`. This measures the
-   transport directly at the size in question. It must be filed as a labelled
-   probe, never as duel-feeding data, and it does NOT invalidate
-   `cells.yaml:525`'s `lidar_expected_hz: 10.0` binding, whose own comment
-   scopes that hazard to `BENCH_PUB_RATE_HZ` — which such a run must leave
-   alone.
+   on `fastdds-udp`. This measures the transport directly at the size in
+   question. It is the most nearly redundant of the three: Task 9's matrix rows
+   already measure ~10 Hz on this transport
+   (`benchmarks/patches/tier4-native/README.md:342,344,349`), and what a
+   CAL-rmw round adds over them is a RECORDED cloud size at cell B's value,
+   which those rows do not carry. It must be filed as a labelled probe, never
+   as duel-feeding data, and it does NOT invalidate `cells.yaml:525`'s
+   `lidar_expected_hz: 10.0` binding, whose own comment scopes that hazard to
+   `BENCH_PUB_RATE_HZ` — which such a run must leave alone.
 
-Neither was run, and nothing in cell B's data, `config/observer_topics/` or any
-cell's transport configuration was touched by this task.
+Neither of the two runnable items was run, and nothing in cell B's data,
+`config/observer_topics/` or any cell's transport configuration was touched by
+this task.
 
 ### Consequence for the pre-registered synthetic size
 
