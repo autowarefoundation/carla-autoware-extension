@@ -341,6 +341,23 @@ at `benchmarks/patches/tier4-native/README.md:476` records 64–76 KB on the sam
 topic; whether that is a different sensor configuration or a third reading of
 this one is not stated there.
 
+**SETTLED 2026-07-30 by Task 17b — ~242 KB is correct.** Added, not rewritten:
+everything above stays as it was registered. `benchmarks/results/B/PROVENANCE.md`
+§4 carries the evidence; in short, cell B's wire `point_step` is **32**, not 16,
+so the ~460 KB figure is a **derivation** — the frozen document's own nominal
+`288000 * 0.1 = 28800` points/message (`README.md:3920-3921`, quoting
+`cells/tier4_autoware.sh:78-79`) multiplied by the refuted 16 B stride, which is
+`460 800 B`. It is wrong in two directions at once — rays cast rather than
+returns received, and half the true stride — and the ~1.9× ratio this section
+noticed is the product of those two errors, not the signature of a `point_step`
+difference. `benchmarks/README.md:3928` already carries the measured
+**241 813 B/msg** for the same topic and runs. The third figure at
+`patches/tier4-native/README.md:476` remains **not reconcilable at any stride**
+and is therefore a different sensor configuration; that much is now stated,
+which is more than "not stated there", but which configuration is still not
+recorded. Item 3 of the list below already assumed the 32 B stride
+(`BENCH_PUB_POINTS=7558`, "7558 × 32 B"), so its arithmetic needs no revision.
+
 **What would settle it, cheapest first. NOT RUN — scheduling is the owner's.**
 Revised 2026-07-31: the list used to open at item 2 below, and it had missed
 that the record ALREADY holds a cheaper discriminator than either of them.
