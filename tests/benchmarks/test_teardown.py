@@ -1,0 +1,655 @@
+"""Behavioural pins for benchmarks/scripts/teardown.sh's tier4-native wiring
+into scripts/e2e/stop_launch_tree.sh (Task 17c, D1-D3).
+
+Task 16 built scripts/e2e/stop_launch_tree.sh -- a pidfile-driven,
+signal-ladder recorded-tree teardown -- for the extension family only, and
+tests/e2e/test_stop_launch_tree.py pins that script itself. What was UNPINNED
+was the wiring: benchmarks/scripts/teardown.sh's tier4-native case branch
+never called it and never touched either of cells/tier4_autoware.sh's
+container-side pid files, so an interrupted cell-B run left its whole
+`ros2 launch` tree behind with nothing holding a pid for it and nothing
+reporting that it did -- the same defect Task 15 measured on the extension
+family (169 nodes, 74 processes, loadavg 42, ten minutes after a "successful"
+teardown).
+
+This campaign has a binding rule that a substring/text-scan assertion is NOT
+a pin (six prior violations, most recently Task 17b finding F5: two wiring
+assertions that both still passed with the call site commented out). Every
+test below that certifies a safety property therefore runs the REAL
+benchmarks/scripts/teardown.sh as a subprocess, with a stand-in `docker`
+placed on PATH ahead of any real one, and checks an effect that can only
+happen if the wiring actually fired -- a real background process dying, a
+real file appearing with real content, a real ordering between two real
+events -- not a string appearing in source text.
+
+WHAT IS FAITHFUL about the `docker` stand-in below, and what is not:
+
+* Faithful -- for the exact `docker exec -i <container> bash -s --
+  <pidfiles>` shape stop_tier4_launch_tree uses, it genuinely execs a REAL
+  `bash -s --`, fed the REAL piped-in script content, against the REAL
+  pidfile paths teardown.sh passes (remapped from their hardcoded
+  /tmp/tier4-*.pid form into a per-test sandbox directory so no test ever
+  touches those literal host paths). scripts/e2e/stop_launch_tree.sh's own
+  signal ladder therefore runs for real here, against a real background
+  process standing in for the container-side `ros2 launch` tree root.
+* Faithful -- every OTHER docker subcommand teardown.sh can reach on this
+  path (the bare `docker exec ... pkill ...` GT-collector kill, the
+  `bash -lc` injector kill, `docker inspect`, `docker cp`, `docker rm`) is
+  logged but never actually run, so a test can assert on call order and
+  arguments without those unrelated steps touching the host.
+* NOT faithful -- there is no real container, no real `ros2 launch` tree,
+  and the stand-in process is a bare Python loop, not a composable-node
+  container with DDS and /clock. These tests pin the WIRING (arguments,
+  ordering, non-fatality, report retention); they do not show a real
+  Autoware stack tears down cleanly under this path -- that is
+  scripts/e2e/test_stop_launch_tree.py's honest limit too, and Task 18 is
+  the first task allowed to check it live.
+"""
+
+from __future__ import annotations
+
+import os
+import stat
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[2]
+TEARDOWN = REPO / "benchmarks" / "scripts" / "teardown.sh"
+STOP_SCRIPT = REPO / "scripts" / "e2e" / "stop_launch_tree.sh"
+TIER4_CELL = REPO / "benchmarks" / "cells" / "tier4_autoware.sh"
+
+# Ladder waits compressed the same way tests/e2e/test_stop_launch_tree.py
+# does, so a rung that is not skipped still costs a couple of seconds, not
+# tens. The stand-in "tree" below dies on the first SIGINT regardless (a bare
+# `python -c` loop has no handler installed, so the default action applies),
+# but this bounds worst case if that ever stops being true.
+FAST_LADDER = {
+    "STOP_INT_WAIT_S": "1",
+    "STOP_REINT_WAIT_S": "1",
+    "STOP_TERM_WAIT_S": "1",
+    "STOP_KILL_WAIT_S": "2",
+    "STOP_POLL_S": "0.05",
+}
+
+# Stand-in for the container-side `ros2 launch` tree root / concat relay:
+# no signal handler installed, so SIGINT ends it immediately -- this pins the
+# WIRING, not the ladder (which already has its own pins).
+STUB_SRC = "import time\nwhile True: time.sleep(0.05)\n"
+
+# The `docker` stand-in placed on PATH ahead of any real `docker` binary.
+# See the module docstring's "WHAT IS FAITHFUL" section for what it does and
+# does not actually execute.
+FAKE_DOCKER = """#!/usr/bin/env bash
+set -u
+
+log_call() {
+  # NUL-separated, not newline-separated: the injector-kill exec (teardown.sh)
+  # passes a multi-line `bash -lc SCRIPT` argument, so a newline cannot be the
+  # record framing without corrupting it. NUL cannot appear inside an argv
+  # element (argv is NUL-terminated C strings), so it is the only safe
+  # delimiter here.
+  {
+    printf '%s\\0' "$@"
+    printf '===END===\\0'
+  } >>"${FAKE_DOCKER_LOG:?FAKE_DOCKER_LOG not set}"
+}
+log_call "$@"
+
+sub="${1:-}"
+case "$sub" in
+  inspect)
+    name="${*: -1}"
+    if [ -n "${FAKE_DOCKER_EXISTS:-}" ] && [ -f "${FAKE_DOCKER_EXISTS}" ] &&
+      grep -qxF "$name" "${FAKE_DOCKER_EXISTS}"; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  exec)
+    shift
+    [ "${1:-}" = "-i" ] && shift
+    shift # drop the container name -- this stand-in only ever serves one
+    if [ "${1:-}" = "bash" ] && [ "${2:-}" = "-s" ] && [ "${3:-}" = "--" ]; then
+      shift 3
+      cmd=(bash -s --)
+      for a in "$@"; do
+        case "$a" in
+          /tmp/tier4-*) cmd+=("${FAKE_DOCKER_SANDBOX:?FAKE_DOCKER_SANDBOX unset}$a") ;;
+          *) cmd+=("$a") ;;
+        esac
+      done
+      # Records whether FAKE_DEMO_PID was still alive the instant this exec
+      # fired -- the empirical check behind the D1 ordering-decision-1 test.
+      if [ -n "${FAKE_ORDER_MARKER:-}" ]; then
+        if [ -n "${FAKE_DEMO_PID:-}" ] && kill -0 "${FAKE_DEMO_PID}" 2>/dev/null; then
+          echo alive >"${FAKE_ORDER_MARKER}"
+        else
+          echo dead >"${FAKE_ORDER_MARKER}"
+        fi
+      fi
+      if [ -n "${FAKE_DOCKER_EXEC_RC:-}" ] && [ "${FAKE_DOCKER_EXEC_RC}" != "0" ]; then
+        exit "${FAKE_DOCKER_EXEC_RC}"
+      fi
+      if [ -n "${FAKE_DOCKER_STDIN_CAPTURE:-}" ]; then
+        cat >"${FAKE_DOCKER_STDIN_CAPTURE}"
+        exec "${cmd[@]}" <"${FAKE_DOCKER_STDIN_CAPTURE}"
+      else
+        exec "${cmd[@]}"
+      fi
+    else
+      # Any OTHER exec shape (the GT-collector `pkill`, the injector's
+      # `bash -lc`) does not need to actually run for these tests, and must
+      # not touch the real host's /tmp.
+      exit 0
+    fi
+    ;;
+  cp)
+    exit "${FAKE_DOCKER_CP_RC:-0}"
+    ;;
+  rm)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"""
+
+
+def _wait_until(predicate, timeout_s: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _alive(pid: int) -> bool:
+    try:
+        stat_line = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    state = stat_line.rsplit(") ", 1)[1].split()[0]
+    return state != "Z"
+
+
+def _start_stub(tmp_path: Path, name: str) -> subprocess.Popen:
+    return subprocess.Popen([sys.executable, "-c", STUB_SRC])
+
+
+def parse_calls(log_path: Path) -> list[list[str]]:
+    """Every `docker` invocation the stand-in received, in call order, as its
+    raw argv list. NUL-separated, with a NUL-terminated `===END===` sentinel
+    closing each call: the injector-kill exec teardown.sh issues passes a
+    multi-line `bash -lc SCRIPT` argument, so newlines cannot be the framing,
+    and NUL cannot occur inside an argv element (argv is NUL-terminated C
+    strings), which is what makes it safe against any argument's own
+    content."""
+    if not log_path.exists():
+        return []
+    tokens = [t for t in log_path.read_bytes().split(b"\0") if t != b""]
+    calls: list[list[str]] = []
+    current: list[str] = []
+    for raw in tokens:
+        tok = raw.decode()
+        if tok == "===END===":
+            calls.append(current)
+            current = []
+        else:
+            current.append(tok)
+    assert not current, f"log ended mid-call (no closing ===END===): {current}"
+    return calls
+
+
+@pytest.fixture
+def fake_docker(tmp_path):
+    """Installs the `docker` stand-in on PATH and returns a dict of the
+    control knobs (env var names) and a `calls()` accessor. Every test opts
+    into the specific behaviour it needs by setting env vars in the dict it
+    passes to `run_teardown`."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    docker_path = bindir / "docker"
+    docker_path.write_text(FAKE_DOCKER)
+    docker_path.chmod(docker_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    (sandbox / "tmp").mkdir()
+    log_path = tmp_path / "docker-calls.log"
+    exists_path = tmp_path / "docker-exists.txt"
+
+    env = {
+        **os.environ,
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(log_path),
+        "FAKE_DOCKER_SANDBOX": str(sandbox),
+        "FAKE_DOCKER_EXISTS": str(exists_path),
+    }
+
+    class Handle:
+        def __init__(self):
+            self.env = env
+            self.sandbox = sandbox
+            self.log_path = log_path
+
+        def set_existing(self, *names: str) -> None:
+            exists_path.write_text("\n".join(names) + "\n")
+
+        def calls(self) -> list[list[str]]:
+            return parse_calls(self.log_path)
+
+        def sandboxed(self, tmp_pidfile: str) -> Path:
+            """Where a literal /tmp/tier4-*.pid argument lands once the
+            stand-in remaps it -- Path(sandbox + tmp_pidfile)."""
+            return Path(str(self.sandbox) + tmp_pidfile)
+
+    return Handle()
+
+
+def _write_launch_env(run_dir: Path, **kv) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    lines = [f'{key}="{value}"' for key, value in kv.items()]
+    (run_dir / "launch.env").write_text("\n".join(lines) + "\n")
+
+
+def run_teardown(run_dir: Path, env: dict) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(TEARDOWN), str(run_dir)],
+        capture_output=True,
+        text=True,
+        env={**env, **FAST_LADDER},
+        timeout=60,
+        check=False,
+    )
+
+
+CONTAINER = "fake-aw-container"
+
+
+def _base_env(run_dir: Path, demo_pid_file: Path | None = None) -> dict:
+    kv = {"APPROACH": "tier4-native", "AW_CONTAINER": CONTAINER, "AW_COMPOSE": ""}
+    if demo_pid_file is not None:
+        kv["TIER4_DEMO_PID_FILE"] = str(demo_pid_file)
+    _write_launch_env(run_dir, **kv)
+    return kv
+
+
+# --- D1: the happy path really runs stop_launch_tree.sh -------------------
+
+
+def test_tier4_native_teardown_really_stops_the_recorded_tree(tmp_path, fake_docker):
+    """The real-code-path pin for D1's delivery mechanism: teardown.sh's
+    tier4-native branch invokes `docker exec -i <container> bash -s --
+    <relay-pidfile> <autoware-pidfile>`, piping in a script that -- once
+    run for real, here, against real stand-in processes -- actually stops
+    them. A text-scan could pass with the call site commented out (Task 17b
+    finding F5); this cannot, because nothing would die."""
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+
+    relay_pidfile = "/tmp/tier4-concat-relay.pid"
+    aw_pidfile = "/tmp/tier4-autoware.pid"
+    relay_proc = _start_stub(tmp_path, "relay")
+    aw_proc = _start_stub(tmp_path, "autoware")
+    try:
+        sandboxed_relay = fake_docker.sandboxed(relay_pidfile)
+        sandboxed_aw = fake_docker.sandboxed(aw_pidfile)
+        sandboxed_relay.write_text(str(relay_proc.pid))
+        sandboxed_aw.write_text(str(aw_proc.pid))
+        stdin_capture = tmp_path / "stdin-capture.sh"
+        fake_docker.env["FAKE_DOCKER_STDIN_CAPTURE"] = str(stdin_capture)
+
+        _base_env(run_dir)
+        result = run_teardown(run_dir, fake_docker.env)
+
+        assert result.returncode == 0, result.stderr
+        # The exact argv teardown.sh must pass -- the literal container-side
+        # paths D2/the brief require, not whatever this test finds convenient.
+        calls = fake_docker.calls()
+        exec_calls = [c for c in calls if c[:1] == ["exec"]]
+        tree_calls = [c for c in exec_calls if "bash" in c and "-s" in c]
+        assert len(tree_calls) == 1, calls
+        assert tree_calls[0] == [
+            "exec",
+            "-i",
+            CONTAINER,
+            "bash",
+            "-s",
+            "--",
+            relay_pidfile,
+            aw_pidfile,
+        ]
+        # The piped script is byte-for-byte the REAL stop_launch_tree.sh --
+        # not a copy, not a paraphrase.
+        assert stdin_capture.read_bytes() == STOP_SCRIPT.read_bytes()
+        # And it really ran: both stand-in processes are gone.
+        assert _wait_until(lambda: not _alive(relay_proc.pid))
+        assert _wait_until(lambda: not _alive(aw_proc.pid))
+        assert "2 pid file(s) checked" in result.stdout, result.stdout
+        assert "0 survivor(s)" in result.stdout, result.stdout
+    finally:
+        for p in (relay_proc, aw_proc):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+
+# --- D1 ordering decision 1: tree stop before the demo ---------------------
+
+
+def test_tree_stop_runs_before_the_demo_is_stopped(tmp_path, fake_docker):
+    """D1 ordering decision 1's real-code-path pin: at the moment the
+    recorded-tree stop fires, the demo pid recorded in TIER4_DEMO_PID_FILE
+    must still be alive. If the case branch is reordered so the demo is
+    stopped first, this fails because the demo is verifiably dead by then --
+    not because a comment says so."""
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+    demo_proc = _start_stub(tmp_path, "demo")
+    aw_proc = _start_stub(tmp_path, "autoware")
+    try:
+        demo_pidfile = tmp_path / "demo.pid"
+        demo_pidfile.write_text(str(demo_proc.pid))
+        fake_docker.sandboxed("/tmp/tier4-autoware.pid").write_text(str(aw_proc.pid))
+        marker = tmp_path / "order-marker.txt"
+        fake_docker.env["FAKE_ORDER_MARKER"] = str(marker)
+        fake_docker.env["FAKE_DEMO_PID"] = str(demo_proc.pid)
+
+        _base_env(run_dir, demo_pid_file=demo_pidfile)
+        result = run_teardown(run_dir, fake_docker.env)
+
+        assert result.returncode == 0, result.stderr
+        assert marker.exists(), "the tree-stop exec never fired"
+        assert marker.read_text().strip() == "alive", (
+            "the demo was already stopped by the time the tree stop ran "
+            "-- D1 ordering decision 1 is violated"
+        )
+        # stop_pidfile still ran afterwards -- teardown is otherwise unchanged.
+        assert _wait_until(lambda: not _alive(demo_proc.pid))
+        assert not demo_pidfile.exists()
+    finally:
+        for p in (demo_proc, aw_proc):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+
+# --- D1 ordering decision 2: tree stop before the log copy -----------------
+
+
+def test_tree_stop_runs_before_the_log_copy(tmp_path, fake_docker):
+    """D1 ordering decision 2's pin: the `docker exec ... bash -s --` call
+    must precede any `docker cp` call in teardown's own real execution
+    order, not just in source order -- read off the stand-in's call log,
+    which only gains an entry when teardown.sh actually reaches that
+    statement."""
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+    aw_proc = _start_stub(tmp_path, "autoware")
+    try:
+        fake_docker.sandboxed("/tmp/tier4-autoware.pid").write_text(str(aw_proc.pid))
+        fake_docker.sandboxed("/tmp/tier4-concat-relay.pid").write_text(str(aw_proc.pid))
+
+        _base_env(run_dir)
+        result = run_teardown(run_dir, fake_docker.env)
+
+        assert result.returncode == 0, result.stderr
+        calls = fake_docker.calls()
+        tree_idx = next(
+            i for i, c in enumerate(calls) if c[:1] == ["exec"] and "bash" in c and "-s" in c
+        )
+        cp_indices = [i for i, c in enumerate(calls) if c[:1] == ["cp"]]
+        assert cp_indices, "docker cp was never called -- nothing to order against"
+        assert tree_idx < min(cp_indices), calls
+    finally:
+        if aw_proc.poll() is None:
+            aw_proc.kill()
+        aw_proc.wait(timeout=5)
+
+
+# --- D3: the survivor report reaches the run directory ---------------------
+
+
+def test_survivor_report_is_retained_in_the_run_directory(tmp_path, fake_docker):
+    """D3's real-code-path pin: stop_launch_tree.sh's own summary line --
+    the whole point of D1 on an interrupted run -- must land in a file
+    under $RUN_DIR, not just in this process's own stdout. Read off the
+    REAL report the real script printed, not a hardcoded string."""
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+    aw_proc = _start_stub(tmp_path, "autoware")
+    try:
+        fake_docker.sandboxed("/tmp/tier4-autoware.pid").write_text(str(aw_proc.pid))
+        fake_docker.sandboxed("/tmp/tier4-concat-relay.pid").write_text(str(aw_proc.pid))
+
+        _base_env(run_dir)
+        result = run_teardown(run_dir, fake_docker.env)
+
+        assert result.returncode == 0, result.stderr
+        log_file = run_dir / "tier4-stop-launch-tree.log"
+        assert log_file.exists(), "no per-run retention of the tree-stop report"
+        report = log_file.read_text()
+        assert "autoware launch + concat relay stopped" in report
+        assert "survivor(s)" in report
+        # Teed, not redirected only into the file: this process's own stdout
+        # (what an interactive run.sh invocation shows) still carries it too.
+        assert "autoware launch + concat relay stopped" in result.stdout
+    finally:
+        if aw_proc.poll() is None:
+            aw_proc.kill()
+        aw_proc.wait(timeout=5)
+
+
+# --- non-fatal on a missing container, missing script, failed exec --------
+
+
+def test_missing_container_leaves_teardown_otherwise_unchanged(tmp_path, fake_docker):
+    """No container registered as existing -- `docker inspect` reports it
+    absent, exactly as it would for a run whose launcher died before the
+    container was even created. The tree-stop exec must never fire, and
+    everything else in teardown must still run."""
+    run_dir = tmp_path / "run"
+    # Deliberately do not call fake_docker.set_existing(): inspect -> 1.
+    demo_proc = _start_stub(tmp_path, "demo")
+    try:
+        demo_pidfile = tmp_path / "demo.pid"
+        demo_pidfile.write_text(str(demo_proc.pid))
+
+        _base_env(run_dir, demo_pid_file=demo_pidfile)
+        result = run_teardown(run_dir, fake_docker.env)
+
+        assert result.returncode == 0, result.stderr
+        calls = fake_docker.calls()
+        assert not [c for c in calls if c[:1] == ["exec"] and "bash" in c and "-s" in c]
+        assert _wait_until(lambda: not _alive(demo_proc.pid)), (
+            "a missing container blocked the rest of teardown"
+        )
+    finally:
+        if demo_proc.poll() is None:
+            demo_proc.kill()
+        demo_proc.wait(timeout=5)
+
+
+def test_missing_stop_script_leaves_teardown_otherwise_unchanged(tmp_path, fake_docker):
+    """A real missing-file condition (not simulated): a from-scratch repo
+    copy that has benchmarks/scripts/teardown.sh but genuinely lacks
+    scripts/e2e/stop_launch_tree.sh at the path $REPO/scripts/e2e/ resolves
+    to for that copy. Exercises teardown's own `$REPO` derivation, which is
+    relative to teardown.sh's OWN location (Task 17c, D1)."""
+    repo_copy = tmp_path / "repo_copy"
+    (repo_copy / "benchmarks" / "scripts").mkdir(parents=True)
+    teardown_copy = repo_copy / "benchmarks" / "scripts" / "teardown.sh"
+    teardown_copy.write_text(TEARDOWN.read_text())
+    teardown_copy.chmod(teardown_copy.stat().st_mode | stat.S_IEXEC)
+    # scripts/e2e/stop_launch_tree.sh is deliberately NOT created here.
+
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+    demo_proc = _start_stub(tmp_path, "demo")
+    try:
+        demo_pidfile = tmp_path / "demo.pid"
+        demo_pidfile.write_text(str(demo_proc.pid))
+        _base_env(run_dir, demo_pid_file=demo_pidfile)
+
+        result = subprocess.run(
+            ["bash", str(teardown_copy), str(run_dir)],
+            capture_output=True,
+            text=True,
+            env={**fake_docker.env, **FAST_LADDER},
+            timeout=60,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "missing" in result.stdout, result.stdout
+        calls = fake_docker.calls()
+        assert not [c for c in calls if c[:1] == ["exec"] and "bash" in c and "-s" in c]
+        assert _wait_until(lambda: not _alive(demo_proc.pid)), (
+            "a missing stop_launch_tree.sh blocked the rest of teardown"
+        )
+    finally:
+        if demo_proc.poll() is None:
+            demo_proc.kill()
+        demo_proc.wait(timeout=5)
+
+
+def test_failed_docker_exec_leaves_teardown_otherwise_unchanged(tmp_path, fake_docker):
+    """`docker exec` itself failing (a daemon hiccup, a container that died
+    between the inspect and the exec) must not block the rest of teardown,
+    and must say so rather than pretend nothing happened."""
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+    fake_docker.env["FAKE_DOCKER_EXEC_RC"] = "17"
+    demo_proc = _start_stub(tmp_path, "demo")
+    try:
+        demo_pidfile = tmp_path / "demo.pid"
+        demo_pidfile.write_text(str(demo_proc.pid))
+        _base_env(run_dir, demo_pid_file=demo_pidfile)
+
+        result = run_teardown(run_dir, fake_docker.env)
+
+        assert result.returncode == 0, result.stderr
+        assert "exited 17" in result.stdout, result.stdout
+        assert _wait_until(lambda: not _alive(demo_proc.pid)), (
+            "a failed docker exec blocked the rest of teardown"
+        )
+    finally:
+        if demo_proc.poll() is None:
+            demo_proc.kill()
+        demo_proc.wait(timeout=5)
+
+
+# --- D2: the .cmd sidecar cells/tier4_autoware.sh writes -------------------
+
+
+def _extract_sidecar_snippet(pidfile_var: str) -> str:
+    """Pulls the two-line sidecar-write snippet straight out of
+    benchmarks/cells/tier4_autoware.sh by REGEX, not by retyping it, so a
+    change to the real snippet is what this test runs -- not this test's own
+    memory of it. `pidfile_var` is AW_PIDFILE or RELAY_PIDFILE."""
+    import re
+
+    text = TIER4_CELL.read_text()
+    pattern = re.compile(
+        r"echo \\\$! >\$" + pidfile_var + r"\n(  tr '\\0' ' '.*\|\| true)"
+    )
+    m = pattern.search(text)
+    assert m, f"sidecar-write line for {pidfile_var} not found in {TIER4_CELL}"
+    return m.group(1)
+
+
+def _run_sidecar_snippet(snippet: str, pidfile_var: str, pidfile: Path):
+    """Runs the REAL snippet through the same TWO bash parses it gets in
+    production, instead of hand-simulating the escaping rules (which is what
+    broke this test the first time: a single `bash -c` chokes on the
+    snippet's own `\\$(cat ...)` with a syntax error, because that escape is
+    meant for a DIFFERENT, earlier parse).
+
+    In the real cell (tier4_autoware.sh:395-398's own comment), the snippet
+    is the tail of a HOST-side double-quoted string handed to `cx`: the host
+    shell expands every plain $VAR (so `$AW_PIDFILE` becomes the real path)
+    and un-escapes `\\$(` to a literal, NOT-yet-executed `$(`, before the
+    resulting string is piped into the container's own `bash -lc`, which
+    does the second parse and actually runs the substitution.
+
+    Pass 1 (below): an UNQUOTED heredoc reproduces that host-side
+    double-quote expansion for real, in real bash, rather than by hand:
+    unquoted heredocs expand $VAR/command-substitution exactly like double
+    quotes, and treat backslash as special ONLY before $, `, \\, or a
+    line-continuing newline -- so `'\\0'` (no `$`) passes through
+    byte-for-byte while `\\$(cat $AW_PIDFILE)` becomes the literal string
+    `$(cat /real/path)`, identical to what the real host-side `cx "..."`
+    call produces before the container ever sees it.
+
+    Pass 2: a second, fresh `bash -c` re-parses that expanded string for
+    real, so the now-unescaped `$(cat /real/path)` finally executes as
+    command substitution -- exactly the container-side parse `cx` triggers.
+    """
+    host_script = (
+        f'{pidfile_var}="{pidfile}"\n'
+        "cat <<SIDECAR_SNIPPET_EOF\n"
+        f"{snippet}\n"
+        "SIDECAR_SNIPPET_EOF\n"
+    )
+    host_pass = subprocess.run(
+        ["bash", "-c", host_script], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert host_pass.returncode == 0, host_pass.stderr
+    return subprocess.run(
+        ["bash", "-c", host_pass.stdout],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("pidfile_var", ["AW_PIDFILE", "RELAY_PIDFILE"])
+def test_tier4_autoware_sh_sidecar_matches_a_real_process_cmdline(tmp_path, pidfile_var):
+    """D2's real-code-path pin: extract the ACTUAL sidecar-write line for
+    AW_PIDFILE/RELAY_PIDFILE out of cells/tier4_autoware.sh, run it for real
+    against a real background process, and check the sidecar it produces is
+    byte-for-byte that process's own /proc/<pid>/cmdline (NUL -> space) --
+    exactly what stop_launch_tree.sh's pid-reuse guard compares against."""
+    snippet = _extract_sidecar_snippet(pidfile_var)
+
+    proc = _start_stub(tmp_path, "stub")
+    try:
+        pidfile = tmp_path / f"{pidfile_var}.pid"
+        pidfile.write_text(str(proc.pid))
+        result = _run_sidecar_snippet(snippet, pidfile_var, pidfile)
+        assert result.returncode == 0, result.stderr
+
+        sidecar = Path(f"{pidfile}.cmd")
+        assert sidecar.exists(), "the snippet did not write the sidecar at all"
+        expected = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        assert sidecar.read_text() == expected
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+
+
+def test_tier4_autoware_sh_sidecar_write_is_best_effort(tmp_path):
+    """The sidecar write must never be allowed to fail the launch (brief D2:
+    "never allowed to fail the launch"). Run the REAL AW_PIDFILE snippet
+    against a pid whose /proc/<pid>/cmdline cannot be read (the process is
+    already gone), and check the snippet's own exit status is still 0 --
+    the `|| true` in the real text is what this pins, not a copy of it."""
+    snippet = _extract_sidecar_snippet("AW_PIDFILE")
+    gone_pid = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone_pid.wait(timeout=5)
+    assert not Path(f"/proc/{gone_pid.pid}").exists()
+
+    pidfile = tmp_path / "gone.pid"
+    pidfile.write_text(str(gone_pid.pid))
+    result = _run_sidecar_snippet(snippet, "AW_PIDFILE", pidfile)
+
+    assert result.returncode == 0, result.stderr
+    assert not Path(f"{pidfile}.cmd").exists() or Path(f"{pidfile}.cmd").read_text() == ""
