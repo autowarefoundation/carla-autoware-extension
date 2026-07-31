@@ -124,10 +124,10 @@
 # cell anyway, deliberately, so an un-drop needs nothing from this script.
 # The tier4-native family did not come through here at all before Task 17c;
 # it does now, via a second caller: benchmarks/scripts/teardown.sh's
-# `stop_tier4_launch_tree` (teardown.sh:114-140), called from the
-# `tier4-native` case branch (teardown.sh:220-249), pipes this SAME script
+# `stop_tier4_launch_tree` (teardown.sh:115-176), called from the
+# `tier4-native` case branch (teardown.sh:256-295), pipes this SAME script
 # into that family's container the identical way (`docker exec -i
-# <container> bash -s -- <pidfiles>`, teardown.sh:133). Cell B still starts
+# <container> bash -s -- <pidfiles>`, teardown.sh:169). Cell B still starts
 # its own `ros2 launch` inside its own container and records the pid in its
 # own container-side pid file (benchmarks/cells/tier4_autoware.sh:399-409;
 # AW_PIDFILE=/tmp/tier4-autoware.pid at tier4_autoware.sh:41); as of Task 17c
@@ -140,7 +140,7 @@
 # WHAT THAT DOES AND DOES NOT MEAN, because the difference matters and the
 # stronger claim does not survive checking. On the HAPPY path cell B's stack
 # is cleared by removing its container outright: cells/tier4-native.sh:144
-# sets AW_COMPOSE="", so teardown.sh:311-316 takes the `docker rm -f
+# sets AW_COMPOSE="", so teardown.sh:357-361 takes the `docker rm -f
 # "$AW_CONTAINER"` branch, and the launcher re-creates the container fresh
 # next run (tier4_autoware.sh:323,326). So the measured accumulation defect
 # -- survivors piling up inside a container that OUTLIVES the launch, which
@@ -151,7 +151,7 @@
 # interrupted before teardown reached that step left the whole tree
 # surviving with nothing holding a pid for it. Task 17c closed exactly that
 # gap: `stop_tier4_launch_tree` now runs FIRST in the `tier4-native` branch
-# (teardown.sh:241), before the demo/CARLA stop, so an interrupted run gets
+# (teardown.sh:287), before the demo/CARLA stop, so an interrupted run gets
 # the same signal ladder the extension family gets through this script --
 # best-effort and never fatal, same as everywhere else in this file. The
 # KNOWN LIMIT two paragraphs up still applies unchanged, to cell B exactly as
@@ -164,7 +164,7 @@
 # written. Extending the recorded-tree teardown to the B path was sequenced
 # separately from Task 16, to land before Task 18 (the primary duel) so that
 # duel's cell-B runs are torn down the same way its cell-A runs are -- see
-# the two paragraphs above for what changed, and teardown.sh:83-140 for the
+# the two paragraphs above for what changed, and teardown.sh:83-176 for the
 # wiring itself. The python-bridge family is not addressed by this change
 # and remains open.
 #
