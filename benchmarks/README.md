@@ -343,7 +343,9 @@ exists — nothing else — so that is what the rule tests, applied per run:
   `header_stamp_ns` is itself wall time on such a run (the bench publishers
   stamp with wall `now()`), so the metric definitions below read the same way
   with no special case, and `one_hop_wall_ms` reduces to the direct
-  `arrival_system_ns - header_stamp_ns` — `cal_report._one_hop_ms`'s form.
+  `arrival_system_ns - header_stamp_ns` — the form `cal_report.summarize_run`
+  computes at `scripts/cal_report.py:83`, by calling `analysis/latency.py`
+  `segment_sim_ms(header_stamp_ns, arrival_system_ns)`.
 
 **Expected branch per cell, so a surprise is loud.** The calibration-approach
 cells (`cells.yaml` `approach: calibration` — `CAL-rmw` and `CAL-seam`) are
@@ -436,8 +438,10 @@ must not be assumed to be the same number.
 
 Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code path,
 deliberately. On **`CAL-rmw`** the publisher stamps `header.stamp` with wall
-`now()` and nothing publishes `/clock`, so `cal_report._one_hop_ms` takes the
-direct `arrival_system_ns - header_stamp_ns` and no fit is possible. Both
+`now()` and nothing publishes `/clock`, so `cal_report.summarize_run` takes the
+direct `arrival_system_ns - header_stamp_ns` — `scripts/cal_report.py:83`,
+`segment_sim_ms(header_stamp_ns, arrival_system_ns)`, whose percentiles become
+`one_hop_p50_ms` on the next lines — and no fit is possible. Both
 halves are evidenced for that cell and only that cell:
 `benchmarks/observer/src/bench_pub.cpp`'s own first line scopes itself to
 CAL-rmw and states "stamp is system now() so the CAL analysis
