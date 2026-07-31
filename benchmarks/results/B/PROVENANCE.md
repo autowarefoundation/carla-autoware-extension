@@ -35,7 +35,7 @@ through `benchmarks/cells/extension.sh:192`. Before Task 17b, neither
 `benchmarks/cells/tier4-native.sh` nor `benchmarks/cells/tier4_autoware.sh`
 called it or anything like it: the B family booted the shared engine's
 `UnrealEditor` against `$BENCH_CARLA_TREE/.../CarlaUnreal.uproject`
-(`benchmarks/cells/tier4-native.sh:27-28`, boot at `:167`) with no artifact
+(`benchmarks/cells/tier4-native.sh:27-28`, boot at `:175-177`) with no artifact
 check.
 
 What the manifests recorded instead — verified on
@@ -91,9 +91,17 @@ The call site itself, disassembled inside `ProcessDataFromLidar`:
 
 That matches the pinned source's sole `SetDataEx` call site,
 `carla-autoware-native` `LibCarla/source/carla/ros2/ROS2.cpp:986` (signature at
-`:959-967`), which is unconditional on the LiDAR path — and it matches the
-eight-parameter, `channel_count`/`upper_fov`/`lower_fov`-carrying signature that
-only the `SetDataEx` era has.
+`:959-967`), and it matches the eight-parameter,
+`channel_count`/`upper_fov`/`lower_fov`-carrying signature that only the
+`SetDataEx` era has.
+
+That call site is **not** unconditional: it sits inside `if (sensors.first) {`
+at `ROS2.cpp:970`, so it runs only once the LiDAR has a registered publisher.
+The substance is unaffected, because no *other* branch reaches
+`CarlaLidarPublisher` at all — the `SetData` at `:992` is
+`CarlaTransformPublisher`'s, on the TF half of the same function — so
+`SetDataEx` remains the only way a cloud from this sensor reaches the wire, and
+the disassembly above shows that is the entry point the shipped binary calls.
 
 ### 2.2 The artifacts are not stale — measured
 
@@ -109,8 +117,22 @@ Source → build → every run, strictly ordered, with no rebuild between the ru
 (a rebuild would have left an mtime after them). The tier4 tree is at
 `6315b856f8faf2118578322eb20a2b902a45a384`, which matches `benchmarks/pins.yaml`
 `tier4_carla_fork.sha: 6315b856f`, and its working tree carries **exactly** the
-three registered patches and nothing else (`sha256sum` on all three matches
-`patches_sha256`). None of them touches the LiDAR publish path.
+three registered patches and nothing else. None of them touches the LiDAR
+publish path.
+
+The check behind that "exactly" is `git apply --reverse --check <patch>` run in
+the tier4 tree for each of `0001-toolchain-libm.patch`,
+`0002-glibc-compat.patch` and `0003-autoware-demo-params.patch` — all three exit
+0, i.e. each patch's post-image is present in the tree verbatim. `git status
+--porcelain -uall` then lists exactly the four paths those three patches write
+and nothing more: `CMake/Toolchain.cmake`, `LibCarla/CMakeLists.txt` and
+`PythonAPI/examples/autoware_demo.py` modified, plus untracked
+`LibCarla/source/carla/GlibcCompat.c`. `--check` does not write, and the
+porcelain listing was taken after the runs. What this is *not* is
+`patches_sha256`: that key digests the patch **files in this repo**, so it
+detects a change to the registered patch set and says nothing about the tier4
+tree's content — see §6, where the tree-side counterpart is
+`tier4_worktree_content_sha256`.
 
 **The stale-build-artifact hypothesis registered at `benchmarks/README.md:1520`
 is therefore REFUTED**, and it stays in the record with what refuted it: the
@@ -135,9 +157,10 @@ Three properties of that cloud are incompatible with CARLA's publisher:
   (`sensing.lidar.top.crop_box_filter_self`: `is_dense is false`,
   `Frame: 'velodyne_top'`).
 - **`Got: 0` for `row_step`.** The pinned publisher sets `row_step` non-zero on
-  **both** code paths — `CarlaLidarPublisher.cpp:211` (`row_step(width *
-  sizeof(float))`, four-field) and `:312` (`row_step(cloud_width * offset)`,
-  ten-field). Neither can emit `row_step 0`.
+  **both** code paths — in `carla-autoware-native`,
+  `LibCarla/source/carla/ros2/publishers/CarlaLidarPublisher.cpp:211`
+  (`row_step(width * sizeof(float))`, four-field) and `:312`
+  (`row_step(cloud_width * offset)`, ten-field). Neither can emit `row_step 0`.
 - **`width 6197`** against a derived ~7 550 points per CARLA cloud (2.4) — a
   cropped, downstream cloud.
 
@@ -186,20 +209,70 @@ Measured over the committed `observer.csv` rows for
 | **B** | `run-007`…`run-012` | **3 348** | **1** (all ≡ 21)         |
 | **A** | `run-001`, `run-002` | 4 519     | **1** (all ≡ 24)         |
 
-Cell A is the control: its 32-byte layout is source-established
-(`PointCloudFieldsLayout.h:59-70`, ten descriptors; `ExtendedLidarPointStep()`
-returns 32 at `:74`) and it produces exactly the single-class signature. Cell B
-produces it too. Under a 16-byte stride, all 3 348 cell-B clouds would have had
-to carry an **even** point count — checked: the 16-byte reading requires
-even-`N` in 3 348 of 3 348 samples, with zero odd. (A and B sit in *different*
-residue classes, 24 vs 21, i.e. their headers differ by 3 bytes; that difference
-was not chased and does not bear on the test, which counts classes rather than
-identifying them.)
+Cell A is the control: its 32-byte layout is source-established in the extension
+fork `carla-autoware-integration`, at
+`LibCarla/source/carla/ros2/publishers/PointCloudFieldsLayout.h:59-70` (ten
+descriptors) with `ExtendedLidarPointStep()` returning 32 at `:74`, and it
+produces exactly the single-class signature. Cell B produces it too.
 
-Deriving from the ten-field layout with frame `velodyne_top`, whose constant
-computes to 309, every cell-B size is an exact fit to `309 + 32N` with
-integral `N`, median **7 545–7 550 points per cloud**, pooled mean 7 547.7,
-range 7 313–7 749.
+**How much the test proves, stated exactly.** Under a 32-byte stride the
+single-class result is *forced*. Under a 16-byte stride it is still *possible*,
+but only if every one of the 3 348 clouds carries an even point count. That
+even-`N` requirement is the *same* observation re-expressed — not a second,
+independent check on it — and the only way to see that is to have both
+constants, so they are derived below rather than asserted:
+
+- the four-field constant is `C₄ = 149` and the ten-field one `C₁₀ = 309`;
+- `149 ≡ 309 ≡ 21 (mod 32)`, which is *why* both readings land on class 21 and
+  why the observed class alone cannot separate them;
+- equating the two readings of one byte count, `309 + 32·N₃₂ = 149 + 16·N₁₆`,
+  gives `N₁₆ = 2·N₃₂ + 10`, even for every integral `N₃₂`.
+
+So "3 348 of 3 348 even" follows algebraically from the single-class observation
+plus the two constants; counting it as a separate confirmation would be
+double-counting one measurement. The evidential content of 2.4 is exactly the
+table above — 3 348 rows, one class — which is why **2.4 corroborates and 2.1
+decides**: on its own, 2.4 could not.
+
+**The two constants, derived.** Positions count from the start of the CDR stream
+(just after the 4-byte encapsulation header), each member aligned to its own
+width:
+
+- **header prefix — 40 B** for `frame_id = velodyne_top`: `stamp.sec` 4,
+  `stamp.nanosec` 4, the `frame_id` length 4 and its 13 bytes (12 chars + NUL)
+  padded to 16, `height` 4, `width` 4, the field-sequence length 4;
+- **one `PointField` — `16 + ceil4(len+1)` B**: name length 4, name bytes padded
+  to a 4-boundary, `offset` 4, `datatype` 1 padded to 4 because `count` follows,
+  `count` 4;
+- **everything else — 21 B**, independent of the field list: the 4-byte
+  encapsulation header at the very front, then after the fields `is_bigendian` 1
+  padded to 4, `point_step` 4, `row_step` 4, the data-sequence length 4, and
+  `is_dense` 1 sitting after the payload.
+
+`x`/`y`/`z` cost 20 B each and `intensity` 28 B, so the four-field list is 88 B
+and `C₄ = 40 + 88 + 21 = 149`. The ten-field list adds `return_type` 28,
+`channel` 24, `azimuth` 24, `elevation` 28, `distance` 28 and `time_stamp` 28
+for 248 B, giving `C₁₀ = 40 + 248 + 21 = 309`. Both fit
+`C = prefix + fields + 21`, since every prefix and every field size is a
+multiple of 4 and the tail's only unaligned members are the two `bool`s.
+
+At `C₁₀ = 309` and a 32-byte stride, every cell-B size is an exact fit to
+`309 + 32N` with integral `N` (as it must be, given the class-21 observation):
+per-run medians **7 528 / 7 545 / 7 550 / 7 549 / 7 545 / 7 550** points per
+cloud across `run-007`…`run-012` — i.e. **7 528–7 550** — pooled mean 7 547.7,
+range 7 313–7 749. The low end of that range is `run-007`, whose median rests on
+only 3 rows (626–699 for each of the others); the other five span 7 545–7 550.
+
+**One loose end, named rather than papered over.** A and B sit in *different*
+classes, 24 vs 21. The derivation above rules out a different field list or
+`frame_id` as the cause: `C = prefix + fields + 21` with both terms multiples of
+4, so `C ≡ 21 (mod 4)` for *every* PointCloud2, and 24 is `≡ 0`. The 3-byte gap
+must therefore come from the byte figure itself rather than the message layout —
+padding the serialized payload up to a 4-byte boundary on one of the two
+measurement paths would produce exactly 21 → 24, but that is a **conjecture**,
+not something this task chased. It does not bear on the test, which counts
+classes rather than identifying them, and 3 B on a ~242 KB cloud is 0.001 %,
+below anything the byte-rate comparison resolves.
 
 ### 2.5 Verdict — brief outcome (b)
 
@@ -320,36 +393,98 @@ Task 18.
   `libUnrealEditor-Carla.so` or `libcarla-ros2-native.so` is older than the
   newest file under the tier4 tree's build sources. Also named and refused:
   `tier4-tree`, `tier4-artifact-missing`, `tier4-source-roots`,
-  `tier4-artifact-older-than-head`. A refusal happens **before** `run.sh` writes
-  a manifest, so no run is filed and no exclusion criterion is consumed.
+  `tier4-artifact-older-than-head`, `tier4-stale-ack-unexplained` and
+  `tier4-identity`. A refusal happens **before** `run.sh` writes a manifest, so
+  no run is filed and no exclusion criterion is consumed.
+- **Has one acknowledgeable refusal**, `tier4-artifact-stale`, because mtime is
+  not content. Re-applying the registered patches, a `git checkout`, a `stash
+  pop` or an editor save all push a scanned source's mtime past the artifacts
+  with the **content unchanged**
+  (`benchmarks/patches/tier4-native/README.md:15-17` documents exactly that
+  `git apply`), and the remedy the refusal names first — rebuild — is forbidden
+  mid-campaign, which would leave the B family refused with no way out.
+  `TIER4_STALE_ACK` takes a **reason string**, never a boolean: with it set, the
+  refusal becomes a loud `WARN` and the run proceeds carrying
+  `tier4_stale_ack=applied`, `tier4_stale_ack_reason=<the reason>` and
+  `tier4_stale_ack_artifacts=<which .so>` in its own manifest. Set-but-empty is
+  itself a refusal (`tier4-stale-ack-unexplained`) — an unexplained
+  acknowledgement is not expressible. All three keys are emitted on **every**
+  run, so `tier4_stale_ack=none` (nothing was stale) and `unused` (set, but
+  nothing was stale) are distinguishable from a manifest written before the key
+  existed. `tier4-artifact-older-than-head` is deliberately **not**
+  acknowledgeable: it can only fire when HEAD moved, which is real content
+  change, not mtime drift. What makes the reason checkable rather than merely
+  asserted is `tier4_source_sha256`: equal digests across two runs prove the
+  scanned sources' content is identical however the mtimes moved.
 - **Records identity** on stdout as `KEY=VALUE`, which `preflight.sh` forwards
   into `manifest.json`'s `placement` block: `tier4_git_sha`, `tier4_worktree`
   (`clean` / `registered-patches` / `diverged:+extra:-absent` against the
-  registered patch set), `tier4_worktree_paths_sha256`, `tier4_plugin_sha256`,
-  `tier4_ros2_native_sha256`, and the three mtimes the staleness verdict used.
-  A path is not an identity; these are.
+  registered patch set), `tier4_worktree_paths_sha256`,
+  `tier4_worktree_content_sha256`, `tier4_source_sha256`, `tier4_plugin_sha256`,
+  `tier4_ros2_native_sha256`, the three mtimes the staleness verdict used, and
+  the three `tier4_stale_ack*` keys below.
+
+  **Which of those are content and which are not**, because the distinction is
+  the whole value of the block: `tier4_plugin_sha256` and
+  `tier4_ros2_native_sha256` digest the two `.so` files, `tier4_source_sha256`
+  digests every regular file under the four scanned source roots, and
+  `tier4_worktree_content_sha256` digests `git diff HEAD --binary` plus the
+  content of each untracked file. Those four are identities.
+  `tier4_worktree_paths_sha256` is **not** — it hashes the sorted list of dirty
+  **paths**, so it moves when a path appears or disappears and stays put when a
+  file listed there is edited. It is a cheap divergence tripwire, and it was the
+  only worktree key in the first version of this gate, which meant an edit to
+  `PythonAPI/examples/autoware_demo.py` — registered patch `0003`, the file that
+  sets `--lidar-pps` and `--lidar-rotation-hz`, i.e. the very sensor
+  configuration §4 leaves open — would have reported an unchanged digest.
+  `tier4_worktree_content_sha256` is what closes that, and it is the tree-side
+  counterpart to `patches_sha256` discussed in §2.2.
 - **Called from two places** so a launcher invoked directly cannot skip it:
   `benchmarks/scripts/preflight.sh` (section 7, for `approach = tier4-native`,
   which is what puts the keys in the manifest) and
   `benchmarks/cells/tier4-native.sh`, before the editor boots, on both `plan`
   and `up`.
 - **Tested** in `tests/benchmarks/test_verify_tier4_artifact.py`, host-only, no
-  docker and nothing booted: fresh artifacts pass, a stale editor plugin and a
-  stale native lib each refuse by name, and the three staleness tests were
-  confirmed to fail against a deliberately suppressed check.
+  docker and nothing booted: fresh artifacts pass; a stale editor plugin and a
+  stale native lib each refuse by name; an acknowledged staleness WARNs, records
+  and does not block; an unexplained acknowledgement cannot pass, on a stale
+  tree or a fresh one; an acknowledgement that was not needed is recorded as
+  `unused`; the HEAD-staleness refusal ignores the acknowledgement; a tree nested
+  inside another repository is refused; an identity-reader failure still prints a
+  named check; and `tier4_source_sha256` is unchanged by an mtime-only touch
+  while `tier4_worktree_content_sha256` moves where the paths digest cannot.
+  Each of those properties was confirmed to **fail** against a deliberately
+  mutated gate (accepting an unexplained acknowledgement: 4 failures; ignoring
+  the acknowledgement: 3; dropping `-uall` from the porcelain read: 1).
 
-Values on the tree as of 2026-07-30, for whoever compares a future manifest
-against the runs described here:
+Values on the tree as of 2026-07-30, re-read unchanged on 2026-07-31 when the two
+content digests were added, for whoever compares a future manifest against the
+runs described here:
 
 ```text
 tier4_git_sha=6315b856f8faf2118578322eb20a2b902a45a384
 tier4_worktree=registered-patches
 tier4_worktree_paths_sha256=880c2127133214ea5fee1dff1efbf1b8b5c2e9a3a3a9de10156bc299026eafc6
+tier4_worktree_content_sha256=23038d8c20a6a0691f941bd9f0be427819a8151c81088c30cf67222764ed3e49
+tier4_source_sha256=eb8aa9af8d91b65a587409771db0c08a47f3584076a06e18cd665d13db71f5e5
 tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e
 tier4_ros2_native_sha256=4485f7b6b74404729a605107a6b2c851286cd942c89db416e811677fc62f3149
+tier4_stale_ack=none
+tier4_stale_ack_reason=-
+tier4_stale_ack_artifacts=-
 ```
 
-A `diverged:` worktree WARNs and records but does **not** refuse: the gate is
-specified to make exactly one refusal, and turning a stray local edit into a
-run-blocking condition would add a criterion the pre-registration does not
-carry.
+The two `.so` digests are of the same files §2.2 dates and §2.1 disassembles, so
+a future manifest that reproduces the four content digests above — the two `.so`
+ones plus `tier4_source_sha256` and `tier4_worktree_content_sha256` — is running
+against the same binaries built from the same tree this document describes.
+
+A `diverged:` worktree WARNs and records but does **not** refuse. The gate's
+refusals are all about whether the recorded identity can be *trusted* — a
+missing artifact, a tree that is not a tree, an artifact older than the source
+or than HEAD, an identity that could not be read. Whether a *legitimate* tree
+state is acceptable is a different question, and turning a stray local edit into
+a run-blocking condition would add an exclusion criterion the pre-registration
+does not carry. Divergence is therefore recorded in full
+(`tier4_worktree=diverged:+extra:-absent` plus
+`tier4_worktree_content_sha256`) and left for analysis to weigh.
