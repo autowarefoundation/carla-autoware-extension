@@ -83,6 +83,25 @@
 # check is skipped rather than failed, so nothing that works today stops
 # working.
 #
+# THE SIDECAR INVARIANT, because exactness alone did NOT deliver the paragraph
+# above. A `.cmd` that OUTLIVES its pid file gets compared against the NEXT
+# launch's pid, and that launch can legitimately have no sidecar of its own to
+# overwrite it with -- launch_autoware.sh writes it best-effort
+# (`... || true`, launch_autoware.sh:191). The comparison is then exact and
+# still wrong, and it skips a REAL teardown: precisely the false positive
+# claimed above to be impossible. MEASURED 2026-07-31, before this was fixed:
+# a graceful (rung-1) teardown removed the pid file and left the sidecar, the
+# next launch at the same fixed path was reported "SKIPPING ... pid was
+# REUSED", nothing was signalled, and the summary line still said
+# "0 survivor(s)" while that whole tree was still running -- a silent no-op
+# teardown, the Task 15 defect shape this script exists to end. So the sidecar
+# now tracks the pid file on EVERY exit path: removed together with it
+# (rung-1 success, ladder success, root already gone, corrupt pid file),
+# removed alone when there is no pid file for it to describe, and KEPT on
+# exactly the two paths that KEEP the pid file -- the survivor WARN and the
+# reuse skip -- so a retry compares the same recorded root against the same
+# recorded cmdline. Pinned by tests/e2e/test_stop_launch_tree.py.
+#
 # KNOWN LIMIT, stated rather than papered over: processes orphaned by an
 # EARLIER SIGTERM-only teardown are descendants of nothing this script has a
 # pid for, so it cannot claim them. `docker compose down` remains the
@@ -257,13 +276,16 @@ stop_one() {
   local pf="$1" pid kid s tree=() left=()
   if [ ! -f "$pf" ]; then
     echo "stop: $pf absent -- nothing was recorded for it"
+    # A sidecar with no pid file beside it describes nothing and can only
+    # mislead a later --stop, so it goes too. See THE SIDECAR INVARIANT.
+    rm -f "$pf.cmd"
     return 0
   fi
   pid="$(cat "$pf" 2>/dev/null)"
   case "$pid" in
     '' | *[!0-9]*)
       echo "stop: $pf holds '$pid', which is not a pid -- removing it"
-      rm -f "$pf"
+      rm -f "$pf" "$pf.cmd"
       return 0
       ;;
   esac
@@ -306,7 +328,7 @@ stop_one() {
   kill -INT "$pid" 2>/dev/null || true
   if wait_gone "$INT_WAIT_S" "$pid" ${tree[@]+"${tree[@]}"}; then
     echo "stop: pid $pid tree gone after SIGINT to the root"
-    rm -f "$pf"
+    rm -f "$pf" "$pf.cmd"
     return 0
   fi
 

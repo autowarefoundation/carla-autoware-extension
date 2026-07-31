@@ -141,6 +141,15 @@ def _alive(pid: int) -> bool:
     return state is not None and state != "Z"
 
 
+def _cmdline_of(pid: int) -> str:
+    """The pid's command line the way launch_autoware.sh records it -- NUL
+    separators turned into spaces, trailing separator included, byte for byte
+    what `tr "\\0" " " </proc/<pid>/cmdline` writes (launch_autoware.sh:191).
+    The pid-reuse guard compares for exact equality, so an approximation here
+    would test a different string than the script does."""
+    return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+
+
 def _children_of(pid: int) -> list[int]:
     kids = []
     for entry in Path("/proc").iterdir():
@@ -170,8 +179,13 @@ def supervisor(tmp_path):
     even when the assertion under test fails."""
     started: list[tuple[int, list[int]]] = []
 
-    def _start(mode: str, n_children: int = 3):
-        pidfile = tmp_path / f"{mode}-{len(started)}.pid"
+    def _start(mode: str, n_children: int = 3, pidfile: Path | None = None):
+        # `pidfile` defaults to a fresh path per start, which keeps unrelated
+        # tests independent. Pass one to reuse a FIXED path across successive
+        # launches -- what the real harness does, since AW_PIDFILE and
+        # RELAY_PIDFILE are constants in a long-lived container.
+        if pidfile is None:
+            pidfile = tmp_path / f"{mode}-{len(started)}.pid"
         proc = subprocess.Popen(
             [sys.executable, "-c", SUPERVISOR_SRC, str(pidfile), str(n_children), mode]
         )
@@ -317,6 +331,64 @@ def test_a_zombie_in_the_tree_is_not_counted_as_a_survivor(supervisor):
     assert "0 survivor(s)" in result.stdout
     assert not _alive(root)
     assert not _alive(live_kid)
+
+
+def test_a_rung_one_success_does_not_leave_the_sidecar_behind(supervisor):
+    """The pid-reuse guard's sidecar must never outlive the pid file it
+    describes. The graceful rung was the path that broke the pairing: it
+    removed the pid file and left `<pidfile>.cmd` on disk, so the next launch
+    at the same fixed path could be judged against a PREVIOUS launch's command
+    line. Asserted on the rung that actually succeeded, so this cannot pass by
+    the tree merely having been cleared some other way."""
+    pidfile, root, _kids = supervisor("graceful")
+    sidecar = Path(f"{pidfile}.cmd")
+    sidecar.write_text(_cmdline_of(root))
+
+    result = _run_stop(pidfile)
+
+    assert result.returncode == 0, result.stderr
+    assert "gone after SIGINT to the root" in result.stdout, result.stdout
+    assert not pidfile.exists(), "a fully stopped tree's pid file must be removed"
+    assert not sidecar.exists(), "the sidecar outlived the pid file it describes"
+
+
+def test_a_stale_sidecar_does_not_skip_the_next_launchs_teardown(supervisor, tmp_path):
+    """The harm behind the previous test, end to end -- the FALSE POSITIVE the
+    script header rules out, which a leaked sidecar made reachable.
+
+    launch_autoware.sh writes the sidecar BEST EFFORT (`... || true`,
+    launch_autoware.sh:191), so a launch legitimately produces a pid file with
+    no `.cmd` beside it. If a previous teardown leaked its sidecar at that same
+    fixed path, the guard compares the OLD command line against the NEW pid,
+    sees a mismatch, and SKIPS a teardown that was entirely legitimate -- a
+    silent no-op teardown, which is the harmful direction for a campaign that
+    has already recorded a Task 15 stack surviving --stop.
+
+    The second launch runs `sigint_ignored`, the disposition the real launch
+    was measured to have, so the teardown under test is the descendant sweep
+    rather than the graceful rung."""
+    pidfile = tmp_path / "e2e-autoware.pid"
+
+    # Launch 1, torn down on the graceful rung, with a sidecar recorded as
+    # launch_autoware.sh records one.
+    _pf, root1, _kids1 = supervisor("graceful", pidfile=pidfile)
+    sidecar = Path(f"{pidfile}.cmd")
+    sidecar.write_text(_cmdline_of(root1))
+    first = _run_stop(pidfile)
+    assert first.returncode == 0, first.stderr
+    assert not pidfile.exists()
+    assert not sidecar.exists(), "launch 1's sidecar outlived its pid file"
+
+    # Launch 2 at the SAME path, with no sidecar of its own.
+    _pf2, root2, kids2 = supervisor("sigint_ignored", pidfile=pidfile)
+
+    second = _run_stop(pidfile)
+
+    assert second.returncode == 0, second.stderr
+    assert "SKIPPING" not in second.stdout, second.stdout
+    assert not _alive(root2), "the teardown skipped a legitimate root"
+    assert [pid for pid in kids2 if _alive(pid)] == []
+    assert "0 survivor(s)" in second.stdout
 
 
 def test_stop_reports_an_absent_pidfile_without_refusing(tmp_path):
