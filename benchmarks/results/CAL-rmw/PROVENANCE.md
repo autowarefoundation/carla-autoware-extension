@@ -244,23 +244,41 @@ about the recorder's transport rather than about the tier4-native approach.
   40.05 s window after a 20 s discovery settle —
   `benchmarks/README.md:2085-2091`), and that passage reads two unrelated
   subscribers losing alike as the loss being **real on the wire** rather than
-  an instrument artifact. That defeats the hypothesis's PAYLOAD — "the
-  asymmetry is a property of the INSTRUMENT rather than of the approach" —
+  an instrument artifact. That bears directly on the hypothesis's PAYLOAD —
+  "the asymmetry is a property of the INSTRUMENT rather than of the approach" —
   because cell B's transport is forced by the fork rather than chosen for the
   recorder (`benchmarks/README.md:1336-1346`) and Autoware's own subscription
-  runs it too (`benchmarks/README.md:1334`). It does not by itself settle the
-  MECHANISM; the next bullet is about that.
+  runs it too (`benchmarks/README.md:1334`). It **constrains that payload
+  without closing it**, which is the same weight the STILL OPEN bullet below
+  gives this evidence and the reason the verdict is disfavoured rather than
+  refuted: `run-010` is a different run from the two the loss rates come from,
+  and a RATE comparison rather than a per-message one. Nor does it by itself
+  settle the MECHANISM; the next bullet is about that.
   **Two qualifications, derived here rather than taken on trust.** (i) The
   8.53 Hz the README pairs with the 8.47 is `results/B/run-009`'s WHOLE-RUN
   observer rate, not `run-010`'s — `benchmarks/README.md:636-637` says "on the
   comparable run" and this is what that means. Derived from `run-009`'s
   `observer.csv`: 662 LiDAR rows spanning 77.45 s of `arrival_system_ns` =
-  8.534 Hz. (ii) On `run-010` ITSELF the bench observer read **8.84–9.04 Hz**
-  over every 40.05 s window (361 rows = 9.01 Hz over the window opening 20 s
-  in; 659 rows over 74.03 s = 8.888 Hz whole-run), so the same-run gap between
-  the two subscribers is ~4–6%, not the ~0.7% the cross-run pairing suggests —
-  and it points the other way: on `run-010` AUTOWARE saw fewer clouds than the
-  recorder did. Both qualifications strengthen this objection rather than
+  8.534 Hz. (ii) On `run-010` ITSELF the bench observer read **8.76–9.06 Hz**
+  (351–363 rows) over a 40.05 s window, wherever that window is placed.
+  **Sweep construction, so the range is reproducible:** the 659
+  `/sensing/lidar/top/pointcloud_raw_ex` rows of
+  `results/B/run-010/observer.csv`, sorted by `arrival_system_ns` and spanning
+  74.032 s, leave 33.982 s of feasible window starts; the row count is
+  piecewise-constant in the start and can only change where a window edge
+  crosses an arrival, so evaluating both sides of every such breakpoint (1207
+  positions) bounds it EXACTLY rather than sampling it. A row-aligned sweep —
+  one window per arrival, 299 windows — gives 8.79–9.06 Hz, and a uniform grid
+  reproduces that 8.79 Hz floor at any step ≤ 2 s. The **8.84–9.04 Hz** this
+  bullet previously stated is superseded: it reproduces only on a coarse grid
+  of ≥ 5 s steps, which understated the spread. The like-for-like window — the
+  one opening 20 s in, matching the discovery settle of Autoware's own
+  measurement — holds **361 rows = 9.01 Hz** against Autoware's 339 = 8.47 Hz,
+  a same-run gap of **6.1%**; over every window position the gap stays between
+  **3.4% and 6.6%**, never the ~0.7% the cross-run pairing suggests.
+  (Whole-run, for reference: 659 rows over 74.03 s = 8.888 Hz.) The direction
+  is unchanged by the correction: on `run-010` AUTOWARE saw fewer clouds than
+  the recorder did. Both qualifications strengthen this objection rather than
   weaken it, since the recorder is not the lossiest subscriber on that run.
 - AGAINST it, on mechanism: `benchmarks/README.md:2075-2077` already
   attributes this deficit to **host CPU starvation, not UDP fragmentation**,
