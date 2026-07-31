@@ -1,0 +1,61 @@
+== cell C, armed (route SET, trajectory live, MRM suppressed), NOT engaged ==
+utc 2026-07-30T23:56:22Z
+-- /vehicle/status/control_mode (ControlModeReport: 1=AUTONOMOUS 4=MANUAL) --
+stamp:
+  sec: 216
+  nanosec: 837661663
+mode: 4
+---
+-- /api/operation_mode/state BEFORE the AD-API attempt --
+stamp:
+  sec: 179
+  nanosec: 737661111
+mode: 1
+is_autoware_control_enabled: false
+is_in_transition: false
+is_stop_mode_available: true
+is_autonomous_mode_available: true
+is_local_mode_available: true
+is_remote_mode_available: true
+---
+-- 6 x /api/operation_mode/change_to_autonomous, 2 s apart --
+attempt 1:
+autoware_adapi_v1_msgs.srv.ChangeOperationMode_Response(status=autoware_adapi_v1_msgs.msg.ResponseStatus(success=True, code=0, message=''))
+
+attempt 2:
+autoware_adapi_v1_msgs.srv.ChangeOperationMode_Response(status=autoware_adapi_v1_msgs.msg.ResponseStatus(success=True, code=60001, message='The mode is the same as the current.'))
+
+attempt 3:
+autoware_adapi_v1_msgs.srv.ChangeOperationMode_Response(status=autoware_adapi_v1_msgs.msg.ResponseStatus(success=True, code=60001, message='The mode is the same as the current.'))
+
+attempt 4:
+autoware_adapi_v1_msgs.srv.ChangeOperationMode_Response(status=autoware_adapi_v1_msgs.msg.ResponseStatus(success=True, code=60001, message='The mode is the same as the current.'))
+
+attempt 5:
+autoware_adapi_v1_msgs.srv.ChangeOperationMode_Response(status=autoware_adapi_v1_msgs.msg.ResponseStatus(success=True, code=60001, message='The mode is the same as the current.'))
+
+attempt 6:
+autoware_adapi_v1_msgs.srv.ChangeOperationMode_Response(status=autoware_adapi_v1_msgs.msg.ResponseStatus(success=True, code=60001, message='The mode is the same as the current.'))
+
+-- /api/operation_mode/state AFTER the AD-API attempts --
+stamp:
+  sec: 222
+  nanosec: 887661754
+mode: 2
+is_autoware_control_enabled: true
+is_in_transition: false
+is_stop_mode_available: true
+is_autonomous_mode_available: false
+is_local_mode_available: true
+is_remote_mode_available: true
+---
+-- /vehicle/status/velocity_status (longitudinal) --
+header:
+  stamp:
+    sec: 235
+    nanosec: 637661944
+  frame_id: base_link
+longitudinal_velocity: 4.14978551864624
+lateral_velocity: 0.02303963340818882
+heading_rate: 0.012706221081316471
+utc 2026-07-30T23:56:42Z

@@ -288,11 +288,38 @@ cells:
       # docs/e2e-report.md's ~20 Hz NDT measurement is from the Nishi-Shinjuku
       # e2e gate, i.e. THIS cell's map, and cell A inherits it as the same rig.
       ndt_expected_hz: 20.0
-      # Task 15, not Task 11: Task 11's re-gate is Town10, and Task 15's
-      # Step 1 runs G1 + G2 live on Nishi for this cell's re-gate, which is
-      # the measurement a branch selection needs.
-      ladder_branch:
-      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
+      # SELECTED 2026-07-30 (Task 15) by THIS CELL'S OWN live G1 re-gate on
+      # the current engine state -- Task 11's re-gate is Town10 and could not
+      # settle this one, because the branch is a property of the BUNDLE (this
+      # file's header; README "M5 definitions"). The bundle is the
+      # map_defaults.sh NishishinjukuMap entry, container
+      # /autoware_map/nishishinjuku, pointcloud_map.pcd sha256
+      # 78b6cf81047489efb1f008a44238d497241da64bb158c824a3f18f23eb50e9d3, and
+      # it IS registered to the world it runs in, so branch (a) applies.
+      #
+      # MEASURED on that bundle: max NDT error 0.062 m over 400 static
+      # samples in a 19.98 s window -- 438 mm inside the 0.5 m gate -- mean
+      # 0.031 m, median 0.030 m, bias (dx, dy) = (-0.004, +0.021) m, per-axis
+      # jitter std 0.021 / 0.012 m. The 21 mm bias is the point of contrast
+      # with cell A's ladder: there is no map-registration offset here of the
+      # kind Town10's rigid bundles carry (+0.475 m cross-track), so no
+      # ladder had to be walked -- the first and only rung passed.
+      # Raw NDT + ground-truth series, the bundle digest and the boot's
+      # engine BuildId / fork SHA / extension .so digest are TRACKED under
+      # benchmarks/evidence/g1-nishi-bundle/, so this threshold's selecting
+      # number is recomputable from the repo. The same boot's G2 is
+      # benchmarks/evidence/g2-nishi-cellc/ (closest approach 0.046 m over
+      # the 222 m route).
+      #
+      # NOT the historical figure: docs/e2e-report.md records 0.078 m on this
+      # map and cell A's comment above cites that number. Both are static
+      # windows on this bundle, 16 mm apart on a max statistic; 0.062 m is
+      # what the branch rests on because it is measured on the CURRENT engine
+      # state and its series are tracked. Cell A's 0.089 m stays NOT directly
+      # comparable for the reason stated there (its bundle is rebuilt from
+      # that rig's own sweeps; this one is independently sourced).
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: D
     approach: tier4-native
     carla: 0.10-tier4
@@ -322,10 +349,41 @@ cells:
       tick_hz: 20.0
       lidar_expected_hz: 10.0
       ndt_expected_hz: 10.0
-      # Task 15, as cell C: this cell's bundle is the Nishi-Shinjuku one (the
-      # same map_defaults.sh entry cell C reads, now that Task 13's launcher
-      # reads that table too), and the branch needs a live G1 measurement ON
-      # that bundle, which is Task 15's Step 1.
+      # DELIBERATELY LEFT NULL 2026-07-30 (Task 15), and this is the last
+      # window in which it could have been filled: the pre-registration
+      # deadline is the first P3 measurement run. Nothing owes it any more --
+      # the earlier note here named Task 15 as the owner, and Task 15's answer
+      # is that this slot stays unfilled. Three facts, kept apart on purpose:
+      #
+      #  1. The BUNDLE this cell would mount is now measured. Task 15's live
+      #     G1 on the map_defaults.sh NishishinjukuMap entry -- the same entry
+      #     cell C reads, and the one tier4_autoware.sh resolves for this map
+      #     since Task 13 -- came out at max 0.062 m
+      #     (benchmarks/evidence/g1-nishi-bundle/). So the null is NOT an
+      #     information gap about the bundle, and this comment is not hiding
+      #     one.
+      #  2. This cell was STRUCK (`dropped:` above), so it will never produce
+      #     a run to gate, and no G1 will ever be measured THROUGH this
+      #     cell's own stack. Copying cell C's `absolute` / 0.5 across -- the
+      #     move Task 13 legitimately made for cell B, which DOES run -- would
+      #     make this row read as a gated, ready cell whose threshold had been
+      #     established for it. It has not: whether the tier4 tree can cook
+      #     this map at all was never tested, so it was never shown that this
+      #     cell can localize against that bundle, or produce a pose series
+      #     to compare a threshold against.
+      #  3. `ladder_branch: null` is the state the M5 gate step REFUSES to
+      #     gate on (this file's header), which is the correct mechanical
+      #     behaviour for a cell in that position -- it fails closed rather
+      #     than silently applying a threshold to a run whose existence was
+      #     never demonstrated. That is the same reason the header gives for
+      #     splitting the two keys in the first place.
+      #
+      # If the strike were ever reversed, the selection is not open: the
+      # branch would follow this bundle's measurement above (`absolute`, 0.5),
+      # confirmed by the cell's own G1 the way Task 13 confirmed cell B's.
+      # That is a statement about what a future measurement would decide, and
+      # it is written here rather than in the value, because the cross-map
+      # tier4 question this cell exists to answer stays OPEN and UNMEASURED.
       ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E

@@ -1112,14 +1112,30 @@ def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
     property of the bundle (README, "M5 definitions"), not of the approach.
     Task 11 could not register them because the branch differs per Town10
     bundle (regen -> absolute, rigid/unshifted -> relative) and nothing had yet
-    chosen one. Cell D runs that same launcher but stays UNSET, because its map
-    is Nishi-Shinjuku and that bundle's branch needs Task 15's live G1.
-    Nishi-Shinjuku (C, D) is Task 15's, the E family measures its own bundle
-    first, and the CAL cells have no localization stack. Every cell not
-    listed must stay UNSET so the M5 gate keeps refusing it rather than
-    gating on a guessed branch -- the property R3.3 added this test for.
+    chosen one.
+
+    Cell C joined on 2026-07-30 from ITS OWN live G1 re-gate on the
+    Nishi-Shinjuku bundle: max NDT error 0.062 m against the same 0.5 m gate,
+    bias 21 mm, so branch (a) applies on the first rung and no ladder had to be
+    walked (benchmarks/evidence/g1-nishi-bundle/, README's 2026-07-30
+    amendment).
+
+    Cell D runs the tier4 launcher against that SAME bundle and still stays
+    UNSET -- deliberately, and this assertion is the pinned half of that
+    decision. D was STRUCK by the 2026-07-30 core-duel scope cut, so it will
+    never produce a run to gate, and whether the tier4 tree can cook this map at
+    all was never tested; mirroring cell C's values across (what Task 13
+    legitimately did for cell B, which runs) would make a never-run, never-shown
+    cell read as a gated one. `null` keeps the M5 gate refusing it. So D is NOT
+    a stale slot to be "fixed" later by filling it: a change that fills it has
+    to argue against that reasoning, which is what this assertion forces.
+
+    The E family measures its own bundle first, and the CAL cells have no
+    localization stack. Every cell not listed must stay UNSET so the M5 gate
+    keeps refusing it rather than gating on a guessed branch -- the property
+    R3.3 added this test for.
     """
-    selected_absolute = {"A", "A-hf", "B", "B-hf", "B45"}
+    selected_absolute = {"A", "A-hf", "B", "B-hf", "B45", "C"}
     doc = load_cells_doc()
     for cell in (c["id"] for c in doc["cells"]):
         metrics = metrics_for(doc, cell)

@@ -3528,6 +3528,67 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   behaviour. No margin, threshold, tolerance, metric or cell definition changes; no
   filed run modified; no fork touched and nothing rebuilt; `config/margins.yaml`
   and `config/exclusions.md` byte-identical.
+- **2026-07-30** — the **G1 ladder branch is SELECTED for cell C: `absolute`,
+  `abs_pose_gate_m: 0.5`**, and **cell D's slot is DELIBERATELY LEFT NULL**
+  (`cells.yaml`). Registered here because branch selection is a pre-registration
+  item, and legitimate now only because no P3 measurement run has happened —
+  this is the last window for it. **No threshold changed and no ladder rung was
+  needed**: cell C's own live G1 re-gate on the current engine state measured
+  **max NDT error 0.062 m** over 400 static samples on the `map_defaults.sh`
+  Nishi-Shinjuku bundle (`pointcloud_map.pcd` sha256 `78b6cf81…50e9d3`), 438 mm
+  inside the 0.5 m gate, mean 0.031 m, bias `(dx, dy) = (-0.004, +0.021)` m,
+  per-axis jitter std 0.021 / 0.012 m. The 21 mm bias is what makes this a
+  one-rung selection rather than a ladder: this bundle carries no
+  registration offset of the kind Town10's rigid variants do (+0.475 m
+  cross-track), so branch (a)'s precondition is met directly. Raw series, the
+  bundle digest and the boot's engine BuildId / fork SHA / extension `.so`
+  digest are tracked under `benchmarks/evidence/g1-nishi-bundle/`; the same
+  boot's closed-loop certification (closest approach **0.046 m** over the 222 m
+  pre-registered route) is under `benchmarks/evidence/g2-nishi-cellc/`. It is
+  **not** the historical 0.078 m in `docs/e2e-report.md`, which stands but is
+  not what the threshold rests on, and cell A's 0.089 m stays **not directly
+  comparable** for the self-registration reason already recorded (confound
+  C4). **Cell D keeps `null` on purpose**: the bundle it would mount is now
+  measured, but cell D was STRUCK by this date's core-duel scope cut, so it will
+  never produce a run to gate and it was never shown that the tier4 tree can
+  cook this map at all — copying cell C's values across (the move Task 13
+  legitimately made for cell B, which runs) would make the row read as a gated,
+  ready cell whose threshold had been established for it. `null` is the state
+  the M5 gate step refuses to gate on, which fails closed instead. What a
+  reversal of the strike would decide is stated in the comment, not in the
+  value; the cross-map tier4 question stays OPEN and UNMEASURED.
+- **2026-07-30** — **step 11.6's root cause for the AD-API engage path is
+  REFUTED by a live cell-C observation; every measurement on both sides is
+  retained and NOTHING is repaired here.** The refuted claim, carried in
+  `benchmarks/injector/arm_and_goal.py`'s engage docstring and in this file's
+  control_mode confound: `change_to_autonomous` does not arm, with the cause
+  "localized to `/vehicle/status/control_mode` reporting MANUAL, so the
+  operation-mode transition manager never marks autonomous available". Task 15
+  observed the same path live on cell C, armed (route SET, trajectory live, MRM
+  suppressed) and stopped, and it was **ACCEPTED on the first call**
+  (`success=True, code=0`; attempts 2-6 returned `code=60001 'The mode is the
+same as the current.'`) and drove the full pre-registered route closed-loop to
+  0.109 m of the goal **with no `/autoware/engage` publish anywhere in the
+  sequence**. `/vehicle/status/control_mode` read `4` (MANUAL) in exactly that
+  accepting state, and the capture shows it FOLLOWS the engage (`4` → `1`), so
+  it is an output of arming and not a precondition; `is_autonomous_mode_available`
+  is a live engage-availability flag, `true` while stopped and armed, `false`
+  from the first moving sample, `true` again once stopped — so step 11.6's
+  decisive `false` **while driving** is that moving-state value and does not
+  establish what cell A's PRE-ENGAGE state was. Captures:
+  `benchmarks/evidence/task-15-adapi-engage-cellc/`. **Bounded deliberately:**
+  cell A was not re-run, so **why cell A refused is NOT diagnosed** — two
+  untested candidates (the transition manager's lateral/yaw/speed
+  engage-availability check, which Town10's stably-biased ~0.5 m lock with
+  metres of along-track slack could fail where Nishi's 0.062 m lock does not; or
+  a per-run state difference) are named in that PROVENANCE with the test that
+  would settle it. Consequences NOT taken here, and they are the owner's call:
+  cell E's PROVISIONAL "static-only" classification is **not** reclassified, the
+  confound text is **not** rewritten, and neither engage path is patched — cell
+  C's own certified G2 armed through the legacy `/autoware/engage` topic, which
+  is all `gate_g2_closed_loop.sh` publishes. No margin, threshold, tolerance,
+  metric or cell definition changes; `config/margins.yaml` and
+  `config/exclusions.md` byte-identical.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

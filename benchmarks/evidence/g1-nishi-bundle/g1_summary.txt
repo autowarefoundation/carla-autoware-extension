@@ -1,0 +1,7 @@
+g1_run: 20260730T235427Z
+map: NishishinjukuMap
+bundle_container_dir: /autoware_map/nishishinjuku
+bundle_pcd_sha256: 78b6cf81047489efb1f008a44238d497241da64bb158c824a3f18f23eb50e9d3
+window_s: 20
+ndt_series: g1_ndt.txt  gt_series: g1_gt.txt
+G1 NDT: ndt_samples=400 gt_samples=399 max_err=0.062 m threshold=0.5 m -> PASS
