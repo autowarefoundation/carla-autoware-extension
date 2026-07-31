@@ -74,10 +74,12 @@ odd-numbered pairs as A,B and even-numbered pairs as B,A, on its own stated
 rationale that "interleaving alone still gives one cell every odd slot and the
 other every even slot, so a per-pair effect … lands entirely on one cell"
 (`benchmarks/scripts/duel.sh:14-18`). So the limitation above is LOCAL to
-CAL-rmw and must not be read across to the duel. (`benchmarks/README.md:3469`
-describes the duel as "interleaved A,B,A,B pairs", whose literal reading is the
-UNcounterbalanced order; the committed driver is the authority and it
-alternates.)
+CAL-rmw and must not be read across to the duel. (`benchmarks/README.md:3484`
+says "Task 18's design requires **interleaved** A,B,A,B pairs", whose literal
+reading is the UNcounterbalanced order; the committed driver is the authority
+and it alternates. Citation corrected 2026-07-31: this first cited `:3469`,
+which carries unrelated text — the number came from the fix brief and had not
+been opened.)
 
 ## Host quiescence — this cell's dominant validity risk
 
@@ -240,7 +242,7 @@ about the recorder's transport rather than about the tier4-native approach.
   container, Autoware's own subscription receives
   `/sensing/lidar/top/pointcloud_raw_ex` at **8.47 Hz** (339 samples over a
   40.05 s window after a 20 s discovery settle —
-  `benchmarks/README.md:2086-2092`), and that passage reads two unrelated
+  `benchmarks/README.md:2085-2091`), and that passage reads two unrelated
   subscribers losing alike as the loss being **real on the wire** rather than
   an instrument artifact. That defeats the hypothesis's PAYLOAD — "the
   asymmetry is a property of the INSTRUMENT rather than of the approach" —
@@ -250,7 +252,7 @@ about the recorder's transport rather than about the tier4-native approach.
   MECHANISM; the next bullet is about that.
   **Two qualifications, derived here rather than taken on trust.** (i) The
   8.53 Hz the README pairs with the 8.47 is `results/B/run-009`'s WHOLE-RUN
-  observer rate, not `run-010`'s — `benchmarks/README.md:636` says "on the
+  observer rate, not `run-010`'s — `benchmarks/README.md:636-637` says "on the
   comparable run" and this is what that means. Derived from `run-009`'s
   `observer.csv`: 662 LiDAR rows spanning 77.45 s of `arrival_system_ns` =
   8.534 Hz. (ii) On `run-010` ITSELF the bench observer read **8.84–9.04 Hz**
@@ -260,7 +262,7 @@ about the recorder's transport rather than about the tier4-native approach.
   and it points the other way: on `run-010` AUTOWARE saw fewer clouds than the
   recorder did. Both qualifications strengthen this objection rather than
   weaken it, since the recorder is not the lossiest subscriber on that run.
-- AGAINST it, on mechanism: `benchmarks/README.md:2076-2078` already
+- AGAINST it, on mechanism: `benchmarks/README.md:2075-2077` already
   attributes this deficit to **host CPU starvation, not UDP fragmentation**,
   and records that as a change of reading forced by Task 9's transport matrix —
   `benchmarks/patches/tier4-native/README.md:342,344,349` measure
@@ -303,7 +305,7 @@ neither is a per-message test on `run-008`/`run-009`. The hypothesis stays in
 the record, marked disfavoured: not deleted, and not asserted refuted.
 
 **OPEN INCONSISTENCY IN THE RECORD, named rather than reconciled: ~460 KB
-against ~242 KB.** `benchmarks/README.md:639` (and `:2104`, `:2121`) describes
+against ~242 KB.** `benchmarks/README.md:639` (and `:2103`, `:2120`) describes
 cell B's clouds as **~460 KB**. Measured here from the committed evidence, the
 same topic in the same runs is **~242 KB**: mean `size_bytes` over
 `/sensing/lidar/top/pointcloud_raw_ex` rows is 241 754 B (`run-008`, 699 rows),
@@ -326,7 +328,7 @@ Revised 2026-07-31: the list used to open at item 2 below, and it had missed
 that the record ALREADY holds a cheaper discriminator than either of them.
 
 1. **Already paid — zero runs and zero analysis.** The `run-010` in-container
-   measurement (`benchmarks/README.md:2086-2092`, and the reading drawn from it
+   measurement (`benchmarks/README.md:2085-2091`, and the reading drawn from it
    at `:634-639`) is exactly the discriminator this section was asking for:
    Autoware's own subscription, on cell B's own transport, in its own
    container. It answers the question by RATE on ONE run, which is why the
