@@ -132,7 +132,7 @@
 #
 # WHAT THAT DOES AND DOES NOT MEAN, because the difference matters and the
 # stronger claim does not survive checking. On the HAPPY path cell B's stack is
-# cleared by removing its container outright: cells/tier4-native.sh:110 sets
+# cleared by removing its container outright: cells/tier4-native.sh:144 sets
 # AW_COMPOSE="", so teardown.sh:227-231 takes the `docker rm -f "$AW_CONTAINER"`
 # branch, and the launcher re-creates the container fresh next run
 # (tier4_autoware.sh:323,326). So the measured accumulation defect -- survivors

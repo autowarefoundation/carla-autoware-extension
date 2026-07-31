@@ -45,7 +45,7 @@ fail() { echo "LAUNCH FAIL (tier4-native/$BENCH_CELL): $*" >&2; exit 2; }
 # The B family's counterpart to cell A's editor-artifact gate, which cell A
 # reaches through cells/extension.sh -> run_e2e.sh:126. Nothing stood here
 # before Task 17b: this launcher boots the shared engine against the tier4
-# tree's plugin (line ~175 below) and a stale .so publishes a different wire
+# tree's plugin (line ~181 below) and a stale .so publishes a different wire
 # format from the source the record cites, silently.
 #
 # Called on BOTH `plan` and `up` (this block runs before the mode switch), and
@@ -54,17 +54,23 @@ fail() { echo "LAUNCH FAIL (tier4-native/$BENCH_CELL): $*" >&2; exit 2; }
 # file -- never passes through preflight, and the tree it would boot is
 # $BENCH_CARLA_TREE, which is what is checked here. The duplicate costs the
 # whole gate a second time -- a `find` over four source roots plus the content
-# digests, 0.06-0.07 s measured 2026-07-30 on the real tree -- and removes a way
+# digests, 0.07-0.08 s measured 2026-07-31 on the real tree -- and removes a way
 # to boot an unverified binary. Its KEY=VALUE stdout is the manifest's business,
 # not this script's, so it is discarded here; the named refusal and the OK/WARN
 # prose both go to stderr and are what an operator sees.
 #
 # The gate's mtime staleness check can be ACKNOWLEDGED rather than only rebuilt
-# away: `export TIER4_STALE_ACK="<reason>"` before this launcher (or before
-# run.sh) turns the refusal into a loud WARN and records the reason in the run's
-# manifest. It is inherited straight through both call sites, so nothing here
-# forwards it explicitly. See the gate's own "STALENESS ACKNOWLEDGEMENT" block
-# for why an mtime refusal can otherwise be unresolvable mid-campaign.
+# away, and the acknowledgement takes TWO variables:
+#   export TIER4_STALE_ACK="<why this staleness is acceptable>"
+#   export TIER4_STALE_ACK_SOURCE_SHA256=<this tree's tier4_source_sha256>
+# Both are inherited straight through both call sites, so nothing here forwards
+# them explicitly. The digest is MANDATORY: without it the acknowledgement is
+# blanket, and one export left in this shell would turn the staleness check off
+# for every later run in it -- Task 18 files ~20 B-family runs from one shell.
+# Every refusal that needs the digest prints the tree's current one, so obtaining
+# it needs neither a rebuild nor a passing run. See the gate's own "STALENESS
+# ACKNOWLEDGEMENT" block for why an mtime refusal can otherwise be unresolvable
+# mid-campaign, and for what the binding does and does not buy.
 TIER4_GATE="$BENCH_REPO/benchmarks/scripts/verify_tier4_artifact.sh"
 [ -f "$TIER4_GATE" ] || fail "tier4 plugin-artifact gate missing: $TIER4_GATE"
 TIER4_TREE="$BENCH_CARLA_TREE" bash "$TIER4_GATE" >/dev/null ||
