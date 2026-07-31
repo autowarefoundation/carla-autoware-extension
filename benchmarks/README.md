@@ -967,6 +967,13 @@ and the comparison must say so:
   re-pick keeps the drive inside the dense region — which also means the
   route and the map's dense region were chosen together, a circularity
   disclosed in the route-re-pick amendment.
+- **Pointer (2026-07-30, Task 15), not a correction:** the cell-C figure to
+  compare against is now a tracked **0.062 m**, measured on cell C's own live
+  re-gate and retained at `benchmarks/evidence/g1-nishi-bundle/`. The 0.078 m
+  cited above stands — both are real static windows on the same Nishi bundle,
+  16 mm apart on a max statistic — and this confound is unchanged either way,
+  since it is about the Town10 bundle's provenance and not about which Nishi
+  window is quoted. A P3 report should quote the tracked one.
 
 Any P3 report comparing M5 localization numbers across map families must state
 this alongside the numbers, exactly as it must for route difficulty above.
@@ -2135,6 +2142,18 @@ transition manager never marks autonomous available while `/autoware/engage`
 bypasses that gate entirely. That specific reading was taken interactively
 and is **not retained** (`benchmarks/evidence/README.md`'s step-11_6 row).
 
+> **That root cause is REFUTED (2026-07-30, Task 15), and this paragraph is
+> left standing on purpose.** Rewriting a registration so it reads as though it
+> had always said the new thing is record destruction (Task 15a), so the
+> refutation is a pointer, not an edit: see **the cell-C block below**, the
+> 2026-07-30 amendment in `## Amendments made so far`, and the captures in
+> `benchmarks/evidence/task-15-adapi-engage-cellc/`. In short: AD-API
+> `change_to_autonomous` was measured **ACCEPTED** on cell C with
+> `/vehicle/status/control_mode` reading `4` (MANUAL) — the very condition
+> named above as the cause — so `control_mode` does not gate the transition. Do
+> not carry the inferred root cause away from this paragraph without reading
+> that block.
+
 **A REFUTED claim about this, recorded with what refuted it (Task 13).** Task 13
 asserted — in commit `296c8cb`'s message and its own report — that R4's arming
 guard was structurally broken because "the legacy `/autoware/engage` publish
@@ -2247,7 +2266,8 @@ for — AND the rate, with BOTH reset at the engage call.
 gating, per-approach observation) rather than dropped, since whether it
 tracks `mode` correctly is itself part of the interop comparison.
 
-**Status: cell A measured; cell B PARTLY measured (2026-07-30, Task 13); cells
+**Status: cell A measured; cell B PARTLY measured (2026-07-30, Task 13); cell C
+measured (2026-07-30, Task 15 — see its block below); cells
 B45, D and the E family unmeasured** — and for B45 and D that is now
 **permanent**, since both were struck by the owner's core-duel scope cut
 (2026-07-30, see the amendment below), so this observation will never be
@@ -2283,11 +2303,59 @@ first, on the localization-initialization block described in the next section �
 so `arm_and_goal.py` has still never run against a real stack, on any cell. That
 is the R4 verification the plan expected from Task 13 and it remains owed.
 
+**Cell C's half of the observation (2026-07-30, Task 15) — the outcome this
+section demanded, and it came out SUCCEEDED.** Recorded in the required form:
+**cell C, `change_to_autonomous` SUCCEEDED.** Measured on cell C's live re-gate,
+armed (route SET, trajectory live, MRM suppressed) and stopped: accepted on the
+**first** call, `success=True, code=0, message=''`, with retries at 2 s
+intervals then returning `code=60001 'The mode is the same as the current.'`;
+operation mode went `1` → `2`, `is_autoware_control_enabled` `false` → `true`,
+and the ego drove the full pre-registered route closed-loop to **0.109 m** of
+the goal — **with no `/autoware/engage` publish anywhere in the sequence**.
+Retained as a tracked console capture,
+`benchmarks/evidence/task-15-adapi-engage-cellc/adapi_change_to_autonomous.log`,
+so it clears this file's evidence rule rather than resting on a bare claim.
+
+Two consequences for the rows above, neither of which rewrites them:
+
+- **Cell A's `4` (MANUAL) reading is now corroborated on the same approach and
+  RETAINED.** Cell C is the extension approach too and read `mode: 4` while
+  parked and armed; the table above marks cell A's identical value "not
+  retained", and this closes that gap for the approach even though cell A's own
+  session output stays unretained.
+- **But the inferred link from that value to a refusal does not survive it.**
+  `control_mode` read `4` in exactly the state where the transition was
+  ACCEPTED, and the capture shows the field FOLLOWS the engage (`4` → `1` at
+  engage, `benchmarks/evidence/task-15-adapi-engage-cellc/legacy_autoware_engage.log`),
+  so it is an output of arming rather than a precondition of it. Relatedly,
+  `is_autonomous_mode_available` is a **live engage-availability flag**, not a
+  static capability: `true` while stopped and armed, `false` from the first
+  moving sample, `true` again once stopped, with mode staying `2` throughout —
+  so step 11.6's decisive `false`-while-driving is that moving-state value and
+  says nothing about cell A's pre-engage state.
+
+**Still unobserved, and stated so it is not read as closed:** cell C's outcome
+was taken with a direct `ros2 service call`, **not** through
+`arm_and_goal.py` — so the "What is still unobserved on cell B" paragraph above
+keeps its claim intact (`arm_and_goal.py` has still never run against a real
+stack, on any cell) and the R4 verification it names remains owed. This block
+records the AD-API layer's behaviour, not that injector's.
+And **why cell A refused is NOT diagnosed**: cell A was not
+re-measured and nothing in the Task 15 captures observes Town10. Two untested
+candidates and the test that would settle them are in that directory's
+`PROVENANCE.md`.
+
 **Caveat carried forward from step 11.6:** the link from `control_mode =
 MANUAL` to the transition manager's refusal is inferred, not measured — the
 alternative candidate is the `control_mode_request` handshake. The
 observation that the two engage paths consult different state holds either
 way, but this has not been upgraded to a measurement.
+
+> **Superseded 2026-07-30 (Task 15), and kept as written.** This caveat said the
+> inference had not been upgraded to a measurement; it has now been
+> **contradicted** by one — see the cell-C block above. What survives is exactly
+> the last sentence's other half: that the two engage paths consult different
+> state. What does not survive is `control_mode = MANUAL` as the state doing it.
 
 ## Pre-registration
 

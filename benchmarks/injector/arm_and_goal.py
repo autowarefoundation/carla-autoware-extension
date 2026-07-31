@@ -26,29 +26,63 @@ Sequence:
   4. Engage (R4, replacing the AD-API-only attempt Task 7 shipped):
 
      a. Attempt AD-API `/api/operation_mode/change_to_autonomous`, bounded
-        to ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S regardless of --timeout. This is
-        NOT the arming mechanism -- step 11.6
-        (benchmarks/evidence/step-11_6-adapi-engage/) measured it refuse
-        for a full 60 s, ~30 retries, "target mode is not available", on
-        cell A, a cell that demonstrably drives. Root cause localized to
-        /vehicle/status/control_mode reporting MANUAL, so the
-        operation-mode transition manager never marks autonomous
-        available. Kept anyway, deliberately: whether change_to_autonomous
-        succeeds is itself a per-approach finding this campaign records
-        (benchmarks/README.md's "Known confounds" -- the control_mode gap
-        is recorded, not patched, because patching every approach into
-        reporting AUTONOMOUS would erase a real interop difference). Its
+        to ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S regardless of --timeout. Its
         outcome is logged and never gates step (b).
+
+        WHAT IS ESTABLISHED, corrected 2026-07-30 (Task 15). This path
+        DOES arm, on at least one cell: it was measured ACCEPTED on cell C
+        on the FIRST call (success=True, code=0; the retries then returned
+        code 60001 "The mode is the same as the current."), after which
+        the ego drove the full pre-registered route closed-loop to 0.109 m
+        of the goal with NO /autoware/engage publish anywhere in the
+        sequence -- benchmarks/evidence/task-15-adapi-engage-cellc/. Step
+        11.6 (benchmarks/evidence/step-11_6-adapi-engage/) measured the
+        opposite on cell A: refused for a full 60 s, ~30 retries, "The
+        target mode is not available". BOTH are retained.
+
+        Two claims this docstring used to make are REFUTED by the cell-C
+        captures, and are corrected here rather than dropped:
+          * "This is NOT the arming mechanism" -- false as a
+            cell-independent statement; on cell C it is one.
+          * The root cause "/vehicle/status/control_mode reporting
+            MANUAL, so the operation-mode transition manager never marks
+            autonomous available" -- that field read 4 (MANUAL) in
+            exactly the state where the transition was ACCEPTED, and the
+            cell-C capture shows it FOLLOWS the engage (4 -> 1 at
+            engage), so it is an output of arming, not a precondition of
+            it. Relatedly, is_autonomous_mode_available is a LIVE
+            engage-availability flag rather than a static capability:
+            true while stopped and armed, false from the first moving
+            sample, true again once stopped, with mode staying 2
+            throughout.
+
+        WHY cell A refused is NOT diagnosed. Cell A was not re-measured
+        and no reading here observes Town10, so the campaign's
+        per-approach observation still has to be made per cell -- which
+        is exactly why this attempt is kept and logged rather than
+        deleted (benchmarks/README.md's "Known confounds" control_mode
+        section, and its 2026-07-30 amendment). Patching every approach
+        into reporting AUTONOMOUS would still erase a real interop
+        difference; nothing measured here changes that.
      b. ALWAYS publish `/autoware/engage {engage: true}` -- the repo's one
         proven arming path (scripts/e2e/arm_closed_loop.sh,
         gate_g2_closed_loop.sh), unconditionally, whether or not (a)
-        succeeded. The two paths are not documented as interchangeable
+        succeeded. The dual-path structure SURVIVES (a)'s correction
+        above, on a sharper reason than it had before: (a) is now measured
+        to SUCCEED on one cell and REFUSE on another, with the refusal
+        undiagnosed, so it is precisely not something to rely on alone.
+        The two paths are also not documented as interchangeable
         (arm_closed_loop.sh --disarm calls BOTH the AD-API change_to_stop
-        service AND publishes /autoware/engage false), so this function
-        does not assume (a) alone is ever sufficient. The gated control_cmd
-        window, and the operation-mode state below, are both reset here
-        (see verify_control_flowing): only state and traffic from this
-        moment on can prove the engage.
+        service AND publishes /autoware/engage false), and publishing (b)
+        keeps this injector's arming semantics identical to the path the
+        repo's certified gates use (cell C's own certified G2 armed
+        through it). Engage is documented to LATCH (CLAUDE.md's arming
+        gotchas), so (b) after a successful (a) re-asserts a state already
+        held rather than issuing a conflicting command -- that rests on
+        the documented latch, not on a measurement of the two paths run
+        back to back. The gated control_cmd window, and the operation-mode
+        state below, are both reset here (see verify_control_flowing):
+        only state and traffic from this moment on can prove the engage.
      c. Verify BOTH, per review round 2: AUTHORITY -- /api/operation_mode/
         state reports mode == OperationModeState.AUTONOMOUS (NOT
         is_autoware_control_enabled: that flag reports WHO drives, not
@@ -65,7 +99,11 @@ Sequence:
         alone would let verify_control_flowing() return True on a stack
         that never armed. engage() returns this check's result, not (a)'s
         or (b)'s reported success, so a near-silent OR not-actually-engaged
-        gate cannot reach ARMED through this function.
+        gate cannot reach ARMED through this function. That also makes the
+        check PATH-AGNOSTIC, which is what lets (a)'s corrected status
+        above leave this code unchanged: whichever of (a) or (b) actually
+        took effect, ARMED is decided by the observed mode plus the gated
+        traffic, never by which interface was credited with it.
 
   Steps 3 and (4a) each retry every 2 s until their service reports
   status.success, up to their own timeout budget. (4a)'s budget is fixed at
@@ -189,14 +227,22 @@ CONTROL_CMD_WINDOW_S = 3.0
 # through a different door). Kept as a recorded, non-gating observation
 # instead (self._control_enabled, logged in engage() for R4.3).
 # Approach-agnostic: every cell runs the same AD-API operation-mode layer
-# regardless of which vehicle interface backs it.
+# regardless of which vehicle interface backs it. CORROBORATED 2026-07-30 by
+# a 34-sample series rather than one snapshot, on cell C: mode goes 1 -> 2 at
+# engage and stays 2 (benchmarks/evidence/task-15-adapi-engage-cellc/
+# legacy_autoware_engage.log), so this term tracks the engage as intended.
 OPERATION_MODE_STATE_TOPIC = "/api/operation_mode/state"
 
-# R4.1 -- the AD-API attempt is bounded far below --timeout's default (60 s)
-# because step 11.6 already measured it refuse consistently for the full
-# 60 s; a few retries are enough to record the per-approach observation
-# without taxing every run in the campaign for the whole budget. Engineering
-# judgment, not an independently measured constant.
+# R4.1 -- the AD-API attempt is bounded far below --timeout's default (60 s),
+# and the two measured outcomes now bracket that bound from both sides: where
+# it succeeds it succeeds on the FIRST call (cell C, 2026-07-30 --
+# benchmarks/evidence/task-15-adapi-engage-cellc/), and where it refuses it
+# refuses for the whole 60 s / ~30 retries (cell A, step 11.6). So a few
+# retries are enough to record the per-approach observation without taxing
+# every run in the campaign for the whole budget. Engineering judgment, not an
+# independently measured constant. (This comment used to rest on "step 11.6
+# already measured it refuse consistently", which the cell-C capture refutes
+# as a general claim; the 10 s bound is unchanged and better supported.)
 ADAPI_ENGAGE_ATTEMPT_TIMEOUT_S = 10.0
 
 # R4.1 -- the proven engage path (scripts/e2e/arm_closed_loop.sh,
@@ -585,7 +631,8 @@ class ArmAndGoal(Node):
         self.get_logger().warning(
             f"change_to_autonomous: did not succeed within {timeout_s:.0f} s -- "
             "FALLING BACK to the proven /autoware/engage publish (documented "
-            "fallback, not silent; see step-11_6-adapi-engage and R4.3)"
+            "fallback, not silent; see step-11_6-adapi-engage for a refusal, "
+            "task-15-adapi-engage-cellc for an acceptance, and R4.3)"
         )
         return False
 

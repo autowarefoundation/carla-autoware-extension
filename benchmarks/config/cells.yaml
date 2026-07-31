@@ -195,6 +195,14 @@ cells:
       # rig's own sweeps, including at the pose G1 measures, so 0.089 m is
       # optimistic relative to an independently-sourced map and is NOT
       # directly comparable to Nishi-Shinjuku's 0.078 m on cell C.
+      # POINTER (2026-07-30, Task 15): cell C's number is now a TRACKED
+      # 0.062 m from its own live re-gate on the current engine state
+      # (benchmarks/evidence/g1-nishi-bundle/, and cell C's own comment
+      # below). The 0.078 m above stands -- both are real static windows on
+      # the same Nishi bundle, 16 mm apart on a max statistic -- but 0.062 m
+      # is the one cell C's threshold rests on, so read the pair rather than
+      # either alone. The non-comparability claim is unaffected: it is about
+      # this bundle's provenance, not about which Nishi window is cited.
       ladder_branch: absolute
       abs_pose_gate_m: 0.5
   - id: B
