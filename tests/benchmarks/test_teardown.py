@@ -556,9 +556,7 @@ def _extract_sidecar_snippet(pidfile_var: str) -> str:
     import re
 
     text = TIER4_CELL.read_text()
-    pattern = re.compile(
-        r"echo \\\$! >\$" + pidfile_var + r"\n(  tr '\\0' ' '.*\|\| true)"
-    )
+    pattern = re.compile(r"echo \\\$! >\$" + pidfile_var + r"\n(  tr '\\0' ' '.*\|\| true)")
     m = pattern.search(text)
     assert m, f"sidecar-write line for {pidfile_var} not found in {TIER4_CELL}"
     return m.group(1)
@@ -592,10 +590,7 @@ def _run_sidecar_snippet(snippet: str, pidfile_var: str, pidfile: Path):
     command substitution -- exactly the container-side parse `cx` triggers.
     """
     host_script = (
-        f'{pidfile_var}="{pidfile}"\n'
-        "cat <<SIDECAR_SNIPPET_EOF\n"
-        f"{snippet}\n"
-        "SIDECAR_SNIPPET_EOF\n"
+        f'{pidfile_var}="{pidfile}"\ncat <<SIDECAR_SNIPPET_EOF\n{snippet}\nSIDECAR_SNIPPET_EOF\n'
     )
     host_pass = subprocess.run(
         ["bash", "-c", host_script], capture_output=True, text=True, timeout=10, check=False
