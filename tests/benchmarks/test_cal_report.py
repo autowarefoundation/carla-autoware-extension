@@ -1,11 +1,17 @@
-"""Tests for cal_report.py: the CAL-seam report tool (C1(a) table).
+"""Tests for cal_report.py: the calibration cells' latency/rate table.
 
-CAMPAIGN STATUS -- these tests cover DEAD CODE, deliberately kept
-(2026-07-30). Cell CAL-seam was STRUCK by the owner's core-duel scope cut
-(benchmarks/config/cells.yaml `dropped:`; benchmarks/README.md's 2026-07-30
-amendment), so cal_report.py will never run against a measurement and C1(a)
-seam overhead is UNMEASURED -- these passing tests are NOT evidence that the
-seam was measured. Kept because a later campaign reviving C1(a) inherits a
+CAMPAIGN STATUS, CORRECTED 2026-07-31 (Task 16). This docstring used to say
+"these tests cover DEAD CODE" and that "cal_report.py will never run against a
+measurement". Task 16 falsified both: it rendered all fifteen
+benchmarks/results/CAL-rmw/run-* directories through summarize_run and froze
+benchmarks/config/margins.yaml's one_hop_wall_ms margin from those p50s. The
+tool is LIVE and these tests cover live code.
+
+What IS dead is the tool's SEAM use. Cell CAL-seam was STRUCK by the owner's
+core-duel scope cut (benchmarks/config/cells.yaml `dropped:`;
+benchmarks/README.md's 2026-07-30 amendment), so C1(a) seam overhead is
+UNMEASURED and the seam-topic fixtures below are NOT evidence that the seam was
+measured. They are kept because a later campaign reviving C1(a) inherits a
 verified tool. See cal_report.py's own module docstring.
 
 A CAL run has NO clock.csv (nothing publishes /clock -- see

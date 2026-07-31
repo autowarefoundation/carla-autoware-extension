@@ -383,9 +383,9 @@ check lives there once rather than twice.
 > `cell_info.merge`'s `has_sim_clock` is true, so `run.sh` starts the clock
 > watchdog for it (step 7), waits for a sim span off `clock.csv` on the unpaced
 > path (step 10), and routes step 15 to `report.py`'s fit-strict renderer. But
-> `scripts/cal_report.py` — which is the **CAL-seam** tool specifically, not a
-> generic calibration one; its own first line says so — asserts that this cell
-> has no `/clock` and that no fit is "needed, or even possible". Both cannot
+> `scripts/cal_report.py` — the **calibration cells'** report tool, CAL-rmw's
+> as much as CAL-seam's — asserts that a CAL run has no `/clock` and that no
+> fit is "needed, or even possible". Applied to CAL-seam, both cannot
 > hold. If CAL-seam really has no `/clock`, every run of it is excluded
 > `stall:clock` before analysis sees it, and `has_sim_clock` (or the `carla:`
 > field it derives from) is wrong; if it does tick, `cal_report.py`'s premise
@@ -2595,9 +2595,12 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   `scripts/cal_report.py`'s assertion that CAL-seam has no `/clock` is
   recorded as Task 14's to settle. Completeness: the branch had been
   keyed off the `carla:` field and justified by citing `cal_report.py`,
-  which is the **CAL-seam** tool specifically, not a generic calibration
-  one — so the rule was keyed on an attribute that does not determine
-  fittability, against evidence scoped to a different cell than the one
+  whose `/clock` premise is about a CAL run generally (that citation
+  originally read "which is the **CAL-seam** tool specifically, not a
+  generic calibration one"; scope corrected 2026-07-31, Task 16 — see the
+  amendment of that date) — so the rule was keyed on an attribute that does
+  not determine fittability, against evidence scoped to a different cell
+  than the one
   it was applied to. Testing the data instead of the attribute makes the
   rule correct whichever way Task 14 resolves the contradiction.
 - **2026-07-28** — `config/cells.yaml`: `tick_hz` set to `null` on the
@@ -3300,12 +3303,11 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
 - **2026-07-30 — registered loss: the CAL-seam publishers are committed but
   UNEXERCISED, i.e. dead code for this campaign.** Task 14's CODE half landed
   and stays in the tree: `extension/src/publishers/BenchCloudPublisher.{h,cpp}`,
-  its `ExtensionInit.cpp` registration and `ext_on_tick` drive,
-  `benchmarks/scripts/cal_report.py`, and their tests
+  its `ExtensionInit.cpp` registration and `ext_on_tick` drive, and their tests
   (`extension/test/test_bench_cloud_publisher.cpp`,
-  `tests/benchmarks/test_cal_report.py`). **None of it will ever run in a
-  measurement**, and its presence must not be read as evidence that the seam was
-  measured — so the disclosure is written into the artifacts themselves
+  `tests/benchmarks/test_cal_report.py`'s seam-topic fixtures). **None of it
+  will ever run in a measurement**, and its presence must not be read as
+  evidence that the seam was measured — so the disclosure is written into the artifacts themselves
   (`BenchCloudPublisher.h`'s header, `cal_report.py`'s docstring, and
   `patches/extension/README.md`'s spec section, whose fork-side twin was never
   written and now will not be) as well as here. **Deliberately NOT deleted**:
@@ -3314,6 +3316,15 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   today), and a later campaign reviving C1(a) inherits both the instrument and
   the spec. No engine relink and no behaviour change: the edits are comments and
   documentation only.
+
+  **Scope corrected 2026-07-31 (Task 16).** This entry's dead-code list also
+  named `benchmarks/scripts/cal_report.py`, and that module is NOT dead: Task
+  16 rendered all fifteen `results/CAL-rmw/run-*` directories through its
+  `summarize_run` and froze `config/margins.yaml`'s `one_hop_wall_ms` margin
+  from those p50s. Only the module's SEAM use is unexercised. Its own
+  docstring and `tests/benchmarks/test_cal_report.py`'s carried the same wrong
+  scope and are corrected with it. Nothing about the PUBLISHERS changes — they
+  remain committed and never run.
 - **2026-07-30 — registered loss: no hard-fork-maintenance finding (`B45`).**
   This cell existed to measure what it costs to carry the tier4 CARLA fork
   against a **different** Autoware release (`pins.yaml` `autoware_045`,
