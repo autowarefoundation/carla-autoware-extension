@@ -42,7 +42,7 @@ MAX_CONSECUTIVE_FAILURES=2
 # ---------------------------------------------------------------------------
 # INTER-RUN PACING (amendment 2026-07-31, Task 18a). Host-idle time between
 # chained runs is a MEASUREMENT CONDITION, exactly like the interleaving and
-# per-pair alternation above (:6-22) -- it is disclosed and derived here for
+# per-pair alternation above (:7-22) -- it is disclosed and derived here for
 # the same reason those are, not tuned to make a stuck duel pass. Full
 # disclosure: benchmarks/results/PROVENANCE.md.
 #
@@ -72,7 +72,7 @@ MAX_CONSECUTIVE_FAILURES=2
 # (the 25.80/50.05 figures above are cell B's), so a load-triggered wait
 # would systematically shortchange whichever cell follows cell A and
 # lengthen whichever follows cell B -- reintroducing, inside pacing meant to
-# fix a chaining defect, exactly the asymmetry :6-22 exists to spread evenly.
+# fix a chaining defect, exactly the asymmetry :7-22 exists to spread evenly.
 #
 # FLOOR then a BOUNDED TOP-UP, never a bare wait and never an unbounded poll.
 # PACE_FLOOR_S is fixed above the measured worst case (95 s) plus margin: a
