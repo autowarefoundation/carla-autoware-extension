@@ -93,15 +93,31 @@ all five runs (**624 messages, 10.000–10.001 Hz**); both Fast DDS arms lose
 
 > ### Read this before using the fastdds-udp p50
 >
-> **The `fastdds-udp` p50 rests on roughly 1% of the offered messages, under
-> load not comparable with the cyclonedds arm's, and it is therefore a WEAK
-> loopback-parity number.** Median delivery on that arm is 53 messages against
-> 624 offered; per run only 4–130 rows survive the 20 s warm-up. The cyclonedds
-> arm carried ~10 msg/s and the fastdds-udp arm ~0.85 msg/s, so the two p50s
-> were not measured under comparable queueing pressure, and a nearly idle
-> transport can look faster per delivered message. Anyone reaching for "the
-> loopback-parity transport term" should treat this as a bound on evidential
-> weight, not as a characterisation of Fast DDS at this size.
+> **The `fastdds-udp` p50 rests on a small and wildly variable fraction of the
+> offered messages, under load not comparable with the cyclonedds arm's, and it
+> is therefore a WEAK loopback-parity number.** DERIVED 2026-07-31 from the
+> committed `observer.csv` files, on the same window construction the p50 uses
+> (`analysis/window.py:65` `static_window`, 20 s warm-up over
+> `arrival_system_ns` for `/bench/cloud`): the rows surviving the warm-up are
+> **4** (`run-003`), **51** (`run-006`), **130** (`run-009`), **7** (`run-012`)
+> and **37** (`run-015`) — a median of 37, i.e. **5.9% of the 624 offered**,
+> across a range of **0.6% to 20.8%**. On whole-run delivery the same arm is
+> 6 / 80 / 177 / 9 / 53 of 624, median 53 = **8.5%**. The denominator 624 is the
+> cyclonedds arm's own delivered count, used as the offered proxy because that
+> arm holds the 10 Hz target to within 0.01% on all five of its runs.
+>
+> **This supersedes a "roughly 1%" figure that stood here until 2026-07-31.**
+> That number describes `run-003` alone — 4/624 = 0.6% in-window, 6/624 = 1.0%
+> whole-run — the worst of the five runs, not the arm. **The ~1% end is
+> nonetheless where the frozen number comes from, which is the sharper
+> statement**: the median-of-5 the formula consumes is `run-012`'s p50 of
+> 1.0992 ms, and `run-012`'s window holds **7 rows**, 1.1% of the 624 offered.
+>
+> The cyclonedds arm carried ~10 msg/s and the fastdds-udp arm ~0.85 msg/s, so
+> the two p50s were not measured under comparable queueing pressure, and a
+> nearly idle transport can look faster per delivered message. Anyone reaching
+> for "the loopback-parity transport term" should treat this as a bound on
+> evidential weight, not as a characterisation of Fast DDS at this size.
 >
 > **No registered exclusion criterion covers this condition**, and that absence
 > is part of the record rather than something to paper over.
