@@ -195,10 +195,18 @@ cells:
       # rig's own sweeps, including at the pose G1 measures, so 0.089 m is
       # optimistic relative to an independently-sourced map and is NOT
       # directly comparable to Nishi-Shinjuku's 0.078 m on cell C.
+      # SOURCE of that 0.078 m: docs/e2e-report.md's "Post-refactor regression
+      # re-run (2026-07-24)" table, G1 NDT localization row -- max_err =
+      # 0.078 m, 400 samples, threshold 0.5 m. Inline-cited because a recorded
+      # number must name its source; Task 11 filed this gap for the final
+      # review pass, and Task 15 closes it instead since this file freezes at
+      # Task 16. The 0.089 m above is tracked at
+      # benchmarks/evidence/g1-rung2-regen/.
       # POINTER (2026-07-30, Task 15): cell C's number is now a TRACKED
       # 0.062 m from its own live re-gate on the current engine state
       # (benchmarks/evidence/g1-nishi-bundle/, and cell C's own comment
-      # below). The 0.078 m above stands -- both are real static windows on
+      # below). The 0.078 m above (cited to e2e-report.md there) stands --
+      # both are real static windows on
       # the same Nishi bundle, 16 mm apart on a max statistic -- but 0.062 m
       # is the one cell C's threshold rests on, so read the pair rather than
       # either alone. The non-comparability claim is unaffected: it is about
@@ -324,7 +332,10 @@ cells:
       # keeps the three distances apart.)
       #
       # NOT the historical figure: docs/e2e-report.md records 0.078 m on this
-      # map and cell A's comment above cites that number. Both are static
+      # map -- its "Post-refactor regression re-run (2026-07-24)" table, G1 NDT
+      # localization row (max_err = 0.078 m, 400 samples, threshold 0.5 m); the
+      # same table's G2 row is the 0.064 m closest approach. Cell A's comment
+      # above cites the same number and location. Both are static
       # windows on this bundle, 16 mm apart on a max statistic; 0.062 m is
       # what the branch rests on because it is measured on the CURRENT engine
       # state and its series are tracked. Cell A's 0.089 m stays NOT directly

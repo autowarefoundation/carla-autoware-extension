@@ -216,7 +216,10 @@ after a number is known.
   differences", i.e. comparability of the rate/latency/resource metrics,
   while the goal criterion's registered purpose is continuity with
   P0/P1's G2 — which measured closest approach over the WHOLE run
-  (0.064 m). Both committed routes set `stations.end_m` at (route length
+  (0.064 m; `docs/e2e-report.md`, "Post-refactor regression re-run
+  (2026-07-24)", the `G2 closed-loop route` row —
+  `closest_approach = 0.064 m`, tol 1.0 m). Both committed routes set
+  `stations.end_m` at (route length
   − 20 m) while their goal sits at the route's end, so the station
   window's last possible sample is 19.772 m (Town10) / 20.039 m
   (Nishi-Shinjuku) from the goal: scored there, the 1.0 m criterion
@@ -827,8 +830,9 @@ after the first P3 measurement run.
 
 **Six of the twelve registered cells will not be measured.** The owner cut the
 campaign's scope to the core duel; the full per-item reasoning is the
-2026-07-30 "core-duel scope cut" entry under `## Amendments made so far`, and
-the strike is machine-readable in `cells.yaml` as a `dropped:` key.
+2026-07-30 "core-duel scope cut" entry in the `Amendments made so far:` list
+under `## Pre-registration`, and the strike is machine-readable in `cells.yaml`
+as a `dropped:` key.
 
 | status                                                   | cells                                                          |
 | -------------------------------------------------------- | -------------------------------------------------------------- |
@@ -958,6 +962,10 @@ and the comparison must say so:
   it is a materially easier problem than matching an independently-authored HD
   map, so **max NDT error 0.089 m on cell A is NOT directly comparable to
   Nishi-Shinjuku's 0.078 m on cell C**, even though the two look alike.
+  (0.078 m: `docs/e2e-report.md`, "Post-refactor regression re-run
+  (2026-07-24)", the `G1 NDT localization` row — `max_err = 0.078 m`, 400
+  samples, threshold 0.5 m. Cell A's 0.089 m is tracked at
+  `benchmarks/evidence/g1-rung2-regen/`.)
 - It is nonetheless a legitimate G1 result rather than a tautology: the map is
   registered by CARLA **ground truth**, never by NDT's own estimate, so the
   pose it implies is the true pose and the error measured against ground truth
@@ -970,7 +978,8 @@ and the comparison must say so:
 - **Pointer (2026-07-30, Task 15), not a correction:** the cell-C figure to
   compare against is now a tracked **0.062 m**, measured on cell C's own live
   re-gate and retained at `benchmarks/evidence/g1-nishi-bundle/`. The 0.078 m
-  cited above stands — both are real static windows on the same Nishi bundle,
+  cited above (`docs/e2e-report.md`, "Post-refactor regression re-run
+  (2026-07-24)") stands — both are real static windows on the same Nishi bundle,
   16 mm apart on a max statistic — and this confound is unchanged either way,
   since it is about the Town10 bundle's provenance and not about which Nishi
   window is quoted. A P3 report should quote the tracked one.
@@ -2951,7 +2960,9 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   scores the same stretch of road regardless of small speed differences", i.e.
   comparability of the rate/latency/resource metrics; the goal criterion's is
   continuity with P0/P1's G2, which measured closest approach over the whole
-  run (0.064 m). Applying the first to the second was the defect.
+  run (0.064 m; `docs/e2e-report.md`, "Post-refactor regression re-run
+  (2026-07-24)", the `G2 closed-loop route` row). Applying the first to the
+  second was the defect.
   `stations.end_m` was NOT extended instead: the "Scoring window" paragraph
   registers that same window for all five margin-carrying duel metrics, so
   moving it would have moved the campaign's headline equivalence measurement.
@@ -3636,7 +3647,9 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   recorded total length; the retained distance series opens at 222.110 m, i.e.
   ~5.2 m after engage, because the gate's `control_cmd` liveness check precedes
   collection) is under `benchmarks/evidence/g2-nishi-cellc/`. It is
-  **not** the historical 0.078 m in `docs/e2e-report.md`, which stands but is
+  **not** the historical 0.078 m in `docs/e2e-report.md` ("Post-refactor
+  regression re-run (2026-07-24)", the `G1 NDT localization` row —
+  `max_err = 0.078 m`, 400 samples), which stands but is
   not what the threshold rests on, and cell A's 0.089 m stays **not directly
   comparable** for the self-registration reason already recorded (confound
   C4). **Cell D keeps `null` on purpose**: the bundle it would mount is now
