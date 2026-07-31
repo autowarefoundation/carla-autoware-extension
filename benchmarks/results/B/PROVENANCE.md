@@ -35,7 +35,7 @@ through `benchmarks/cells/extension.sh:192`. Before Task 17b, neither
 `benchmarks/cells/tier4-native.sh` nor `benchmarks/cells/tier4_autoware.sh`
 called it or anything like it: the B family booted the shared engine's
 `UnrealEditor` against `$BENCH_CARLA_TREE/.../CarlaUnreal.uproject`
-(`benchmarks/cells/tier4-native.sh:27-28`, boot at `:175-177`) with no artifact
+(`benchmarks/cells/tier4-native.sh:27-28`, boot at `:181-183`) with no artifact
 check.
 
 What the manifests recorded instead — verified on
@@ -392,10 +392,22 @@ Task 18.
 - **Refuses**, with the named check `tier4-artifact-stale`, when either
   `libUnrealEditor-Carla.so` or `libcarla-ros2-native.so` is older than the
   newest file under the tier4 tree's build sources. Also named and refused:
-  `tier4-tree`, `tier4-artifact-missing`, `tier4-source-roots`,
-  `tier4-artifact-older-than-head`, `tier4-stale-ack-unexplained` and
-  `tier4-identity`. A refusal happens **before** `run.sh` writes a manifest, so
-  no run is filed and no exclusion criterion is consumed.
+  `tier4-tree`, `tier4-tree-no-head`, `tier4-artifact-missing`,
+  `tier4-source-roots`, `tier4-source-scan`, `tier4-source-digest`,
+  `tier4-artifact-older-than-head`, `tier4-stale-ack-unexplained`,
+  `tier4-stale-ack-unbound`, `tier4-stale-ack-mismatch` and `tier4-identity`. A
+  refusal happens **before** `run.sh` writes a manifest, so no run is filed and
+  no exclusion criterion is consumed.
+
+  Two of those names were added on 2026-07-31 to close paths that could exit
+  **without** a name, which both callers' "named reason above" message
+  (`preflight.sh:316`, `cells/tier4-native.sh:77`) then pointed at nothing:
+  `tier4-source-scan` for the newest-source scan, which as a bare assignment
+  from a pipeline under `set -o pipefail` exited 1 with empty stdout *and* empty
+  stderr when a scanned root held an unreadable subdirectory (measured), and
+  `tier4-source-digest` for an unreadable source file. `tier4-tree-no-head` was
+  a **rename**: the no-HEAD-commit refusal was called `tier4-tree`, which is
+  check 1's name too, so no test could pin which check had refused.
 - **Has one acknowledgeable refusal**, `tier4-artifact-stale`, because mtime is
   not content. Re-applying the registered patches, a `git checkout`, a `stash
   pop` or an editor save all push a scanned source's mtime past the artifacts
@@ -403,26 +415,60 @@ Task 18.
   (`benchmarks/patches/tier4-native/README.md:15-17` documents exactly that
   `git apply`), and the remedy the refusal names first — rebuild — is forbidden
   mid-campaign, which would leave the B family refused with no way out.
-  `TIER4_STALE_ACK` takes a **reason string**, never a boolean: with it set, the
-  refusal becomes a loud `WARN` and the run proceeds carrying
-  `tier4_stale_ack=applied`, `tier4_stale_ack_reason=<the reason>` and
+  `TIER4_STALE_ACK` takes a **reason string**, never a boolean, and since
+  2026-07-31 it must be accompanied by `TIER4_STALE_ACK_SOURCE_SHA256`, the
+  `tier4_source_sha256` it is granted for. With both set, the refusal becomes a
+  loud `WARN` and the run proceeds carrying `tier4_stale_ack=applied`,
+  `tier4_stale_ack_reason=<the reason>`,
+  `tier4_stale_ack_source_sha256=<the binding>` and
   `tier4_stale_ack_artifacts=<which .so>` in its own manifest. Set-but-empty is
   itself a refusal (`tier4-stale-ack-unexplained`) — an unexplained
-  acknowledgement is not expressible. All three keys are emitted on **every**
-  run, so `tier4_stale_ack=none` (nothing was stale) and `unused` (set, but
-  nothing was stale) are distinguishable from a manifest written before the key
-  existed. `tier4-artifact-older-than-head` is deliberately **not**
-  acknowledgeable: it can only fire when HEAD moved, which is real content
-  change, not mtime drift. What makes the reason checkable rather than merely
-  asserted is `tier4_source_sha256`: equal digests across two runs prove the
-  scanned sources' content is identical however the mtimes moved.
+  acknowledgement is not expressible. All four keys are emitted on **every** run,
+  so `tier4_stale_ack=none` (nothing was stale) and `unused` (set, but nothing
+  was stale) are distinguishable from a manifest written before the keys existed.
+  `tier4-artifact-older-than-head` is deliberately **not** acknowledgeable: it
+  can only fire when HEAD moved, which is real content change, not mtime drift.
+  What makes the reason checkable rather than merely asserted is
+  `tier4_source_sha256`: equal digests across two runs prove the scanned sources'
+  content is identical however the mtimes moved.
+
+  **The binding was added because the acknowledgement was transferable**, and the
+  superseded design is kept here rather than replaced. As written on 2026-07-30 —
+  "`TIER4_STALE_ACK` takes a **reason string**, never a boolean: with it set, the
+  refusal becomes a loud `WARN`" — any non-empty reason downgraded the refusal, on
+  that run **and on every later one in the same shell**. One `export` left behind
+  therefore switched `tier4-artifact-stale` off for a whole session, including a
+  run whose scanned sources had **genuinely changed** — precisely the case the
+  check exists to refuse — and the `unused` WARN cannot catch it, because `unused`
+  only fires when nothing is stale. Task 18 files ~20 B-family runs from one
+  shell, so that was the shape of a whole arm's provenance gap reopening. An
+  acknowledgement now names the source state it was granted for and stops applying
+  the moment that state moves (`tier4-stale-ack-mismatch`, refused under its own
+  name so the operator learns the acknowledgement **expired** rather than only
+  that something is stale); an acknowledgement carrying no binding at all is
+  refused as `tier4-stale-ack-unbound`. Both refusals are eager — they fire
+  whether or not anything is stale — because the ack keys are filed on every run,
+  so a manifest recording a reason for a source state its run did not have would
+  be a corrupt record even when nothing was suppressed.
+
+  **What the binding does not do**, stated because the distinction matters: it
+  does not make the acknowledgement *self-justifying*. The digest is the tree's
+  own, and every refusal that needs it prints it, deliberately — a false refusal
+  must have a remedy and a rebuild is forbidden mid-campaign, so the remedy has to
+  be one copy-paste away. What the binding buys is **non-transferability across
+  source states**, nothing more. And for an `applied` acknowledgement
+  `tier4_stale_ack_source_sha256` necessarily equals that run's own
+  `tier4_source_sha256`, since a mismatch refuses: the honest reading of the key
+  is "a binding was required and satisfied", which is what separates such a
+  manifest from one written by the blanket-acknowledgement version of the gate,
+  where the key is absent altogether.
 - **Records identity** on stdout as `KEY=VALUE`, which `preflight.sh` forwards
   into `manifest.json`'s `placement` block: `tier4_git_sha`, `tier4_worktree`
   (`clean` / `registered-patches` / `diverged:+extra:-absent` against the
   registered patch set), `tier4_worktree_paths_sha256`,
   `tier4_worktree_content_sha256`, `tier4_source_sha256`, `tier4_plugin_sha256`,
   `tier4_ros2_native_sha256`, the three mtimes the staleness verdict used, and
-  the three `tier4_stale_ack*` keys below.
+  the four `tier4_stale_ack*` keys below.
 
   **Which of those are content and which are not**, because the distinction is
   the whole value of the block: `tier4_plugin_sha256` and
@@ -445,21 +491,60 @@ Task 18.
   `benchmarks/cells/tier4-native.sh`, before the editor boots, on both `plan`
   and `up`.
 - **Tested** in `tests/benchmarks/test_verify_tier4_artifact.py`, host-only, no
-  docker and nothing booted: fresh artifacts pass; a stale editor plugin and a
-  stale native lib each refuse by name; an acknowledged staleness WARNs, records
-  and does not block; an unexplained acknowledgement cannot pass, on a stale
-  tree or a fresh one; an acknowledgement that was not needed is recorded as
-  `unused`; the HEAD-staleness refusal ignores the acknowledgement; a tree nested
-  inside another repository is refused; an identity-reader failure still prints a
-  named check; and `tier4_source_sha256` is unchanged by an mtime-only touch
-  while `tier4_worktree_content_sha256` moves where the paths digest cannot.
-  Each of those properties was confirmed to **fail** against a deliberately
-  mutated gate (accepting an unexplained acknowledgement: 4 failures; ignoring
-  the acknowledgement: 3; dropping `-uall` from the porcelain read: 1).
+  docker and nothing booted: 47 executing tests as of 2026-07-31.
+
+  **Mutation coverage, per property.** This table replaces a claim that this
+  document made and did not establish. On 2026-07-30 the wording was narrow and
+  true — "the three staleness tests were confirmed to fail against a deliberately
+  suppressed check" — and on 2026-07-31 it was broadened to "**Each of those
+  properties** was confirmed to **fail** against a deliberately mutated gate
+  (accepting an unexplained acknowledgement: 4 failures; ignoring the
+  acknowledgement: 3; dropping `-uall` from the porcelain read: 1)", over a list
+  of ten properties. Three mutations yielding 4 + 3 + 1 failures cannot establish
+  ten properties, and one of the three (`-uall`) covers none of the ten. The
+  broadened claim is **withdrawn** and superseded by the measurements below, run
+  the same day. Both wordings are kept: this campaign keeps corrected claims in
+  the record beside what corrected them.
+
+  Every mutation was applied to a **copy** of the repo layout in a scratch
+  directory, never to the tracked tree, and the module was run against the copy.
+  Failure counts are out of the 47 tests. A mutation is reported with the test
+  that carries the property, plus the count of everything it took down with it.
+
+  | property | mutation | result | test that fails |
+  | -------- | -------- | ------ | --------------- |
+  | fresh artifacts pass | `-lt` → `-gt` in check 3, so a fresh artifact reads as stale | 27 failed / 20 passed | `test_fresh_artifacts_pass_and_record_the_trees_identity` |
+  | a stale editor plugin and a stale native lib each refuse by name | check 3's `fail` → a non-fatal `note` | 3 failed / 44 passed | `test_a_source_newer_than_the_editor_plugin_is_refused`, `…_the_ros2_native_lib_alone_…` |
+  | an acknowledged staleness WARNs, records and does not block | the acknowledgement is ignored in the verdict | 5 failed / 42 passed | `test_an_acknowledged_staleness_warns_records_and_does_not_block` |
+  | an unexplained acknowledgement cannot pass, stale tree or fresh | the blank-reason refusal → a `note` | 4 failed / 43 passed | `test_an_unexplained_acknowledgement_cannot_pass` (×3), `…_is_refused_even_on_a_fresh_tree` |
+  | an acknowledgement that was not needed is recorded as `unused` | `STALE_ACK_STATE=unused` → `none` | 6 failed / 41 passed | `test_an_acknowledgement_that_was_not_needed_is_recorded_as_unused` |
+  | an acknowledgement bound to no source state cannot pass | the `unbound` and `mismatch` refusals → `note`s (the pre-2026-07-31 blanket acknowledgement) | 6 failed / 41 passed | `test_an_acknowledgement_bound_to_no_source_state_cannot_pass` (×3), `…_even_on_a_fresh_tree` |
+  | an acknowledgement granted for another source state is refused | the binding is read but not enforced | 1 failed / 46 passed | `test_an_acknowledgement_granted_for_another_source_state_is_refused_by_name` |
+  | …and refused under its OWN name, not as plain staleness | a mismatched acknowledgement is ignored, so the run refuses as `tier4-artifact-stale` | 1 failed / 46 passed | same test |
+  | the binding is recorded in the manifest | `tier4_stale_ack_source_sha256` is not emitted | 4 failed / 43 passed | `test_fresh_artifacts_pass_and_record_the_trees_identity`, `test_an_acknowledged_staleness_…` |
+  | the HEAD-staleness refusal ignores the acknowledgement | check 4 honours `TIER4_STALE_ACK` | 1 failed / 46 passed | `test_the_head_staleness_check_cannot_be_acknowledged` |
+  | a tree nested inside another repository is refused | check 1 reverts to `rev-parse --git-dir`, which walks up | 1 failed / 46 passed | `test_a_tree_nested_inside_another_repository_is_refused` |
+  | an identity-reader failure still prints a named check | the reader reverts to a bare assignment | 1 failed / 46 passed | `test_a_tree_identity_failure_still_names_a_check` |
+  | a source scan that cannot read a directory refuses BY NAME | the scan reverts to a bare assignment from a pipeline, `find` stderr discarded | 1 failed / 46 passed | `test_an_unreadable_directory_under_a_scanned_root_is_refused_by_name` |
+  | the no-HEAD refusal is distinguishable from check 1 | it is renamed back to `tier4-tree` | 1 failed / 46 passed | `test_a_tree_with_no_commit_is_refused_by_name` |
+  | `tier4_source_sha256` is unchanged by an mtime-only touch | the digest folds in each file's mtime | 4 failed / 43 passed | `test_the_source_digest_is_unchanged_by_an_mtime_only_touch` |
+  | `tier4_worktree_content_sha256` moves where the paths digest cannot | it degenerates to the sorted dirty path list | 2 failed / 45 passed | `test_the_worktree_content_digest_moves_where_the_paths_digest_cannot`, `…_covers_untracked_file_content` |
+  | `-uall` keeps an untracked new directory out of `diverged:` | `-uall` → the porcelain default | 1 failed / 46 passed | `test_an_untracked_registered_path_in_a_new_directory_is_not_diverged` |
+  | preflight actually calls the gate | its call site is commented out | 1 failed / 46 passed | `test_preflight_runs_the_gate_for_the_tier4_approach_and_forwards_its_keys` |
+  | the launcher actually calls the gate | its call site is commented out | 1 failed / 46 passed | `test_the_tier4_launcher_runs_the_gate_before_it_boots_the_editor` |
+
+  **One property is NOT mutation-confirmed and rests on reading**, recorded here
+  rather than omitted. The source-digest walk passes `os.walk` an `onerror` that
+  re-raises, so an unreadable subtree cannot be silently skipped; deleting it
+  leaves all 47 tests green, because the scan that precedes it (`tier4-source-scan`)
+  already refuses on an unreadable directory, so nothing can reach the walk with
+  one in place. It is kept as defence in depth — the two steps' membership rules
+  are maintained separately and only coincide today — and the gate's own comment
+  says the same thing at the line concerned.
 
 Values on the tree as of 2026-07-30, re-read unchanged on 2026-07-31 when the two
-content digests were added, for whoever compares a future manifest against the
-runs described here:
+content digests were added and again when the acknowledgement binding was, for
+whoever compares a future manifest against the runs described here:
 
 ```text
 tier4_git_sha=6315b856f8faf2118578322eb20a2b902a45a384
@@ -471,8 +556,16 @@ tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd09
 tier4_ros2_native_sha256=4485f7b6b74404729a605107a6b2c851286cd942c89db416e811677fc62f3149
 tier4_stale_ack=none
 tier4_stale_ack_reason=-
+tier4_stale_ack_source_sha256=-
 tier4_stale_ack_artifacts=-
 ```
+
+All seven digests and both mtimes are byte-for-byte what the gate emitted before
+the acknowledgement binding was added, `tier4_source_sha256` included: moving that
+digest out of the identity reader and into check 3 changed **where** it is
+computed, not **what** it covers. That is the check that the reordering was
+behaviour-preserving, and it is the only reason the block above can still be
+compared against a manifest written by either version of the gate.
 
 The two `.so` digests are of the same files §2.2 dates and §2.1 disassembles, so
 a future manifest that reproduces the four content digests above — the two `.so`
