@@ -42,6 +42,26 @@ fail() { echo "LAUNCH FAIL (tier4-native/$BENCH_CELL): $*" >&2; exit 2; }
 [ -x "$EDITOR" ] || fail "shared engine editor missing: $EDITOR (set CARLA_UNREAL_ENGINE_PATH)"
 [ -f "$UPROJECT" ] || fail "tier4 fork uproject missing: $UPROJECT (pins.yaml tier4_carla_fork.path)"
 
+# The B family's counterpart to cell A's editor-artifact gate, which cell A
+# reaches through cells/extension.sh -> run_e2e.sh:126. Nothing stood here
+# before Task 17b: this launcher boots the shared engine against the tier4
+# tree's plugin (line ~147 below) and a stale .so publishes a different wire
+# format from the source the record cites, silently.
+#
+# Called on BOTH `plan` and `up` (this block runs before the mode switch), and
+# called AGAIN even though preflight.sh section 7 already ran it under run.sh:
+# a launcher invoked directly -- the documented entry point at the top of this
+# file -- never passes through preflight, and the tree it would boot is
+# $BENCH_CARLA_TREE, which is what is checked here. The duplicate costs one
+# `find` over two source roots (~20 ms measured) and removes a way to boot an
+# unverified binary. Its KEY=VALUE stdout is the manifest's business, not this
+# script's, so it is discarded here; the named refusal and the OK/WARN prose
+# both go to stderr and are what an operator sees.
+TIER4_GATE="$BENCH_REPO/benchmarks/scripts/verify_tier4_artifact.sh"
+[ -f "$TIER4_GATE" ] || fail "tier4 plugin-artifact gate missing: $TIER4_GATE"
+TIER4_TREE="$BENCH_CARLA_TREE" bash "$TIER4_GATE" >/dev/null ||
+  fail "the tier4 plugin-artifact gate refused this run (named reason above)"
+
 # The GT client must match the SERVER this cell boots -- the tier4 fork's own
 # 0.10 build. The tree's wheel is built for cp313 and this host's default
 # interpreter is 3.12, so there is no ready-made venv: refuse with the exact

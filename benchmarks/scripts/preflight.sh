@@ -13,9 +13,12 @@
 #   RPC port already bound  criterion 7 (port)       -- SIGABRT inside LoadMap
 #   engine BuildId mismatch criterion 8 (buildid)    -- editor modules stale
 #
-# Disk and stale DDS shared memory are not exclusion criteria: they are
-# preconditions for the run producing data at all, so they are checked (and,
-# for SHM, repaired) here rather than diagnosed afterwards.
+# Disk, stale DDS shared memory and the tier4 plugin-artifact gate are not
+# exclusion criteria: they are preconditions for the run producing data at all,
+# so they are checked (and, for SHM, repaired) here rather than diagnosed
+# afterwards. A refusal from any of them happens BEFORE run.sh writes a
+# manifest, so no run is filed and no criterion is consumed --
+# benchmarks/config/exclusions.md is pre-registered and may not be edited.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -287,6 +290,34 @@ if [ -n "$BUNDLE_DIR_NAME" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 7. tier4 plugin artifact + tree identity, tier4-native approach only (cells
+#    B, B-hf, B45, D). Cell A gets the equivalent through
+#    cells/extension.sh -> run_e2e.sh:126 -> verify_editor_artifact.sh; the B
+#    family reached nothing at all until Task 17b, so every B-family run
+#    committed before this section was ungated
+#    (benchmarks/results/B/PROVENANCE.md).
+#
+#    Placed HERE, in preflight, and not only in the launcher, because the
+#    identity has to reach the MANIFEST: run.sh writes the manifest at step 4
+#    from this script's KEY=VALUE output and runs the launcher only at step 5,
+#    so a launcher-only gate could refuse a run but could never record what a
+#    run that passed actually loaded. cells/tier4-native.sh calls the same
+#    script again in its `plan` step, which is what covers a launcher invoked
+#    directly rather than through run.sh.
+#
+#    CARLA_TREE comes from section 5, which resolved it from pins.yaml
+#    tier4_carla_fork.path -- the same value run.sh passes to the launcher as
+#    BENCH_CARLA_TREE, so the gate and the boot cannot disagree about which
+#    tree was checked.
+# ---------------------------------------------------------------------------
+TIER4_KV=""
+if [ "$APPROACH" = "tier4-native" ]; then
+  if ! TIER4_KV="$(TIER4_TREE="$CARLA_TREE" bash "$HERE/verify_tier4_artifact.sh")"; then
+    fail "the tier4 plugin-artifact gate refused this run (named reason above)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # KEY=VALUE report. run.sh folds these into placement.
 # ---------------------------------------------------------------------------
 GOVERNOR="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown)"
@@ -309,4 +340,13 @@ fi
 # check never ran" the same observation in the manifest. Every path above sets
 # this to either a pin key or skipped:<reason>:<detail>.
 echo "map_bundle_pin=$MAP_BUNDLE_PIN"
+# Section 7's KEY=VALUE block, verbatim and unparsed: the gate owns the key
+# names, this script only forwards them, so adding a key there needs no edit
+# here. Empty for every non-tier4-native approach, and `echo` on an empty
+# string would emit a blank line that run.sh's `key, _, value = line.partition`
+# would turn into no key at all -- harmless, but the guard keeps the output a
+# clean KEY=VALUE stream.
+if [ -n "$TIER4_KV" ]; then
+  echo "$TIER4_KV"
+fi
 exit 0
