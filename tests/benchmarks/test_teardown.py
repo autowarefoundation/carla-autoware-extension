@@ -446,6 +446,128 @@ def test_survivor_report_is_retained_in_the_run_directory(tmp_path, fake_docker)
         aw_proc.wait(timeout=5)
 
 
+# --- F3 (fix round 1): append, not truncate, across a repeated invocation --
+
+
+def test_repeated_teardown_with_container_still_present_appends_the_report(tmp_path, fake_docker):
+    """F3's real-code-path pin: teardown.sh runs TWICE per real run (:27-29
+    below) -- once on the success path, once from run.sh's EXIT trap -- and
+    the second call normally returns early because `docker inspect` fails
+    once the container is gone (:311-316's `docker rm -f`). But if THAT
+    removal itself failed -- the wedged state this whole task exists to
+    report on -- the container is still there, `stop_tier4_launch_tree`
+    re-enters, and a TRUNCATING `tee` would silently replace the first,
+    informative report with the second. This never removes the container
+    from the stand-in's "existing" list across two REAL, separate
+    teardown.sh subprocess invocations against the SAME run_dir, so the
+    second exec genuinely re-fires against a second real stand-in tree --
+    then checks the retained log carries BOTH reports. A truncating `tee`
+    (reverting fix round 1's `-a`) leaves only the second, failing this."""
+    run_dir = tmp_path / "run"
+    fake_docker.set_existing(CONTAINER)
+    _base_env(run_dir)
+
+    relay1, aw1 = _start_stub(tmp_path, "relay1"), _start_stub(tmp_path, "aw1")
+    try:
+        fake_docker.sandboxed("/tmp/tier4-concat-relay.pid").write_text(str(relay1.pid))
+        fake_docker.sandboxed("/tmp/tier4-autoware.pid").write_text(str(aw1.pid))
+        result1 = run_teardown(run_dir, fake_docker.env)
+        assert result1.returncode == 0, result1.stderr
+        assert _wait_until(lambda: not _alive(relay1.pid))
+        assert _wait_until(lambda: not _alive(aw1.pid))
+    finally:
+        for p in (relay1, aw1):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+    # Second invocation, same run_dir, same container name still reported as
+    # existing (the stand-in's `rm` subcommand never edits the exists file --
+    # modelling a `docker rm -f` that did not actually take), against a
+    # fresh pair of real stand-in processes.
+    relay2, aw2 = _start_stub(tmp_path, "relay2"), _start_stub(tmp_path, "aw2")
+    try:
+        fake_docker.sandboxed("/tmp/tier4-concat-relay.pid").write_text(str(relay2.pid))
+        fake_docker.sandboxed("/tmp/tier4-autoware.pid").write_text(str(aw2.pid))
+        result2 = run_teardown(run_dir, fake_docker.env)
+        assert result2.returncode == 0, result2.stderr
+        assert _wait_until(lambda: not _alive(relay2.pid))
+        assert _wait_until(lambda: not _alive(aw2.pid))
+    finally:
+        for p in (relay2, aw2):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+    log_file = run_dir / "tier4-stop-launch-tree.log"
+    assert log_file.exists()
+    report = log_file.read_text()
+    # Each real invocation prints this exactly once (stop_launch_tree.sh's
+    # own final summary line); two occurrences means both were retained.
+    assert report.count("autoware launch + concat relay stopped") == 2, report
+
+
+def _extract_log_target_guard() -> str:
+    """Pulls the REAL log_target fallback guard (fix round 1, F3) straight
+    out of benchmarks/scripts/teardown.sh by regex, the same
+    regex-extraction technique the D2 sidecar tests below use, so a change
+    to the real guard is what this test runs -- not this test's own memory
+    of it."""
+    import re
+
+    text = TEARDOWN.read_text()
+    pattern = re.compile(
+        r'(local log_target="\$RUN_DIR/tier4-stop-launch-tree\.log"\n'
+        r'  \[ -n "\$\{RUN_DIR:-\}" \] && \[ -d "\$RUN_DIR" \] \|\| '
+        r"log_target=/dev/null)"
+    )
+    m = pattern.search(text)
+    assert m, "log_target fallback guard not found in teardown.sh"
+    return m.group(1)
+
+
+def test_log_target_falls_back_to_devnull_when_run_dir_is_missing(tmp_path):
+    """F3's second real-code-path pin (fix round 1): a `tee` pointed at a
+    path under a $RUN_DIR that does not exist fails to open its target and
+    exits immediately, SIGPIPE-ing whatever is still writing to the far end
+    of the pipe -- surfacing as the tree-stop exec exiting 141 mid-ladder
+    instead of completing it. Runs the REAL guard line (extracted above) as
+    real bash, under `set -u` to match teardown.sh's own flags, against a
+    RUN_DIR that is set (as it always is in the real script, from its own
+    `${1:?...}`) but points at a directory that does not exist, and against
+    one that does -- checking log_target resolves to /dev/null only in the
+    first case."""
+    guard = _extract_log_target_guard()
+
+    def resolve(run_dir_value: str) -> str:
+        # Wrapped in a function, not run at top level: the real guard's
+        # `local` only works inside a function (it lives inside
+        # stop_tier4_launch_tree() in teardown.sh), and `local` outside one
+        # is a non-fatal bash error that would silently leave $log_target
+        # unset instead of reproducing the real scoping.
+        script = (
+            "set -u\n"
+            "probe() {\n"
+            f'  local RUN_DIR="{run_dir_value}"\n'
+            f"  {guard}\n"
+            '  echo "$log_target"\n'
+            "}\n"
+            "probe\n"
+        )
+        result = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, timeout=10, check=False
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    missing_dir = tmp_path / "does-not-exist"
+    assert resolve(str(missing_dir)) == "/dev/null"
+
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    assert resolve(str(real_dir)) == f"{real_dir}/tier4-stop-launch-tree.log"
+
+
 # --- non-fatal on a missing container, missing script, failed exec --------
 
 

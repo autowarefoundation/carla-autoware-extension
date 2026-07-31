@@ -108,9 +108,11 @@
 # documented recovery for that state (CLAUDE.md; benchmarks/README.md).
 #
 # SECOND KNOWN LIMIT -- WHICH CELLS THIS COVERS, and it is not all of them.
-# Nothing reaches this script except `launch_autoware.sh --stop` (a documented
-# standalone entry point too -- docs/running-e2e.md), and the only HARNESS
-# caller of that is run_e2e.sh's cleanup() at scripts/e2e/run_e2e.sh:254.
+# Nothing reached this script except `launch_autoware.sh --stop` (a
+# documented standalone entry point too -- docs/running-e2e.md) until Task
+# 17c added a second caller (below). The only HARNESS caller of
+# `launch_autoware.sh --stop` is still run_e2e.sh's cleanup() at
+# scripts/e2e/run_e2e.sh:254.
 # On the bench side that is the EXTENSION family only:
 # benchmarks/cells/extension.sh:192 is the sole cell launcher that starts
 # run_e2e.sh, and benchmarks/config/cells.yaml gives `approach: extension` to
@@ -120,34 +122,51 @@
 # (cells.yaml:585) from the owner's 2026-07-30 core-duel scope cut, and that
 # key is a SCOPE marker, not a prohibition -- run.sh:240-249 WARNs and runs the
 # cell anyway, deliberately, so an un-drop needs nothing from this script.
-# The tier4-native family never comes through here. Cell B starts its own
-# `ros2 launch` inside its own container and records the pid in its own
-# container-side pid file (benchmarks/cells/tier4_autoware.sh:389-395;
-# AW_PIDFILE=/tmp/tier4-autoware.pid at tier4_autoware.sh:41), and nothing
-# outside that launcher ever reads it -- benchmarks/scripts/teardown.sh's
-# `tier4-native` branch (teardown.sh:157-165) stops the demo and CARLA and not
-# the Autoware launch tree. The python-bridge family has the same shape
-# (/tmp/bridge-stage1.pid, /tmp/bridge-stage2.pid --
+# The tier4-native family did not come through here at all before Task 17c;
+# it does now, via a second caller: benchmarks/scripts/teardown.sh's
+# `stop_tier4_launch_tree` (teardown.sh:114-140), called from the
+# `tier4-native` case branch (teardown.sh:220-249), pipes this SAME script
+# into that family's container the identical way (`docker exec -i
+# <container> bash -s -- <pidfiles>`, teardown.sh:133). Cell B still starts
+# its own `ros2 launch` inside its own container and records the pid in its
+# own container-side pid file (benchmarks/cells/tier4_autoware.sh:399-409;
+# AW_PIDFILE=/tmp/tier4-autoware.pid at tier4_autoware.sh:41); as of Task 17c
+# that pid file is read by this script too, through the second caller above,
+# so the Autoware launch tree is stopped there along with the demo and
+# CARLA. The python-bridge family is the one family this still does not
+# reach (/tmp/bridge-stage1.pid, /tmp/bridge-stage2.pid --
 # benchmarks/cells/python-bridge.sh:330,369).
 #
 # WHAT THAT DOES AND DOES NOT MEAN, because the difference matters and the
-# stronger claim does not survive checking. On the HAPPY path cell B's stack is
-# cleared by removing its container outright: cells/tier4-native.sh:144 sets
-# AW_COMPOSE="", so teardown.sh:227-231 takes the `docker rm -f "$AW_CONTAINER"`
-# branch, and the launcher re-creates the container fresh next run
-# (tier4_autoware.sh:323,326). So the measured accumulation defect -- survivors
-# piling up inside a container that OUTLIVES the launch, which is exactly the
-# run_e2e.sh shape -- does not reproduce there run over run. What cell B does
-# NOT have is any graceful, recorded-tree shutdown at all: its launch tree dies
-# with the container, with no signal ladder and no exit handlers, and if a run
-# is interrupted before teardown reaches that step the whole tree survives with
-# nothing holding a pid for it. Recovery is again `docker rm -f` /
-# `docker compose down`.
+# stronger claim does not survive checking. On the HAPPY path cell B's stack
+# is cleared by removing its container outright: cells/tier4-native.sh:144
+# sets AW_COMPOSE="", so teardown.sh:311-316 takes the `docker rm -f
+# "$AW_CONTAINER"` branch, and the launcher re-creates the container fresh
+# next run (tier4_autoware.sh:323,326). So the measured accumulation defect
+# -- survivors piling up inside a container that OUTLIVES the launch, which
+# is exactly the run_e2e.sh shape -- did not reproduce there run over run
+# even before Task 17c. Before Task 17c, what cell B did NOT have was any
+# graceful, recorded-tree shutdown at all: its launch tree died with the
+# container, with no signal ladder and no exit handlers, and a run
+# interrupted before teardown reached that step left the whole tree
+# surviving with nothing holding a pid for it. Task 17c closed exactly that
+# gap: `stop_tier4_launch_tree` now runs FIRST in the `tier4-native` branch
+# (teardown.sh:241), before the demo/CARLA stop, so an interrupted run gets
+# the same signal ladder the extension family gets through this script --
+# best-effort and never fatal, same as everywhere else in this file. The
+# KNOWN LIMIT two paragraphs up still applies unchanged, to cell B exactly as
+# to the extension family: processes orphaned by an EARLIER SIGTERM-only
+# teardown are not descendants of anything this script has a pid for, so
+# `docker rm -f` / `docker compose down` remains the documented recovery for
+# that residual case.
 #
-# DELIBERATELY NOT FIXED HERE. Extending the recorded-tree teardown to the B
-# path is outside Task 16's scope and is sequenced separately, to land before
-# Task 18 (the primary duel) so that duel's cell-B runs are torn down the same
-# way its cell-A runs are.
+# FIXED IN TASK 17c, not left as it was when this paragraph was first
+# written. Extending the recorded-tree teardown to the B path was sequenced
+# separately from Task 16, to land before Task 18 (the primary duel) so that
+# duel's cell-B runs are torn down the same way its cell-A runs are -- see
+# the two paragraphs above for what changed, and teardown.sh:83-140 for the
+# wiring itself. The python-bridge family is not addressed by this change
+# and remains open.
 #
 # /proc is read directly. `pgrep`/`pkill -f` self-match this script's own
 # command line, a documented project gotcha that has cost live runs.

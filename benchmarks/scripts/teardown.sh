@@ -89,9 +89,10 @@ stop_container() {
 # Task 15 measured on the extension family ten minutes after a
 # "successful" teardown (169 nodes, 74 processes, loadavg 42) and Task 16
 # fixed there with scripts/e2e/stop_launch_tree.sh. This function wires
-# that SAME script -- unmodified, since it is pinned by
-# tests/e2e/test_stop_launch_tree.py and by
-# benchmarks/results/CAL-rmw/PROVENANCE.md -- into cell B.
+# that SAME script -- its behaviour untouched, since it is pinned by
+# tests/e2e/test_stop_launch_tree.py -- into cell B. (Fix round 1's F2
+# updated that script's own header comments to keep its design record
+# accurate after this wiring landed; no functional change.)
 #
 # Delivery: `docker exec -i <container> bash -s -- <pidfiles>`, piping the
 # script in on stdin. scripts/e2e/launch_autoware.sh's own --stop path
@@ -128,11 +129,46 @@ stop_tier4_launch_tree() {
   # teardown.sh call and duel.sh's call into run.sh both run unredirected).
   # Mirrors run.sh step 9's arm.log tee: PIPESTATUS[0] under pipefail so
   # the exec's own exit code, not tee's, decides the WARN below.
+  #
+  # `-a`, not a truncating `tee` (fix round 1, F3): teardown.sh runs TWICE
+  # per run (:27-29 below); the second call normally returns early because
+  # the container is already gone (`docker inspect` above fails after
+  # :311-316's `docker rm -f`). But if THAT removal itself failed -- the
+  # wedged state this whole task exists to report on -- the container is
+  # still there, this function re-enters, and a truncating `tee` would
+  # replace the first, informative report with whatever the second,
+  # already-torn-down pass produces. Appending keeps both.
+  #
+  # The log target falls back to /dev/null when $RUN_DIR is unset or does
+  # not exist, rather than pointing `tee` at a path it cannot create: a
+  # `tee` that fails to open its target exits immediately, SIGPIPEs the
+  # `docker exec` still writing to the far end of the pipe, and that
+  # surfaces as the exec exiting 141 mid-ladder instead of completing it.
+  # /dev/null always opens, so the exec always runs to completion; losing
+  # the log in that case is strictly better than losing the tree stop.
+  local log_target="$RUN_DIR/tier4-stop-launch-tree.log"
+  [ -n "${RUN_DIR:-}" ] && [ -d "$RUN_DIR" ] || log_target=/dev/null
+  # Bounded so a wedged `docker exec` cannot block the demo/CARLA stop
+  # below or the next duel run (fix round 1, F4): 100s, derived as two
+  # pidfiles walked SEQUENTIALLY through stop_launch_tree.sh's own
+  # ladder (INT_WAIT_S=5 + REINT_WAIT_S=15 + TERM_WAIT_S=10 +
+  # KILL_WAIT_S=5 = 35s per pidfile at that script's documented
+  # defaults, so 2 * 35s = 70s worst case) plus a 30s margin for
+  # `docker exec`'s own dial and startup overhead. Assumes those
+  # defaults are not overridden; this bound would need revisiting if
+  # they ever are. `--kill-after=10` makes the exec actually die rather
+  # than merely being asked to, since nothing here owns the far end of
+  # the pipe once `timeout` gives up. A fired timeout only means
+  # survivors are reported instead of a clean stop -- the WARN below
+  # already treats every non-zero exit (including timeout's 124) as
+  # non-fatal, exactly like a real exec failure.
+  local tree_stop_timeout_s=100
   local rc
   set +o pipefail
-  docker exec -i "$container" bash -s -- \
+  timeout --kill-after=10 "$tree_stop_timeout_s" \
+    docker exec -i "$container" bash -s -- \
     /tmp/tier4-concat-relay.pid /tmp/tier4-autoware.pid \
-    <"$script" 2>&1 | tee "$RUN_DIR/tier4-stop-launch-tree.log"
+    <"$script" 2>&1 | tee -a "$log_target"
   rc="${PIPESTATUS[0]}"
   set -o pipefail
   [ "$rc" = "0" ] ||
@@ -229,9 +265,19 @@ case "${APPROACH:-}" in
     # rclcpp can spin() its way to a clean exit, and the demo is this
     # cell's tick source, so stopping the demo FIRST would freeze /clock
     # and turn every SIGINT rung into a dead wait, i.e. the exact
-    # ungraceful-shutdown defect stop_launch_tree.sh exists to fix. Cost of
-    # tree-first: none identified against the demo-hang hazard, since
-    # nothing here touches CARLA or the demo before the tree stop returns.
+    # ungraceful-shutdown defect stop_launch_tree.sh exists to fix. Cost
+    # of tree-first, corrected (fix round 1, F4): it is NOT free. The
+    # demo/CARLA stop below is delayed by however long the tree stop
+    # takes -- up to the full signal ladder per pidfile (INT_WAIT_S=5 +
+    # REINT_WAIT_S=15 + TERM_WAIT_S=10 + KILL_WAIT_S=5 = 35s at
+    # stop_launch_tree.sh's own defaults), for EACH of the two pidfiles
+    # it walks sequentially -- ~70s worst case -- and the `docker exec`
+    # itself was unbounded until this round, so on a loaded host with a
+    # sluggish daemon that delay could land on the UE editor still
+    # holding port 2000 and block the next duel run.
+    # `stop_tier4_launch_tree` now wraps its `docker exec` in `timeout`
+    # (see there for the budget and its derivation) to cap that
+    # exposure; it does not remove it.
     #
     # D1 ordering decision 2: placed here, the call also runs before the
     # log-copy block below (guarded by
