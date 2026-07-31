@@ -384,6 +384,18 @@ cx "test -f $MAP_DIR/lanelet2_map.osm" >/dev/null 2>&1 ||
 # artifacts ship); the clear-road injector stands in, which is what
 # benchmarks/README.md's perception-load confound registers for A/B/C/D.
 # launch_vehicle_interface:=false because the fork IS the vehicle interface.
+#
+# The line after echo $! writes the SAME sidecar
+# scripts/e2e/launch_autoware.sh:186-191 writes for the extension family --
+# stop_launch_tree.sh's pid-reuse guard compares a recorded pid's /proc
+# cmdline against this file (Task 17c, D2). Best-effort (|| true) and never
+# allowed to fail the launch: an absent sidecar only means that guard is
+# skipped, never failed (stop_launch_tree.sh's own header), and the sidecar's
+# REMOVAL is already that script's job -- this launcher only owes the write.
+# cx() sends a DOUBLE-quoted string (unlike compose_exec's single-quoted
+# one), so $AW_PIDFILE below expands on the HOST like every other $VAR in
+# this call, and only \$(cat ...) is escaped to defer it to the container's
+# own /proc at run time.
 echo "OK: bringing Autoware up (map $BENCH_MAP, bundle $MAP_DIR) -- log $AW_LOG"
 # shellcheck disable=SC2016 # $AW_LOG/$! expand IN the container, on purpose
 cx "$AW_ENV
@@ -392,7 +404,8 @@ cx "$AW_ENV
     sensor_model:=awsim_labs_sensor_kit vehicle_model:=sample_vehicle \
     simulator_type:=awsim launch_vehicle_interface:=false \
     use_sim_time:=true perception:=false rviz:=false >$AW_LOG 2>&1 &
-  echo \$! >$AW_PIDFILE" ||
+  echo \$! >$AW_PIDFILE
+  tr '\0' ' ' </proc/\$(cat $AW_PIDFILE)/cmdline >$AW_PIDFILE.cmd 2>/dev/null || true" ||
   fail_with_log "the Autoware launch could not be started"
 
 # ---------------------------------------------------------------------------
@@ -454,10 +467,15 @@ echo "OK: the fork's LiDAR is readable inside the stack (Task 9 rung 1 holds)"
 # above rather than deleted, per the campaign's convention that refuted
 # hypotheses stay in the record WITH what refuted them -- annotated here
 # because this is where a reader acts on it.
+#
+# Same sidecar shape as the Autoware launch step above (Task 17c, D2): a
+# best-effort, never-fatal write of the recorded pid's /proc cmdline, for
+# stop_launch_tree.sh's pid-reuse guard.
 cx "$AW_ENV
   nohup ros2 run topic_tools relay $RELAY_IN $RELAY_OUT \
     >/tmp/tier4-concat-relay.log 2>&1 &
-  echo \$! >$RELAY_PIDFILE" ||
+  echo \$! >$RELAY_PIDFILE
+  tr '\0' ' ' </proc/\$(cat $RELAY_PIDFILE)/cmdline >$RELAY_PIDFILE.cmd 2>/dev/null || true" ||
   fail_with_log "the single-LiDAR concat relay could not be started"
 echo "OK: concat relay $RELAY_IN -> $RELAY_OUT"
 
