@@ -1354,6 +1354,28 @@ than the `observer_env` row it shows up in:
   observed one-hop M1/M2 number is attributable to the recording
   transport, and it bounds exactly that: the **instrument** difference
   between a Cyclone-on-`lo` observer and a Fast-DDS-UDP observer.
+- **DISCLOSED APPROXIMATION: publisher PLACEMENT is not the duel's.** In
+  `CAL-rmw` both ends are containerised — `bench_pub` and `bench_observer` run
+  in two containers from the ONE observer image, `--net=host --ipc=host`
+  (`cells/calibration.sh:136-142`, `run.sh:605-607`), and every CAL-rmw
+  manifest records it as `placement.run_mode: container-only`. In the native
+  cells the publisher is a HOST process (the CARLA fork; `run_mode:
+  editor-game`), and only the observer is containerised. So the calibration
+  measures a container-to-container hop where the duel has a host-to-container
+  one. **What that does bound:** the observer-side transport difference
+  between two RMW configurations, since both CAL arms share the identical
+  placement and it therefore cancels out of the cyclonedds-vs-fastdds delta
+  the `one_hop_wall_ms` margin is frozen from. **What it does NOT bound:** the
+  absolute one-hop wall latency of a native cell, because a host-process
+  publisher crossing into a container is a different path — namespace
+  boundaries, `--ipc=host` segment ownership and scheduling all differ — and
+  this campaign never measured that path with the publisher on the host.
+  Nothing corrects for it and the delta is not adjusted; it is stated so a
+  reader does not transfer a CAL absolute onto a native cell. **Registered
+  2026-07-31 (Task 16)**: this approximation had been asserted in that task's
+  dispatch as "already recorded in the README" and it was NOT — the word
+  "approximation" did not occur in this file at all — so it is recorded here
+  now rather than left as an inherited claim about itself.
 - **What `CAL-rmw` does not bound.** It contains no Autoware, so it says
   nothing about the DUT-side difference. In the B family Autoware's own
   intra-stack topics travel over Fast-DDS/UDP-loopback instead of
