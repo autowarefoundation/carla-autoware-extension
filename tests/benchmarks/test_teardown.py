@@ -61,6 +61,7 @@ REPO = Path(__file__).resolve().parents[2]
 TEARDOWN = REPO / "benchmarks" / "scripts" / "teardown.sh"
 STOP_SCRIPT = REPO / "scripts" / "e2e" / "stop_launch_tree.sh"
 TIER4_CELL = REPO / "benchmarks" / "cells" / "tier4_autoware.sh"
+LAUNCH_AUTOWARE = REPO / "scripts" / "e2e" / "launch_autoware.sh"
 
 # Ladder waits compressed the same way tests/e2e/test_stop_launch_tree.py
 # does, so a rung that is not skipped still costs a couple of seconds, not
@@ -685,100 +686,20 @@ def test_failed_docker_exec_leaves_teardown_otherwise_unchanged(tmp_path, fake_d
         demo_proc.wait(timeout=5)
 
 
-# --- D2: the .cmd sidecar cells/tier4_autoware.sh writes -------------------
+# --- D2/D1: the .cmd sidecars cells/tier4_autoware.sh writes ---------------
 #
-# AW_PIDFILE and RELAY_PIDFILE write DIFFERENT shapes since Task 18b: the
-# RELAY_PIDFILE write is still the original single-line best-effort `tr`
-# (D1 is scoped to the fork/exec race on the AUTOWARE launch pid only, per
-# the brief -- the relay's own pidfile is untouched), while AW_PIDFILE now
-# runs the polling loop that closes that race (D1). Extracted and run
-# separately below, each against the technique that is actually faithful to
-# its own escaping.
-
-
-def _extract_sidecar_snippet(pidfile_var: str) -> str:
-    """Pulls the RELAY_PIDFILE single-line sidecar-write snippet straight out
-    of benchmarks/cells/tier4_autoware.sh by REGEX, not by retyping it, so a
-    change to the real snippet is what this test runs -- not this test's own
-    memory of it. AW_PIDFILE no longer matches this shape (Task 18b) --
-    see _extract_aw_sidecar_snippet below for it."""
-    import re
-
-    text = TIER4_CELL.read_text()
-    pattern = re.compile(r"echo \\\$! >\$" + pidfile_var + r"\n(  tr '\\0' ' '.*\|\| true)")
-    m = pattern.search(text)
-    assert m, f"sidecar-write line for {pidfile_var} not found in {TIER4_CELL}"
-    return m.group(1)
-
-
-def _run_sidecar_snippet(snippet: str, pidfile_var: str, pidfile: Path):
-    """Runs the REAL snippet through the same TWO bash parses it gets in
-    production, instead of hand-simulating the escaping rules (which is what
-    broke this test the first time: a single `bash -c` chokes on the
-    snippet's own `\\$(cat ...)` with a syntax error, because that escape is
-    meant for a DIFFERENT, earlier parse).
-
-    In the real cell (tier4_autoware.sh:395-398's own comment), the snippet
-    is the tail of a HOST-side double-quoted string handed to `cx`: the host
-    shell expands every plain $VAR (so `$AW_PIDFILE` becomes the real path)
-    and un-escapes `\\$(` to a literal, NOT-yet-executed `$(`, before the
-    resulting string is piped into the container's own `bash -lc`, which
-    does the second parse and actually runs the substitution.
-
-    Pass 1 (below): an UNQUOTED heredoc reproduces that host-side
-    double-quote expansion for real, in real bash, rather than by hand:
-    unquoted heredocs expand $VAR/command-substitution exactly like double
-    quotes, and treat backslash as special ONLY before $, `, \\, or a
-    line-continuing newline -- so `'\\0'` (no `$`) passes through
-    byte-for-byte while `\\$(cat $AW_PIDFILE)` becomes the literal string
-    `$(cat /real/path)`, identical to what the real host-side `cx "..."`
-    call produces before the container ever sees it.
-
-    Pass 2: a second, fresh `bash -c` re-parses that expanded string for
-    real, so the now-unescaped `$(cat /real/path)` finally executes as
-    command substitution -- exactly the container-side parse `cx` triggers.
-    """
-    host_script = (
-        f'{pidfile_var}="{pidfile}"\ncat <<SIDECAR_SNIPPET_EOF\n{snippet}\nSIDECAR_SNIPPET_EOF\n'
-    )
-    host_pass = subprocess.run(
-        ["bash", "-c", host_script], capture_output=True, text=True, timeout=10, check=False
-    )
-    assert host_pass.returncode == 0, host_pass.stderr
-    return subprocess.run(
-        ["bash", "-c", host_pass.stdout],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-
-
-def test_tier4_autoware_sh_relay_sidecar_matches_a_real_process_cmdline(tmp_path):
-    """D2's real-code-path pin (unchanged by Task 18b): extract the ACTUAL
-    RELAY_PIDFILE sidecar-write line out of cells/tier4_autoware.sh, run it
-    for real against a real background process, and check the sidecar it
-    produces is byte-for-byte that process's own /proc/<pid>/cmdline
-    (NUL -> space) -- exactly what stop_launch_tree.sh's pid-reuse guard
-    compares against. AW_PIDFILE's own pin is below, against the mechanism
-    Task 18b replaced this exact shape with for that pidfile only."""
-    snippet = _extract_sidecar_snippet("RELAY_PIDFILE")
-
-    proc = _start_stub(tmp_path, "stub")
-    try:
-        pidfile = tmp_path / "RELAY_PIDFILE.pid"
-        pidfile.write_text(str(proc.pid))
-        result = _run_sidecar_snippet(snippet, "RELAY_PIDFILE", pidfile)
-        assert result.returncode == 0, result.stderr
-
-        sidecar = Path(f"{pidfile}.cmd")
-        assert sidecar.exists(), "the snippet did not write the sidecar at all"
-        expected = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
-        assert sidecar.read_text() == expected
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=5)
+# AW_PIDFILE and RELAY_PIDFILE wrote DIFFERENT shapes between Task 18b and
+# fix round 1: only AW_PIDFILE got the fork/exec-race-closing polling loop
+# at first (D1 was scoped to the AUTOWARE launch pid only, per the brief),
+# while RELAY_PIDFILE kept the original single-line best-effort `tr`. Fix
+# round 1, F3 closed that gap -- the controller's own scope correction, not
+# a new defect -- so both pidfiles now run the identical loop shape and are
+# extracted/tested the identical way below; the RELAY_PIDFILE-specific
+# heredoc-based extraction this section used to hold is gone with it (the
+# heredoc trick was already known to be unsound for the `\"`-heavy loop
+# shape -- see _run_aw_sidecar_snippet's own docstring below -- so keeping
+# it only for a RELAY_PIDFILE line that no longer has that simple shape
+# would have pinned a snippet this file cannot reach in production).
 
 
 # --- D1: the AW_PIDFILE polling loop that closes the fork/exec race --------
@@ -787,31 +708,52 @@ def test_tier4_autoware_sh_relay_sidecar_matches_a_real_process_cmdline(tmp_path
 def _extract_aw_sidecar_snippet() -> str:
     """Pulls the ACTUAL AW_PIDFILE polling loop (Task 18b, D1) straight out
     of benchmarks/cells/tier4_autoware.sh by REGEX, from right after the
-    `echo \\$! >$AW_PIDFILE` line through its closing `done`, so a change to
-    the real loop is what this test runs -- not this test's own memory of
-    it."""
+    `echo \\$! >$AW_PIDFILE` line through its closing `done` and, if present,
+    the trailing `|| true` (fix round 1, F1 added it). The `|| true` is
+    OPTIONAL in the pattern -- not because production ever omits it, but so
+    that F1's own regression test (which reverts just that token to pin the
+    fix) still gets a clean, runnable extraction ending in bare `done`
+    instead of the pattern skipping past the missing anchor and running on
+    into the NEXT `echo \\$! >$...` block (RELAY_PIDFILE's own, which also
+    ends `done || true`): a non-greedy `.*?` with no such stop is happy to
+    cross an intervening block boundary to find a LATER `done || true`,
+    which happened during finalisation -- confirmed by extracting a ~6000-char
+    snippet spanning both loops and failing with a bash syntax error
+    (returncode 2, `unexpected EOF`) instead of the intended clean exit-status
+    assertion. The `(?!echo \\\\\\$! >\\$)` negative lookahead below is the
+    actual fix: it forbids the lazy `.*?` from stepping over another
+    `echo \\$! >$...` line at all, so a missing `|| true` here can only ever
+    be satisfied by THIS block's own `done`, never a neighbour's."""
     import re
 
     text = TIER4_CELL.read_text()
-    pattern = re.compile(r"echo \\\$! >\$AW_PIDFILE\n(  aw_cmd=.*?\n  done)", re.DOTALL)
+    pattern = re.compile(
+        r"echo \\\$! >\$AW_PIDFILE\n"
+        r"(  aw_cmd=(?:(?!echo \\\$! >\$).)*?\n  done(?: \|\| true)?)",
+        re.DOTALL,
+    )
     m = pattern.search(text)
     assert m, f"AW_PIDFILE sidecar polling loop not found in {TIER4_CELL}"
     return m.group(1)
 
 
-def _run_aw_sidecar_snippet(snippet: str, pidfile: Path) -> subprocess.CompletedProcess:
-    """Runs the REAL AW_PIDFILE polling loop through the same two bash parses
-    it gets in production -- but NOT via the heredoc trick
-    _run_sidecar_snippet uses above, which is unsound for THIS snippet.
+def _run_aw_sidecar_snippet(
+    snippet: str, pidfile: Path, env: dict | None = None, pidfile_var: str = "AW_PIDFILE"
+) -> subprocess.CompletedProcess:
+    """Runs the REAL AW_PIDFILE (or, with `pidfile_var="RELAY_PIDFILE"`, the
+    real relay) polling loop through the same two bash parses it gets in
+    production -- NOT via an UNQUOTED-heredoc trick (an earlier version of
+    this helper set, removed once RELAY_PIDFILE stopped needing it
+    separately), which is unsound for this loop shape.
 
-    That trick relies on an UNQUOTED heredoc reproducing real double-quote
-    expansion, and it does for the RELAY_PIDFILE line (which never contains
-    `\\"`), but an unquoted heredoc body only treats backslash as special
-    before $, `` ` ``, \\ or a line-continuing newline -- `"` is NOT on that
-    list, so `\\"` survives a heredoc UNCOLLAPSED (still `\\"`, two chars),
-    whereas a REAL double-quoted argument (what `cx "$AW_ENV ..."` actually
-    is) DOES collapse `\\"` to `"` (one char, the backslash consumed). The
-    AW_PIDFILE loop is full of `\\"` (its own `\"$aw_cmd\"` guards), so the
+    That trick relies on an unquoted heredoc reproducing real double-quote
+    expansion, and it would for a snippet that never contains `\\"`, but an
+    unquoted heredoc body only treats backslash as special before $, `` ` ``,
+    \\ or a line-continuing newline -- `"` is NOT on that list, so `\\"`
+    survives a heredoc UNCOLLAPSED (still `\\"`, two chars), whereas a REAL
+    double-quoted argument (what `cx "$AW_ENV ..."` actually is) DOES
+    collapse `\\"` to `"` (one char, the backslash consumed). Both loops are
+    full of `\\"` (their own `\"$aw_cmd\"` / `\"$rel_cmd\"` guards), so the
     heredoc route would silently test different text than production runs --
     measured directly while building this fix (`\\"` came out as literal
     backslash-quote, not quote).
@@ -821,8 +763,13 @@ def _run_aw_sidecar_snippet(snippet: str, pidfile: Path) -> subprocess.Completed
     single parse the real `cx "$AW_ENV ..."` call gets in
     benchmarks/cells/tier4_autoware.sh. Pass 2 re-parses pass 1's output as a
     fresh `bash -c`, exactly the container-side parse `cx` triggers.
+
+    `env`, when given, replaces pass 2's environment (e.g. to shadow `sleep`
+    on PATH -- see the F1 regression test below). Pass 1 never needs it: it
+    only expands host-side variables, it does not run any of the loop's own
+    commands.
     """
-    host_script = f'AW_PIDFILE="{pidfile}"\ncx() {{ printf "%s" "$1"; }}\ncx "{snippet}"\n'
+    host_script = f'{pidfile_var}="{pidfile}"\ncx() {{ printf "%s" "$1"; }}\ncx "{snippet}"\n'
     host_pass = subprocess.run(
         ["bash", "-c", host_script], capture_output=True, text=True, timeout=10, check=False
     )
@@ -833,6 +780,7 @@ def _run_aw_sidecar_snippet(snippet: str, pidfile: Path) -> subprocess.Completed
         text=True,
         timeout=15,
         check=False,
+        env=env,
     )
 
 
@@ -849,12 +797,31 @@ def test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline(tmp_path)
     Mutation-verified against the PRE-fix single-`tr`-read line (see the
     task report): that line reliably records the transient PRE-exec argv
     against this exact stand-in, which is the defect Task 18b measured live
-    on 5/10 cell-B runs (results/B/run-017,019,020,021,022)."""
+    on 5/10 cell-B runs (results/B/run-017,019,020,021,022).
+
+    Fix round 1, F2: the exec-really-happened guard used to be
+    `assert "delayed_exec" not in expected` -- but "delayed_exec" never
+    appears in ANY of this stub's cmdlines (it names the Python
+    identifiers that build the source text, not text the source itself
+    contains), so that assertion could not fail even if the stub silently
+    stopped exec-ing, at which point the loop would settle on the STILL-
+    pre-exec cmdline and `sidecar.read_text() == expected` would pass
+    anyway -- the exact defect this test exists to catch, reproduced
+    inside the test's own setup. Replaced with a check tied to content
+    that is present before the exec and verifiably absent after it: the
+    pre-exec argv is `[python3, "-c", <the stub's OWN source text>]`,
+    which contains the literal string "os.execv" (the call the source
+    makes); the post-exec argv is the FINAL stub's `import time; while
+    True: ...` and cannot contain it. Captured before the loop even
+    starts, independent of timing, so this cannot degrade into a
+    tautology the way the string check did."""
     snippet = _extract_aw_sidecar_snippet()
 
     proc = _start_delayed_exec_stub(delay_s=1.0)
     try:
         pidfile = tmp_path / "AW_PIDFILE.pid"
+        pre_exec = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        assert "os.execv" in pre_exec, "stub setup is broken -- this should be the PRE-exec argv"
         pidfile.write_text(str(proc.pid))
         result = _run_aw_sidecar_snippet(snippet, pidfile)
         assert result.returncode == 0, result.stderr
@@ -863,7 +830,8 @@ def test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline(tmp_path)
         # 5s), so the exec has already happened; this re-read is simply the
         # ground truth to compare the sidecar against.
         expected = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
-        assert "delayed_exec" not in expected, "the stub never exec'd -- test setup is broken"
+        assert "os.execv" not in expected, "the stub never exec'd -- test setup is broken"
+        assert expected != pre_exec, "the stub never exec'd -- test setup is broken"
 
         sidecar = Path(f"{pidfile}.cmd")
         assert sidecar.exists(), "the loop never wrote the sidecar at all"
@@ -890,6 +858,193 @@ def test_tier4_autoware_sh_aw_sidecar_write_is_best_effort(tmp_path):
     pidfile = tmp_path / "gone.pid"
     pidfile.write_text(str(gone_pid.pid))
     result = _run_aw_sidecar_snippet(snippet, pidfile)
+
+    assert result.returncode == 0, result.stderr
+    assert not Path(f"{pidfile}.cmd").exists() or Path(f"{pidfile}.cmd").read_text() == ""
+
+
+def test_tier4_autoware_sh_aw_sidecar_loop_status_never_leaks(tmp_path):
+    """Fix round 1, F1's regression pin. `while ...; done` takes the exit
+    status of the last BODY command it ran, and that command is `sleep 0.1`
+    -- so before this fix, one failed fork on the loop's own last iteration
+    (measured plausible: ~200 forks during the launch's own fork storm, on a
+    host this campaign has recorded at loadavg 40-70) would have made the
+    whole `cx "$AW_ENV ..."` call return non-zero and
+    `fail_with_log "the Autoware launch could not be started"` fire -- on a
+    launch that had actually succeeded. `done || true` is what prevents that.
+
+    Shadows `sleep` on PATH with one that ALWAYS exits 1 (and does not
+    actually sleep, so this test stays fast) and runs the REAL loop against
+    an already-settled process. The write logic is unaffected -- a `while`
+    loop's own exit status is only its LAST executed command's, so the
+    fake failures do not stop the loop from reading, comparing or writing on
+    any earlier iteration -- but without `done || true` the loop's own status
+    (and therefore the whole snippet's) would be 1. Mutation-verified in the
+    task report: reverting `done || true` to `done` makes this fail with
+    `result.returncode == 1`."""
+    snippet = _extract_aw_sidecar_snippet()
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake_sleep = bindir / "sleep"
+    fake_sleep.write_text("#!/usr/bin/env bash\nexit 1\n")
+    fake_sleep.chmod(fake_sleep.stat().st_mode | 0o111)
+
+    proc = _start_stub(tmp_path, "settled")
+    try:
+        pidfile = tmp_path / "AW_PIDFILE.pid"
+        pidfile.write_text(str(proc.pid))
+        env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"}
+        result = _run_aw_sidecar_snippet(snippet, pidfile, env=env)
+
+        assert result.returncode == 0, (
+            "the loop's own exit status leaked through -- 'done || true' "
+            f"is missing or broken: {result.stderr}"
+        )
+        # The fake `sleep` failing on every iteration must not have stopped
+        # the loop from doing its actual job.
+        expected = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        assert Path(f"{pidfile}.cmd").read_text() == expected
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+
+
+# --- F3 (fix round 1): the relay sidecar gets the same D1 mechanism --------
+
+
+def _extract_relay_sidecar_snippet() -> str:
+    """Pulls the ACTUAL RELAY_PIDFILE polling loop (fix round 1, F3) out of
+    benchmarks/cells/tier4_autoware.sh by REGEX -- the same treatment
+    _extract_aw_sidecar_snippet gives the AW_PIDFILE loop above, since F3
+    applied that exact mechanism here too."""
+    import re
+
+    text = TIER4_CELL.read_text()
+    pattern = re.compile(
+        r"echo \\\$! >\$RELAY_PIDFILE\n(  rel_cmd=.*?\n  done \|\| true)", re.DOTALL
+    )
+    m = pattern.search(text)
+    assert m, f"RELAY_PIDFILE sidecar polling loop not found in {TIER4_CELL}"
+    return m.group(1)
+
+
+def test_tier4_autoware_sh_relay_sidecar_settles_on_the_post_exec_cmdline(tmp_path):
+    """F3's real-code-path pin, the RELAY_PIDFILE twin of
+    test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline
+    above: extracts the REAL relay polling loop and runs it against a
+    process that execs into a different cmdline 1.0s later, checking the
+    sidecar settles on the TRUE post-exec cmdline rather than the
+    transient one -- the same property D1 established for AW_PIDFILE, now
+    established for the sidecar F3 found still racing."""
+    snippet = _extract_relay_sidecar_snippet()
+
+    proc = _start_delayed_exec_stub(delay_s=1.0)
+    try:
+        pidfile = tmp_path / "RELAY_PIDFILE.pid"
+        pidfile.write_text(str(proc.pid))
+        result = _run_aw_sidecar_snippet(snippet, pidfile, pidfile_var="RELAY_PIDFILE")
+        assert result.returncode == 0, result.stderr
+
+        expected = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        assert "os.execv" not in expected, "the stub never exec'd -- test setup is broken"
+
+        sidecar = Path(f"{pidfile}.cmd")
+        assert sidecar.exists(), "the loop never wrote the sidecar at all"
+        assert sidecar.read_text() == expected
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+
+
+# --- F5 (fix round 1): the extension-path AW_PIDFILE loop has no test ------
+
+
+def _extract_launch_autoware_snippet(pidfile_var: str) -> str:
+    """Pulls the ACTUAL polling loop for `pidfile_var` (AW_PIDFILE or
+    RELAY_PIDFILE) out of scripts/e2e/launch_autoware.sh by REGEX. Fix
+    round 1, F5: every prior D1 pin extracted from tier4_autoware.sh only;
+    this covers the extension path's own copy of the same mechanism."""
+    import re
+
+    text = LAUNCH_AUTOWARE.read_text()
+    if pidfile_var == "AW_PIDFILE":
+        pattern = re.compile(r'(  aw_cmd="".*?\n  done)', re.DOTALL)
+    elif pidfile_var == "RELAY_PIDFILE":
+        pattern = re.compile(r'(        rel_cmd="".*?\n        done)', re.DOTALL)
+    else:
+        raise ValueError(pidfile_var)
+    m = pattern.search(text)
+    assert m, f"{pidfile_var} sidecar polling loop not found in {LAUNCH_AUTOWARE}"
+    return m.group(1)
+
+
+def _run_launch_autoware_snippet(
+    snippet: str, pidfile_var: str, pidfile: Path
+) -> subprocess.CompletedProcess:
+    """Runs the REAL launch_autoware.sh polling loop as REAL bash -- a
+    SINGLE parse, not tier4's two-pass. compose_exec's argument is
+    SINGLE-quoted at the host level (`compose_exec '...'`), so unlike
+    tier4's `cx "$AW_ENV ..."` (a HOST-side double-quoted string that the
+    host itself partially expands before the container ever sees it),
+    nothing here is expanded until the container's own `bash -lc` runs it
+    -- $AW_PIDFILE / $RELAY_PIDFILE are supplied via `-e` (an environment
+    variable), never a host-string substitution. So the faithful
+    reproduction is exactly that: run the extracted text as-is, with
+    `pidfile_var` set as a real environment variable, in ONE real bash
+    parse -- no heredoc trick, no escaping pitfall, confirming F5's own
+    claim that the single-quoted context makes this EASIER than tier4's."""
+    env = {**os.environ, pidfile_var: str(pidfile)}
+    return subprocess.run(
+        ["bash", "-c", snippet], capture_output=True, text=True, timeout=15, env=env, check=False
+    )
+
+
+@pytest.mark.parametrize("pidfile_var", ["AW_PIDFILE", "RELAY_PIDFILE"])
+def test_launch_autoware_sh_sidecar_settles_on_the_post_exec_cmdline(tmp_path, pidfile_var):
+    """F5's real-code-path pin (and F3's completion for the relay half):
+    extracts the REAL scripts/e2e/launch_autoware.sh polling loop for
+    `pidfile_var` and runs it against a process that execs into a
+    different cmdline 1.0s later, checking the sidecar settles on the TRUE
+    post-exec cmdline. Before fix round 1 this extension-path loop was
+    pinned only by a reviewer's one-off manual run; this makes it a real,
+    repeatable, mutation-verifiable pin like tier4's."""
+    snippet = _extract_launch_autoware_snippet(pidfile_var)
+
+    proc = _start_delayed_exec_stub(delay_s=1.0)
+    try:
+        pidfile = tmp_path / f"{pidfile_var}.pid"
+        pidfile.write_text(str(proc.pid))
+        result = _run_launch_autoware_snippet(snippet, pidfile_var, pidfile)
+        assert result.returncode == 0, result.stderr
+
+        expected = Path(f"/proc/{proc.pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        assert "os.execv" not in expected, "the stub never exec'd -- test setup is broken"
+
+        sidecar = Path(f"{pidfile}.cmd")
+        assert sidecar.exists(), "the loop never wrote the sidecar at all"
+        assert sidecar.read_text() == expected
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+
+
+def test_launch_autoware_sh_sidecar_write_is_best_effort(tmp_path):
+    """launch_autoware.sh's own best-effort pin, matching D2's requirement
+    ("never allowed to fail the launch") the way
+    test_tier4_autoware_sh_aw_sidecar_write_is_best_effort already does for
+    the tier4 side. Runs the REAL AW_PIDFILE loop against a pid that is
+    already gone: exit 0, no (or empty) sidecar."""
+    snippet = _extract_launch_autoware_snippet("AW_PIDFILE")
+    gone_pid = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone_pid.wait(timeout=5)
+    assert not Path(f"/proc/{gone_pid.pid}").exists()
+
+    pidfile = tmp_path / "gone.pid"
+    pidfile.write_text(str(gone_pid.pid))
+    result = _run_launch_autoware_snippet(snippet, "AW_PIDFILE", pidfile)
 
     assert result.returncode == 0, result.stderr
     assert not Path(f"{pidfile}.cmd").exists() or Path(f"{pidfile}.cmd").read_text() == ""
