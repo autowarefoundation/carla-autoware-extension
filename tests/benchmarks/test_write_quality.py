@@ -1130,12 +1130,30 @@ def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
     a stale slot to be "fixed" later by filling it: a change that fills it has
     to argue against that reasoning, which is what this assertion forces.
 
-    The E family measures its own bundle first, and the CAL cells have no
-    localization stack. Every cell not listed must stay UNSET so the M5 gate
-    keeps refusing it rather than gating on a guessed branch -- the property
-    R3.3 added this test for.
+    Cells E and E0 joined on 2026-08-01 (Task 8) on the OTHER branch, and they
+    are what makes this test's two-set shape necessary rather than a
+    selected-or-not flag. Their launcher (`cells/python-bridge.sh`) pins the
+    UNSHIFTED `~/autoware_map/town10` -- content-verified as
+    `autoware_contents.town10_pcd_sha256`, the digest `pins.yaml`'s rigid
+    variants describe themselves as correcting "+0.475 m cross-track" away from
+    -- so README's branch (b) applies and `abs_pose_gate_m` must stay null. That
+    is a SELECTION, not an absent one: gating them at 0.5 m against that bundle
+    would fail them for map registration under a reason a reader would attribute
+    to the bridge, which cells.yaml's header block predicted by name. Their
+    branch was settled from the bundle's identity, not from a scored run -- no
+    E-family run had been scored when it was registered.
+
+    E-opt stays UNSET even though it runs cell E's image and would inherit E's
+    values: it was STRUCK by the scope cut, and its only arm is `closed-loop`,
+    which Task 4 showed this family cannot reach (cell E armed to AUTONOMOUS and
+    the gated control command never flowed). Same argument as cell D.
+
+    The CAL cells have no localization stack. Every cell in neither set must stay
+    UNSET so the M5 gate keeps refusing it rather than gating on a guessed
+    branch -- the property R3.3 added this test for.
     """
     selected_absolute = {"A", "A-hf", "B", "B-hf", "B45", "C"}
+    selected_relative = {"E", "E0"}
     doc = load_cells_doc()
     for cell in (c["id"] for c in doc["cells"]):
         metrics = metrics_for(doc, cell)
@@ -1144,6 +1162,11 @@ def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
             # Non-null iff absolute, and it is the README's registered
             # threshold -- not any float, which would let a relaxed gate in.
             assert metrics["abs_pose_gate_m"] == pytest.approx(0.5), cell
+        elif cell in selected_relative:
+            assert metrics["ladder_branch"] == "relative", cell
+            # Null iff relative, and `write_quality.resolve_ladder` REFUSES a
+            # relative branch carrying a threshold rather than ignoring it.
+            assert metrics["abs_pose_gate_m"] is None, cell
         else:
             assert metrics["ladder_branch"] is None, cell
             assert metrics["abs_pose_gate_m"] is None, cell

@@ -14,6 +14,7 @@ import json
 import math
 
 import numpy as np
+import yaml
 import pytest
 
 from benchmarks.analysis.ceiling import CeilingVerdict
@@ -1006,11 +1007,27 @@ def test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound
     still null, not substitute a plausible number (e.g. tick_hz, or another
     cell's value).
 
-    Driven on cell E since 2026-07-30: this test used cell B, whose
-    lidar_expected_hz Task 13 registered at 10.0 from the launcher constant it
-    landed. E's is still null (Task 10/20 re-grounds the bridge's own rig), so
-    the property under test is unchanged and is still exercised against a REAL
-    committed null rather than a synthetic one."""
+    SYNTHETIC NULL since 2026-08-01, and the churn is worth recording because it
+    is the third owner of this test. It ran on cell B until Task 13 registered
+    B's rate from the launcher constant it landed, then on cell E until Task 8
+    registered the whole bridge family from
+    `0002-sensor-config-harmonized.patch` -- and there is now NO committed null
+    left to drive it. `--class` only resolves for the three cells
+    `sweep_classes.applies_to` lists (A, B, E), and all three are registered;
+    the remaining nulls (A-hf, B-hf, E-opt, CAL-seam) belong to cells no sweep
+    class applies to, so `merge` rejects them before the binding is ever read.
+
+    So the null is INJECTED through `--cells-yaml` rather than borrowed. That is
+    strictly weaker evidence than a real committed null and is labelled as such:
+    it pins the REFUSAL, not the registry. The registry side is pinned
+    separately and per cell by tests/benchmarks/test_cell_info.py."""
+    doc = load_cells_doc()
+    for entry in doc["cells"]:
+        if entry["id"] == "E":
+            entry["metrics"]["lidar_expected_hz"] = None
+    cells_yaml = tmp_path / "cells-unbound.yaml"
+    cells_yaml.write_text(yaml.safe_dump(doc, sort_keys=False))
+
     cell_dir = tmp_path / "E" / "run-001"
     cell_dir.mkdir(parents=True)
     _write_manifest(cell_dir, arm="paced", approach="python-bridge", cell="E")
@@ -1023,7 +1040,17 @@ def test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound
     _write_quality(cell_dir, gate_pass=True)
 
     with pytest.raises(ValueError, match="lidar_expected_hz"):
-        sweep_verdict.main(["E", "--class", "vlp16", "--results-root", str(tmp_path)])
+        sweep_verdict.main(
+            [
+                "E",
+                "--class",
+                "vlp16",
+                "--results-root",
+                str(tmp_path),
+                "--cells-yaml",
+                str(cells_yaml),
+            ]
+        )
 
 
 def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):

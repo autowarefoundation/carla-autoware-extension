@@ -432,15 +432,123 @@ cells:
       # patches/python-bridge/README.md: the bridge drives CARLA in
       # synchronous mode with fixed_delta_seconds = 0.05, verified live.
       tick_hz: 20.0
-      # NOT REGISTERED: the bridge's own sensor rig, re-grounded live by
-      # Task 10/20 before any E-family P3 run. P1 measured 8.59 Hz as-emitted
-      # on an unpatched run, which is a MEASUREMENT, not a target.
-      lidar_expected_hz:
-      ndt_expected_hz: # Task 10/20, with lidar_expected_hz
-      # cell E's re-gate: which pcd variant E localizes against is
-      # MEASURED first (README, M5 definitions).
-      ladder_branch:
-      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
+      # REGISTERED 2026-08-01 (Task 8), BEFORE this cell's first scored P3 run,
+      # from the CONFIGURATION this cell applies -- the same shape of derivation
+      # cell B's block above makes from its launcher's arguments, and NOT from a
+      # measurement of a run being scored. The earlier note here read "P1
+      # measured 8.59 Hz as-emitted on an unpatched run, which is a MEASUREMENT,
+      # not a target"; that stays true, and it is superseded rather than
+      # contradicted -- see the arrival-vs-header paragraph below, which is what
+      # the 8.59 was.
+      #
+      # A python-bridge cell's as-emitted rate is fixed by two committed numbers
+      # and one mechanism:
+      #
+      #   1. the bridge sets NO `sensor_tick` on the LiDAR blueprint --
+      #      modules/carla_wrapper.py's _configure_lidar_attributes sets only
+      #      range / rotation_frequency / channels / upper_fov / lower_fov /
+      #      points_per_second -- so the CARLA sensor fires on EVERY world tick,
+      #      i.e. at tick_hz above (20.0);
+      #   2. the bridge throttles PUBLICATION in its own code:
+      #      carla_ros.py's checkFrequency() calls sensor_manager.should_publish(),
+      #      which returns `time_diff >= (1.0 / sensor.frequency_hz)` measured on
+      #      `self.timestamp` -- SIM time, and deliberately so ("Uses simulation
+      #      time (self.timestamp) for all sensors to ensure correct throttling in
+      #      synchronous mode"). `frequency_hz` is sensor_mapping.yaml's
+      #      ros_config value.
+      #
+      # A sim-time threshold that can only be evaluated on tick boundaries fires
+      # every ceil(tick_hz / frequency_hz)-th tick, so the as-emitted rate is
+      #
+      #     tick_hz / ceil(tick_hz / frequency_hz)
+      #
+      # -- the divisor-quantized analogue of the min(1/sensor_tick, tick_hz)
+      # relation cell A registers, and NOT frequency_hz itself. Registering the
+      # raw request would put a rate the tick cannot produce into the divisor of
+      # achieved_rate_ratio (cell E0's 11 is exactly that case), which is the
+      # silent-wrong-number class this file's header exists to prevent.
+      #
+      # frequency_hz for THIS cell is 20, and it is a constant committed in THIS
+      # repo, not a transcription: patches/python-bridge/0002-sensor-config-
+      # harmonized.patch's `+ frequency_hz: 20` on velodyne_top_base_link, which
+      # cells/python-bridge.sh proves is present in the resolved image before it
+      # will run the cell at all (the `is_dense=True` patch-marker check, both
+      # directions). So 20.0 / ceil(20.0 / 20.0) = 20.0. `rotation_frequency`
+      # (10) does NOT enter: on this blueprint it governs points per revolution,
+      # not frame cadence -- unlike cell B, where the demo derives
+      # points_per_second FROM the rotation period.
+      #
+      # CORROBORATED, not derived, and only on BRING-UP-class data: results/E/
+      # run-009 (`duel_admissible: false`, and excluded gate:arm-failed, so it is
+      # not verdict data and was never scored -- no E-family run has ever
+      # produced a quality.json) records /sensing/lidar/top/pointcloud_raw_ex at
+      # 19.969 Hz over a 65.50 s span of HEADER stamps, n = 1309.
+      #
+      # READ THE HEADER-STAMP RATE, NOT THE ARRIVAL RATE, and this is the whole
+      # of the apparent 8.59 Hz discrepancy the old note recorded: the bridge is
+      # a Python publisher that does not deliver in wall-clock step with the sim,
+      # so its ARRIVAL rate sits well below its sim-stamp rate (cell E0's
+      # report.md says 8.42 Hz where its header stamps say 9.983). That gap is a
+      # transport RESULT this family exists to expose -- it is what
+      # achieved_rate_ratio and one_hop_wall_ms report -- so it must not be
+      # absorbed into this denominator, which would make the shortfall
+      # unmeasurable by construction.
+      lidar_expected_hz: 20.0
+      # ndt_expected_hz: the SENSOR rate, on cell B's registered rule and this
+      # file's header -- "one NDT pose per input cloud is the target", and a
+      # chain that decimates must FAIL the M5 NDT-rate criterion rather than hide
+      # inside a lower expectation.
+      #
+      # STATED HERE BEFORE THE FIRST SCORED RUN so it cannot later be read as
+      # chosen to fit an outcome: THIS CELL IS EXPECTED TO FAIL THAT CRITERION.
+      # The same bring-up run measures NDT (/localization/pose_estimator/
+      # pose_with_covariance) at 8.943 Hz against its own 19.969 Hz input --
+      # ~0.45 of the sensor rate, against the gate's 0.90. Registering ~8.9 here
+      # would gate the cell at its own observed throughput, which is the tuning
+      # this campaign forbids, and would delete the finding. 20.0 records it.
+      # 20.0 is also the HARMONIZED target: 0002 sets this rig to 16 channels at
+      # 288000 pts/s, the `vlp16` sweep class below, so the rate is the
+      # campaign's own comparability choice and not the bridge's default.
+      ndt_expected_hz: 20.0
+      # SELECTED 2026-08-01 (Task 8) from THE BUNDLE THIS CELL MOUNTS, which is
+      # the pre-registered rule (README, "M5 definitions"), and that README names
+      # this family's bundle outright: "the unshifted ~/autoware_map/town10 that
+      # cells/python-bridge.sh pins for the E family".
+      #
+      # Established from four things that all predate any E-family P3 run:
+      # cells/python-bridge.sh's committed literal MAP_BUNDLE_HOST=
+      # "$HOME/autoware_map/town10"; scripts/bundle_pin.py's BUNDLE_REGISTRY,
+      # which maps that directory to `autoware_contents.town10_pcd_sha256` and
+      # whose APPROACH_BUNDLE_DIR entry already records "cells/python-bridge.sh
+      # pins the UNSHIFTED ~/autoware_map/town10 for the E family"; preflight's
+      # per-run `map_bundle_pin` placement key, which reads
+      # `autoware_contents.town10_pcd_sha256` in every filed E-family manifest;
+      # and the bundle's own bytes, sha256
+      # 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b,
+      # verified live 2026-08-01. That is the unshifted digest -- NOT
+      # `town10_pcd_regen`, the rung-2 bundle cells A/B/A-hf/B-hf/B45 take branch
+      # (a) on.
+      #
+      # The unshifted bundle is BY DEFINITION the one carrying the offset the
+      # ladder exists to correct: pins.yaml's town10_pcd_shifted block describes
+      # itself as "the Town10 pointcloud, rigid-shifted by dy_m to correct the
+      # +0.475 m cross-track offset the P1 seed sweep localized to this file",
+      # and the two rigid re-registrations OF it measured max 0.824 m and
+      # 0.570 m, both over the 0.5 m gate. So branch (b) applies -- exactly the
+      # outcome this file's header anticipated in as many words: "gating cell E
+      # at 0.5 m against the deliberately unshifted bundle
+      # cells/python-bridge.sh pins would fail it by ~0.475 m of map
+      # registration, under a reason a reader would attribute to the bridge."
+      #
+      # NOT MEASURED THROUGH THIS CELL, and it did not need to be: the branch is
+      # a property of the bundle, and the bundle is identified by content hash
+      # rather than inferred from a pose series. That is the same route cell B's
+      # selection took (its own run confirms the branch rather than deriving it).
+      ladder_branch: relative
+      # NULL BY THE REGISTRATION ABOVE, not by omission: the relative branch
+      # applies no absolute threshold, and write_quality.resolve_ladder REFUSES
+      # `relative` carrying one rather than silently ignoring it.
+      abs_pose_gate_m:
   - id: E0
     approach: python-bridge
     carla: 0.9.15
@@ -464,12 +572,67 @@ cells:
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
       tick_hz: 20.0
-      lidar_expected_hz: # Task 10/20, as cell E
-      ndt_expected_hz: # Task 10/20, as cell E
-      # cell E's re-gate: which pcd variant E localizes against is
-      # MEASURED first (README, M5 definitions).
-      ladder_branch:
-      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
+      # REGISTERED 2026-08-01 (Task 8), BEFORE this cell's first scored P3 run,
+      # by cell E's derivation applied to THIS cell's own configuration. Cell E
+      # carries the full argument -- no `sensor_tick` on the blueprint, so the
+      # sensor fires every tick; a sim-time publish throttle at `frequency_hz`
+      # evaluated only on tick boundaries; hence
+      # tick_hz / ceil(tick_hz / frequency_hz).
+      #
+      # THE TWO CELLS' RATES ARE NOT INTERCHANGEABLE and neither may be copied
+      # from the other. E0 runs the UNPATCHED image, so the shipped
+      # sensor_mapping.yaml applies: `frequency_hz: 11` on velodyne_top_base_link
+      # -- committed in THIS repo as the `-` side of patches/python-bridge/
+      # 0002-sensor-config-harmonized.patch, and re-checked live against the
+      # pinned image (pins.yaml bridge_bench.local_digest) on 2026-08-01.
+      # cells/python-bridge.sh refuses to run E0 on a patched image at all, in
+      # both directions, so the binding cannot silently apply to the wrong rig.
+      #
+      # 20.0 / ceil(20.0 / 11) = 20.0 / 2 = 10.0. The raw 11 is deliberately NOT
+      # what is registered: a 20 Hz tick cannot produce 11 Hz, so 11 would be a
+      # denominator no configuration can satisfy -- an achieved_rate_ratio
+      # capped at 0.91 by arithmetic alone. The whole rig differs from cell E's
+      # too (64 channels at 300000 pts/s, upper/lower fov 10.0/-30.0,
+      # rotation_frequency 20), which is the as-shipped configuration E0 exists
+      # to measure.
+      #
+      # CORROBORATED on bring-up-class data only: results/E0/run-001
+      # (`duel_admissible: false`, unscored -- no E-family run has ever produced
+      # a quality.json) records /sensing/lidar/top/pointcloud_before_sync at
+      # 9.983 Hz over a 57.70 s span of HEADER stamps, n = 577. Its report.md
+      # says 8.42 Hz for the same rows because that column is the ARRIVAL rate;
+      # see cell E on why the gap is a result rather than a correction.
+      lidar_expected_hz: 10.0
+      # ndt_expected_hz: the SENSOR rate, on cell B's rule, as cell E.
+      #
+      # STATED BEFORE THE FIRST SCORED RUN, as cell E's: THIS CELL IS EXPECTED TO
+      # FAIL the M5 NDT-rate criterion, and by a far wider margin than E. That is
+      # not a defect of this binding -- it is E0's registered RESULT. The
+      # as-shipped bridge publishes `is_dense=False` and Autoware's
+      # crop_box_filter_self rejects every cloud (README's named exception, P1
+      # Verdict 1), so NDT is structurally starved: run-001 measured
+      # /localization/pose_estimator/pose_with_covariance at 0.168 Hz, n = 10.
+      #
+      # ANTICIPATED CONSEQUENCE, recorded now rather than discovered later: at
+      # that rate a 60 s static window holds fewer than quality.MIN_JOIN_PAIRS
+      # NDT<->GT pairs, so the M5 gate is expected to REFUSE these runs by name
+      # ("fewer than 10 NDT<->GT stamp pairs in the window") and write no
+      # quality.json. A refusal is not an exclusion: exclusions.md has no
+      # criterion for it, the runs stay valid and unexcluded, and the absent
+      # quality.json is the registered carrier of "not scored" (write_quality's
+      # module docstring). E0's row is its transport and process cost plus that
+      # structural failure, exactly as `arms: [static]` above describes.
+      ndt_expected_hz: 10.0
+      # SELECTED 2026-08-01 (Task 8), as cell E and by the same route: this cell
+      # runs the SAME launcher, so it mounts the SAME bundle -- the unshifted
+      # ~/autoware_map/town10, sha256 7ed7890e...e95b, recorded per run as
+      # `map_bundle_pin: autoware_contents.town10_pcd_sha256`. The branch is a
+      # property of the bundle, not of the image, so the patch difference that
+      # separates E0 from E does not separate their branches. See cell E for the
+      # full derivation and for why nothing in it comes from a scored run.
+      ladder_branch: relative
+      # NULL BY THE REGISTRATION ABOVE, not by omission (see cell E).
+      abs_pose_gate_m:
   - id: E-opt
     approach: python-bridge
     carla: 0.9.15
@@ -492,10 +655,30 @@ cells:
       control_published_time_topic: # Tasks 13/20
       cpu_process_label: carla-server
       tick_hz: 20.0
-      lidar_expected_hz: # Task 10/20, as cell E
-      ndt_expected_hz: # Task 10/20, as cell E
-      # cell E's re-gate: which pcd variant E localizes against is
-      # MEASURED first (README, M5 definitions).
+      # DELIBERATELY LEFT NULL 2026-08-01 (Task 8), on cell D's precedent above,
+      # and the reader is owed the reason because cells E and E0 WERE grounded
+      # in that same task off configuration this cell shares. Three facts, kept
+      # apart on purpose:
+      #
+      #  1. The information gap is closed. This cell runs cell E's patched image
+      #     and therefore E's rig, so E's derivation would give 20.0/20.0 and
+      #     E's bundle would give `relative`. Nothing about this row is unknown.
+      #  2. This cell was STRUCK (`dropped:` above), so it will never produce a
+      #     run to gate -- and its ONLY registered arm is `closed-loop`, which
+      #     Task 4 established this family cannot reach at all: cell E armed to
+      #     mode AUTONOMOUS and the gated control command never flowed, blocked
+      #     on the route (results/E/run-009, `gate:arm-failed`; PROVENANCE.md
+      #     section 7.4). Cell E's own closed-loop is downgraded to static-only
+      #     for that reason, so this cell's arm is doubly unreachable.
+      #  3. Filling the four keys would make this row read as a gated, ready
+      #     cell whose thresholds had been established for it -- cell D's exact
+      #     argument -- and `ladder_branch: null` is the state the M5 gate step
+      #     REFUSES to score, which is the correct fail-closed behaviour here.
+      #
+      # If the strike were ever reversed AND the closed-loop blocker were fixed,
+      # the values are not open: they are cell E's, for the reason in 1.
+      lidar_expected_hz:
+      ndt_expected_hz:
       ladder_branch:
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: CAL-rmw

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 
 import pytest
 import yaml
@@ -11,6 +13,18 @@ from benchmarks.scripts import cell_info
 
 CONFIG_DIR = cell_info.CELLS_YAML.parent
 ALL_CELL_IDS = [str(c["id"]) for c in yaml.safe_load(cell_info.CELLS_YAML.read_text())["cells"]]
+
+# The bridge's sensor-config patch, which carries BOTH python-bridge rigs: the
+# as-shipped `frequency_hz` on its `-` side (cell E0's) and the harmonized one
+# on its `+` side (cells E / E-opt's). Read here so the rate DERIVATION cell E's
+# comment records is falsifiable rather than merely asserted.
+BRIDGE_SENSOR_PATCH = (
+    cell_info.CELLS_YAML.parents[1]
+    / "patches"
+    / "python-bridge"
+    / "0002-sensor-config-harmonized.patch"
+)
+_FREQ_RE = re.compile(r"^([-+])\s*frequency_hz:\s*([0-9.]+)\s*$", re.MULTILINE)
 
 
 def _observer_topics(cell: str) -> list[str]:
@@ -200,6 +214,91 @@ def test_ndt_rate_is_registered_only_where_the_ndt_topic_is(doc, cell):
     metrics = cell_info.metrics_for(doc, cell)
     if metrics["ndt_topic"] is None:
         assert metrics["ndt_expected_hz"] is None
+
+
+def _bridge_frequency_hz() -> dict[str, float]:
+    """`{"E0": <as-shipped frequency_hz>, "E": <harmonized frequency_hz>}`.
+
+    Both come from the ONE committed patch file, which is what makes them
+    checkable: its `-` side is the image cell E0 runs and its `+` side is the
+    image cells E / E-opt run, and `cells/python-bridge.sh` refuses to run either
+    cell against the other's image. Exactly one of each is required -- a second
+    `frequency_hz` hunk (a camera rate, say) would make "the LiDAR's" ambiguous,
+    and silently picking the first would then bind a rate off the wrong sensor.
+    """
+    found = _FREQ_RE.findall(BRIDGE_SENSOR_PATCH.read_text())
+    shipped = [v for sign, v in found if sign == "-"]
+    patched = [v for sign, v in found if sign == "+"]
+    assert len(shipped) == 1 and len(patched) == 1, (
+        f"expected exactly one -/+ frequency_hz pair in {BRIDGE_SENSOR_PATCH.name}, "
+        f"got {found}: the E-family rate derivation cannot tell which sensor is meant"
+    )
+    return {"E0": float(shipped[0]), "E": float(patched[0])}
+
+
+@pytest.mark.parametrize("cell", ["E", "E0"])
+def test_bridge_cells_register_the_rate_their_own_config_can_actually_emit(doc, cell):
+    """The E-family derivation, made falsifiable (Task 8, 2026-08-01).
+
+    The bridge sets no `sensor_tick`, so its LiDAR fires every world tick, and it
+    throttles PUBLICATION on a sim-time threshold (`should_publish`:
+    `time_diff >= 1.0 / frequency_hz`) that can only be evaluated on tick
+    boundaries. The as-emitted rate is therefore
+    `tick_hz / ceil(tick_hz / frequency_hz)` -- NOT `frequency_hz`, which for
+    cell E0's shipped 11 is a rate a 20 Hz tick cannot produce.
+
+    Pinned rather than restated in prose because getting it wrong is silent: a
+    denominator no configuration can satisfy caps `achieved_rate_ratio` by
+    arithmetic alone, and through `ndt_expected_hz` it moves the M5 gate.
+    """
+    metrics = cell_info.metrics_for(doc, cell)
+    tick_hz = metrics["tick_hz"]
+    freq_hz = _bridge_frequency_hz()[cell]
+    assert metrics["lidar_expected_hz"] == tick_hz / math.ceil(tick_hz / freq_hz)
+
+
+def test_the_two_bridge_cells_do_not_share_a_rate(doc):
+    """E is PATCHED to 20 Hz on /pointcloud_raw_ex; E0 is the AS-SHIPPED image on
+    /pointcloud_before_sync. Copying either cell's rate onto the other is the
+    mistake this asserts against -- it would read as a measurement of the rig the
+    cell does not run, and cells.yaml's own E0 comment names it."""
+    e = cell_info.metrics_for(doc, "E")
+    e0 = cell_info.metrics_for(doc, "E0")
+    assert e["lidar_expected_hz"] != e0["lidar_expected_hz"]
+    assert e["lidar_topic"] != e0["lidar_topic"]
+
+
+@pytest.mark.parametrize("cell", ["E", "E0"])
+def test_bridge_cells_take_the_relative_ladder_branch(doc, cell):
+    """Both mount the UNSHIFTED `~/autoware_map/town10`
+    (`cells/python-bridge.sh`'s `MAP_BUNDLE_HOST`), which carries the +0.475 m
+    cross-track offset `pins.yaml`'s rigid variants exist to correct -- so
+    README's branch (b) applies. Gating them at 0.5 m against that bundle would
+    fail them for map registration under a reason a reader would attribute to the
+    bridge, which is the outcome cells.yaml's header block predicted by name."""
+    metrics = cell_info.metrics_for(doc, cell)
+    assert metrics["ladder_branch"] == "relative"
+    assert metrics["abs_pose_gate_m"] is None
+
+
+@pytest.mark.parametrize("cell", ALL_CELL_IDS)
+def test_every_ladder_registration_is_one_of_the_three_valid_states(doc, cell):
+    """`ladder_branch` and `abs_pose_gate_m` are ONE binding in two fields, and
+    cells.yaml's header registers exactly three legal combinations. Anything else
+    -- `absolute` with no threshold, `relative` carrying one, an unrecognised
+    branch name -- is an inconsistent registration that `write_quality` refuses
+    at run time, i.e. only after a cell has been booted and a window recorded.
+    Asserting it over the REGISTRY catches it before that costs a live run."""
+    metrics = cell_info.metrics_for(doc, cell)
+    branch, gate = metrics["ladder_branch"], metrics["abs_pose_gate_m"]
+    if branch is None:
+        assert gate is None, f"{cell}: no branch selected, so no threshold may be registered"
+    elif branch == "absolute":
+        assert gate is not None and gate > 0, f"{cell}: absolute branch needs its threshold"
+    elif branch == "relative":
+        assert gate is None, f"{cell}: the relative branch applies no absolute threshold"
+    else:
+        pytest.fail(f"{cell}: unregistered ladder branch {branch!r}")
 
 
 def test_metrics_for_rejects_a_cell_with_no_metrics_block():

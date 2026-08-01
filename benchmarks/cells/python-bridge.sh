@@ -258,7 +258,26 @@ AW_COMPOSE=""
 # build (pins.yaml gezp_wheel) and the container's python3.10 is the only
 # interpreter on this host that can load it. /out is the run directory.
 GT_ENABLED="1"
-GT_CMD="docker exec -e PYTHONPATH=/work $AW_CONTAINER python3 -m benchmarks.scripts.collect_gt"
+# PYTHONUNBUFFERED=1 is OBSERVABILITY, not behaviour, and it closes a recorded
+# gap: every python-bridge run filed a 0-byte gt.log while its gt.csv was fully
+# populated (PROVENANCE.md 7.5), so this family left NO filed record of which
+# base_link anchor collect_gt.py applied -- the exact fact the plan-phase guard
+# above exists to establish, and the one every E-family pose_error rests on.
+#
+# ROOT-CAUSED 2026-08-01 (Task 8), measured rather than reasoned. collect_gt.py
+# prints its anchor line and the client/server versions at start-up, but
+# python's stdout is BLOCK-buffered over a non-TTY pipe, and docker exec is
+# not a TTY here. run.sh's teardown SIGTERMs GT_PID, which is the host-side
+# docker exec CLIENT and not the in-container interpreter, so the buffer is
+# never flushed anywhere the redirect can see. Reproduced both ways against
+# this image: a buffered exec killed after 4 s left 0 bytes, the identical exec
+# with PYTHONUNBUFFERED=1 left the line. The UE5 families never hit this because
+# their collector is a HOST process that receives the SIGTERM itself, runs its
+# handler and exits cleanly -- which is why only this family was affected.
+#
+# It changes nothing measured: the collector prints three lines in total, none
+# per row, and gt.csv was already flushed per row (collect_gt.py's own comment).
+GT_CMD="docker exec -e PYTHONPATH=/work -e PYTHONUNBUFFERED=1 $AW_CONTAINER python3 -m benchmarks.scripts.collect_gt"
 GT_OUT_DIR="/out"
 # NEVER 1 here: the bridge publishes FROM its own sensor.listen callback and
 # CARLA keeps one callback per sensor, so a counter would displace it and

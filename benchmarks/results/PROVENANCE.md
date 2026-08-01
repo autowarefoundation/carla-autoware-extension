@@ -1904,3 +1904,212 @@ vector-map work. Cell C's own path is **byte-identical** across the two shas:
 `benchmarks/analysis/`. `run.sh` dispatches `cells/$approach.sh`, and cell C is
 `approach: extension`, so `tier4_autoware.sh` is never on its path. The two shas
 are therefore the same measurement code for this cell.
+
+## 9. Task 8 bridge-cell collection: E0 and E (live, 2026-08-01)
+
+The campaign's last collection task. Two sections: **9.1–9.4 are the
+PRE-REGISTRATION**, written and committed *before the first scored E-family
+boot*; 9.5 onwards is what the collection then produced. The ordering is the
+point, and it is checkable from the git history rather than asserted here: the
+commit carrying 9.1–9.4 and the `cells.yaml` registration precedes every
+`started_at_ns` filed below.
+
+### 9.1 Cell E's closed loop is NOT collected — the recorded downgrade applies
+
+Task 4 settled this and it is not re-litigated or retried here. `E/run-009`
+reached `mode=2 autonomous=True is_autoware_control_enabled=True` and then failed
+on the gated control command (`control_cmd_hz~0.00 n=0`), excluded
+`gate:arm-failed`. Its failing link is named in §7.4 and is **the route**:
+`behavior_path_planner: waiting for route` persists 63.98 s past
+`set_waypoint_route`, `waiting for map` never appears at all, and the downstream
+`Waiting for trajectory data` / `Control is skipped since input data is not
+ready` follow from it. That is a *different* failing link from cell B's map, so
+one diagnosis does not unblock both.
+
+**The recorded wording, which is the deliverable rather than silence:** cell E's
+pre-registered **static-only downgrade** applies. Cell E is collected on the
+`static` arm only; its `closed-loop` arm produces no P3 data, and the campaign
+records the reason above rather than an absent row. This is a **spec outcome, not
+a blocker** — the downgrade was registered in advance precisely so this case
+would not need a decision taken after seeing a failure. Cell E0 was already
+`arms: [static]` by its own registration, so the two cells collect the same arm
+for two different reasons, and the record keeps them apart.
+
+Consequence for the matrix: **C2's closed-loop evidence for the python-bridge
+approach is structural, not measured.** Nothing in this record may be read as the
+bridge having been measured closed-loop and found wanting; it was never measured
+closed-loop at all, because it could not be armed.
+
+### 9.2 The grounding: what was registered, from what, and why it is independent
+
+`cells.yaml` left `lidar_expected_hz`, `ndt_expected_hz`, `ladder_branch` and
+`abs_pose_gate_m` null for **both** E and E0, so the M5 gate refused to score
+them and **no E-family run had ever produced a `quality.json`** (§7.5). That file
+also pre-registered the *procedure* for closing the gap — "re-grounded live …
+**before any E-family P3 run**", and "which pcd variant E localizes against is
+MEASURED first". A measurement-derived threshold is therefore the design; what
+the no-tuning rule forbids is deriving one from a **scored** run. Every input
+below is either a committed constant or a **bring-up-class** artifact
+(`duel_admissible: false`), and no E-family run had been scored when this was
+written, so the two are not in tension.
+
+**Registered values:**
+
+| cell | `lidar_expected_hz` | `ndt_expected_hz` | `ladder_branch` | `abs_pose_gate_m` |
+| --- | --- | --- | --- | --- |
+| E | 20.0 | 20.0 | `relative` | null |
+| E0 | 10.0 | 10.0 | `relative` | null |
+
+**The rate derivation.** A python-bridge cell's as-emitted rate is fixed by two
+committed numbers and one mechanism, read out of the pinned images
+(`bridge-bench:latest` = `sha256:b734b9af…b4123`, `bridge-bench-patched:latest` =
+`sha256:6d65be77…e14220`, both matching `pins.yaml`'s `local_digest` on
+2026-08-01):
+
+1. the bridge sets **no `sensor_tick`** on the LiDAR blueprint —
+   `modules/carla_wrapper.py`'s `_configure_lidar_attributes` sets only `range`,
+   `rotation_frequency`, `channels`, `upper_fov`, `lower_fov`,
+   `points_per_second` — so the CARLA sensor fires on **every world tick**, i.e.
+   at the already-registered `tick_hz` of 20.0;
+2. the bridge throttles **publication** in its own code: `carla_ros.py`'s
+   `checkFrequency()` → `sensor_manager.should_publish()` returns
+   `time_diff >= (1.0 / sensor.frequency_hz)` on `self.timestamp`, which is
+   **sim** time and deliberately so ("Uses simulation time (self.timestamp) for
+   all sensors to ensure correct throttling in synchronous mode").
+
+A sim-time threshold evaluable only on tick boundaries fires every
+`ceil(tick_hz / frequency_hz)`-th tick, so the as-emitted rate is
+`tick_hz / ceil(tick_hz / frequency_hz)` — the divisor-quantized analogue of the
+`min(1/sensor_tick, tick_hz)` relation cell A registers.
+
+`frequency_hz` for each cell is a constant **committed in this repo**, not a
+transcription: `patches/python-bridge/0002-sensor-config-harmonized.patch` holds
+E0's on its `-` side (`frequency_hz: 11`) and E's on its `+` side
+(`frequency_hz: 20`), and `cells/python-bridge.sh` refuses to run either cell
+against the other's image, in both directions. So E is
+`20.0 / ceil(20/20) = 20.0` and E0 is `20.0 / ceil(20/11) = 10.0`.
+
+**The raw `frequency_hz` is deliberately NOT what is registered.** E0's shipped
+11 is a rate a 20 Hz tick cannot produce, so registering it would cap
+`achieved_rate_ratio` at 0.91 by arithmetic alone — the silent-wrong-number class
+`cells.yaml`'s own header exists to prevent. `rotation_frequency` does not enter
+either: on this blueprint it governs points per revolution, not frame cadence.
+
+**Corroboration, on bring-up-class data only.** `E/run-009` records
+`/sensing/lidar/top/pointcloud_raw_ex` at **19.969 Hz** over a 65.50 s span of
+header stamps (n = 1309); `E0/run-001` records
+`/sensing/lidar/top/pointcloud_before_sync` at **9.983 Hz** over 57.70 s
+(n = 577). Both match the derivation to within 0.16 %. This *corroborates*, it
+does not derive: the numbers above come from the patch file and the tick.
+
+**Read the header-stamp rate, not the arrival rate — and this resolves the
+apparent 8.59 Hz discrepancy** the old `cells.yaml` note recorded ("P1 measured
+8.59 Hz as-emitted on an unpatched run, which is a MEASUREMENT, not a target").
+It was an *arrival* rate. The bridge is a Python publisher that does not deliver
+in wall-clock step with the sim, so its arrival rate sits below its sim-stamp
+rate — `E0/run-001`'s `report.md` says 8.42 Hz for exactly the rows whose header
+stamps say 9.983. That gap is a transport **result** this cell family exists to
+expose, and it is what `achieved_rate_ratio` and `one_hop_wall_ms` report.
+Absorbing it into the denominator would make the shortfall unmeasurable by
+construction, so the old note is superseded rather than contradicted.
+
+**The ladder branch.** Selected from **the bundle the cell mounts**, which is the
+pre-registered rule (README, "M5 definitions") and which that README already
+names for this family: "the unshifted `~/autoware_map/town10` that
+`cells/python-bridge.sh` pins for the E family". Four independent confirmations,
+all predating any E-family P3 run:
+
+- `cells/python-bridge.sh`'s committed literal
+  `MAP_BUNDLE_HOST="$HOME/autoware_map/town10"`;
+- `scripts/bundle_pin.py`'s `BUNDLE_REGISTRY`, which maps that directory to
+  `autoware_contents.town10_pcd_sha256`, and whose `APPROACH_BUNDLE_DIR` entry
+  already records that resolving E through `map_defaults.sh` would report
+  `town10_pcd_regen` — "the wrong bundle";
+- preflight's per-run `map_bundle_pin` placement key, which reads
+  `autoware_contents.town10_pcd_sha256` in **every** filed E-family manifest;
+- the bundle's own bytes, verified live 2026-08-01:
+  `sha256(~/autoware_map/town10/pointcloud_map.pcd)` =
+  `7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b`, the
+  unshifted digest — **not** `town10_pcd_regen`.
+
+That bundle is by definition the one carrying the offset the ladder exists to
+correct: `pins.yaml`'s `town10_pcd_shifted` describes itself as correcting "the
++0.475 m cross-track offset the P1 seed sweep localized to this file", and the
+two rigid re-registrations *of* it measured max 0.824 m and 0.570 m — both over
+the 0.5 m gate. So README branch **(b)** applies: no drift (|mean of last 20 % −
+mean of first 20 %| < 0.2 m) and p95 − p50 < 0.3 m, with the constant bias
+reported. `abs_pose_gate_m` stays null, and `write_quality.resolve_ladder`
+*refuses* a relative branch carrying a threshold rather than ignoring one.
+
+This is the outcome `cells.yaml`'s header block predicted in as many words:
+"gating cell E at 0.5 m against the deliberately unshifted bundle
+`cells/python-bridge.sh` pins would fail it by ~0.475 m of map registration,
+under a reason a reader would attribute to the bridge."
+
+Nothing in the branch selection came from a pose series: the bundle is identified
+by **content hash**, which is the same route cell B's selection took.
+
+### 9.3 Two consequences stated BEFORE the runs, so neither can read as tuning
+
+`ndt_expected_hz` is registered as the **sensor** rate on cell B's rule and
+`cells.yaml`'s header — "one NDT pose per input cloud is the target", and a chain
+that decimates must **fail** the M5 NDT-rate criterion "instead of hiding inside
+a lower expectation". Applying that rule to this family has two consequences that
+are written down here, in advance, rather than discovered afterwards:
+
+1. **Cell E is expected to FAIL the M5 NDT-rate criterion.** `E/run-009` measures
+   NDT at 8.943 Hz against its own 19.969 Hz input — a ratio of ~0.45 against the
+   gate's 0.90. Registering ~8.9 would gate the cell at its own observed
+   throughput, which is the tuning this campaign forbids, and would delete the
+   finding. **20.0 records it.** The finding, stated plainly: *the bridge's
+   localization chain does not sustain NDT at the cell's own sensor rate.*
+2. **Cell E0 is expected to be UNSCOREABLE, and that is its registered result.**
+   The as-shipped bridge publishes `is_dense=False` and Autoware's
+   `crop_box_filter_self` rejects every cloud (README's named exception, P1
+   Verdict 1), so NDT is structurally starved — `E0/run-001` measured 0.168 Hz,
+   n = 10. At that rate a 60 s static window holds fewer than
+   `quality.MIN_JOIN_PAIRS` NDT↔GT pairs, so the gate is expected to **refuse**
+   by name and write no `quality.json`.
+
+**A refusal is not an exclusion.** `exclusions.md` has no criterion for it — and
+deliberately so, there being no quality-based criterion at all — so such runs
+stay **valid and unexcluded**, and the absent `quality.json` is the registered
+carrier of "not scored" (`write_quality`'s module docstring). Cell E0's row is
+its transport and process cost plus that structural failure, exactly as its own
+`arms: [static]` registration describes.
+
+### 9.4 GT-anchor gap closed: the applied anchor is now filed per run
+
+§7.5 recorded that every python-bridge run filed a **0-byte `gt.log`** beside a
+fully-populated `gt.csv`, so the family left "no filed record of which
+ground-truth anchor was applied — the exact fact `1f43914`'s guard exists to
+establish". Since this task relies on E's `pose_error` (the relative branch is a
+criterion *on* `pose_error`), the gap is closed rather than disclosed and left.
+
+**Root-caused by measurement, not by reasoning.** `collect_gt.py` prints its
+anchor line and the client/server versions at start-up, but python's stdout is
+**block-buffered** over a non-TTY pipe and `docker exec` is not a TTY here.
+`run.sh` SIGTERMs `GT_PID`, which for this family is the host-side `docker exec`
+**client** and not the in-container interpreter, so the buffer is never flushed
+anywhere the redirect can see. Reproduced both directions against this image on
+2026-08-01: a buffered exec killed after 4 s left **0 bytes**; the identical exec
+with `PYTHONUNBUFFERED=1` left the line. The UE5 families never hit this because
+their collector is a **host** process that receives the SIGTERM itself, runs its
+handler and exits cleanly — which is why only this family was affected, and why
+§8.6's single 0-byte `gt.log` on `C/run-005` is a *different*, unexplained
+one-off rather than the same defect.
+
+Fixed by adding `-e PYTHONUNBUFFERED=1` to `cells/python-bridge.sh`'s `GT_CMD`.
+It is **observability only**: the collector prints three lines in total, none per
+row, and `gt.csv` was already flushed per row.
+
+**The anchor itself, stated independently of that fix.** The registered
+`python-bridge` anchor is **−1.425 m** in the ego body frame
+(`analysis/gt_anchor.py`: the bridge's `CoordinateTransformer` subtracts
+`DEFAULT_WHEELBASE / 2 = 2.850 / 2` when it places sensors), and
+`cells/python-bridge.sh`'s plan-phase guard re-reads `sensor_kit_loader.py` **out
+of the image the run will use** and aborts the run on any drift. So the anchor
+was already *enforced* on every filed E-family run; what was missing was only its
+*record*. From this commit forward the value is filed in each run's own
+`gt.log`, and §9.5 reports it per run.
+
