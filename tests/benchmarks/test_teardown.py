@@ -472,7 +472,7 @@ def test_repeated_teardown_with_container_still_present_appends_the_report(tmp_p
     """F3's real-code-path pin: teardown.sh runs TWICE per real run (:27-29
     below) -- once on the success path, once from run.sh's EXIT trap -- and
     the second call normally returns early because `docker inspect` fails
-    once the container is gone (:311-316's `docker rm -f`). But if THAT
+    once the container is gone (:361's `docker rm -f`). But if THAT
     removal itself failed -- the wedged state this whole task exists to
     report on -- the container is still there, `stop_tier4_launch_tree`
     re-enters, and a TRUNCATING `tee` would silently replace the first,

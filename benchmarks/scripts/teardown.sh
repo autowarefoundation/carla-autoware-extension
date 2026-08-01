@@ -133,7 +133,7 @@ stop_tier4_launch_tree() {
   # `-a`, not a truncating `tee` (fix round 1, F3): teardown.sh runs TWICE
   # per run (:27-29 below); the second call normally returns early because
   # the container is already gone (`docker inspect` above fails after
-  # :311-316's `docker rm -f`). But if THAT removal itself failed -- the
+  # :361's `docker rm -f`). But if THAT removal itself failed -- the
   # wedged state this whole task exists to report on -- the container is
   # still there, this function re-enters, and a truncating `tee` would
   # replace the first, informative report with whatever the second,
