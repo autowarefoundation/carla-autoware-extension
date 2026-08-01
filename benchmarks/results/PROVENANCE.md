@@ -876,3 +876,171 @@ sides of the kill, consistent with this cell's already-registered instability
 The duplicate-stamp mechanism therefore has **less** to explain than §6.7
 implied, and it remains **NOT TESTED** — a hypothesis for whoever picks it up,
 never a finding, wherever it appears in this record.
+
+## 7. Task 4 smoke pass over the unproven closed-loop paths (live, 2026-08-01)
+
+One run per unproven path before any batch collection commits to it, all
+**without `--duel`** (`duel_admissible: false` on every manifest). Purpose: stop
+this campaign repeating the 20 runs it already lost batch-collecting on unproven
+paths (B run-001…012, E run-001…008).
+
+Preamble held for every launch: `ROS_DOMAIN_ID=0`, 1-min loadavg < 2 at start
+(1.66 / 1.26 / 1.63 / 1.65 / 1.72), no non-desktop GPU consumer, no pre-existing
+`UnrealEditor`/`CarlaUE4`, governor `powersave` (recorded, unchanged).
+`docker compose … down` between runs; `bootstrap_carla_msgs.sh` re-run after each
+container recreate ahead of the extension-family runs.
+
+| cell | run | arm | outcome | filed as |
+| --- | --- | --- | --- | --- |
+| B | `B/run-028` | closed-loop | **FAIL** — arm gate | excluded `gate:arm-failed` |
+| B | `B/run-029` | static | **PASS** — filed, M5 rate gate fails as registered | not excluded |
+| C | `C/run-001` | closed-loop | warm-up (pre-registered discard) | excluded `warmup:nishi` |
+| C | `C/run-002` | closed-loop | **PASS** — all four criteria | not excluded |
+| E | `E/run-009` | closed-loop | **FAIL** — arm gate | excluded `gate:arm-failed` |
+| E0 | `E0/run-001` | static | **PASS** — files, observer records the as-emitted set | not excluded |
+
+### 7.1 Cell B closed-loop: NO-GO, and it has never once armed
+
+`B/run-028` reached `mode=2 autonomous=True is_autoware_control_enabled=True` via
+the proven `/autoware/engage` publish (the AD API `change_to_autonomous` refused
+first — "The target mode is not available", then "no response (spin timed out)" —
+and the harness took its documented fallback). It failed on the control command:
+post-engage `control_cmd_hz~0.00 n=0`.
+
+**Failing link, named: planning never produced a trajectory.** The route was set
+(`Route set via set_waypoint_route`, `lanelet_sequence = [ids: 324 5650 719 6660
+776 31 2463]`, t=1785596518.797), but for the remaining 73 s
+`control.trajectory_follower.controller_node_exe` logged `Waiting for trajectory
+data` / `Control is skipped since input data is not ready` — last at
+**1785596591.014**, i.e. right up to teardown — and
+`control.autoware_operation_mode_transition_manager: Subscribed control_cmd is
+timed out` × 25, last at 1785596592.905.
+
+The run's own `observer.csv` shows `/control/command/control_cmd` spanning
+**08:01:46.417 → 08:01:56.863 only** — it died **13.0 s BEFORE** the engage
+publish, so engage did not stop it. The only control traffic the run ever carried
+was the pre-route emergency-stop stream of a `vehicle_cmd_gate` already in
+`Emergency!` (`system_emergency heartbeat is timeout` at 1785596516.515, 0.35 s
+before the stream ended). `system.mrm_handler` oscillated `NORMAL ↔ MRM_OPERATING`
+at ~1 Hz throughout.
+
+Upstream, from the same log: `sensing.lidar.concatenate_data:
+transformed_raw_points[/sensing/lidar/{left,right}/pointcloud_before_sync] is
+nullptr, skipping pointcloud publish` × **630**, plus
+`crop_box_filter_measurement_range: Invalid PointCloud: row_step mismatch.
+Expected: 99968 … Got: 0`. Measured on this run: LiDAR 8.90 Hz and NDT 4.82 Hz.
+That is the **already-registered** cell-B sensing/NDT confound (§4.1, §6), which
+the Task 1 ruling settled as not-to-be-fixed — recorded here as context, not as a
+new defect.
+
+**Not a one-off.** Across every cell B manifest: run-001…006 `crash:cell-launch`,
+run-007 `crash:collect_gt`, run-008…012 `gate:arm-failed`, run-028
+`gate:arm-failed`. Cell B has attempted closed-loop **13 times across two
+independent sessions and has never armed**; run-028 is the **sixth**
+`gate:arm-failed`. Deterministic within the run (73 s of continuous "Waiting for
+trajectory data") and across sessions, so it was **not** re-run: this is a smoke
+failure with a named link, and cell B closed-loop collection stops here.
+
+### 7.2 Cell B static: GO, and the `quality.json` question is answered
+
+`B/run-029` is the first clean, un-intervened cell B run since Phase 0. It
+**filed a `quality.json`**: `ndt_rate_ratio = 0.281`, `pose_err_max_m = 0.050`,
+`gate_pass = false`, `reasons = ["ndt rate ratio 0.28 < 0.9"]`.
+
+So the `B/run-025` / `B/run-026` "no `quality.json`, and no matching exclusion
+criterion" state did **not** recur on a clean run. That supports the mitigating
+reading already on record: those four were the intervened-upon Phase 0 diagnostic
+runs with a deliberate mid-run relay kill, and the missing `quality.json` is an
+artifact of that intervention rather than baseline cell B behaviour. `0.281` sits
+inside §4.1's filed 0.257–0.989 range. The failing M5 rate gate is the
+**registered measured confound** — expected on B, neither a smoke failure nor
+excludable.
+
+`B/run-028` also has no `quality.json`, but that is a different and benign state:
+it aborted at step 9 (`ARM FAIL`) and so never reached step 13 `write_quality`,
+and it carries a registered exclusion. Nothing was hand-written into it.
+
+### 7.3 Cell C: GO
+
+`C/run-001` was the mandatory criterion-5 Nishi warm-up and is excluded
+`warmup:nishi` — a pre-registered discard, not a failure (it armed and scored
+cleanly regardless). `C/run-002` is the smoke, and passes all four criteria:
+
+- engage on the `/autoware/engage` path — `published engage=true x5`, then
+  `ARMED: localized, route set to (81571.616, 50019.827), autonomous engaged`;
+- `/control/command/control_cmd` flows — post-engage `control_cmd_hz~20.00 n=68
+  nonzero_longitudinal=63/68 frac=0.926`, and the harness's own gate printed
+  `OK: /control/command/control_cmd is flowing`;
+- manifest validates — `excluded: false`, `duel_admissible: false`;
+- teardown — `teardown: done`, no survivors/skips heading.
+
+`quality.json`: `gate_pass=True branch=absolute ndt_rate_ratio=1.000
+pose_err_max_m=0.187`.
+
+### 7.4 Cell E closed-loop: NO-GO — the recorded static-only downgrade applies
+
+`E/run-009` reached `mode=2 autonomous=True is_autoware_control_enabled=True` and
+then failed on the control command exactly as B did: post-engage
+`control_cmd_hz~0.00 n=0`, excluded `gate:arm-failed`.
+
+**Failing link, named — the same link as B's:** the route was set (`Route set via
+set_waypoint_route` × 1 in `bridge-stage2.log`), but planning never emitted a
+trajectory — `control.trajectory_follower.controller_node_exe: Waiting for
+trajectory data` × 15 and `Control is skipped since input data is not ready` ×
+23, with `Subscribed control_cmd is timed out` × 24. The run's `observer.csv`
+carries just **6** `/control/command/control_cmd` rows, all ~55 s *before* the
+engage.
+
+This cell's sensing and localization were healthy on this run — LiDAR
+`/sensing/lidar/top/pointcloud_raw_ex` 19.91 Hz (the patched image's topic),
+`/localization/kinematic_state` 19.91 Hz, NDT 8.91 Hz — so the failure is in the
+planning→control chain, not in bring-up. This is the outcome the plan
+anticipated: cell E's recorded **static-only downgrade** applies and its later
+collection is static-only. That is a spec outcome, not a blocker.
+
+### 7.5 Cell E0: GO for what it measures, with a scoring caveat
+
+`E0/run-001` passes its two criteria: the run files (`run 1/1 complete`,
+`excluded: false`) and the observer records the **as-emitted** topic set of
+`benchmarks/config/observer_topics/E0.yaml` — all four topics present, including
+the unpatched image's own `/sensing/lidar/top/pointcloud_before_sync` (8.42 Hz),
+`/localization/kinematic_state` (14.84 Hz),
+`/localization/pose_estimator/pose_with_covariance` (0.14 Hz) and
+`/control/command/control_cmd` (5.14 Hz).
+
+**Caveat, registered here because E-family collection depends on it:** no
+`quality.json` was written, and the refusal is deliberate and by design —
+
+```
+QUALITY GATE FAIL: metrics.ladder_branch is null for cell 'E0': no G1 ladder
+branch is selected for the map bundle this cell localizes against, so the M5
+gate has no localization criterion to apply.
+```
+
+`cells.yaml` leaves `ladder_branch`, `abs_pose_gate_m`, `lidar_expected_hz` and
+`ndt_expected_hz` null for **both** E and E0, pending the live re-gate those
+entries name. Consequence, checked against every filed manifest: **no E-family
+run has ever produced a `quality.json`** — `E/run-001…009` are all excluded, and
+`E0/run-001` is valid-but-unscored. An E-family collection can therefore gather
+transport and process-cost data (which is what E0 exists to measure) but cannot
+be M5-scored until that re-gate selects the branch. This is distinct from the
+`B/run-025` / `B/run-026` state: E0/run-001's missing `quality.json` has a named,
+pre-registered cause and the run is not excluded.
+
+### 7.6 Pre-flight harness defect: every python-bridge cell could not `plan`
+
+Found by a `--dry-run` pass before any live boot, and fixed before cells E / E0
+could run at all. `ad56308` ("fix round 1 … No live run") inserted the base_link
+anchor guard into `cells/python-bridge.sh` **65 lines above** the `IMAGE=`
+resolution it reads, so under `set -u` every python-bridge cell (E, E0, E-opt)
+aborted `plan` with `IMAGE: unbound variable`. The empty pipe that followed made
+the guard mis-report itself as anchor drift ("no DEFAULT_WHEELBASE assignment
+found in the bridge source") rather than as the statement-ordering defect it was.
+
+Fixed by moving the guard **verbatim** below the resolution and its
+`docker image inspect` (commit `1f43914`); nothing about what it checks changed,
+it merely became reachable. It then passed on both E-family images
+(`-1.42500000 m`), and `E0/run-001`'s launch log carries the first `OK: base_link
+anchor` line this campaign has ever produced. No exclusion applies: the defect
+aborts before step 4, so no run directory is created, and no filed run was
+measured through it (`E/run-001…008` predate `ad56308`).
