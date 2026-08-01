@@ -432,12 +432,34 @@ done
 # the opposite of what happened. The skip is non-fatal and STAYS non-fatal --
 # same exit 0, same never-refuses contract -- only the CLAIM changes: this
 # heading now names what is presumed still running instead of calling it done.
-if [ "$TOTAL_SKIPPED" -gt 0 ]; then
+#
+# Fix round 1, F4: the same lie had a THIRD route, pre-existing and not
+# introduced by D2 -- when the signal ladder finishes with survivors left
+# (the WARN path below, TOTAL_LEFT > 0), the heading still said "stopped"
+# with the survivor count sitting right there in its own parenthetical.
+# Task 18's own #F1 teardown check reads this exact heading next, on the
+# closed-loop arm, for both cells -- the same check that caught the D1
+# defect this whole task exists to fix -- so a heading that can be fooled a
+# third way is in scope now. Same non-fatal pattern as D2: exit 0 and the
+# never-refuses contract are both unchanged; only the claim changes.
+if [ "$TOTAL_SKIPPED" -gt 0 ] && [ "$TOTAL_LEFT" -gt 0 ]; then
+  echo "autoware launch + concat relay NOT fully stopped:" \
+    "$TOTAL_SKIPPED of $# recorded tree(s) SKIPPED (pid reuse guard) and" \
+    "presumed STILL RUNNING, PLUS $TOTAL_LEFT more process(es) SURVIVED the" \
+    "full signal ladder -- see the SKIPPING/WARN line(s) above" \
+    "($# pid file(s) checked, $TOTAL_TREE process(es) in the recorded trees," \
+    "$TOTAL_LEFT survivor(s); container now: $(proc_count))"
+elif [ "$TOTAL_SKIPPED" -gt 0 ]; then
   echo "autoware launch + concat relay NOT fully stopped:" \
     "$TOTAL_SKIPPED of $# recorded tree(s) SKIPPED (pid reuse guard) and" \
     "presumed STILL RUNNING -- see the SKIPPING line(s) above" \
     "($# pid file(s) checked, $TOTAL_TREE process(es) in the recorded trees," \
     "$TOTAL_LEFT survivor(s); container now: $(proc_count))"
+elif [ "$TOTAL_LEFT" -gt 0 ]; then
+  echo "autoware launch + concat relay NOT fully stopped:" \
+    "$TOTAL_LEFT process(es) SURVIVED the full signal ladder -- see the WARN" \
+    "line(s) above ($# pid file(s) checked, $TOTAL_TREE process(es) in the" \
+    "recorded trees, $TOTAL_LEFT survivor(s); container now: $(proc_count))"
 else
   echo "autoware launch + concat relay stopped" \
     "($# pid file(s) checked, $TOTAL_TREE process(es) in the recorded trees," \

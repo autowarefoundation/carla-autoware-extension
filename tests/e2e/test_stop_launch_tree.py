@@ -462,3 +462,69 @@ def test_summary_still_claims_stopped_when_nothing_was_skipped(supervisor):
     assert "NOT fully stopped" not in result.stdout, result.stdout
     assert not _alive(root)
     assert [pid for pid in kids if _alive(pid)] == []
+
+
+# --- F4 (fix round 1): a third route to the same lie -- survivors ----------
+
+
+def _extract_summary_block() -> str:
+    """Pulls the REAL final if/elif/elif/else summary-selection block (fix
+    round 1, F4) out of stop_launch_tree.sh by REGEX, so a change to the
+    real heading logic is what the test below runs. Cannot be driven
+    through a real supervisor for the survivor cases: nothing survives the
+    ladder's SIGKILL rung by construction (that IS the property the ladder
+    exists to guarantee), so TOTAL_LEFT > 0 is not producible from a real
+    process without faking the kernel. Same technique
+    test_log_target_falls_back_to_devnull_when_run_dir_is_missing above
+    already uses for exactly this reason: run the REAL extracted logic
+    directly, with the inputs it reads (TOTAL_SKIPPED, TOTAL_LEFT, $#) set
+    by the caller instead of computed by a live signal ladder."""
+    import re
+
+    text = STOP_SCRIPT.read_text()
+    pattern = re.compile(r'(if \[ "\$TOTAL_SKIPPED" -gt 0 \].*?\nfi)', re.DOTALL)
+    m = pattern.search(text)
+    assert m, "the F4 summary-selection block was not found in stop_launch_tree.sh"
+    return m.group(1)
+
+
+@pytest.mark.parametrize(
+    "skipped,left,want_heading,want_absent",
+    [
+        (0, 0, "autoware launch + concat relay stopped (", "NOT fully stopped"),
+        (2, 0, "NOT fully stopped: 2 of 3 recorded tree(s) SKIPPED", "SURVIVED the full"),
+        (0, 4, "NOT fully stopped: 4 process(es) SURVIVED the full signal ladder", "SKIPPED"),
+        (2, 4, "SKIPPED (pid reuse guard) and presumed STILL RUNNING, PLUS 4", None),
+    ],
+    ids=["neither", "skipped-only", "survivors-only", "both"],
+)
+def test_summary_heading_matches_what_actually_happened(skipped, left, want_heading, want_absent):
+    """F4's real-code-path pin: runs the REAL summary-selection block
+    (extracted above) with TOTAL_SKIPPED/TOTAL_LEFT/$# set directly,
+    checking the heading it prints for all four combinations -- including
+    survivors-only and skipped-AND-survivors, neither of which the
+    pre-existing D2 tests exercise. `proc_count` is stubbed (its own
+    accuracy is untested here; this test is about which HEADING gets
+    chosen, not the container process counts inside it)."""
+    block = _extract_summary_block()
+    script = (
+        "set -u\n"
+        f"TOTAL_SKIPPED={skipped}\n"
+        f"TOTAL_TREE=7\n"
+        f"TOTAL_LEFT={left}\n"
+        'proc_count() { echo "stub"; }\n'
+        f"{block}\n"
+    )
+    # $# inside the extracted block comes from THIS script's own positional
+    # params -- three dummy pidfile paths give a real, non-trivial $#.
+    result = subprocess.run(
+        ["bash", "-c", script, "bash", "a.pid", "b.pid", "c.pid"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert want_heading in result.stdout, result.stdout
+    if want_absent is not None:
+        assert want_absent not in result.stdout, result.stdout
