@@ -406,15 +406,25 @@ cx "test -f $MAP_DIR/lanelet2_map.osm" >/dev/null 2>&1 ||
 # mismatch trips the pid-reuse guard -- correctly, on a racy input -- and a
 # real teardown is silently skipped. Same fix as scripts/e2e/launch_autoware.sh
 # (see its own comment for the full reasoning): poll for the cmdline to hold
-# STEADY for 2 continuous seconds (20 identical reads, 0.1s apart) inside a 5s
-# bound, rewriting the sidecar each time a new steady value is reached so a
-# still-settling read mistaken for final gets corrected by a later real
-# change, as long as the true post-exec value itself goes steady with >= 2s
-# left in the bound. Bounded so a stuck read cannot hang the bring-up; the
-# sidecar can be stale past that bound, in theory, but this was not observed
-# even at effectively ZERO added delay before this fix existed. Does not
-# touch the launched process (no ptrace/strace attach, itself a
-# launch-timing change) -- only /proc reads for the pid already recorded.
+# STEADY for 2 continuous seconds -- 21 identical reads (aw_stable starts at
+# 0 and needs 20 MATCHES against the read before it, so the 21st read is the
+# first that counts), 0.1s apart -- rewriting the sidecar each time a new
+# steady value is reached so a still-settling read mistaken for final gets
+# corrected by a later real change, as long as the true post-exec value
+# itself goes steady with >= 2s left in the budget. Capped at 50 polls so a
+# stuck read cannot hang the bring-up; that cap is a FLOOR, not a ceiling --
+# the polls, forks and sleeps measured ~5.17s idle even with nothing to wait
+# for, and load stretches it further, never shortens it. Past the cap the
+# sidecar can be left holding a STALE pre-exec value, not merely absent (see
+# fix round 1, F6.2) -- in theory, but this was not observed even at
+# effectively ZERO added delay before this fix existed. Does not touch the
+# launched process (no ptrace/strace attach, itself a launch-timing change)
+# -- only /proc reads for the pid already recorded. The `|| true` after
+# `done` is load-bearing, not decoration: without it, this loop's own exit
+# status (a `while` returns its last BODY command's status, and that command
+# is `sleep 0.1`) becomes `cx`'s exit status, so one failed fork in the ~200
+# this loop forks during the launch's own fork storm would abort a launch
+# that actually succeeded (fix round 1, F1).
 echo "OK: bringing Autoware up (map $BENCH_MAP, bundle $MAP_DIR) -- log $AW_LOG"
 # shellcheck disable=SC2016 # $AW_LOG/$! expand IN the container, on purpose
 cx "$AW_ENV
@@ -438,7 +448,7 @@ cx "$AW_ENV
     aw_prev=\"\$aw_cmd\"
     aw_tries=\$((aw_tries + 1))
     sleep 0.1
-  done" ||
+  done || true" ||
   fail_with_log "the Autoware launch could not be started"
 
 # ---------------------------------------------------------------------------
@@ -504,11 +514,45 @@ echo "OK: the fork's LiDAR is readable inside the stack (Task 9 rung 1 holds)"
 # Same sidecar shape as the Autoware launch step above (Task 17c, D2): a
 # best-effort, never-fatal write of the recorded pid's /proc cmdline, for
 # stop_launch_tree.sh's pid-reuse guard.
+#
+# SAME FORK/EXEC RACE AS THE AW_PIDFILE WRITE ABOVE (fix round 1, F3) --
+# this is `nohup ... &` too, so it gets the identical hold-STEADY-for-2s,
+# capped-at-50-polls loop; see the AW_PIDFILE comment above for the full
+# mechanism, including why the trailing `|| true` after `done` is required
+# (F1) and the exec-count/cap-outcome corrections (F6.2-3).
+#
+# BLAST RADIUS, stated so this reads as scoped rather than alarming (fix
+# round 1, F3): a surviving relay is worse than an ordinary survivor
+# because it keeps publishing onto RELAY_OUT, NDT's own input topic, where
+# a SECOND publisher is already a measured, gate-relevant variable in this
+# file (the "THAT PREMISE IS REFUTED" note above -- publishers=2 -> 4.89
+# Hz). But cell B is bounded TWICE against a survivor outliving a run:
+# teardown.sh:361's `docker rm -f` (taken because tier4-native.sh:144 sets
+# AW_COMPOSE="") and this file's own container removal before the next
+# `docker run` (:323) both clear it even if teardown never ran at all --
+# the duel is not at cross-run risk. What a same-run survivor would do to
+# THAT run's own NDT rate is not established from code -- duplicate
+# identical clouds may be benign or may compound the mixed-source rate
+# defect above; that needs a live stack, correctly left open by this round.
 cx "$AW_ENV
   nohup ros2 run topic_tools relay $RELAY_IN $RELAY_OUT \
     >/tmp/tier4-concat-relay.log 2>&1 &
   echo \$! >$RELAY_PIDFILE
-  tr '\0' ' ' </proc/\$(cat $RELAY_PIDFILE)/cmdline >$RELAY_PIDFILE.cmd 2>/dev/null || true" ||
+  rel_cmd=\"\" rel_prev=\"\" rel_stable=0 rel_tries=0
+  while [ \"\$rel_tries\" -lt 50 ]; do
+    rel_cmd=\"\$(tr '\0' ' ' </proc/\$(cat $RELAY_PIDFILE)/cmdline 2>/dev/null)\"
+    if [ -n \"\$rel_cmd\" ] && [ \"\$rel_cmd\" = \"\$rel_prev\" ]; then
+      rel_stable=\$((rel_stable + 1))
+      if [ \"\$rel_stable\" -ge 20 ]; then
+        printf '%s' \"\$rel_cmd\" >$RELAY_PIDFILE.cmd 2>/dev/null
+      fi
+    else
+      rel_stable=0
+    fi
+    rel_prev=\"\$rel_cmd\"
+    rel_tries=\$((rel_tries + 1))
+    sleep 0.1
+  done || true" ||
   fail_with_log "the single-LiDAR concat relay could not be started"
 echo "OK: concat relay $RELAY_IN -> $RELAY_OUT"
 
