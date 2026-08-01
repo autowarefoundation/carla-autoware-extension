@@ -188,7 +188,45 @@ compose_exec '
   # KEEPS the pid file when it could not clear a tree, so a later --stop in a
   # long-lived container could otherwise sweep a strangers subtree. Best
   # effort: a missing sidecar only means the guard is skipped.
-  tr "\0" " " </proc/$(cat "$AW_PIDFILE")/cmdline >"$AW_PIDFILE.cmd" 2>/dev/null || true
+  #
+  # FORK/EXEC RACE (Task 18b). $! is valid the instant the shell forks this
+  # background job, but nohup has not yet exec-ed into ros2 -- an immediate
+  # cmdline read can land on the PRE-exec argv ("nohup ros2 launch ..."),
+  # while stop_launch_tree.sh later reads the POST-exec form
+  # ("/usr/bin/python3 .../ros2 launch ..."). An exact mismatch trips the
+  # pid-reuse guard and skips a real teardown -- MEASURED live on 5/10 cell-B
+  # static runs, via the identical shape benchmarks/cells/tier4_autoware.sh
+  # copied from this file.
+  #
+  # Fixed by polling for the cmdline to hold STEADY for 2 continuous seconds
+  # (20 identical reads, 0.1s apart) inside a 5s overall bound, rewriting the
+  # sidecar each time a new steady value is reached rather than stopping at
+  # the first one: if a still-settling read gets mistaken for final and
+  # written, a later real change is still caught and the sidecar is
+  # corrected, as long as the true post-exec value itself goes steady with
+  # >= 2s left in the bound. Bounded so a stuck read cannot hang the launch;
+  # past the bound the sidecar keeps whatever it last wrote (or stays
+  # unwritten if nothing was ever steady long enough), which can be stale in
+  # theory but was not observed even at effectively ZERO added delay before
+  # this fix existed -- real exec latency here is orders of magnitude under
+  # the 2s threshold. Touches only /proc for the pid already recorded; the
+  # launched process itself is not touched (no ptrace/strace attach, which
+  # would itself be a launch-timing change).
+  aw_cmd="" aw_prev="" aw_stable=0 aw_tries=0
+  while [ "$aw_tries" -lt 50 ]; do
+    aw_cmd="$(tr "\0" " " </proc/$(cat "$AW_PIDFILE")/cmdline 2>/dev/null)"
+    if [ -n "$aw_cmd" ] && [ "$aw_cmd" = "$aw_prev" ]; then
+      aw_stable=$((aw_stable + 1))
+      if [ "$aw_stable" -ge 20 ]; then
+        printf "%s" "$aw_cmd" >"$AW_PIDFILE.cmd" 2>/dev/null
+      fi
+    else
+      aw_stable=0
+    fi
+    aw_prev="$aw_cmd"
+    aw_tries=$((aw_tries + 1))
+    sleep 0.1
+  done
   echo "autoware launch pid $(cat "$AW_PIDFILE")"'
 
 # Block until the stack is up AND carla_interface has fired-and-died. Two conditions,

@@ -386,16 +386,35 @@ cx "test -f $MAP_DIR/lanelet2_map.osm" >/dev/null 2>&1 ||
 # launch_vehicle_interface:=false because the fork IS the vehicle interface.
 #
 # The line after echo $! writes the SAME sidecar
-# scripts/e2e/launch_autoware.sh:186-191 writes for the extension family --
+# scripts/e2e/launch_autoware.sh:185-227 writes for the extension family --
 # stop_launch_tree.sh's pid-reuse guard compares a recorded pid's /proc
-# cmdline against this file (Task 17c, D2). Best-effort (|| true) and never
-# allowed to fail the launch: an absent sidecar only means that guard is
-# skipped, never failed (stop_launch_tree.sh's own header), and the sidecar's
-# REMOVAL is already that script's job -- this launcher only owes the write.
+# cmdline against this file (Task 17c, D2). Best-effort and never allowed to
+# fail the launch: an absent sidecar only means that guard is skipped, never
+# failed (stop_launch_tree.sh's own header), and the sidecar's REMOVAL is
+# already that script's job -- this launcher only owes the write.
 # cx() sends a DOUBLE-quoted string (unlike compose_exec's single-quoted
 # one), so $AW_PIDFILE below expands on the HOST like every other $VAR in
-# this call, and only \$(cat ...) is escaped to defer it to the container's
-# own /proc at run time.
+# this call, and only \$-prefixed references are escaped to defer them to
+# the container's own /proc at run time.
+#
+# THE WRITE ITSELF used to race the exec (Task 18b), on this exact shape:
+# $! is valid the instant the shell forks the background job, but nohup has
+# not yet exec-ed into ros2 -- an immediate cmdline read can record the
+# PRE-exec argv ("nohup ros2 launch ...") while stop_launch_tree.sh later
+# reads the POST-exec form ("/usr/bin/python3 .../ros2 launch ..."). MEASURED
+# live on 5/10 cell-B static runs (results/B/run-017,019,020,021,022): the
+# mismatch trips the pid-reuse guard -- correctly, on a racy input -- and a
+# real teardown is silently skipped. Same fix as scripts/e2e/launch_autoware.sh
+# (see its own comment for the full reasoning): poll for the cmdline to hold
+# STEADY for 2 continuous seconds (20 identical reads, 0.1s apart) inside a 5s
+# bound, rewriting the sidecar each time a new steady value is reached so a
+# still-settling read mistaken for final gets corrected by a later real
+# change, as long as the true post-exec value itself goes steady with >= 2s
+# left in the bound. Bounded so a stuck read cannot hang the bring-up; the
+# sidecar can be stale past that bound, in theory, but this was not observed
+# even at effectively ZERO added delay before this fix existed. Does not
+# touch the launched process (no ptrace/strace attach, itself a
+# launch-timing change) -- only /proc reads for the pid already recorded.
 echo "OK: bringing Autoware up (map $BENCH_MAP, bundle $MAP_DIR) -- log $AW_LOG"
 # shellcheck disable=SC2016 # $AW_LOG/$! expand IN the container, on purpose
 cx "$AW_ENV
@@ -405,7 +424,21 @@ cx "$AW_ENV
     simulator_type:=awsim launch_vehicle_interface:=false \
     use_sim_time:=true perception:=false rviz:=false >$AW_LOG 2>&1 &
   echo \$! >$AW_PIDFILE
-  tr '\0' ' ' </proc/\$(cat $AW_PIDFILE)/cmdline >$AW_PIDFILE.cmd 2>/dev/null || true" ||
+  aw_cmd=\"\" aw_prev=\"\" aw_stable=0 aw_tries=0
+  while [ \"\$aw_tries\" -lt 50 ]; do
+    aw_cmd=\"\$(tr '\0' ' ' </proc/\$(cat $AW_PIDFILE)/cmdline 2>/dev/null)\"
+    if [ -n \"\$aw_cmd\" ] && [ \"\$aw_cmd\" = \"\$aw_prev\" ]; then
+      aw_stable=\$((aw_stable + 1))
+      if [ \"\$aw_stable\" -ge 20 ]; then
+        printf '%s' \"\$aw_cmd\" >$AW_PIDFILE.cmd 2>/dev/null
+      fi
+    else
+      aw_stable=0
+    fi
+    aw_prev=\"\$aw_cmd\"
+    aw_tries=\$((aw_tries + 1))
+    sleep 0.1
+  done" ||
   fail_with_log "the Autoware launch could not be started"
 
 # ---------------------------------------------------------------------------
