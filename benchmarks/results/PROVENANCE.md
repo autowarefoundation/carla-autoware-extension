@@ -899,6 +899,26 @@ container recreate ahead of the extension-family runs.
 | E | `E/run-009` | closed-loop | **FAIL** — arm gate | excluded `gate:arm-failed` |
 | E0 | `E0/run-001` | static | **PASS** — files, observer records the as-emitted set | not excluded |
 
+**Fix round 1 (2026-08-01, documentation only — no live runs).** Three
+corrections are folded into the sections below and flagged in place rather than
+silently rewritten. Every verdict, exclusion and go/no-go above is
+**unchanged**; what changed is the diagnosis behind two of them, and one
+citation:
+
+1. **§7.1 / §7.4 — the "B and E fail at the same link" framing was WRONG**, and
+   it hid cell B's actual blocker. They share a symptom (no trajectory) and stall
+   on **different missing inputs**: B on the **map**, E on the **route**. B's
+   `waiting for map` × 11 went unrecorded entirely in the first version; it is
+   the single most actionable lead in the run.
+2. **§7.4 — a 4.5× numeric error.** E's last `control_cmd` row is **12.077 s**
+   before engage, not "~55 s".
+3. **§7.6 — evidence cited that does not exist.** No filed artifact contains the
+   `OK: base_link anchor` line; it was in the operator's terminal capture.
+
+Commit `68116ac`'s message carries the superseded "SAME named link" framing.
+Git history is immutable, so this note is the correction of record: **read §7.1
+and §7.4 below, not that commit message,** for what the two cells actually did.
+
 ### 7.1 Cell B closed-loop: NO-GO, and it has never once armed
 
 `B/run-028` reached `mode=2 autonomous=True is_autoware_control_enabled=True` via
@@ -907,18 +927,36 @@ first — "The target mode is not available", then "no response (spin timed out)
 and the harness took its documented fallback). It failed on the control command:
 post-engage `control_cmd_hz~0.00 n=0`.
 
-**Failing link, named: planning never produced a trajectory.** The route was set
-(`Route set via set_waypoint_route`, `lanelet_sequence = [ids: 324 5650 719 6660
-776 31 2463]`, t=1785596518.797), but for the remaining 73 s
+**Failing link, named: `behavior_path_planner` is blocked WAITING FOR THE MAP, so
+planning never produced a trajectory.** The route was set (`Route set via
+set_waypoint_route`, `lanelet_sequence = [ids: 324 5650 719 6660 776 31 2463]`,
+t=1785596518.797) and it **reached the planner** — `behavior_path_planner`'s own
+`waiting for route` **stops** at `tier4-autoware.log:1347`, t=1785596529.903.
+From that point the planner logs a *different* missing input, and logs nothing
+else, for the rest of the run:
+
+| `tier4-autoware.log` | t | line |
+| --- | --- | --- |
+| first `behavior_path_planner: waiting for map` | 1785596537.705 | `:1522` |
+| last `behavior_path_planner: waiting for map` | 1785596590.955 | `:2453` (teardown) |
+
+`waiting for map` × **11** spanning **53.3 s**, against `waiting for route` × 7
+that all cease once the route lands. Downstream of that, and explained by it,
 `control.trajectory_follower.controller_node_exe` logged `Waiting for trajectory
 data` / `Control is skipped since input data is not ready` — last at
 **1785596591.014**, i.e. right up to teardown — and
 `control.autoware_operation_mode_transition_manager: Subscribed control_cmd is
 timed out` × 25, last at 1785596592.905.
 
+**`waiting for map` is the actionable lead on cell B**, and it is the *only*
+input `behavior_path_planner` still reports missing at teardown. It is recorded
+here rather than left in the raw log because it names a specific next probe:
+whether `map_loader` publishes the lanelet map at all, and whether its
+`transient_local` sample reaches a subscriber that joins late.
+
 The run's own `observer.csv` shows `/control/command/control_cmd` spanning
-**08:01:46.417 → 08:01:56.863 only** — it died **13.0 s BEFORE** the engage
-publish, so engage did not stop it. The only control traffic the run ever carried
+**08:01:46.417 → 08:01:56.863 only** — it died **12.996 s BEFORE** the engage
+publish (1785596529.859), so engage did not stop it. The only control traffic the run ever carried
 was the pre-route emergency-stop stream of a `vehicle_cmd_gate` already in
 `Emergency!` (`system_emergency heartbeat is timeout` at 1785596516.515, 0.35 s
 before the stream ended). `system.mrm_handler` oscillated `NORMAL ↔ MRM_OPERATING`
@@ -937,9 +975,23 @@ new defect.
 run-007 `crash:collect_gt`, run-008…012 `gate:arm-failed`, run-028
 `gate:arm-failed`. Cell B has attempted closed-loop **13 times across two
 independent sessions and has never armed**; run-028 is the **sixth**
-`gate:arm-failed`. Deterministic within the run (73 s of continuous "Waiting for
-trajectory data") and across sessions, so it was **not** re-run: this is a smoke
-failure with a named link, and cell B closed-loop collection stops here.
+`gate:arm-failed`. Deterministic within the run (53.3 s of continuous `waiting
+for map`, and 73 s of the `Waiting for trajectory data` it causes) and across
+sessions, so it was **not** re-run: this is a smoke failure with a named link,
+and cell B closed-loop collection stops here.
+
+**Hand-off to the cell-B diagnostic.** A separate static B run is dispatched to
+settle the `waiting for map` lead before the primary duel. Starting point, from
+this run's filed evidence: `behavior_path_planner` received the route
+(`waiting for route` ceased at 1785596529.903) and then reported **only**
+`waiting for map`, 11 times over 53.3 s, up to teardown. The open questions that
+follow directly are whether `map_loader` publishes the lanelet map at all, and
+whether its `transient_local` sample reaches a subscriber that joins late — the
+latter being the case a late-starting planner would hit while the topic still
+looks correctly advertised. Note that `/map/vector_map` is **not** in cell B's
+observer topic set (`observer_topics/B.yaml` records LiDAR, NDT pose,
+kinematic_state, control_cmd and published_time only), so no filed run in this
+campaign can answer it from data already on disk — it needs the live probe.
 
 ### 7.2 Cell B static: GO, and the `quality.json` question is answered
 
@@ -980,16 +1032,43 @@ pose_err_max_m=0.187`.
 ### 7.4 Cell E closed-loop: NO-GO — the recorded static-only downgrade applies
 
 `E/run-009` reached `mode=2 autonomous=True is_autoware_control_enabled=True` and
-then failed on the control command exactly as B did: post-engage
+then failed on the control command with the same *symptom* as B: post-engage
 `control_cmd_hz~0.00 n=0`, excluded `gate:arm-failed`.
 
-**Failing link, named — the same link as B's:** the route was set (`Route set via
-set_waypoint_route` × 1 in `bridge-stage2.log`), but planning never emitted a
-trajectory — `control.trajectory_follower.controller_node_exe: Waiting for
-trajectory data` × 15 and `Control is skipped since input data is not ready` ×
-23, with `Subscribed control_cmd is timed out` × 24. The run's `observer.csv`
-carries just **6** `/control/command/control_cmd` rows, all ~55 s *before* the
-engage.
+**Failing link, named — the same SYMPTOM as B, a DIFFERENT CAUSE.** Corrected in
+fix round 1; the first version of this section called it "the same link as B's",
+which the logs do not support and which hid B's real blocker (§7.1). The two
+cells stall on **different missing inputs**:
+
+| | `B/run-028` | `E/run-009` |
+| --- | --- | --- |
+| `Route set via set_waypoint_route` | 1785596518.797 | 1785597940.366 (`bridge-stage2.log:1459`) |
+| `behavior_path_planner: waiting for route` | **stops** at 1785596529.903 | **persists** to 1785598004.347 (`:1976`) — **63.98 s AFTER** route-set |
+| `behavior_path_planner: waiting for map` | **× 11**, to teardown | **× 0** |
+| blocked on | **the map** | **the route** |
+
+So on E the route is published by `mission_planner` but **never reaches
+`behavior_path_planner`**, and the map is not implicated at all; on B the route
+does arrive and the map never does. **One diagnosis will not unblock both.**
+
+Downstream of E's missing route, and explained by it:
+`control.trajectory_follower.controller_node_exe: Waiting for trajectory data` ×
+15 and `Control is skipped since input data is not ready` × 23, with `Subscribed
+control_cmd is timed out` × 24. The run's `observer.csv` carries just **6**
+`/control/command/control_cmd` rows, the last at 1785597942.392 — **12.077 s
+before** the engage publish at 1785597954.469.
+
+That offset is worth recording rather than rounding away: **12.077 s on E against
+12.996 s on B**, i.e. both cells' control streams die ~12–13 s ahead of engage,
+despite the two failing on different inputs. Whether that near-coincidence is
+mechanism or arithmetic of the fixed arm sequence is **NOT established here** — it
+is an observation for whoever picks the question up, not a finding.
+
+**Ruled out on E, so it is not mistaken for the blocker later:**
+`planning.scenario_planning.parking.costmap_generator: Could not find a
+connection between 'map' and 'base_link' … Tf has two or more unconnected trees`
+is a **bring-up transient**. Its last occurrence is `bridge-stage2.log:1284`,
+t=1785597929.809 — **10.557 s BEFORE** route-set — and it never recurs.
 
 This cell's sensing and localization were healthy on this run — LiDAR
 `/sensing/lidar/top/pointcloud_raw_ex` 19.91 Hz (the patched image's topic),
@@ -1018,14 +1097,32 @@ gate has no localization criterion to apply.
 ```
 
 `cells.yaml` leaves `ladder_branch`, `abs_pose_gate_m`, `lidar_expected_hz` and
-`ndt_expected_hz` null for **both** E and E0, pending the live re-gate those
-entries name. Consequence, checked against every filed manifest: **no E-family
-run has ever produced a `quality.json`** — `E/run-001…009` are all excluded, and
-`E0/run-001` is valid-but-unscored. An E-family collection can therefore gather
-transport and process-cost data (which is what E0 exists to measure) but cannot
-be M5-scored until that re-gate selects the branch. This is distinct from the
-`B/run-025` / `B/run-026` state: E0/run-001's missing `quality.json` has a named,
+`ndt_expected_hz` null for E and E0, pending the live re-gate those entries name.
+Consequence, checked against every filed manifest: **no E-family run has ever
+produced a `quality.json`** — `E/run-001…009` are all excluded, and `E0/run-001`
+is valid-but-unscored. An E-family collection can therefore gather transport and
+process-cost data (which is what E0 exists to measure) but cannot be M5-scored
+until that re-gate selects the branch. This is distinct from the `B/run-025` /
+`B/run-026` state: E0/run-001's missing `quality.json` has a named,
 pre-registered cause and the run is not excluded.
+
+**Corrected in fix round 1 — the gap is NOT E-only**, and saying "both E and E0"
+understated it. `cells.yaml` leaves `ladder_branch` null for **D** (`:410-411`)
+and **E-opt** (`:495-500`) on the same pending-measurement grounds, so the same
+refusal awaits them. **CAL-rmw** (`:527-528`) and the other CAL cells are also
+null but belong in a different category: their nulls are *deliberate and
+terminal*, carrying their own stated reason (`# no localization stack in this
+cell`), not a pending measurement. Any cell in the first group needs its branch
+selected before it can be M5-scored; the CAL cells never will be.
+
+**Also registered (pre-existing, not caused by this task):** both new E-family
+runs file a **0-byte `gt.log`** while their `gt.csv` is fully populated
+(`E/run-009` 1349 rows, `E0/run-001` 1169), where the UE5-family runs file a
+~250-byte `gt.log` (`B/run-029` 253 B, `C/run-002` 251 B). So the python-bridge
+family leaves **no filed record of which ground-truth anchor was applied** — the
+exact fact `1f43914`'s guard exists to establish. That absence is what made the
+F2 citation error below possible, and it is worth closing before E-family
+`pose_error` numbers are relied on.
 
 ### 7.6 Pre-flight harness defect: every python-bridge cell could not `plan`
 
@@ -1040,7 +1137,30 @@ found in the bridge source") rather than as the statement-ordering defect it was
 Fixed by moving the guard **verbatim** below the resolution and its
 `docker image inspect` (commit `1f43914`); nothing about what it checks changed,
 it merely became reachable. It then passed on both E-family images
-(`-1.42500000 m`), and `E0/run-001`'s launch log carries the first `OK: base_link
-anchor` line this campaign has ever produced. No exclusion applies: the defect
-aborts before step 4, so no run directory is created, and no filed run was
-measured through it (`E/run-001…008` predate `ad56308`).
+(`-1.42500000 m`). No exclusion applies: the defect aborts before step 4, so no
+run directory is created, and no filed run was measured through it
+(`E/run-001…008` predate `ad56308`).
+
+**Where that observation actually comes from — corrected in fix round 1.** This
+section previously said `E0/run-001`'s launch log "carries the first `OK:
+base_link anchor` line this campaign has ever produced". **It does not, and no
+filed artifact does.** Checked:
+
+```
+$ grep -ril anchor benchmarks/results/E0/run-001/ benchmarks/results/E/run-009/
+(no matches)
+```
+
+The guard runs in the cell launcher's `plan` phase, whose stdout goes to the
+**runner's terminal**, not into the run directory; the two `OK: -1.42500000 m`
+lines this task observed were in the operator-side capture (`/tmp/smoke-E.log`,
+`/tmp/smoke-E0.log`), which is **not** filed evidence. The observation is real
+and was independently reproduced by running the guard directly against both
+images — but the record must not point at a filed artifact that does not exist,
+so the claim is withdrawn and replaced by its actual provenance.
+
+This compounds the 0-byte `gt.log` noted in §7.5: the python-bridge family files
+**no** record of the applied GT anchor anywhere in its run directory, which is
+precisely the fact this guard exists to prove. Making the guard's result reach
+the run directory is the obvious follow-up; it is **not** done here (fix round 1
+is documentation only).
