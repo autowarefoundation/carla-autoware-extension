@@ -474,16 +474,25 @@ one unscoreable; good-teardown group 0.257–0.989), and the single passing run
 (`run-016`, 0.257). Two independent findings, and neither is evidence for the
 other.
 
-## 6. Phase 0 harness re-verification (2026-07-31): branch (c) ruled, then BLOCKED pending an owner decision
+## 6. Phase 0 harness re-verification: FINAL RULING = branch (c), reached in three stages
 
-> **READ §6.5 BEFORE ACTING ON THIS SECTION.** §6.1–§6.4 record the Phase 0
-> session and its branch-(c) ruling as they stood when the ruling was made, and
-> they are left unedited. A follow-up measurement (fix round 1, finding F3) then
-> established that P1's criterion did **not** measure the phenomenon the
-> hypothesis names. The ruling is procedurally correct on the pre-declared
-> criterion and is **not** substantively established. **No later task may build
-> on it until the owner rules.** The refuted premise stays in place with what
-> refuted it, per the campaign's convention.
+> **THE FINAL, ACTIONABLE RULING IS §6.7. READ IT FIRST.**
+>
+> This section records the whole arc, in order, because two of its stages were
+> superseded and the campaign's convention is that superseded rulings stay in
+> the record with the diagnostics that superseded them:
+>
+> | Stage | What it says | Status |
+> | --- | --- | --- |
+> | §6.1–§6.4 (2026-07-31) | Branch (c), ruled on P1's publisher **count** | **superseded reasoning** — do not act on §6.3's list |
+> | §6.5 (fix round 1) | The count did not measure double *publication*; BLOCKED | **superseded by the owner's ruling to resume**, and its measurement stands |
+> | §6.6 | A refuted premise in cell A's launcher, annotation deferred | current |
+> | **§6.7 (fix round 2)** | **FINAL: branch (c), ruled on P3 + P4 as pre-declared** | **ACT ON THIS** |
+>
+> The final branch is the same letter the first stage reached, but it is
+> **not** the same ruling: the first rested on a criterion that measured the
+> wrong quantity, and the final rests on the spec's own P3 and P4 with their
+> pre-declared thresholds. That distinction is the point of keeping both.
 
 The P3 completion plan opens with a live decision gate. Its hypothesis, its four
 probes with their predicted outcomes, and three adjudication branches were
@@ -501,7 +510,7 @@ tier4 `concatenate_data`), **absent on cell A** (relay only).
 
 | Probe | Predicted (pre-declared) | Measured | Outcome |
 | --- | --- | --- | --- |
-| **P1** — cell A publisher census on `/sensing/lidar/concatenated/pointcloud` | **1**, `//relay` | **2** — `/sensing/lidar/concatenate_data` **and** `//relay`; daemon-backed and `--no-daemon` censuses agree | **prediction FAILED → hypothesis refuted** |
+| **P1** — cell A publisher census on `/sensing/lidar/concatenated/pointcloud` | **1**, `//relay` | **2 advertisers** — `/sensing/lidar/concatenate_data` **and** `//relay` — but only **1 emitter** (§6.5) | **failed on advertisement count; MET on emission** (see §6.5: the count is not the quantity the hypothesis names) |
 | **P2** — cell B, same census | **2** — `//relay` and `/sensing/lidar/concatenate_data` | **2** — `/relay` and `/sensing/lidar/concatenate_data`, reproducing the `results/B/run-012` record | prediction held |
 | **P3** — concat output usable with the relay stopped | — | **not run** | decisional role removed by P1 |
 | **P4** — NDT rate with the relay stopped, vs 0.9 × the registered `ndt_expected_hz: 10.0` = 9.0 Hz | recovery, if the hypothesis were true | **not run**; the relay was never killed | same |
@@ -521,8 +530,9 @@ the ruling was made, and it has since been measured: **it does not hold.** See
 
 ### 6.2 Ruling: branch (c)
 
-*(Recorded as it stood at ruling time. Superseded in status by §6.5 — kept
-unedited, with what refuted it attached, rather than rewritten.)*
+*(Recorded as it stood at ruling time. **Superseded** — its reasoning by §6.5,
+its status by §6.7's final ruling. Kept unedited, with what superseded it
+attached, rather than rewritten.)*
 
 The hypothesis is explicitly *differential* — it explains cell B's depressed
 rate **by** a difference from cell A. P1 measured the same double publication on
@@ -534,12 +544,20 @@ refutes the hypothesis (the probe can kill it, deliberately)"* — and branches
 unestablished. **Branch (c) is the ruling.**
 
 No fourth branch was invented, no branch reshaped, and no prediction softened
-after the fact: P1's prediction is recorded as FAILED in the transcript.
+after the fact.
+
+**Corrected in fix round 2:** describing P1's prediction as simply "FAILED" was
+itself imprecise, and the imprecision is the crux of this whole correction. P1
+predicted **one publisher** and measured **two advertisers but one emitter**. It
+therefore failed on advertisement count and was **met on emission** — and
+emission is the quantity the hypothesis names. Reading the failure as a
+refutation is what produced the superseded ruling below.
 
 ### 6.3 What follows, and what explicitly does not
 
-*(Recorded as it stood at ruling time. **Do not act on this list** — §6.5
-suspends it pending an owner decision.)*
+*(Recorded as it stood at ruling time. **Do not act on this list** — it was
+suspended by §6.5 and is superseded by **§6.7**, which reaches the same branch
+on the correct probes and restates the consequences. Act on §6.7.)*
 
 Branch (c) prescribes no harness edit and no reclassification. Therefore:
 
@@ -592,7 +610,7 @@ specific to cell B's transport (cell A's cyclonedds censuses agreed with and
 without the daemon), and on that transport a CLI graph query must be given time
 to discover before its count means anything.
 
-### 6.5 BLOCKED: P1's count criterion did not measure double PUBLICATION
+### 6.5 Fix round 1 — P1's count criterion did not measure double PUBLICATION (this stage returned BLOCKED)
 
 Fix round 1 (2026-08-01) closed the open question flagged in §6.1. It is
 decision-relevant, and it goes against the ruling.
@@ -624,7 +642,8 @@ measurement of something the hypothesis does not name. The differential the
 hypothesis rests on — double publication present on B, absent on A — is
 therefore **not refuted by P1**, and branch (a) or (b) may be correct.
 
-**This is an owner decision and it has not been taken.** Re-adjudicating here
+**This was escalated as an owner decision rather than re-adjudicated here.**
+It has since been taken — see §6.7. Re-adjudicating at this stage
 would mean reshaping the spec's branch table against its own pre-declared
 criterion after seeing data, which is what the pre-declaration exists to
 prevent. The decision needed is whether P1's count criterion stands as written
@@ -664,3 +683,91 @@ record is what later tasks read. The finding is therefore registered here, and
 the annotation is scheduled for after all live collection completes. The
 cell-B-side counterpart comment (`tier4_autoware.sh`'s "THAT PREMISE IS
 REFUTED") already carries its own refutation in place and needs no change.
+
+### 6.7 FINAL RULING (fix round 2, 2026-08-01): branch (c), on P3 and P4 as pre-declared
+
+**Owner ruling that reopened the protocol**, recorded because it is what makes
+this stage legitimate rather than a second bite at the adjudication:
+
+> **RESUME Phase 0 at P3/P4.** Not "honor the literal count criterion", not
+> "re-run the whole session from P2". P3 and P4 are pre-declared in the spec
+> with pre-declared thresholds and can still land on (c), so running them shapes
+> no outcome — it completes a protocol that was short-circuited by an instrument
+> measuring the wrong quantity. In publication terms, cell A has exactly the one
+> emitter P1 predicted, so the differential is intact and the hypothesis is live
+> again.
+
+Four cell-B diagnostic runs, `--arm static`, no `--duel`, all filed and **none
+excluded**: `B/run-024` (emission census, P4 pre-kill, the kill, post-kill
+census), `B/run-025` and `B/run-026` (P4 post-kill, the second with
+`PYTHONUNBUFFERED=1` to rule out a block-buffering artifact), `B/run-027` (P4
+across the kill on an already-discovered subscriber, plus the full P3 cloud
+characterisation). Raw output for all of it is in
+`benchmarks/evidence/p3-phase0/probe-transcripts.md` §11.
+
+#### The differential IS real — cell B has two emitters, cell A has one
+
+Same stamp-identity instrument on both cells, so they are measured by one rule:
+
+| Quantity | Cell A (`run-014`) | Cell B (`run-024`) |
+| --- | --- | --- |
+| Advertised publishers on `RELAY_OUT` | 2 | 2 |
+| `RELAY_OUT`/`RELAY_IN` message ratio | 0.995 | **1.818** |
+| `RELAY_OUT` **duplicate** stamps | **0** | **72** of 88 unique |
+| `RELAY_IN` stamps absent from `RELAY_OUT` (loss symmetry) | 2 (= count diff) | **0** |
+| **Emitters** | **1** | **2** |
+
+The 0/0 loss symmetry rules out the probe's own dropped samples, and the excess
+is entirely duplicate stamps — `concatenate_data` republishing the relay's input
+clouds under the input's own stamp. So fix round 1's correction stands and the
+hypothesis had a real differential to rest on.
+
+#### The probe table, against the spec's thresholds
+
+| Probe | Predicted (pre-declared) | Measured | Outcome |
+| --- | --- | --- | --- |
+| **P3** — concat output usable, relay stopped | — | `frame_id` **`base_link`**, `width` **6202** (6198 / 6254 on two other runs), `point_step` **16**, `row_step` 99232, `is_dense` true, fields x/y/z/intensity/return_type/channel, topic steady at **7.612 Hz** | clouds **usable** — (b)'s trigger NOT met |
+| **P4** — NDT rate, relay stopped, vs **≥ 9.0 Hz** (0.9 × registered 10.0) | recovery, if the hypothesis were true | **0.000 Hz** on three independent runs; pre-kill with both emitters **4.830 Hz** (ratio ≈ 0.48) | **no recovery** — (c)'s trigger MET |
+
+- **(a) Recovery** — needs P4 ≥ 9.0 Hz. Measured 0.000. **Not selected.**
+- **(b) Concat output unusable** — trigger is *"P3 fails: empty/malformed
+  clouds"*. The clouds are neither. **Not selected.**
+- **(c) No recovery** — trigger is *"P4 stays < 0.9 with a single publisher"*.
+  Measured 0.000 post-kill, 0.48 pre-kill. **SELECTED.**
+
+#### What is and is not concluded
+
+The differential is real; it is **not the cause**. Removing the second publisher
+does not move NDT's rate toward 10 Hz — it stops NDT entirely — and the rate was
+already 0.48 of expectation while both publishers ran. The hypothesis names
+double publication as the *cause*, P4 is the test of causation, and it fails.
+
+**Fix mechanism for Task 2: NONE.** Branch (c) prescribes no harness change.
+Not relay-removal (a) — the relay is load-bearing, and killing it is what takes
+NDT to zero. Not concat-suppression (b) — its trigger is not met, and the
+measured 0.48 pre-kill rate shows that suppressing the second publisher would
+not reach the 0.9 gate either. `benchmarks/cells/tier4_autoware.sh:538` stays
+exactly as it is, comment block included.
+
+Consequences, all as pre-declared for (c): no `harness:<commit>`
+reclassification of B `run-013…022` under `exclusions.md` criterion 3; no
+10-fresh-pair static recollection; **no `duel_admissible` flip on A
+`run-003…012`** — the spec conditions that on branches (a)/(b), which did not
+fire, so the A static pair-halves keep `duel_admissible: true`. No gate was
+tuned, no threshold moved, no run excluded, no harness file edited. Cell B's M5
+failures stand and the verdict carries them.
+
+#### Two things a later task must not misread
+
+1. **NDT on cell B stops on its own.** On `run-027` the bucketed rates show NDT
+   at 1.600 Hz for 10 s and then 0.000 Hz from t≈10 s — twelve seconds *before*
+   the kill completed. `B/run-025` and `B/run-026` were both **unscoreable** by
+   the M5 gate (too few NDT↔GT stamp pairs, the same class as the filed
+   `B/run-019`), and `run-027` scored `ndt_rate_ratio=0.039`. The post-kill zero
+   is carried by `run-025`/`run-026`; `run-027` carries P3.
+2. **An unproven mechanism, flagged as unproven.** `concatenate_data` republishes
+   under stamps the relay already used (72 duplicates). A chain that
+   de-duplicates or time-filters on header stamp would drop such a stream while
+   the clouds themselves look sane — consistent with P4, but **not tested and
+   not evidence**. It is a hypothesis for whoever picks the question up, not a
+   finding.

@@ -44,6 +44,27 @@ in-count/out-count pair, and the independent `ros2 topic hz` readings taken
 alongside it (an entirely separate subscriber). The duplicate-stamp signal in
 particular survives drops -- losing samples cannot create duplicates.
 
+SECOND FAILURE MODE, added in fix round 2 for cell B. On a LOSSY transport the
+"unmatched stamp" signal acquires a FALSE-POSITIVE mode it does not have on a
+clean one: if the probe drops an inbound RELAY_IN sample but still receives the
+relay's forwarded copy on RELAY_OUT, that copy looks like a stamp no relay could
+have produced -- exactly what a second emitter would look like. Cell B's
+transport is `rmw_fastrtps_cpp` with shared memory OFF, which this campaign has
+already measured losing 17-26% of samples (benchmarks/README.md's A-side
+instrument-asymmetry bound), so on cell B the mode is not hypothetical.
+
+It is disambiguated by reporting BOTH directions of the mismatch. Symmetric
+loss (in-not-on-out ~= out-not-on-in) is the probe dropping samples on both
+topics; a genuine second emitter is ASYMMETRIC, adding traffic to RELAY_OUT
+only. The duplicate-stamp count stays the one signal no amount of loss can fake.
+
+THE DECISION RULE ABOVE IS UNCHANGED by this addition -- the two extra lines are
+reported diagnostics, not new criteria -- so cell A's already-filed measurement
+(`results/A/run-014`: ratio 0.995, 0 unmatched, 0 duplicates) was produced under
+the same rule cell B is judged by and stays directly comparable. Had these lines
+existed for that run they would have read `RELAY_IN stamps not seen on
+RELAY_OUT: 2`, which is just its 400-vs-398 count difference.
+
 Run INSIDE the Autoware container, where /work/benchmarks is mounted:
 
     docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash &&
@@ -142,6 +163,12 @@ def main() -> None:
     out_stamps = collections.Counter(r[1] for r in out_rows)
     unmatched = sum(c for s, c in out_stamps.items() if s not in in_stamps)
     duplicates = sum(c - 1 for c in out_stamps.values() if c > 1)
+    # Reverse direction, fix round 2: the loss-symmetry check. See the second
+    # failure mode in this file's docstring -- on a lossy transport an unmatched
+    # OUT stamp can be the probe's own dropped IN sample rather than a second
+    # emitter, and only the asymmetry between the two directions tells them
+    # apart. Reported, never folded into the decision rule.
+    reverse_unmatched = sum(c for s, c in in_stamps.items() if s not in out_stamps)
 
     print("\n=== ATTRIBUTION ===")
     print(f"RELAY_IN  messages                        : {len(in_rows)}")
@@ -149,6 +176,7 @@ def main() -> None:
     ratio = (len(out_rows) / len(in_rows)) if in_rows else float("nan")
     print(f"out/in ratio                              : {ratio:.3f}")
     print(f"RELAY_OUT stamps NOT seen on RELAY_IN     : {unmatched}")
+    print(f"RELAY_IN  stamps NOT seen on RELAY_OUT    : {reverse_unmatched}  (loss-symmetry check)")
     print(f"RELAY_OUT duplicate stamps (extra copies) : {duplicates}")
 
     emits = unmatched > 0 or duplicates > 0 or (in_rows and ratio > 1.25)
@@ -156,8 +184,14 @@ def main() -> None:
     if not in_rows or not out_rows:
         print("INDETERMINATE: one of the two topics delivered no samples.")
     elif emits:
+        # No cell is named here. An earlier revision hardcoded "on cell A"
+        # because the probe was written for the cell-A run, and it then printed
+        # that string verbatim during the CELL-B run of fix round 2 -- a
+        # misleading line in raw output that the transcript has to annotate.
+        # The probe does not know which cell it is running on, so it does not
+        # claim to.
         print("concatenate_data EMITS: RELAY_OUT carries traffic the relay alone")
-        print("cannot account for. Double PUBLICATION is present on cell A.")
+        print("cannot account for. Double PUBLICATION is present on this stack.")
     else:
         print("concatenate_data only ADVERTISES: every RELAY_OUT message is one the")
         print("relay forwarded (matched stamp, no duplicates, out/in ~= 1).")

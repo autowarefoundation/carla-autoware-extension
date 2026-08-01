@@ -1,8 +1,9 @@
 # P3 Phase 0 — harness re-verification: what is retained and what is not
 
-Decision supported: **the Phase 0 branch ruling — branch (c), now BLOCKED
-pending an owner decision** (see "What fix round 1 changed" below), the decision
-gate of the P3 completion plan
+Decision supported: **the Phase 0 branch ruling — FINAL: branch (c)**, reached
+in three stages (count-based ruling → BLOCKED on an instrument correction →
+owner ruling to resume → final ruling on P3/P4), the decision gate of the P3
+completion plan
 (`specs/2026-07-31-p3-completion-design.md`, "Phase 0 — Harness
 re-verification (live, decision gate)"). Every later P3 task keys off it.
 
@@ -26,14 +27,33 @@ hypothesis names double _publication_, so P1 did not measure the phenomenon its
 own hypothesis names, and the differential the hypothesis rests on is **not**
 refuted by it.
 
-The branch-(c) ruling is therefore **procedurally correct on the pre-declared
-criterion and NOT substantively established**. It is left in the record exactly
-as it was made, with what undermined it attached — this bundle is the evidence
-for both. **Nothing may be built on the ruling until the owner rules** on
-whether the count criterion stands as written or is superseded by a
-publication-based one. Re-adjudicating to (a)/(b) here would mean reshaping the
-spec's branch table after seeing data, which is what the pre-declaration exists
-to prevent.
+That first ruling was therefore procedurally correct on the pre-declared
+criterion and NOT substantively established, and the task returned BLOCKED
+rather than re-adjudicating.
+
+## What fix round 2 settled (2026-08-01) — the FINAL ruling
+
+The owner ruled **resume Phase 0 at P3/P4** rather than honour the literal count
+criterion or re-run from P2: both probes are pre-declared with pre-declared
+thresholds, so running them shapes no outcome. Four cell-B runs
+(`B/run-024…027`) then produced the measurement Phase 0 never had:
+
+- **The differential is real.** Cell B: out/in ratio **1.818**, **72 duplicate
+  stamps** of 88 unique, loss symmetry **0/0** ⇒ **2 emitters**. Cell A:
+  ratio 0.995, 0 duplicates ⇒ **1 emitter**.
+- **P3 PASSES on cloud structure**: `frame_id` `base_link`, `width` 6202,
+  `point_step` 16, `is_dense` true, x/y/z/intensity/return_type/channel, topic
+  steady at 7.612 Hz. Branch (b)'s trigger ("empty/malformed clouds") is not met.
+- **P4 finds NO recovery**: **0.000 Hz** post-kill on three independent runs
+  against the pre-declared **≥ 9.0 Hz**; pre-kill with both emitters 4.830 Hz
+  (ratio ≈ 0.48). Branch (c)'s trigger is met.
+
+**FINAL: branch (c).** The differential is real but is **not the cause** —
+removing the second publisher does not restore NDT's rate, it stops NDT
+altogether. Fix mechanism: **none**; no harness change. All three stages are
+kept here in order, because the final branch is the same letter as the first but
+not the same ruling: the first rested on a criterion measuring the wrong
+quantity, the final rests on the spec's own P3 and P4.
 
 ## Retention status, per figure
 
@@ -42,7 +62,11 @@ to prevent.
 | P1: cell A `RELAY_OUT` publisher count = **2** (`/sensing/lidar/concatenate_data`, `//relay`)                                           | **RETAINED** — full `ros2 topic info -v` output, plus the `--no-daemon` corroboration, in `probe-transcripts.md` §3                                                                                                                                                                                                            |
 | P2: cell B `RELAY_OUT` publisher count = **2** (`/relay`, `/sensing/lidar/concatenate_data`)                                            | **RETAINED** — `probe-transcripts.md` §4, including the three under-discovering `--no-daemon` attempts that preceded it                                                                                                                                                                                                        |
 | Cell B graph-discovery under-reporting under `--no-daemon` (relay alive at pid 437, discovered by neither `topic info` nor `node list`) | **RETAINED** — `probe-transcripts.md` §4                                                                                                                                                                                                                                                                                       |
-| P3 (concat output usability) and P4 (NDT rate, relay killed)                                                                            | **NOT MEASURED, deliberately** — the pre-declaration removed their decisional role once P1 returned 2; no value is asserted for either, and the 9.0 Hz recovery threshold is not evaluated                                                                                                                                     |
+| P3: concat cloud structure with the relay dead — `base_link`, `width` 6202, `point_step` 16, `row_step` 99232, `is_dense`, 6 fields     | **RETAINED, measured in fix round 2** — `probe-transcripts.md` §11.4, from `results/B/run-027` via `probe_relay_kill_transition.py`                                                                                                                                                                                            |
+| P4: NDT rate **4.830 Hz** pre-kill and **0.000 Hz** post-kill (three runs) against the pre-declared ≥ 9.0 Hz                            | **RETAINED** — `probe-transcripts.md` §11.3, from `results/B/run-024` (pre) and `run-025`/`run-026`/`run-027` (post)                                                                                                                                                                                                           |
+| Cell B emitter count = **2** (out/in 1.818, 72 duplicate stamps, loss symmetry 0/0)                                                     | **RETAINED** — `probe-transcripts.md` §11.2, from `results/B/run-024`                                                                                                                                                                                                                                                          |
+| That the relay pid surviving SIGKILL on `run-027` was a **zombie**                                                                      | **NOT CONFIRMED** — `/proc/<pid>/stat` was not read before the container was removed. What is measured instead, and is what P4 needs, is the DDS-level census on `run-024`/`run-025` showing the relay gone from the graph and the publisher count down to 1                                                                   |
+| Whether `concatenate_data`'s duplicate header stamps are what stops NDT                                                                 | **NOT TESTED** — recorded in `probe-transcripts.md` §11.4 and `results/PROVENANCE.md` §6.7 explicitly as an unproven hypothesis, not a finding                                                                                                                                                                                 |
 | Whether cell A's `concatenate_data` is _emitting_ or merely _advertising_                                                               | **RETAINED, measured in fix round 1** — it **only advertises**: out/in 398/400, 0 unmatched stamps, 0 duplicate stamps, aggregate 19.957 Hz vs `RELAY_IN` 19.960 Hz. Raw output in `probe-transcripts.md` §10, probe committed as `probe_concat_emission.py`, run filed as `results/A/run-014`. This is what BLOCKS the ruling |
 | The two ~310-entry `widths` histograms in the `probe_concat_emission.py` output                                                         | **TRUNCATED, not retained in full** — labelled in place in `probe-transcripts.md` §10. Per-frame point counts; they carry no attribution information and every attribution figure is retained                                                                                                                                  |
 | Individual wall-clock times of probes P1 and P2                                                                                         | **NOT RETAINED** — not captured inline. `probe-transcripts.md` §8 gives the bounds each probe necessarily falls inside, derived from the filed runs' own `manifest.json`/`quality.json` mtimes, and reconstructs nothing beyond them                                                                                           |
@@ -72,16 +96,16 @@ Cell A (`rmw_cyclonedds_cpp`) showed no such split.
 
 ## What is deliberately NOT here
 
-No relay was killed on either cell and no NDT rate was measured with a single
-publisher, so this bundle contains **no** post-kill rate, no concat-output cloud
-dump, and no recovery/non-recovery figure. Those probes were skipped on the
-strength of P1, and P1 is now known not to have measured what it was taken to
-measure — so if the owner supersedes the count criterion, they are what Phase 0
-must go back and run. Nothing was destroyed by that: no run was excluded or
-reclassified, no `duel_admissible` flag was flipped, and no harness file was
-edited, so a re-run from P2 costs two live runs and no recollection.
+No relay was ever killed on **cell A**, so this bundle contains no cell-A
+post-kill figure and asserts none; the kill probes are a cell-B protocol step and
+only cell B was subjected to them. Cell B's raw cloud payloads are not retained
+either — the structural metadata is (`frame_id`, `height`, `width`,
+`point_step`, `row_step`, `is_dense`, field layout), which is what P3 asks for,
+but the 99232 bytes of points behind each cloud are not.
 
-The bundle also asserts **no A-vs-B comparison**. The three runs it references
-(`A/run-013`, `B/run-023`, `A/run-014`) are all `duel_admissible: false`
-bring-up-class runs; the equivalence verdict is computed once, later, by
-`duel_verdict.py`.
+The bundle asserts **no A-vs-B comparison of scores**. The seven runs it
+references (`A/run-013`, `A/run-014`, `B/run-023`, `B/run-024…027`) are all
+`duel_admissible: false` bring-up-class runs; the equivalence verdict is
+computed once, later, by `duel_verdict.py`. The cell-A-vs-cell-B **emitter
+count** comparison is not a score comparison — it is the differential the
+pre-declared hypothesis itself names, measured by one instrument on both cells.

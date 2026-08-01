@@ -757,3 +757,364 @@ Note for whoever takes that decision: the kill probes were never run and the
 relay was never killed on either cell, so **no data was destroyed by this
 outcome** — re-running Phase 0 from P2 onward costs two live runs and no
 recollection.
+
+---
+
+## 11. Fix round 2 — owner ruling: RESUME Phase 0 at P3/P4
+
+### 11.1 The ruling that reopened the protocol (recorded before the measurements)
+
+Fix round 1 established that P1's count criterion did not measure double
+_publication_, and this task returned BLOCKED. The owner ruled on 2026-08-01:
+
+> **RESUME Phase 0 at P3/P4.** Not "honor the literal count criterion", not
+> "re-run the whole session from P2". P3 and P4 are pre-declared in the spec
+> with pre-declared thresholds and can still land on (c), so running them shapes
+> no outcome — it completes a protocol that was short-circuited by an instrument
+> measuring the wrong quantity. In publication terms, cell A has exactly the one
+> emitter P1 predicted, so the differential is intact and the hypothesis is live
+> again.
+
+Nothing below moves a threshold. Recovery remains **≥ 9.0 Hz sustained**
+(0.9 × cell B's registered `ndt_expected_hz: 10.0`,
+`benchmarks/config/cells.yaml:269`), and the branch table is the spec's,
+unchanged.
+
+Four cell-B diagnostic runs were needed, all `--arm static`, no `--duel`, each
+with a full preamble and `docker compose down` + `bootstrap_carla_msgs.sh`
+hygiene, each waiting for the 1-min loadavg to fall below 2 first. All four are
+filed, **none excluded**, all `duel_admissible: false`:
+
+| run         | what it contributed                                                                                          | why another run was needed                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `B/run-024` | emission census (pre-kill), pre-kill publisher census, **P4 pre-kill**, the kill, post-kill publisher census | the harness tore the stack down at the start of P4 post-kill                                                                   |
+| `B/run-025` | **P4 post-kill**, P3 `width`                                                                                 | `ros2 topic hz` printed nothing; had to rule out stdout block-buffering + SIGTERM losing the output                            |
+| `B/run-026` | **P4 post-kill re-measured with `PYTHONUNBUFFERED=1`**, P3 `width`                                           | buffering ruled out, but `--no-daemon` echo could not resolve `frame_id`, and the relay was found still alive 3 s after `kill` |
+| `B/run-027` | **P4 across the kill on an already-discovered subscriber**, full **P3** cloud characterisation               | —                                                                                                                              |
+
+### 11.2 Probe 1 — emission census on cell B, PRE-kill (`B/run-024`)
+
+The same stamp-identity instrument used on cell A in §10, so the two cells are
+measured by the same rule. This is the direct differential against
+`A/run-014`'s 2 advertisers / 1 emitter.
+
+```console
+$ docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && python3 /work/benchmarks/evidence/p3-phase0/probe_concat_emission.py --seconds 20 && ros2 topic info -v … && timeout 45 ros2 topic hz /localization/pose_estimator/pose_with_covariance --window 100 && kill $(cat /tmp/tier4-concat-relay.pid) && ros2 topic info -v … && timeout 45 ros2 topic hz … --window 100 && timeout 30 ros2 topic echo --once --no-daemon … --field width && …'
+T_CHAIN_START=2026-08-01T13:45:46Z
+===== STEP 1: emission census on B RELAY_OUT, PRE-KILL (2026-08-01T13:45:47Z) =====
+collecting for 20 s on:
+  IN  /sensing/lidar/top/pointcloud_before_sync
+  OUT /sensing/lidar/concatenated/pointcloud
+
+--- /sensing/lidar/top/pointcloud_before_sync ---
+messages received      : 88
+wall span / rate       : 18.25 s / 4.768 Hz
+unique header stamps   : 88
+widths (value: count)  : {6330: 1, 6195: 1, 6138: 1, 6317: 1, 6262: 2, 6203: 1, … [76 distinct widths, TRUNCATED for width; full histogram not retained]}
+frame_ids              : {'base_link': 88}
+stamp span / rate      : 18.25 s / 4.767 Hz
+
+--- /sensing/lidar/concatenated/pointcloud ---
+messages received      : 160
+wall span / rate       : 18.43 s / 8.626 Hz
+unique header stamps   : 88
+widths (value: count)  : {6330: 1, 6195: 2, 6138: 2, 6317: 2, 6262: 3, 6203: 1, … [76 distinct widths, TRUNCATED for width; full histogram not retained]}
+frame_ids              : {'base_link': 160}
+stamp span / rate      : 18.25 s / 8.712 Hz
+
+=== ATTRIBUTION ===
+RELAY_IN  messages                        : 88
+RELAY_OUT messages                        : 160
+out/in ratio                              : 1.818
+RELAY_OUT stamps NOT seen on RELAY_IN     : 0
+RELAY_IN  stamps NOT seen on RELAY_OUT    : 0  (loss-symmetry check)
+RELAY_OUT duplicate stamps (extra copies) : 72
+
+=== VERDICT (by the decision rule in this file's docstring) ===
+concatenate_data EMITS: RELAY_OUT carries traffic the relay alone
+cannot account for. Double PUBLICATION is present on cell A.
+===== STEP 1b: publisher census, PRE-KILL (2026-08-01T13:46:07Z) =====
+Publisher count: 2
+Node name: relay
+Node namespace: /
+Node name: concatenate_data
+Node namespace: /sensing/lidar
+Subscription count: 1
+Node name: crop_box_filter_measurement_range
+Node namespace: /localization/util
+===== STEP 2: P4 PRE-KILL NDT rate (2026-08-01T13:46:07Z) =====
+WARNING: topic [/localization/pose_estimator/pose_with_covariance] does not appear to be published yet
+average rate: 4.615
+ min: 0.121s max: 0.391s std dev: 0.08305s window: 6
+average rate: 4.997
+ min: 0.094s max: 0.391s std dev: 0.07737s window: 12
+    … [64 lines of the same rolling ladder TRUNCATED for length] …
+average rate: 4.850
+ min: 0.009s max: 1.719s std dev: 0.21175s window: 100
+average rate: 4.830
+ min: 0.009s max: 1.719s std dev: 0.21020s window: 100
+===== STEP 3: kill the harness relay (2026-08-01T13:46:53Z) =====
+Publisher count: 1
+Node name: concatenate_data
+Node namespace: /sensing/lidar
+Subscription count: 1
+Node name: crop_box_filter_measurement_range
+Node namespace: /localization/util
+===== STEP 4: P4 POST-KILL NDT rate (2026-08-01T13:46:56Z) =====
+```
+
+**Two corrections to that raw output, both stated rather than edited out.**
+
+1. The probe's verdict line prints "Double PUBLICATION is present on **cell A**".
+   That string was hardcoded when the probe was written for the cell-A run; the
+   probe does not know which cell it runs on. **This measurement is cell B.**
+   The string is fixed in the committed probe (it now says "on this stack") and
+   the defect is recorded here because the raw output above still carries it.
+2. The trailing `average rate:` ladder of the 45 s P4 block and the ~75-entry
+   `widths` histograms are truncated for length, marked in place. Every
+   attribution figure is retained in full.
+
+### P2-on-emission result — cell B has TWO emitters
+
+| Quantity                                                  | Cell A (`run-014`) | Cell B (`run-024`)    |
+| --------------------------------------------------------- | ------------------ | --------------------- |
+| Advertised publishers on `RELAY_OUT`                      | 2                  | 2                     |
+| `RELAY_OUT` / `RELAY_IN` message ratio                    | 0.995              | **1.818**             |
+| `RELAY_OUT` stamps absent from `RELAY_IN`                 | 0                  | 0                     |
+| `RELAY_IN` stamps absent from `RELAY_OUT` (loss symmetry) | (2, = count diff)  | **0**                 |
+| `RELAY_OUT` **duplicate** stamps                          | **0**              | **72** (of 88 unique) |
+| **Emitters**                                              | **1**              | **2**                 |
+
+The loss-symmetry check is 0/0, so cell B's excess is not the probe dropping
+`RELAY_IN` samples — the mismatch is asymmetric in the one direction a second
+emitter produces. And the excess is entirely **duplicate stamps**: 72 of the 88
+unique stamps arrive twice. That is the signature of `concatenate_data`
+republishing the relay's own input clouds under the input's stamp, which is what
+a concatenation node does. **Double publication is confirmed present on cell B
+and absent on cell A. The differential the hypothesis names is real.**
+
+### 11.3 P4 — NDT output rate, pre- and post-kill
+
+**P4 pre-kill (`B/run-024`, both publishers emitting)**, from the block above:
+the rolling ladder runs **4.383 – 6.145 Hz** and closes at **4.830 Hz** on a
+full `--window 100`. Against the registered 10.0 Hz that is a ratio of ≈ 0.48 —
+and it reproduces the 4.89 Hz that `benchmarks/cells/tier4_autoware.sh`'s "THAT
+PREMISE IS REFUTED" comment recorded on `results/B/run-012`.
+
+**The kill worked**, on the same stack: the census immediately after it drops
+from 2 publishers to **1**, `/sensing/lidar/concatenate_data`, with the relay
+gone from the graph.
+
+**P4 post-kill** needed three attempts because two instrument confounds had to
+be eliminated first. All three agree.
+
+```console
+$ # B/run-025 -- brief-verbatim command, output redirected to a file
+$ docker exec autoware bash -lc '… kill $(cat /tmp/tier4-concat-relay.pid); … timeout 45 ros2 topic hz /localization/pose_estimator/pose_with_covariance --window 100; …'
+===== census, POST-KILL (2026-08-01T13:51:45Z) =====
+Publisher count: 1
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Subscription count: 0
+===== P4 POST-KILL NDT rate (2026-08-01T13:51:47Z) =====
+===== P3 concat output usability, relay dead (2026-08-01T13:52:32Z) =====
+6254
+---
+WARNING: topic [/sensing/lidar/concatenated/pointcloud] does not appear to be published yet
+Could not determine the type for the passed topic
+```
+
+45 s of `ros2 topic hz` produced **no output at all**. That is not yet a
+measurement: with stdout redirected to a file it is block-buffered, and
+`timeout`'s SIGTERM discards an unflushed buffer — the `PYTHONUNBUFFERED=1`
+class of defect this repo has already been bitten by. Re-measured:
+
+```console
+$ # B/run-026 -- same, with PYTHONUNBUFFERED=1
+$ docker exec autoware bash -lc '… RP=$(cat /tmp/tier4-concat-relay.pid); kill $RP; sleep 3; kill -0 $RP && echo "RELAY STILL ALIVE (pid $RP)" || echo dead; PYTHONUNBUFFERED=1 timeout 45 ros2 topic hz … --window 100; …'
+===== kill the harness relay =====
+RELAY STILL ALIVE (pid 439)
+===== P4 POST-KILL NDT rate, UNBUFFERED (2026-08-01T13:57:43Z) =====
+(P4 post-kill block ended 2026-08-01T13:58:28Z)
+===== P3 brief-verbatim (2026-08-01T13:58:28Z) =====
+6198
+---
+WARNING: topic [/sensing/lidar/concatenated/pointcloud] does not appear to be published yet
+Could not determine the type for the passed topic
+```
+
+Buffering is ruled out — unbuffered, 45 s still yields **zero NDT samples**.
+But this run surfaced a _second_ confound: `kill -0` reported the relay pid
+**still alive 3 s after `kill`**. And a third: `ros2 topic hz` builds a fresh
+node, and on cell B's transport a fresh node's discovery is exactly what Phase 0
+already measured under-reporting — so "printed nothing" is ambiguous between
+"NDT stopped" and "this node never discovered NDT".
+
+`B/run-027` removes all three at once with
+`benchmarks/evidence/p3-phase0/probe_relay_kill_transition.py`: it subscribes
+**before** the kill so discovery settles while the relay is still up and the
+_same_ subscriber sees both regimes, it performs the kill itself and escalates
+SIGTERM → SIGKILL rather than trusting a fixed sleep, and it prints bucketed
+rates so the transition is visible instead of averaged.
+
+```console
+$ docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && PYTHONUNBUFFERED=1 python3 /work/benchmarks/evidence/p3-phase0/probe_relay_kill_transition.py --pre-s 12 --post-s 35'
+subscribed; observing 12 s PRE-kill (discovery settles here)
+
+=== KILLING THE RELAY at t+12.0s ===
+relay pidfile records pid 438; sending SIGTERM
+  STILL ALIVE after 5 s of SIGTERM; escalating to SIGKILL
+  WARNING: relay pid STILL alive; post-kill labels below are NOT trustworthy
+
+=== NDT OUTPUT RATE, bucketed (topic: /localization/pose_estimator/pose_with_covariance) ===
+window (s rel. start)     regime        msgs        Hz
+[  0.0,   5.0)            PRE-kill         8     1.600
+[  5.0,  10.0)            PRE-kill         8     1.600
+[ 10.0,  15.0)            PRE-kill         0     0.000
+[ 15.0,  20.0)            PRE-kill         0     0.000
+[ 20.0,  25.0)            spans kill       0     0.000
+[ 25.0,  30.0)            POST-kill        0     0.000
+[ 30.0,  35.0)            POST-kill        0     0.000
+[ 35.0,  40.0)            POST-kill        0     0.000
+[ 40.0,  45.0)            POST-kill        0     0.000
+[ 45.0,  47.0)            POST-kill        0     0.000
+
+=== SUMMARY ===
+NDT   PRE-kill  :   16 msgs over  22.1 s =  0.725 Hz
+NDT   POST-kill :    0 msgs over  25.0 s =  0.000 Hz
+CLOUD PRE-kill  :   59 msgs over  22.1 s =  2.673 Hz
+CLOUD POST-kill :  190 msgs over  25.0 s =  7.612 Hz
+
+=== P3: FIRST CLOUD ON RELAY_OUT AFTER THE RELAY IS CONFIRMED DEAD ===
+(by construction a concatenate_data cloud: it is the only publisher left)
+header.frame_id : 'base_link'
+header.stamp    : 67.162079379
+height          : 1
+width           : 6202
+point_step      : 16
+row_step        : 99232
+is_dense        : True
+is_bigendian    : False
+data length     : 99232 bytes
+fields          : [('x', 0, 7, 1), ('y', 4, 7, 1), ('z', 8, 7, 1), ('intensity', 12, 2, 1), ('return_type', 13, 2, 1), ('channel', 14, 4, 1)]
+T_END=2026-08-01T14:04:19Z
+```
+
+**Three caveats on `run-027`, none of which changes the P4 reading, all stated.**
+
+1. _"WARNING: relay pid STILL alive"_ after SIGKILL. A pid that survives SIGKILL
+   is almost certainly a **zombie** — the `ros2 run` wrapper exited and was never
+   reaped, so `kill -0` keeps succeeding on an entry that is no longer a running
+   process. This was **not confirmed directly**: by the time the hypothesis
+   formed, the harness had removed the container, and `/proc/<pid>/stat` is not
+   retained. What _is_ measured is the DDS-level fact that settles the point for
+   P4's purposes — on `run-024` and `run-025` the post-kill census shows the
+   relay **gone from the graph** and the publisher count down to 1.
+2. **NDT had already stopped BEFORE the kill on this run.** The buckets show
+   1.600 Hz for the first 10 s and then 0.000 Hz from t≈10 s, while the kill
+   completed at t≈22 s. So `run-027`'s post-kill zero is _not attributable to the
+   kill_; NDT on cell B stopped on its own. This is why `run-025` and `run-026`
+   carry the post-kill measurement and `run-027` carries P3. It is also not
+   anomalous for this cell: `B/run-025` and `B/run-026` were both **unscoreable**
+   by the M5 gate (too few NDT↔GT stamp pairs), the same class as the filed
+   `B/run-019`, and `run-027` scored `ndt_rate_ratio=0.039`.
+3. The **cloud** rates in that block (2.673 Hz pre → 7.612 Hz post) must **not**
+   be read as the relay's removal increasing traffic. A BEST_EFFORT subscription
+   discovering on this transport ramps up; the trustworthy figure is the settled
+   post-kill one, **7.612 Hz from `concatenate_data` alone**.
+
+### P4 result
+
+|                            | Predicted (pre-declared)                 | Measured                                                                                                   |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| P4 pre-kill (2 emitters)   | —                                        | **4.830 Hz** (`run-024`, ladder 4.383–6.145, `--window 100`) ⇒ ratio ≈ **0.48**                            |
+| P4 post-kill (1 publisher) | **≥ 9.0 Hz** if the hypothesis were true | **0.000 Hz** — `run-025` (45 s), `run-026` (45 s, unbuffered), `run-027` (25 s, pre-discovered subscriber) |
+
+**No recovery.** Killing the relay did not raise NDT's rate toward 9.0 Hz; it
+removed NDT's output entirely. The pre-kill rate was already 0.48 of the
+registered expectation, and the post-kill rate is 0.
+
+### 11.4 P3 — is `concatenate_data`'s own output a usable NDT input?
+
+The brief's verbatim command answered `width` on two runs (**6254**, **6198**)
+but never `frame_id`: `ros2 topic echo --once --no-daemon` failed twice with
+"Could not determine the type for the passed topic", which is the same cell-B
+fresh-discovery failure, not an absent topic. `run-027`'s probe answers it
+without the CLI, on the first cloud to arrive after the relay is dead — by
+construction a `concatenate_data` cloud, since it is then the only publisher:
+
+```text
+header.frame_id : 'base_link'
+height          : 1
+width           : 6202
+point_step      : 16
+row_step        : 99232
+is_dense        : True
+data length     : 99232 bytes
+fields          : [('x', 0, 7, 1), ('y', 4, 7, 1), ('z', 8, 7, 1),
+                   ('intensity', 12, 2, 1), ('return_type', 13, 2, 1), ('channel', 14, 4, 1)]
+```
+
+| Usability criterion (brief)   | Measured                                                                                       | Verdict                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| non-zero `width`              | **6202** points (6198 / 6254 on the other two runs)                                            | **PASS**                                     |
+| `frame_id` = `base_link`      | **`base_link`**                                                                                | **PASS**                                     |
+| sane `point_step` / structure | 16 B/point, `row_step` 99232 = 6202 × 16, `is_dense` true, x/y/z/intensity/return_type/channel | **PASS**                                     |
+| steady rate                   | **7.612 Hz** on the topic, but NDT downstream produces **0 Hz**                                | cloud stream steady; NDT does not consume it |
+
+**`concatenate_data`'s clouds are neither empty nor malformed.** They are
+well-formed, non-empty, `base_link` clouds with a sane field layout, arriving at
+7.6 Hz. So the spec's branch-(b) trigger — _"P3 fails: empty/malformed clouds"_ —
+is **not met**.
+
+An unproven mechanism note, recorded because a later task will want it: the
+emission census measured `concatenate_data` republishing clouds under **the same
+header stamps the relay already published** (72 duplicate stamps). A downstream
+chain that de-duplicates or time-filters on header stamp would drop such a
+stream while the clouds themselves look perfectly sane — which is consistent
+with what P4 measured. **This was not tested and is not evidence**; it is a
+hypothesis for whoever picks the question up.
+
+### 11.5 Adjudication against the spec's branch table, unchanged
+
+| Probe                                           | Predicted (pre-declared)    | Measured                                                                             | Outcome                                            |
+| ----------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| **P1** cell A census                            | **1** (`//relay`)           | **2 advertisers, 1 emitter**                                                         | **failed on advertisement count, MET on emission** |
+| **P2** cell B census                            | **2**                       | **2 advertisers, 2 emitters** (72 duplicate stamps, out/in 1.818, loss symmetry 0/0) | **met, on both quantities**                        |
+| **P3** concat output usable, relay stopped      | —                           | non-empty (6202), `base_link`, `point_step` 16, `is_dense`, 6 fields, 7.612 Hz       | **clouds usable — (b)'s trigger NOT met**          |
+| **P4** NDT rate, relay stopped, vs **≥ 9.0 Hz** | recovery if hypothesis true | **0.000 Hz** across three runs (pre-kill 4.830 Hz ⇒ ratio 0.48)                      | **no recovery — (c)'s trigger MET**                |
+
+- **(a) Recovery** — requires P4 post-kill ≥ 9.0 Hz. Measured 0.000 Hz.
+  **Not selected.**
+- **(b) Concat output unusable** — pre-declared trigger is _"P3 fails:
+  empty/malformed clouds"_. The clouds are neither empty nor malformed.
+  **Not selected.**
+- **(c) No recovery** — pre-declared trigger is _"P4 stays < 0.9 with a single
+  publisher"_. Measured ratio **0.000** post-kill (and 0.48 pre-kill).
+  **SELECTED.**
+
+## FINAL RULING: branch (c) — no recovery; the hypothesis is wrong
+
+Note precisely what is and is not concluded. The **differential is real** —
+cell B genuinely has two emitters where cell A has one, which fix round 1's
+correction restored to the record. What the intervention test shows is that the
+differential is **not the cause of the depressed rate**: removing the second
+publisher does not restore NDT's rate toward 10 Hz, it stops NDT altogether, and
+the rate was already at 0.48 of expectation while both publishers ran. The
+hypothesis names double publication as the _cause_; P4 is the test of causation
+and it fails.
+
+**Fix mechanism for Task 2: NONE — branch (c) prescribes no harness change.**
+Not relay-removal (a): the relay is load-bearing, and killing it is what takes
+NDT to zero. Not concat-suppression (b): its trigger is not met, and the
+measured pre-kill rate of 0.48 shows suppressing the second publisher would not
+reach the 0.9 gate either. `benchmarks/cells/tier4_autoware.sh:538` stays
+exactly as it is.
+
+Consequences, all as pre-declared for (c): no `harness:<commit>`
+reclassification of B `run-013…022` under `exclusions.md` criterion 3; no
+10-fresh-pair static recollection; **no `duel_admissible` flip on A
+`run-003…012`** (the spec conditions that on branches (a)/(b), which did not
+fire — the A static pair-halves keep `duel_admissible: true`). No gate was
+tuned, no threshold moved, no run excluded. Cell B's M5 failures stand and the
+verdict carries them.
