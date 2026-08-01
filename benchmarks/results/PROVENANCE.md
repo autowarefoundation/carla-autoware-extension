@@ -2113,3 +2113,243 @@ was already *enforced* on every filed E-family run; what was missing was only it
 *record*. From this commit forward the value is filed in each run's own
 `gt.log`, and §9.5 reports it per run.
 
+### 9.5 What was collected
+
+Every run below was driven one at a time by a pacing wrapper, never two harness
+instances at once, and never `run.sh --runs N` — which has no inter-run pacing
+against preflight's loadavg gate and aborted two of four invocations during cell
+C. The wrapper waits for the host's 1-min loadavg to fall below **2.0** before
+each run (preflight's own gate is 8) and settles afterwards. Every filed
+manifest records `cpu_governor: powersave`, which was **recorded and never
+changed**, and a start loadavg between **0.75 and 1.97**. All runs of this task
+carry `harness_git_sha: e7ba92a` — the registration commit — so no run straddles
+a mixed tree, and every one of them is **after** the registration, not before it.
+
+All runs are `duel_admissible: false`, matching cell C's convention: `--duel` is
+`scripts/duel.sh`'s declaration for the interleaved primary duel, and this is P3
+cell collection.
+
+**Cell E0 — `arms: [static]` by registration.** `run-001` is Task 4's; this task
+filed `run-002`…`run-010`.
+
+| run | outcome | exclusion | M5 gate |
+| --- | --- | --- | --- |
+| run-002 | valid | — | refused: 5 NDT↔GT pairs |
+| run-003 | valid | — | **scored**, `gate_pass=false` |
+| run-004 | valid | — | refused: 5 pairs |
+| run-005 | excluded | `harness:e7ba92a` | not scored |
+| run-006 | excluded | `harness:e7ba92a` | not scored |
+| run-007 | valid | — | refused: 3 pairs |
+| run-008 | valid | — | refused: 4 pairs |
+| run-009 | excluded | `gate:arm-failed` | not scored |
+| run-010 | excluded | `crash:cell-launch` | not scored |
+
+**Valid static from this task: 5 (`run-002`, `run-003`, `run-004`, `run-007`,
+`run-008`).** Target met. Task 4's `run-001` is a sixth valid run in the same
+pool but is bring-up class and is not counted toward the five.
+
+**Cell E — static only, per the §9.1 downgrade.** `run-001`…`run-009` are the
+stale Task 10 / Task 4 runs, all excluded, retained as history and not inputs.
+This task filed `run-010`…`run-016`.
+
+| run | outcome | exclusion | M5 gate |
+| --- | --- | --- | --- |
+| run-010 | excluded | `crash:cell-launch` | not scored |
+| run-011 | valid | — | scored, `gate_pass=false` |
+| run-012 | valid | — | scored, `gate_pass=false` |
+| run-013 | valid | — | scored, `gate_pass=false` |
+| run-014 | valid | — | scored, `gate_pass=false` |
+| run-015 | valid | — | scored, `gate_pass=false` |
+| run-016 | valid | — | scored, `gate_pass=false` |
+
+**Valid static from this task: 6 (`run-011`…`run-016`)**, one over target
+because the top-up batch was sized before `run-015` landed. **No cell-E
+closed-loop run was attempted**, per §9.1.
+
+`E/run-011` is the **first `quality.json` any python-bridge run has ever
+produced** in this campaign (§7.5 recorded that none existed), and `E0/run-003`
+is the first for the as-shipped bridge.
+
+Both `crash:cell-launch` exclusions (`E0/run-010`, `E/run-010`) are criterion 1
+and were filed by the launcher's 420 s readiness gate with its own diagnosis
+attached: `/localization/kinematic_state never published within 420s **while the
+sim clock kept advancing (so this is NOT the tick stall)**`, with an empty
+`/localization/util/` node list — the `load_node` race the launcher documents,
+not a bridge defect. That is criterion **1**, and the launcher's probe is what
+rules out criterion 4 rather than an assumption.
+
+### 9.6 Integrity pass
+
+Per run: manifest validates through `analysis.manifest.load_manifest`; watchdog
+marker (`clock_stall.marker`) absent; exclusion reason (where present) verbatim
+from the `exclusions.md` criteria 1–10 vocabulary; `gt.csv` has data rows; and —
+new for this task — `gt.log` records the applied `base_link` anchor.
+
+`quality.json` presence is an **observation here, not a gate**, and the
+difference is deliberate. It is a hard check on the UE5 families because a
+scoreable run that produced no verdict is a defect there. On this family §9.3
+pre-registered, before any of these runs booted, that cell E0's gate would refuse
+for want of NDT↔GT pairs. So a missing `quality.json` is instead re-derived by
+**running the gate again** and its refusal recorded verbatim; a run whose
+refusal does not reproduce would fail the pass. None did.
+
+**Every run this task filed passes**, except the two `crash:cell-launch` runs,
+which fail `gt_csv_has_rows` and `anchor_recorded` for the same single reason:
+the cell never came up, so the GT collector never ran. That is what a criterion-1
+exclusion means and it is not a separate defect.
+
+Among the retained stale runs, three fail `watchdog_marker_absent`
+(`E0/run-009`, `E/run-001`, `E/run-006`) — see §9.10 — and the rest fail
+`gt_csv_has_rows` or the closed-loop engage checks, all of them already-excluded
+Task 10 runs whose failures are their filed exclusion reasons.
+
+### 9.7 The grounding held: registered against measured
+
+The §9.2 registration was committed before any of these boots. What the boots
+then measured, on **header (sim) stamps**:
+
+| cell | topic | registered | measured across this task's valid runs |
+| --- | --- | --- | --- |
+| E | `/sensing/lidar/top/pointcloud_raw_ex` | 20.0 Hz | 19.89, 19.95, 19.97, 19.97, 19.97, 19.94 |
+| E0 | `/sensing/lidar/top/pointcloud_before_sync` | 10.0 Hz | 9.96, 9.97, 9.97, 9.98, 9.99 |
+
+Eleven independent runs, every one within **0.55 %** of its registered value, and
+the two cells separated by exactly the factor their two committed `frequency_hz`
+values predict. The derivation in §9.2 — no `sensor_tick`, a sim-time publish
+throttle, `tick_hz / ceil(tick_hz / frequency_hz)` — is therefore confirmed
+rather than merely argued, and the confirmation is out-of-sample with respect to
+the two bring-up runs it was corroborated on.
+
+**The ladder branch is vindicated too, and this is the part that would have gone
+wrong.** On the relative branch every one of cell E's six scored runs passes the
+localization criteria (no drift, bounded spread); their `pose_err_max_m` runs
+0.318–0.645 m, so **four of the six exceed 0.5 m**. Had the branch been
+registered `absolute` at 0.5 m — the value cells A/B/C carry — those four would
+additionally have failed the localization criterion, and they would have failed
+it for the **map registration offset of the unshifted bundle**, under a heading a
+reader would have attributed to the bridge. That is verbatim the failure
+`cells.yaml`'s header block predicted, and the branch was selected from the
+bundle's content hash **before** any of these numbers existed.
+
+### 9.8 The M5 verdicts, and exactly what they do and do not say
+
+| run | `ndt_rate_ratio` | `pose_err_max_m` | `pose_bias_m` | gate reasons |
+| --- | --- | --- | --- | --- |
+| E/run-011 | 0.253 | 0.376 | 0.083 | ndt rate ratio 0.25 < 0.9 |
+| E/run-012 | 0.382 | 0.605 | 0.081 | ndt rate ratio 0.38 < 0.9 |
+| E/run-013 | 0.090 | 0.318 | 0.076 | ndt rate ratio 0.09 < 0.9 |
+| E/run-014 | 0.341 | 0.645 | 0.085 | ndt rate ratio 0.34 < 0.9 |
+| E/run-015 | 0.242 | 0.605 | 0.087 | ndt rate ratio 0.24 < 0.9 |
+| E/run-016 | 0.162 | 0.570 | 0.074 | ndt rate ratio 0.16 < 0.9 |
+| E0/run-003 | 0.038 | 0.114 | 0.090 | ndt rate ratio 0.04 < 0.9 |
+
+**Every scored run fails, and every one fails on exactly ONE criterion: the NDT
+rate.** No run fails the ladder's drift or spread criterion. This is the outcome
+§9.3 wrote down in advance, and the advance statement is what makes it evidence
+rather than an artifact: the divisor was fixed by cell B's registered rule before
+the runs, and it was **not** moved to the observed throughput afterwards.
+
+**What this says:** the python-bridge's localization chain does not sustain NDT
+anywhere near the cell's own sensor rate. On cell E the sensor delivers ~20 Hz
+and NDT returns roughly a tenth to a third of it, per window.
+
+**What it does NOT say, and must not be read as saying:**
+
+- It is **not** a statement that the bridge localizes inaccurately. The ladder's
+  localization criteria — the ones that measure that — **passed on every scored
+  run**, and the constant bias sits at 0.074–0.090 m.
+- It is **not** a comparison with any other cell. No cross-cell statement is made
+  here and none may be inferred from these numbers; the duel wrap owns that.
+- `ndt_rate_ratio` here is computed over the **scoring window**, not the whole
+  run, so it is lower than a whole-run rate on a bursty series and the two are
+  not interchangeable.
+
+### 9.9 FINDING: cell E0's exclusion is CORRELATED WITH ITS OWN RESULT
+
+This is the most important caveat on cell E0's row and it is not a defect
+introduced by this task; it is a property of the filing path that only shows up
+on a cell this degraded.
+
+`E0/run-005` and `run-006` were excluded `harness:e7ba92a`. The mechanism,
+diagnosed exactly: on each, NDT published **exactly one** pose for the whole run.
+`benchmarks/report.py`'s `summarize_run` computes per-topic cadence through
+`analysis/cadence.py`'s `inter_arrival_stats`, which raises `need >= 2 arrivals`
+on a single sample; run.sh's step-15 smoke therefore fails, and its handler files
+the run under criterion 3's catch-all.
+
+Two things follow, and they must be kept apart.
+
+**The label is admissible; the attribution is not accurate.** `harness:<commit>`
+is verbatim criterion 3, so the exclusion is legal and the run stays filed with
+all its data. But criterion 3 reads "harness defect discovered **and fixed** (the
+run was measured with a broken observer/injector)", and nothing here was broken
+and nothing was fixed. What actually happened is that the renderer cannot express
+a topic carrying one message — and one message is not a malfunction on this cell,
+it is cell E0's registered result in its sharpest form.
+
+**The exclusion is therefore NOT independent of the measurement.** The runs the
+filing path drops are precisely the runs where the as-shipped bridge performed
+**worst**. The six other E0 runs are not a random sample of E0's behaviour: they
+are E0's behaviour *conditioned on NDT having emitted at least two poses*. The
+campaign registered "deliberately **no quality-based criterion**", and this is a
+quality-based exclusion arriving through a registered criterion's back door.
+
+**Any statement about cell E0's central tendency must carry this caveat.** The
+excluded runs' data is retained in full and is the stronger evidence for E0's
+registered failure, not weaker.
+
+**Deliberately NOT fixed here, and the reason is the campaign's own rule.**
+`analysis/**` is frozen, so `inter_arrival_stats` could not be touched in any
+case; `benchmarks/report.py` is not frozen and could have been taught to skip
+cadence for a single-sample topic. That was rejected: it would have changed
+**which runs count as valid** in the middle of a collection, splitting cell E0
+across two behaviours of the filing path, and a harness change that converts
+excluded runs into valid ones is exactly the shape of tweak this campaign
+forbids. The distortion is disclosed instead, which is where the decision
+belongs.
+
+Measured incidence, so the size of the effect is on the record rather than
+implied: **2 of the 9 runs this task filed for cell E0**, plus the same
+underlying starvation visible as gate refusals on 4 more (3, 4, 5 and 5 NDT↔GT
+pairs against the required 10).
+
+### 9.10 FINDING: a FROZEN sim clock filed as an arm failure — criterion 4 vs 2
+
+`E0/run-009` is filed `gate:arm-failed` (criterion 2), and its run directory also
+carries a `clock_stall.marker` reading **"newest /clock arrival is 5.4 s old
+(limit 5.0 s)"**. Both are true, and the ordering explains it: the clock watchdog
+wrote the marker, then `arm_and_goal.py` failed at run.sh **step 9**, whose
+`exclude_and_die` files the run immediately — and **step 14 is the only place the
+marker is ever read**. So run.sh's own stated priority ("stall:clock wins over
+the others: a frozen sim clock is the cause a short window or a suppressed
+control output would be a symptom of") is not enforced on the earlier exit paths.
+
+The causal direction is the one run.sh says it wants to preserve, and here it was
+inverted: the sim clock froze, every node on sim time stopped with it,
+`/localization/kinematic_state` could not sustain 5 Hz, and the arm failed. The
+arm failure is the **symptom**; the frozen clock is the **cause**, and it is the
+python-bridge sync-tick stall (P1 Verdict 1) that criterion 4 exists to name.
+
+**Criterion 4, and explicitly NOT criterion 10.** The two are different
+phenomena and this run discriminates them cleanly. Criterion 4 is a **frozen**
+clock — no `/clock` advance for more than 5 s — which is what the marker records.
+Criterion 10 (`stall:unpaced-window-cap`) is a clock that "advanced throughout
+the run" and was merely **slow**, and it applies only to the `--unpaced` arm's
+sim-time window. **No run in this task used the unpaced arm, so criterion 10
+could not apply to any of them**, and no run was filed under it.
+
+**Not rewritten, deliberately.** The filed reason stays `gate:arm-failed`: it is
+verbatim criterion 2, the arm genuinely did fail, the run is excluded either way
+so no count moves, and re-labelling a filed manifest after the fact to a reason
+that reads better is revisionism, not correction. The marker is committed
+alongside it, so the fuller story is recoverable from the run directory itself —
+which is what this section makes findable.
+
+**Two stale runs carry the same marker, from two different causes**, and they are
+not conflated: `E/run-006` (`harness:7425084`) shows "newest /clock arrival is
+5.1 s old", the same frozen-clock phenomenon; `E/run-001` (`gate:arm-failed`)
+shows **"no /clock rows at all after 30 s grace"**, which is not a frozen clock
+at all but the observer-transport defect the launcher now refuses outright (the
+`lo`-pinned Cyclone profile discovering nothing against a Fast-DDS stack, §7.5
+and the launcher's own transport matrix). The watchdog's two message forms
+distinguish them; the exclusion vocabulary does not.

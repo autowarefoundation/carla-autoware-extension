@@ -1,0 +1,12 @@
+## Cell E0
+
+| run | topic | hz | p95 ms | 1-hop p50 ms | 1-hop p99 ms | MB/s |
+|---|---|---|---|---|---|---|
+| run-001 | /control/command/control_cmd | 5.14 | 1125.27 | 30.42 | 970.97 | 0.00 |
+| run-001 | /localization/kinematic_state | 14.84 | 121.22 | 15.07 | 130.28 | 0.00 |
+| run-001 | /localization/pose_estimator/pose_with_covariance | 0.14 | 17151.50 | 74.21 | 123.77 | 0.00 |
+| run-001 | /sensing/lidar/top/pointcloud_before_sync | 8.42 | 137.22 | 30.75 | 148.52 | 1.05 |
+| run-002 | /control/command/control_cmd | 3.79 | 1065.31 | 39.00 | 321.73 | 0.00 |
+| run-002 | /localization/kinematic_state | 14.19 | 125.23 | 10.69 | 103.99 | 0.00 |
+| run-002 | /localization/pose_estimator/pose_with_covariance | 0.11 | 24306.07 | 74.14 | 116.44 | 0.00 |
+| run-002 | /sensing/lidar/top/pointcloud_before_sync | 8.43 | 135.14 | 22.82 | 117.07 | 1.05 |

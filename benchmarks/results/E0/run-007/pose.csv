@@ -1,0 +1,7 @@
+topic,header_stamp_ns,x_m,y_m
+/localization/pose_estimator/pose_with_covariance,150700002245,53.8137,-141.1133
+/localization/pose_estimator/pose_with_covariance,153500002287,53.8191,-141.1174
+/localization/pose_estimator/pose_with_covariance,163500002436,53.8373,-141.1212
+/localization/pose_estimator/pose_with_covariance,173050002578,53.7828,-141.0871
+/localization/pose_estimator/pose_with_covariance,189350002821,53.7907,-141.0814
+/localization/pose_estimator/pose_with_covariance,193250002879,53.7944,-141.1104

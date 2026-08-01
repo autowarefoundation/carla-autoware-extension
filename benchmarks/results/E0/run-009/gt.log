@@ -1,0 +1,3 @@
+gt base_link anchor: -1.42500000 m (body frame) for approach 'python-bridge'
+carla client=0.9.15 server=0.9.15
+warning: wait_for_tick: time-out of 20000ms while waiting for the simulator, make sure the simulator is ready and connected to localhost:2000

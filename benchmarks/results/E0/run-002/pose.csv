@@ -1,0 +1,9 @@
+topic,header_stamp_ns,x_m,y_m
+/localization/pose_estimator/pose_with_covariance,121350001808,53.8364,-141.0969
+/localization/pose_estimator/pose_with_covariance,122600001826,53.7698,-141.0625
+/localization/pose_estimator/pose_with_covariance,130700001947,53.8176,-141.0868
+/localization/pose_estimator/pose_with_covariance,156650002334,53.8237,-141.0720
+/localization/pose_estimator/pose_with_covariance,160150002386,53.8414,-141.1251
+/localization/pose_estimator/pose_with_covariance,164450002450,53.8361,-141.0961
+/localization/pose_estimator/pose_with_covariance,167950002502,53.8214,-141.1041
+/localization/pose_estimator/pose_with_covariance,176050002623,53.8261,-141.0899

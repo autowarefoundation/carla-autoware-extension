@@ -1,0 +1,63 @@
+# bench_observer topic list for cell E (python-bridge approach).
+#
+# The LiDAR entry is the BRIDGE'S AS-EMITTED topic, measured, not
+# assumed -- and for THIS cell it is no longer the shipped name.
+# Task 10's 0002-sensor-config-harmonized.patch sets the bridge's
+# `topic_suffix` to /pointcloud_raw_ex (the spec's injection topic in
+# every cell) and moves carla_sensor_kit_launch's crop_box_filter_self
+# input to match, so the patched bridge emits
+# /sensing/lidar/top/pointcloud_raw_ex. Cell E0, which runs the
+# UNPATCHED image, still emits /pointcloud_before_sync and its own
+# topic list says so -- the three E-family lists are deliberately NOT
+# identical any more. Re-grounded live in Task 10 (see that task's
+# report and patches/python-bridge/README.md, "Cell E bring-up gate"),
+# which is what the previous revision of this comment deferred.
+#
+# PublishedTime topics are NOT listed here yet. They are appended in
+# Tasks 13/20, after live discovery on the running stack
+# (`ros2 topic list | grep published_time`) -- a pre-P3 registration step,
+# because a guessed name records silence as "no publisher-side stamps"
+# rather than as a wrong topic. On the pinned universe-devel-cuda image the
+# message is autoware_internal_msgs/msg/PublishedTime (verified against the
+# image; NOT autoware_internal_debug_msgs), so an appended line reads:
+#   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
+#
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
+# (benchmarks/observer/src/bench_observer.cpp). `generic` records serialized
+# size. The typed kinds record the 0 size sentinel in observer.csv and also
+# write their own file: `odometry` -> odometry.csv, `pose` -> pose.csv, `tf` ->
+# tf.csv (whose fourth field is the child_frame_id it filters on).
+# out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+#
+# AMENDED 2026-07-29 (R3, before any P3 run), extending the history above: the
+# NDT pose line's kind is the typed `pose` kind, not `generic`. A generic
+# subscription records stamp + serialized size only, so no NDT x/y was
+# recorded anywhere in the campaign and M5's registered `pose_error_m` -- NDT
+# pose minus CARLA ground truth -- had no data source at all.
+#
+# AMENDED 2026-07-29 (R3, before any P3 run): /tf IS listed now, as a typed
+# `tf` line filtered to child_frame_id `base_link`, which is what cell E's
+# H1 hypothesis needs (the map->base_link TF rate that blocked the AD-API
+# engage; patches/python-bridge/README.md, "What will and will not
+# discriminate H1"). The prior revision of this comment forbade the line, and
+# it was right for the reason it gave: a `generic` line cannot do it, twice
+# over -- `stamp_from_cdr` assumes a leading std_msgs/Header, and TFMessage is
+# a SEQUENCE of TransformStamped, so header_stamp_ns would be silently
+# nonsense; and `generic` has no frame filter, so the rate recorded would be
+# aggregate /tf across every broadcaster, which can look healthy while the one
+# pair in question is dead. Neither objection applies to the typed kind: it
+# reads the per-transform header stamp off the deserialized message and
+# records ONLY the transforms whose child_frame_id matches, with the parent
+# frame recorded per row (tf.csv's `frame_id`) so map->base_link is verified
+# rather than assumed. This line is the discriminator, not a diagnostic
+# convenience: without it the re-gate cannot separate a genuine transform
+# outage from the false-silence effect this cell has already produced once.
+/**:
+  ros__parameters:
+    topics:
+      - /sensing/lidar/top/pointcloud_raw_ex|sensor_msgs/msg/PointCloud2|generic
+      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|pose
+      - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
+      - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic
+      - /tf|tf2_msgs/msg/TFMessage|tf|base_link
