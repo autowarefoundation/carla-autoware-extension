@@ -328,3 +328,92 @@ def test_the_block_is_syntactically_whole(tmp_path: Path, arm: str):
     proc = _run_gate(tmp_path, arm=arm)
     assert "syntax error" not in proc.stderr, proc.stderr
     assert "unexpected EOF" not in proc.stderr, proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# 3. the registered-transport refusal, and its deliberate-deviation opt-in
+# ---------------------------------------------------------------------------
+#
+# cells/tier4_autoware.sh refuses any middleware but the pair Task 9 measured
+# (`--rmw rmw_fastrtps_cpp` + `observer/config/udp_only.xml`), because with any
+# other one the fork's topics are invisible to the stack and its control input
+# is undeliverable -- matrix rows 5 and 10 in
+# benchmarks/patches/tier4-native/README.md. That refusal is a safety backstop
+# and must keep firing.
+#
+# Task 5's owner ruling needs ONE deliberate deviation run on cyclonedds to
+# bound whether the latched-delivery defect is Fast-DDS-specific. The opt-in
+# below exists for exactly that, and these tests pin both halves: the refusal
+# still fires by default, and the opt-in is impossible to trip by accident.
+
+
+def _refusal_block() -> str:
+    text = TIER4_CELL.read_text()
+    pattern = re.compile(
+        r"^(# --- BEGIN registered-transport refusal.*?^# --- END registered-transport refusal[^\n]*$)",
+        re.DOTALL | re.MULTILINE,
+    )
+    matches = pattern.findall(text)
+    assert len(matches) == 1, (
+        f"expected exactly one registered-transport refusal block in {TIER4_CELL}, "
+        f"found {len(matches)}"
+    )
+    return matches[0]
+
+
+def _run_refusal(tmp_path: Path, rmw: str, profile: str, deviation: str | None):
+    script = tmp_path / "refusal.sh"
+    dev = f'BENCH_TIER4_TRANSPORT_DEVIATION="{deviation}"\n' if deviation is not None else ""
+    script.write_text(
+        "set -euo pipefail\n"
+        f'BENCH_CELL=B\nBENCH_RMW="{rmw}"\nBENCH_DDS_PROFILE="{profile}"\n'
+        f'UDP_ONLY="/repo/benchmarks/observer/config/udp_only.xml"\n'
+        + dev
+        + f'fail() {{ printf "%s\\n" "$*" >>"{tmp_path}/fail.log"; exit 2; }}\n'
+        + _refusal_block()
+        + "\n"
+    )
+    return subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=30)
+
+
+REGISTERED = "/repo/benchmarks/observer/config/udp_only.xml"
+
+
+def test_the_registered_pair_passes_the_refusal(tmp_path: Path):
+    proc = _run_refusal(tmp_path, "rmw_fastrtps_cpp", REGISTERED, None)
+    assert proc.returncode == 0, proc.stderr
+    assert not (tmp_path / "fail.log").exists()
+
+
+def test_a_wrong_middleware_still_fails_loudly(tmp_path: Path):
+    """The backstop Task 9 put there. Without it a cyclonedds cell-B run comes
+    up, localizes off nothing, and measures a vehicle under no command -- all
+    silently, with every endpoint matched."""
+    proc = _run_refusal(tmp_path, "rmw_cyclonedds_cpp", "none", None)
+    assert proc.returncode != 0
+    assert "rmw_fastrtps_cpp" in (tmp_path / "fail.log").read_text()
+
+
+def test_a_wrong_profile_still_fails_loudly(tmp_path: Path):
+    proc = _run_refusal(tmp_path, "rmw_fastrtps_cpp", "none", None)
+    assert proc.returncode != 0
+    assert "udp_only" in (tmp_path / "fail.log").read_text()
+
+
+def test_the_deviation_opt_in_allows_it_and_says_so(tmp_path: Path):
+    """One deliberate deviation run is what Task 5's ruling needs. It must be
+    impossible to reach by accident, so it is keyed on an environment variable
+    that carries its own REASON string -- not a flag, and not a default."""
+    proc = _run_refusal(tmp_path, "rmw_cyclonedds_cpp", "none", "task5 cyclonedds bounding probe")
+    assert proc.returncode == 0, proc.stderr
+    assert not (tmp_path / "fail.log").exists()
+    assert "DEVIATION" in proc.stdout, proc.stdout
+    assert "task5 cyclonedds bounding probe" in proc.stdout, proc.stdout
+
+
+def test_an_empty_deviation_reason_does_not_unlock_it(tmp_path: Path):
+    """An empty string is what an unset-but-exported variable looks like. It
+    must not count as a registered reason."""
+    proc = _run_refusal(tmp_path, "rmw_cyclonedds_cpp", "none", "")
+    assert proc.returncode != 0
+    assert (tmp_path / "fail.log").exists()

@@ -214,13 +214,39 @@ MAP_HOST="$HOME/autoware_map/$(basename "$MAP_DIR")"
 # this is the backstop that makes a wrong explicit choice fail loudly instead
 # of producing a stack that drives nothing. Same shape as
 # cells/python-bridge.sh's refusal of the `lo`-pinned Cyclone profile.
-[ "${BENCH_RMW:-}" = "rmw_fastrtps_cpp" ] ||
-  fail "cell $BENCH_CELL must run --rmw rmw_fastrtps_cpp --shm off (got
+# --- BEGIN registered-transport refusal (pinned by tests/benchmarks/test_vector_map_gate.py)
+#
+# BENCH_TIER4_TRANSPORT_DEVIATION is the ONE way past this, and it exists for
+# ONE thing: a deliberate, non-duel deviation probe that measures this family
+# under a different middleware on purpose. It takes a REASON string rather than
+# a boolean, it is never set by run.sh or by any cell, and an empty value does
+# NOT unlock it -- an exported-but-empty variable must not read as a registered
+# reason. Any run that uses it is a deviation from cell B's registered
+# transport, its manifest's `transport` block will not match cells.yaml's
+# registration, and it can never be duel data. Task 9's matrix (rows 5 and 10)
+# is why the refusal exists at all: with the lo-pinned Cyclone profile the
+# fork's topics are invisible to this stack; row 11 (cyclone, NO profile) is
+# the only non-fastrtps cell in which the fork is readable at all, and that one
+# works only via the host's routable NIC with a flaky graph, which is why the
+# README says not to use it for measurement.
+TIER4_TRANSPORT_DEVIATION="${BENCH_TIER4_TRANSPORT_DEVIATION:-}"
+if [ -n "$TIER4_TRANSPORT_DEVIATION" ]; then
+  echo "*** DEVIATION from cell $BENCH_CELL's registered transport, on purpose:"
+  echo "***   reason : $TIER4_TRANSPORT_DEVIATION"
+  echo "***   rmw    : ${BENCH_RMW:-unset} (registered: rmw_fastrtps_cpp)"
+  echo "***   profile: ${BENCH_DDS_PROFILE:-none} (registered: $UDP_ONLY)"
+  echo "*** This run is NOT a cell-$BENCH_CELL run in the normal sense and must"
+  echo "*** never be read as one. duel_admissible stays false."
+else
+  [ "${BENCH_RMW:-}" = "rmw_fastrtps_cpp" ] ||
+    fail "cell $BENCH_CELL must run --rmw rmw_fastrtps_cpp --shm off (got
   BENCH_RMW=${BENCH_RMW:-unset}). With any other middleware the fork's topics
   are invisible to this stack and its control input is undeliverable."
-[ "${BENCH_DDS_PROFILE:-none}" = "$UDP_ONLY" ] ||
-  fail "cell $BENCH_CELL needs BENCH_DDS_PROFILE=$UDP_ONLY (got
+  [ "${BENCH_DDS_PROFILE:-none}" = "$UDP_ONLY" ] ||
+    fail "cell $BENCH_CELL needs BENCH_DDS_PROFILE=$UDP_ONLY (got
   ${BENCH_DDS_PROFILE:-none}); that profile is what turns shared memory off."
+fi
+# --- END registered-transport refusal
 
 # Spawn pose, from the committed route file, in the CARLA frame -- the exact
 # six numbers cells/extension.sh feeds the extension runner as --initial-pose,
@@ -329,11 +355,28 @@ echo "OK: tier4 ego + sensor rig up, world ticking at $TIER4_TICK_HZ Hz"
 docker rm -f "$BENCH_AW_CONTAINER" >/dev/null 2>&1 || true
 DATA_MOUNT=()
 [ -d "$HOME/autoware_data" ] && DATA_MOUNT=(-v "$HOME/autoware_data:/root/autoware_data:ro")
+# The transport the container actually runs. On every REGISTERED run the
+# refusal above has already pinned BENCH_RMW=rmw_fastrtps_cpp and
+# BENCH_DDS_PROFILE=$UDP_ONLY, so this array expands to exactly the
+# `-e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTRTPS_DEFAULT_PROFILES_FILE=...
+# -v $UDP_ONLY:/dds-profile.xml:ro` it has always been -- byte-identical, which
+# is what keeps every filed B run comparable. It is written as a selection
+# rather than a literal ONLY so a registered deviation probe actually gets the
+# middleware it asked for instead of a manifest that says one thing while the
+# container runs another.
+TRANSPORT_ARGS=(-e "RMW_IMPLEMENTATION=${BENCH_RMW:-rmw_fastrtps_cpp}")
+case "${BENCH_RMW:-rmw_fastrtps_cpp}" in
+  rmw_fastrtps_cpp)
+    TRANSPORT_ARGS+=(-e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml
+      -v "${BENCH_DDS_PROFILE:-$UDP_ONLY}:/dds-profile.xml:ro") ;;
+  rmw_cyclonedds_cpp)
+    [ "${BENCH_DDS_PROFILE:-none}" = "none" ] ||
+      TRANSPORT_ARGS+=(-e CYCLONEDDS_URI=file:///dds-profile.xml
+        -v "$BENCH_DDS_PROFILE:/dds-profile.xml:ro") ;;
+esac
 docker run -d --name "$BENCH_AW_CONTAINER" --gpus all --net=host --ipc=host \
   -e ROS_DOMAIN_ID=0 \
-  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-  -e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml \
-  -v "$UDP_ONLY:/dds-profile.xml:ro" \
+  "${TRANSPORT_ARGS[@]}" \
   -v "$MAP_HOST:$MAP_DIR:ro" \
   -v "$POSE_INIT_OVERRIDE:$POSE_INIT_TARGET:ro" \
   -v "$BENCH_REPO:/work:ro" \
