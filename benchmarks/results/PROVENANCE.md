@@ -473,3 +473,94 @@ one unscoreable; good-teardown group 0.257–0.989), and the single passing run
 (`run-013`, 0.989) is in the good-teardown group alongside the worst failure
 (`run-016`, 0.257). Two independent findings, and neither is evidence for the
 other.
+
+## 6. Phase 0 harness re-verification (2026-07-31): the double-publication hypothesis is REFUTED — branch (c)
+
+The P3 completion plan opens with a live decision gate. Its hypothesis, its four
+probes with their predicted outcomes, and three adjudication branches were
+pre-declared in `specs/2026-07-31-p3-completion-design.md` **before any
+measurement existed**. The full transcript — pre-declaration copied verbatim
+*above* the measurements, every probe's raw output unedited — is committed at
+`benchmarks/evidence/p3-phase0/probe-transcripts.md`, with per-figure retention
+status in that directory's `PROVENANCE.md`.
+
+**Hypothesis under test.** Cell B's depressed NDT rate is caused by double
+publication on `/sensing/lidar/concatenated/pointcloud` (the harness relay plus
+tier4 `concatenate_data`), **absent on cell A** (relay only).
+
+### 6.1 Probe summary
+
+| Probe | Predicted (pre-declared) | Measured | Outcome |
+| --- | --- | --- | --- |
+| **P1** — cell A publisher census on `/sensing/lidar/concatenated/pointcloud` | **1**, `//relay` | **2** — `/sensing/lidar/concatenate_data` **and** `//relay`; daemon-backed and `--no-daemon` censuses agree | **prediction FAILED → hypothesis refuted** |
+| **P2** — cell B, same census | **2** — `//relay` and `/sensing/lidar/concatenate_data` | **2** — `/relay` and `/sensing/lidar/concatenate_data`, reproducing the `results/B/run-012` record | prediction held |
+| **P3** — concat output usable with the relay stopped | — | **not run** | decisional role removed by P1 |
+| **P4** — NDT rate with the relay stopped, vs 0.9 × the registered `ndt_expected_hz: 10.0` = 9.0 Hz | recovery, if the hypothesis were true | **not run**; the relay was never killed | same |
+
+Diagnostic runs: `A/run-013` and `B/run-023`, both launched without `--duel`
+(`duel_admissible: false`), both completing a full 60 s static window with no
+exclusion. They are bring-up-class runs; **no A-vs-B comparison is drawn from
+them and none may be.**
+
+### 6.2 Ruling: branch (c)
+
+The hypothesis is explicitly *differential* — it explains cell B's depressed
+rate **by** a difference from cell A. P1 measured the same double publication on
+cell A, whose filed `ndt_rate_ratio` is ≈ 0.99999998 across 12 runs. The alleged
+cause is present where the alleged effect is absent, so it is not the cause. The
+spec assigned this outcome its consequence in advance — *"Two publishers here
+refutes the hypothesis (the probe can kill it, deliberately)"* — and branches
+(a) and (b) are both fix branches predicated on a harness fault that is now
+unestablished. **Branch (c) is the ruling.**
+
+No fourth branch was invented, no branch reshaped, and no prediction softened
+after the fact: P1's prediction is recorded as FAILED in the transcript.
+
+### 6.3 What follows, and what explicitly does not
+
+Branch (c) prescribes no harness edit and no reclassification. Therefore:
+
+- `benchmarks/cells/tier4_autoware.sh`'s relay is **unchanged**, and its "THAT
+  PREMISE IS REFUTED" comment block stays as written, per the convention that
+  refuted hypotheses stay in the record with the diagnostics that refuted them.
+- **No** `harness:<commit>` reclassification of B `run-013…022` under
+  `exclusions.md` criterion 3. Those runs stay filed and unexcluded, exactly as
+  §4.1 above rules.
+- **No** 10-fresh-pair static recollection — the spec conditions it on branch
+  (a)/(b).
+- **No `duel_admissible` flip on A `run-003…012`.** The spec's "Consequence of
+  (a)/(b) for the A pair-halves" paragraph is conditioned on branches (a)/(b)
+  and does not fire. The A static pair-halves keep `duel_admissible: true`.
+  Recorded explicitly so no later task applies that paragraph by reflex.
+
+**Nothing here is a gate adjustment.** No threshold moved, no run was excluded,
+no harness was tuned. Cell B's M5 failures stand and the verdict will carry
+them. The single thing that changed is that one candidate explanation for those
+failures is now measured to be false — which is a subtraction from the space of
+explanations, not an adjustment to the measurement.
+
+### 6.4 The confound that remains is the one already registered
+
+Branch (c) asks that the depressed rate be registered as a measured confound
+with the Phase 0 diagnostics attached. It already is, and this session did not
+find a new one — it removed a competitor to the existing one:
+
+- `benchmarks/README.md`'s A-side instrument-asymmetry bound: `observer_loss_rate`
+  **0.0000** on cell A against **0.2564 / 0.1715** on cell B, concluding "the
+  loss is a property of cell B's SHM-off Fast-DDS transport".
+- `benchmarks/results/CAL-rmw/PROVENANCE.md`: the same transport at
+  **0.333–6.156 Hz** against cyclonedds' **10.008–10.010 Hz**, under **Owner
+  ruling 2026-07-31: retain all fifteen runs as produced, with no exclusions,
+  and disclose.**
+- §4.1 above, which applied that ruling unchanged to cell B's static runs.
+
+Phase 0 adds an independent fourth observation of the same transport property,
+on a different quantity — DDS **graph discovery** rather than sample delivery.
+On cell B a `--no-daemon` census returned nothing, then 1 publisher with
+`_NODE_NAME_UNKNOWN_`, and `ros2 node list --no-daemon` found neither the relay
+nor `concatenate_data` while the relay process was alive at pid 437; the settled
+daemon then resolved both out of a 162-node graph. **This is the opposite
+polarity of the stale-daemon trap `benchmarks/run.sh:789` documents**, it is
+specific to cell B's transport (cell A's cyclonedds censuses agreed with and
+without the daemon), and on that transport a CLI graph query must be given time
+to discover before its count means anything.
