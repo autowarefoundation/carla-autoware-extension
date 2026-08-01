@@ -522,7 +522,11 @@ cells:
       # whose APPROACH_BUNDLE_DIR entry already records "cells/python-bridge.sh
       # pins the UNSHIFTED ~/autoware_map/town10 for the E family"; preflight's
       # per-run `map_bundle_pin` placement key, which reads
-      # `autoware_contents.town10_pcd_sha256` in every filed E-family manifest;
+      # `autoware_contents.town10_pcd_sha256` in every E-family manifest that
+      # CARRIES the key -- every E0 run and E/run-009 onward, absent from
+      # E/run-001..008, which predate it (an earlier revision of this line
+      # overstated that as "every filed E-family manifest"; no manifest
+      # disagrees, and the other three confirmations stand alone);
       # and the bundle's own bytes, sha256
       # 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b,
       # verified live 2026-08-01. That is the unshifted digest -- NOT

@@ -2026,7 +2026,14 @@ all predating any E-family P3 run:
   already records that resolving E through `map_defaults.sh` would report
   `town10_pcd_regen` — "the wrong bundle";
 - preflight's per-run `map_bundle_pin` placement key, which reads
-  `autoware_contents.town10_pcd_sha256` in **every** filed E-family manifest;
+  `autoware_contents.town10_pcd_sha256` in every E-family manifest **that
+  carries the key at all** — every `E0` run, and `E/run-009` onward. It is
+  ABSENT from `E/run-001`…`E/run-008`, which predate the key. (An earlier
+  revision of this line claimed "every filed E-family manifest", which is
+  false for those eight and is corrected here rather than dropped. The
+  correction does not weaken the selection: the key agrees on every manifest
+  that has it, none disagrees, and the other three confirmations do not depend
+  on it.);
 - the bundle's own bytes, verified live 2026-08-01:
   `sha256(~/autoware_map/town10/pointcloud_map.pcd)` =
   `7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b`, the
@@ -2145,8 +2152,22 @@ filed `run-002`…`run-010`.
 | run-010 | excluded | `crash:cell-launch` | not scored |
 
 **Valid static from this task: 5 (`run-002`, `run-003`, `run-004`, `run-007`,
-`run-008`).** Target met. Task 4's `run-001` is a sixth valid run in the same
-pool but is bring-up class and is not counted toward the five.
+`run-008`).** Target met.
+
+> **TWO ITEMS THE WRAP MUST SETTLE FOR THIS ROW — neither is decided here.**
+>
+> 1. **Whether Task 4's `run-001` is pooled as a sixth E0 run.** It is valid and
+>    unexcluded, sits in the same pool, and is a legitimate candidate — but it is
+>    **bring-up class** (`duel_admissible: false`, filed before the §9.2
+>    registration and on a different harness sha) and is **not** counted toward
+>    this task's five. Pooling it is defensible and so is excluding it; this
+>    section deliberately does not choose, and the wrap must **state which it
+>    did** rather than leave the count ambiguous.
+> 2. **§9.9 must be quoted INLINE beside this row, not merely cited.** Cell E0's
+>    valid pool is *conditioned on NDT having emitted at least two poses*, so
+>    these five runs are not a random sample of E0's behaviour. A reader who
+>    meets this table without that caveat attached will read the row as
+>    representative, which it is not.
 
 **Cell E — static only, per the §9.1 downgrade.** `run-001`…`run-009` are the
 stale Task 10 / Task 4 runs, all excluded, retained as history and not inputs.
@@ -2264,11 +2285,13 @@ and NDT returns roughly a tenth to a third of it, per window.
   run, so it is lower than a whole-run rate on a bursty series and the two are
   not interchangeable.
 
-### 9.9 FINDING: cell E0's exclusion is CORRELATED WITH ITS OWN RESULT
+### 9.9 FINDING: cell E0's exclusion is CORRELATED WITH ITS OWN RESULT — and criterion 3's substance does not fit it
 
 This is the most important caveat on cell E0's row and it is not a defect
 introduced by this task; it is a property of the filing path that only shows up
-on a cell this degraded.
+on a cell this degraded. It carries **two** claims, and a reader quoting this
+section must carry both: the sampling bias (item iii) **and** the
+criterion-substance mismatch that produces it (items i–ii).
 
 `E0/run-005` and `run-006` were excluded `harness:e7ba92a`. The mechanism,
 diagnosed exactly: on each, NDT published **exactly one** pose for the whole run.
@@ -2277,17 +2300,56 @@ diagnosed exactly: on each, NDT published **exactly one** pose for the whole run
 on a single sample; run.sh's step-15 smoke therefore fails, and its handler files
 the run under criterion 3's catch-all.
 
-Two things follow, and they must be kept apart.
+Three things follow, and they must be kept apart.
 
-**The label is admissible; the attribution is not accurate.** `harness:<commit>`
-is verbatim criterion 3, so the exclusion is legal and the run stays filed with
-all its data. But criterion 3 reads "harness defect discovered **and fixed** (the
-run was measured with a broken observer/injector)", and nothing here was broken
-and nothing was fixed. What actually happened is that the renderer cannot express
-a topic carrying one message — and one message is not a malfunction on this cell,
-it is cell E0's registered result in its sharpest form.
+**(i) The reason STRING is verbatim; the criterion's SUBSTANCE does not fit, and
+this has to be named rather than softened.** `harness:e7ba92a` matches criterion
+3's registered form exactly. But criterion 3 reads, in full, "Harness defect
+discovered **and fixed** (the run was measured with a broken observer/injector)",
+and on these two runs:
 
-**The exclusion is therefore NOT independent of the measurement.** The runs the
+- **nothing was broken.** The observer recorded its full topic set, the sampler
+  and GT collector ran to completion (`gt.csv` at 1148 and 1167 rows), and the
+  sim clock never stalled. The run's data is intact.
+- **nothing was fixed.** No harness defect was discovered or repaired in
+  response; this task changed neither `report.py` nor `cadence.py` (see the
+  refusal below).
+
+What actually happened is narrower than the criterion describes: the step-15
+smoke fails inside `analysis/cadence.py:28`'s `need >= 2 arrivals` — a **frozen**
+file — because `report.py`'s `summarize_run` cannot express a topic carrying a
+single message, and `run.sh:1014` then files `harness:<sha>` as the handler's
+catch-all. One message is not a malfunction on this cell; it is **cell E0's
+registered result in its sharpest form**.
+
+This matters because `exclusions.md:51-52` states that "any exclusion not
+matching 1-10 invalidates the campaign for that cell and requires a fresh cell."
+So the gap between the matching string and the non-matching substance is exactly
+the kind of thing a later reader must be able to see, and must not have to
+re-derive.
+
+**(ii) What makes it defensible, stated so it cannot be mistaken for
+manipulation.** The `harness:<commit>` ⇄ criterion-3 mapping is **pre-registered
+in the harness itself**, at `run.sh:1028-1029`: "`crash:` while the world is
+being built (criterion 1), `harness:<commit>` once the data exists and only
+finalization can still fail (criterion 3)." That mapping predates this task and
+**was not touched by it**. Checkable: outside `benchmarks/results/`, the whole
+range `9c0f8dd..a52bb6b` changes exactly five files —
+`benchmarks/cells/python-bridge.sh`, `benchmarks/config/cells.yaml`,
+`tests/benchmarks/test_cell_info.py`, `tests/benchmarks/test_sweep_verdict.py`
+and `tests/benchmarks/test_write_quality.py`. `run.sh`, `report.py` and all of
+`analysis/` are **byte-identical** across it. So the label was applied
+**mechanically by committed code**, to a rule written before cell E0's data
+existed, and not chosen after seeing which runs it would drop. The substance
+mismatch is a property of the pre-registration, not an exercise of discretion
+inside this task.
+
+Whether that is enough to keep the cell, or whether `exclusions.md:51-52` bites
+and cell E0 needs re-collecting under a widened criterion, is **NOT this task's
+call** — it is a pre-registration question for the owner. It is recorded here so
+the decision is taken knowingly.
+
+**(iii) The exclusion is NOT independent of the measurement.** The runs the
 filing path drops are precisely the runs where the as-shipped bridge performed
 **worst**. The six other E0 runs are not a random sample of E0's behaviour: they
 are E0's behaviour *conditioned on NDT having emitted at least two poses*. The
@@ -2313,37 +2375,54 @@ implied: **2 of the 9 runs this task filed for cell E0**, plus the same
 underlying starvation visible as gate refusals on 4 more (3, 4, 5 and 5 NDT↔GT
 pairs against the required 10).
 
-### 9.10 FINDING: a FROZEN sim clock filed as an arm failure — criterion 4 vs 2
+### 9.10 An unread clock-stall marker under an arm failure — and why criterion 2 still fits
+
+**This section's claim was overstated in its first revision and is narrowed
+here.** It previously argued that `E0/run-009` "should be" criterion 4. It should
+not; criterion 2 is the better textual fit, and the filed reason is more
+defensible than that revision implied. What survives is the *mechanism*, which is
+worth recording on its own.
 
 `E0/run-009` is filed `gate:arm-failed` (criterion 2), and its run directory also
 carries a `clock_stall.marker` reading **"newest /clock arrival is 5.4 s old
-(limit 5.0 s)"**. Both are true, and the ordering explains it: the clock watchdog
-wrote the marker, then `arm_and_goal.py` failed at run.sh **step 9**, whose
-`exclude_and_die` files the run immediately — and **step 14 is the only place the
-marker is ever read**. So run.sh's own stated priority ("stall:clock wins over
-the others: a frozen sim clock is the cause a short window or a suppressed
-control output would be a symptom of") is not enforced on the earlier exit paths.
+(limit 5.0 s)"**. Both are true, and the ordering explains why only one is in the
+manifest: the clock watchdog wrote the marker, then `arm_and_goal.py` failed at
+run.sh **step 9**, whose `exclude_and_die` (`run.sh:762`) files the run
+immediately — and **step 14 (`run.sh:910-913`) is the only place the marker is
+ever read**. So run.sh's own stated priority there ("stall:clock wins over the
+others: a frozen sim clock is the cause a short window or a suppressed control
+output would be a symptom of") is not enforced on the earlier exit paths. That
+asymmetry is the finding.
 
-The causal direction is the one run.sh says it wants to preserve, and here it was
-inverted: the sim clock froze, every node on sim time stopped with it,
-`/localization/kinematic_state` could not sustain 5 Hz, and the arm failed. The
-arm failure is the **symptom**; the frozen clock is the **cause**, and it is the
-python-bridge sync-tick stall (P1 Verdict 1) that criterion 4 exists to name.
+**Why criterion 2 nonetheless fits and criterion 4 does not.** Criterion 4 is
+conditioned on the stall occurring "while the run was **armed**"
+(`exclusions.md:19-20`). This run's arm **failed** — it never armed at all — so
+criterion 4's own precondition is not met, whatever the marker says about the
+clock. Criterion 2 covers "a pre-registered readiness check that must pass before
+the scoring window starts did not", which is precisely what happened. The filing
+is therefore correct on the text, not merely tolerable.
 
-**Criterion 4, and explicitly NOT criterion 10.** The two are different
-phenomena and this run discriminates them cleanly. Criterion 4 is a **frozen**
-clock — no `/clock` advance for more than 5 s — which is what the marker records.
+The causal reading still holds and is not withdrawn: the sim clock froze, nodes
+on sim time stopped with it, `/localization/kinematic_state` could not sustain
+5 Hz, and the readiness check failed. The clock stall is plausibly the **cause**
+and the arm failure the **symptom** — but "cause" is not what the exclusion
+vocabulary indexes, and criterion 4's armed-precondition is what settles it.
+
+**Criterion 10 is excluded outright, and for a stronger reason than either.**
 Criterion 10 (`stall:unpaced-window-cap`) is a clock that "advanced throughout
 the run" and was merely **slow**, and it applies only to the `--unpaced` arm's
-sim-time window. **No run in this task used the unpaced arm, so criterion 10
-could not apply to any of them**, and no run was filed under it.
+sim-time window. **Every run in this task is `arm: static`; none used the unpaced
+arm, so criterion 10 could not apply to any of them**, and none was filed under
+it. The criterion-4-vs-10 distinction the brief flagged is therefore applied
+exactly: the one frozen-clock event is criterion 4's *phenomenon* (a frozen
+clock, not a slow one), even though criterion 4's *precondition* rules it out
+here.
 
-**Not rewritten, deliberately.** The filed reason stays `gate:arm-failed`: it is
-verbatim criterion 2, the arm genuinely did fail, the run is excluded either way
-so no count moves, and re-labelling a filed manifest after the fact to a reason
-that reads better is revisionism, not correction. The marker is committed
-alongside it, so the fuller story is recoverable from the run directory itself —
-which is what this section makes findable.
+**Not rewritten, deliberately** — and now for a better reason than the first
+revision gave. The filed reason stays `gate:arm-failed` because it is the
+textually correct criterion, not merely because rewriting would be revisionism.
+The marker is committed alongside it, so the fuller causal story is recoverable
+from the run directory itself — which is what this section makes findable.
 
 **Two stale runs carry the same marker, from two different causes**, and they are
 not conflated: `E/run-006` (`harness:7425084`) shows "newest /clock arrival is
@@ -2353,3 +2432,51 @@ at all but the observer-transport defect the launcher now refuses outright (the
 `lo`-pinned Cyclone profile discovering nothing against a Fast-DDS stack, §7.5
 and the launcher's own transport matrix). The watchdog's two message forms
 distinguish them; the exclusion vocabulary does not.
+
+### 9.11 What the registration COST the test suite, and what replaced it
+
+Recorded here rather than only in a test docstring, because it is a real
+coverage loss and a reader auditing the registration should not have to find it
+by reading tests.
+
+`tests/benchmarks/test_sweep_verdict.py`'s
+`test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound`
+pins that `sweep_verdict.main` **refuses** a cell whose `lidar_expected_hz` is
+null rather than substituting a plausible number (`tick_hz`, or another cell's
+value). It had always been driven against a **real committed null**, and this
+task consumed the last one:
+
+- it ran on cell **B** until Task 13 registered B's rate from the launcher
+  constant that task landed;
+- it ran on cell **E** until this task registered the whole bridge family;
+- and there is now **no committed null left that can drive it**. `--class` only
+  resolves for the three cells `sweep_classes.applies_to` lists (A, B, E), and
+  all three are registered. The four remaining nulls (`A-hf`, `B-hf`, `E-opt`,
+  `CAL-seam`) belong to cells no sweep class applies to, so `cell_info.merge`
+  rejects them before the binding is ever read.
+
+So the null is now **injected** via `--cells-yaml`. That is **strictly weaker
+evidence** than a real committed null: it pins the *refusal path*, not the
+*registry*, and it would keep passing even if every cell in `cells.yaml` were
+mis-registered.
+
+**What compensates for it**, and why the net position is not worse:
+`tests/benchmarks/test_cell_info.py` gained registry-side pins this task, and
+they are stronger than what was lost because they check the derivation rather
+than restate the value —
+
+- the E/E0 rates are **recomputed** from
+  `patches/python-bridge/0002-sensor-config-harmonized.patch`'s own
+  `frequency_hz` lines through `tick_hz / ceil(tick_hz / frequency_hz)` and
+  compared against `cells.yaml`, so a drifting patch or a hand-edited registry
+  fails rather than passing;
+- the two cells are asserted **not** to share a rate or a topic, which is the
+  copy-one-cell's-rig-onto-the-other mistake `cells.yaml`'s E0 comment names;
+- both are asserted onto the **relative** branch with a null threshold;
+- and a **registry-wide** check requires every cell's `ladder_branch` /
+  `abs_pose_gate_m` pair to be one of the three legal states — catching an
+  inconsistent registration in the suite instead of at `write_quality` time,
+  i.e. before it costs a live run rather than after.
+
+`tests/benchmarks/test_write_quality.py`'s registry-wide ladder assertion also
+gained a `selected_relative` set, so E/E0's branch is pinned from both sides.
