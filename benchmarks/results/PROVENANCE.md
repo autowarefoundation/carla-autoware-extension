@@ -474,13 +474,22 @@ one unscoreable; good-teardown group 0.257–0.989), and the single passing run
 (`run-016`, 0.257). Two independent findings, and neither is evidence for the
 other.
 
-## 6. Phase 0 harness re-verification (2026-07-31): the double-publication hypothesis is REFUTED — branch (c)
+## 6. Phase 0 harness re-verification (2026-07-31): branch (c) ruled, then BLOCKED pending an owner decision
+
+> **READ §6.5 BEFORE ACTING ON THIS SECTION.** §6.1–§6.4 record the Phase 0
+> session and its branch-(c) ruling as they stood when the ruling was made, and
+> they are left unedited. A follow-up measurement (fix round 1, finding F3) then
+> established that P1's criterion did **not** measure the phenomenon the
+> hypothesis names. The ruling is procedurally correct on the pre-declared
+> criterion and is **not** substantively established. **No later task may build
+> on it until the owner rules.** The refuted premise stays in place with what
+> refuted it, per the campaign's convention.
 
 The P3 completion plan opens with a live decision gate. Its hypothesis, its four
 probes with their predicted outcomes, and three adjudication branches were
 pre-declared in `specs/2026-07-31-p3-completion-design.md` **before any
 measurement existed**. The full transcript — pre-declaration copied verbatim
-*above* the measurements, every probe's raw output unedited — is committed at
+*above* the measurements — is committed at
 `benchmarks/evidence/p3-phase0/probe-transcripts.md`, with per-figure retention
 status in that directory's `PROVENANCE.md`.
 
@@ -502,7 +511,18 @@ Diagnostic runs: `A/run-013` and `B/run-023`, both launched without `--duel`
 exclusion. They are bring-up-class runs; **no A-vs-B comparison is drawn from
 them and none may be.**
 
+**What the refutation rests on, and the gap in it.** P1's pre-declared criterion
+is a publisher **count**. A count cannot distinguish a publisher that
+*advertises* from one that *emits*, and the spec's hypothesis names double
+**publication**. So the refutation below holds only if cell A's second
+publisher is actually emitting. That gap was recorded as an open question when
+the ruling was made, and it has since been measured: **it does not hold.** See
+§6.5.
+
 ### 6.2 Ruling: branch (c)
+
+*(Recorded as it stood at ruling time. Superseded in status by §6.5 — kept
+unedited, with what refuted it attached, rather than rewritten.)*
 
 The hypothesis is explicitly *differential* — it explains cell B's depressed
 rate **by** a difference from cell A. P1 measured the same double publication on
@@ -517,6 +537,9 @@ No fourth branch was invented, no branch reshaped, and no prediction softened
 after the fact: P1's prediction is recorded as FAILED in the transcript.
 
 ### 6.3 What follows, and what explicitly does not
+
+*(Recorded as it stood at ruling time. **Do not act on this list** — §6.5
+suspends it pending an owner decision.)*
 
 Branch (c) prescribes no harness edit and no reclassification. Therefore:
 
@@ -539,11 +562,15 @@ them. The single thing that changed is that one candidate explanation for those
 failures is now measured to be false — which is a subtraction from the space of
 explanations, not an adjustment to the measurement.
 
-### 6.4 The confound that remains is the one already registered
+### 6.4 The pre-existing registered confound is unaffected
 
 Branch (c) asks that the depressed rate be registered as a measured confound
 with the Phase 0 diagnostics attached. It already is, and this session did not
-find a new one — it removed a competitor to the existing one:
+find a new one. **Phase 0 measured nothing that bears on whether that registered
+confound is a complete causal account of cell B's depressed rate, and this
+section makes no such claim** — an earlier wording here ("the confound that
+*remains*") asserted an exhaustiveness Phase 0 did not measure and is corrected.
+What the registered confound is, and what backs it:
 
 - `benchmarks/README.md`'s A-side instrument-asymmetry bound: `observer_loss_rate`
   **0.0000** on cell A against **0.2564 / 0.1715** on cell B, concluding "the
@@ -564,3 +591,76 @@ polarity of the stale-daemon trap `benchmarks/run.sh:789` documents**, it is
 specific to cell B's transport (cell A's cyclonedds censuses agreed with and
 without the daemon), and on that transport a CLI graph query must be given time
 to discover before its count means anything.
+
+### 6.5 BLOCKED: P1's count criterion did not measure double PUBLICATION
+
+Fix round 1 (2026-08-01) closed the open question flagged in §6.1. It is
+decision-relevant, and it goes against the ruling.
+
+**Measured on a third diagnostic cell-A stack** (`A/run-014`, `--arm static`,
+no `--duel`), with the publisher census and the flow measurement taken against
+the **same stack state** so the two cannot be about different moments:
+
+| Quantity | If both publishers emit | Measured |
+| --- | --- | --- |
+| `RELAY_OUT` / `RELAY_IN` message ratio | ≈ 2.0 | **0.995** (398 / 400) |
+| `RELAY_OUT` header stamps absent from `RELAY_IN` | > 0 | **0** |
+| `RELAY_OUT` duplicate header stamps | > 0 | **0** |
+| Aggregate `ros2 topic hz` on `RELAY_OUT` | ≈ 40 Hz | **19.957 Hz**, vs `RELAY_IN` **19.960 Hz** |
+| Publisher count, same stack state | 2 | **2** |
+
+`topic_tools relay` forwards verbatim, so every message it emits carries a
+stamp that also appeared on `RELAY_IN`; a second emitting publisher would show
+up as unmatched stamps, duplicate stamps, or a doubled rate. None is present.
+**Every message on `/sensing/lidar/concatenated/pointcloud` is a relay forward.
+Cell A's `concatenate_data` holds an advertised publisher and contributes zero
+traffic.** The instrument's own bias (subscriber-side BEST_EFFORT sampling)
+points toward this same conclusion, so it cannot have manufactured it; the
+independent `ros2 topic hz` reading is what rules the bias out.
+
+**Consequence.** The spec's hypothesis names double **publication**. Cell A has
+two publish*ers* and one publish*er emitting*, so P1's count of 2 is a true
+measurement of something the hypothesis does not name. The differential the
+hypothesis rests on — double publication present on B, absent on A — is
+therefore **not refuted by P1**, and branch (a) or (b) may be correct.
+
+**This is an owner decision and it has not been taken.** Re-adjudicating here
+would mean reshaping the spec's branch table against its own pre-declared
+criterion after seeing data, which is what the pre-declaration exists to
+prevent. The decision needed is whether P1's count criterion stands as written
+(branch (c) holds) or is superseded by a publication-based criterion (Phase 0
+re-runs from P2, executing the P3/P4 kill probes that were skipped on the
+strength of P1).
+
+**Nothing was destroyed by this outcome.** No relay was ever killed on either
+cell, no run was excluded or reclassified, no `duel_admissible` flag was
+flipped, and no harness file was edited. Re-running Phase 0 from P2 costs two
+live runs and no recollection. All three diagnostic runs (`A/run-013`,
+`B/run-023`, `A/run-014`) stay filed, unexcluded, `duel_admissible: false`.
+
+### 6.6 A refuted premise in `scripts/e2e/launch_autoware.sh`, annotation deferred
+
+`scripts/e2e/launch_autoware.sh:44-47` (cell A's relay, a different file from
+the cell-B relay at `benchmarks/cells/tier4_autoware.sh:538`) asserts:
+
+> (The concat node is left with its stock 3-topic config; it stays silent with
+> a single publisher, so the relay is the sole publisher on the concatenated
+> topic -- verified live after bring-up.)
+
+and above it, that the node "HARD-REQUIRES >= 2 input topics … and never loads".
+
+**P1 measured both claims false on cell A**: `concatenate_data` *does* load and
+*does* advertise a publisher on `/sensing/lidar/concatenated/pointcloud`, so the
+relay is **not** the sole publisher there. §6.5 then measured the part the
+comment gets right in substance though not in mechanism: the node is indeed
+**silent** — it emits nothing — but it is silent *while holding a publisher*,
+not by failing to load.
+
+**The in-file annotation is deliberately deferred to the P3 wrap task**, on the
+owner's ruling: cell A is about to carry hours of live duel collection, this
+branch has a documented citation-drift class that has already fired seven times,
+and line-shifting that file now risks live runs while buying nothing, since the
+record is what later tasks read. The finding is therefore registered here, and
+the annotation is scheduled for after all live collection completes. The
+cell-B-side counterpart comment (`tier4_autoware.sh`'s "THAT PREMISE IS
+REFUTED") already carries its own refutation in place and needs no change.

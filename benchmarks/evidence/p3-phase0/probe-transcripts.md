@@ -15,9 +15,33 @@ branches, and every later P3 task keys off the ruling.
 The pre-declaration is reproduced **verbatim below, above every measurement**,
 so the record itself shows that the hypothesis, the probes, their predicted
 outcomes and the three admissible branches all existed before any datum did.
-Nothing in that block was edited after the probes ran. Every probe's raw
-output is `tee`-appended unedited, including output that refutes the
-hypothesis.
+Nothing in that block was edited after the probes ran.
+
+**What the console blocks below are, stated precisely** (corrected in fix
+round 1, where the original wording — "every probe's raw output is
+`tee`-appended unedited" and the commands "recorded exactly" — was found to
+overstate what the file contains):
+
+- Every console block's **output** is `tee`-appended **unedited**, including
+  output that refutes the hypothesis and including two probes of my own that
+  failed outright. Nothing was removed from any output for being inconvenient.
+- Two exceptions to "unedited", both marked in place: the `pgrep` self-match
+  line in §2 is truncated for width (labelled `[… TRUNCATED …]`), and several
+  blocks pipe the probe through `grep`/`tail` to select lines. **Where a block
+  is `grep`-filtered, its `$` command line shows the filter**, so what was kept
+  and what was dropped is legible. The consequence worth naming: the cell-A
+  `--no-daemon` corroboration in §3 is `grep`-filtered to counts and node
+  names, so **that census's endpoint GIDs are not in this file** — the
+  unfiltered cell-A census immediately above it does carry them.
+- The `$` command lines are **transcribed, not captured**. Where one reads
+  `bash -lc '... ros2 topic info -v …'`, the `...` elides the invariant
+  `source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash &&`
+  preamble that every `docker compose exec` in this campaign carries. §9 lists
+  each elided command in full, so no command in this file is unrecoverable.
+- Probe timing: the P1/P2 blocks in §3–§4 were **not** timestamped inline (a
+  defect found in fix round 1). §8 gives the session timeline, marking which
+  times are attested from filed artifacts and which are derived. The fix-round
+  probes in §10 carry inline UTC timestamps.
 
 ---
 
@@ -520,3 +544,216 @@ Teardown after both: no `autoware` container, no `UnrealEditor`/`CarlaUE4`
 process, port 2000 free. Inter-run hygiene (`docker compose down` +
 `bootstrap_carla_msgs.sh`) was applied between them, and the cell-B launch
 waited for the 1-min loadavg to fall back below 2 after cell A's teardown.
+
+---
+
+## 8. Session timeline, and what is NOT retained about it
+
+Fix round 1 found that no console block in §3–§7 carries a timestamp. That is a
+real defect for a document whose standard is "a reader not in the session
+reaches the same ruling", and it is corrected going forward rather than
+back-filled by guesswork.
+
+**Individual probe wall-clock times for P1 and P2 are NOT RETAINED.** They were
+not captured inline and reconstructing them from memory would be fabrication.
+What _is_ attested, from the filed run directories' own artifacts, are the
+bounds each probe necessarily falls inside — every probe ran against a live
+stack, so each sits strictly between its run's manifest write and its
+`quality.json` write:
+
+| Attested from                                                  | Time (host local, 2026-07-31) |
+| -------------------------------------------------------------- | ----------------------------- |
+| Session preamble (`uptime`, §2)                                | 22:17:09                      |
+| `A/run-013` `manifest.json` written (run starts)               | 22:17:45                      |
+| `A/run-013` `quality.json` written (window closed, stack down) | 22:20:11                      |
+| `B/run-023` `manifest.json` written (run starts)               | 22:22:35                      |
+| `B/run-023` `quality.json` written (window closed, stack down) | 22:25:01                      |
+
+So **P1 and its corroboration fall inside 22:17:45–22:20:11**, and **P2 and its
+four follow-ups inside 22:22:35–22:25:01**, in the order printed. Both bounds
+are recomputable: `stat -c '%y %n' benchmarks/results/{A/run-013,B/run-023}/{manifest,quality}.json`.
+
+The fix-round probes in §10 carry inline `date -u` stamps, captured in the same
+`docker exec` as the probe itself, so they need no such reconstruction.
+
+## 9. The elided command preambles, in full
+
+Every `$` line in this file that reads `bash -lc '... <command>'` elides the
+same invariant prefix, which is mandatory for every `docker exec` in this
+campaign (the container does not inherit the entrypoint):
+
+```bash
+source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash
+```
+
+The four elided command lines, written out:
+
+```bash
+# §3 cell-A corroboration, and §4's three-attempt cell-B loop
+docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && ros2 topic info -v --no-daemon /sensing/lidar/concatenated/pointcloud 2>&1 | grep -E "count|Node name"'
+
+# §3 supplementary rate probe (FAILED: `ros2 topic hz` has no --no-daemon)
+docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && timeout 12 ros2 topic hz --no-daemon /sensing/lidar/concatenated/pointcloud'
+
+# §4 node list + relay liveness
+docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && ros2 node list --no-daemon 2>&1 | grep -Ei "relay|concat" || echo "(no relay/concat node discovered)"'
+docker exec autoware bash -lc 'cat /tmp/tier4-concat-relay.pid; ps -o pid,args -p "$(cat /tmp/tier4-concat-relay.pid)" 2>&1 | tail -2; echo "--- relay log tail ---"; tail -3 /tmp/tier4-concat-relay.log 2>&1'
+
+# §4 final settled-daemon census
+docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && echo "node count: $(ros2 node list 2>/dev/null | wc -l)" && (ros2 node list 2>/dev/null | grep -Ei "relay|concat" || echo "(no relay/concat in daemon node list)") && ros2 topic info -v /sensing/lidar/concatenated/pointcloud 2>&1 | grep -E "count|Node name|Node namespace"'
+```
+
+---
+
+## 10. Fix round 1, finding F3 — does cell A's `concatenate_data` EMIT or only ADVERTISE?
+
+This section was added **after** the ruling in §6, in response to a review
+finding. It is recorded here rather than silently folded into §6 because the
+question it answers is one §6's ruling depends on, and the record must show
+that the check came second.
+
+**Why it matters, stated before the measurement.** P1's pre-declared criterion
+is a publisher **count**. A count cannot distinguish a publisher that
+_advertises_ from one that _emits_. The spec's hypothesis names double
+**publication**. So if cell A's `concatenate_data` advertises but never emits,
+then double publication is _not_ present on cell A, the differential the
+hypothesis rests on survives, and (a)/(b) could be the correct branch — the
+count would not have measured the phenomenon its own hypothesis names.
+
+**Instrument, and why it answers the question.** `ros2 topic hz` reports the
+**sum** over publishers and cannot attribute flow to a source. So the primary
+instrument is stamp identity, in
+`benchmarks/evidence/p3-phase0/probe_concat_emission.py` (committed with this
+round; its decision rule is fixed in its module docstring, written before the
+probe was run). `topic_tools relay` forwards its input **verbatim**, so every
+message the relay puts on `RELAY_OUT` carries a header stamp that also appeared
+on `RELAY_IN`. A second emitting publisher cannot have that property for free:
+it either stamps its own output (producing `RELAY_OUT` stamps absent from
+`RELAY_IN`) or copies its input's stamp as a concatenation node does (producing
+**duplicate** stamps on `RELAY_OUT`). Matching the two streams therefore
+attributes traffic to a source. Cell A's registered `lidar_expected_hz` is
+**20.0**, so two emitting 20 Hz publishers would also drive the aggregate rate
+toward 40 Hz — a factor-of-two separation, far outside noise, which the
+independent `ros2 topic hz` reading below tests.
+
+The probe's known bias is stated in its docstring and repeated here: it is a
+subscriber-side BEST_EFFORT measurement, so dropped samples would push it
+toward the "only advertises" reading — i.e. **against** the ruling it is
+checking. It cannot manufacture a false confirmation of §6.
+
+Diagnostic run: `bash benchmarks/run.sh A --arm static` (no `--duel`), filed as
+`benchmarks/results/A/run-014`. Full preamble and inter-run hygiene first
+(loadavg 0.23, GPU 1281 MiB / 32607 MiB with no CARLA consumer, no CARLA
+process, governor `powersave` recorded, `docker compose down` +
+`bootstrap_carla_msgs.sh`).
+
+```console
+$ docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && echo "T_START=$(date -u +%FT%TZ)" && python3 /work/benchmarks/evidence/p3-phase0/probe_concat_emission.py --seconds 20 && echo "T_END=$(date -u +%FT%TZ)"'
+T_START=2026-08-01T05:51:16Z
+collecting for 20 s on:
+  IN  /sensing/lidar/top/pointcloud_before_sync
+  OUT /sensing/lidar/concatenated/pointcloud
+
+--- /sensing/lidar/top/pointcloud_before_sync ---
+messages received      : 400
+wall span / rate       : 19.99 s / 19.956 Hz
+unique header stamps   : 400
+widths (value: count)  : {14563: 3, 12733: 1, 14700: 2, 12625: 1, 14649: 1, 12677: 1, … [310 distinct widths, TRUNCATED for width; full histogram not retained]}
+frame_ids              : {'base_link': 400}
+stamp span / rate      : 19.95 s / 20.000 Hz
+
+--- /sensing/lidar/concatenated/pointcloud ---
+messages received      : 398
+wall span / rate       : 19.89 s / 19.958 Hz
+unique header stamps   : 398
+widths (value: count)  : {12733: 1, 14700: 2, 12625: 1, 14649: 1, 12677: 1, 14581: 2, … [309 distinct widths, TRUNCATED for width; full histogram not retained]}
+frame_ids              : {'base_link': 398}
+stamp span / rate      : 19.85 s / 20.000 Hz
+
+=== ATTRIBUTION ===
+RELAY_IN  messages                        : 400
+RELAY_OUT messages                        : 398
+out/in ratio                              : 0.995
+RELAY_OUT stamps NOT seen on RELAY_IN     : 0
+RELAY_OUT duplicate stamps (extra copies) : 0
+
+=== VERDICT (by the decision rule in this file's docstring) ===
+concatenate_data only ADVERTISES: every RELAY_OUT message is one the
+relay forwarded (matched stamp, no duplicates, out/in ~= 1).
+T_END=2026-08-01T05:51:37Z
+```
+
+Independent corroboration, on the **same live stack**, taken so that the count
+and the flow are measured against the same stack state rather than two
+different ones:
+
+```console
+$ docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && echo "T=$(date -u +%FT%TZ)" && ros2 topic info -v /sensing/lidar/concatenated/pointcloud | grep -E "count|Node name|Node namespace" && timeout 12 ros2 topic hz /sensing/lidar/concatenated/pointcloud && timeout 12 ros2 topic hz /sensing/lidar/top/pointcloud_before_sync && echo "T_END=$(date -u +%FT%TZ)"'
+T=2026-08-01T05:51:53Z
+--- census, same stack state ---
+Publisher count: 2
+Node name: concatenate_data
+Node namespace: /sensing/lidar
+Node name: relay
+Node namespace: /
+Subscription count: 1
+Node name: crop_box_filter_measurement_range
+Node namespace: /localization/util
+--- hz RELAY_OUT (aggregate over BOTH publishers) ---
+ min: 0.046s max: 0.054s std dev: 0.00141s window: 201
+average rate: 19.957
+ min: 0.046s max: 0.054s std dev: 0.00138s window: 221
+--- hz RELAY_IN ---
+ min: 0.047s max: 0.053s std dev: 0.00112s window: 102
+average rate: 19.960
+ min: 0.047s max: 0.053s std dev: 0.00115s window: 122
+T_END=2026-08-01T05:52:18Z
+```
+
+### F3 result: cell A's `concatenate_data` ADVERTISES but does NOT EMIT
+
+| Quantity                                  | If both publishers emit                    | Measured                                          |
+| ----------------------------------------- | ------------------------------------------ | ------------------------------------------------- |
+| `RELAY_OUT` / `RELAY_IN` message ratio    | ≈ 2.0                                      | **0.995** (398 / 400)                             |
+| `RELAY_OUT` stamps absent from `RELAY_IN` | > 0                                        | **0**                                             |
+| `RELAY_OUT` duplicate header stamps       | > 0 (a concat node copies its input stamp) | **0**                                             |
+| Aggregate `ros2 topic hz` on `RELAY_OUT`  | ≈ 40 Hz                                    | **19.957 Hz**, against `RELAY_IN`'s **19.960 Hz** |
+| Publisher count, same stack state         | 2                                          | **2** (`concatenate_data` + `relay`)              |
+
+Two independent instruments agree, and they agree against the probe's own known
+bias direction. **Every single message on `/sensing/lidar/concatenated/pointcloud`
+is a relay forward.** `concatenate_data` holds an advertised publisher on that
+topic and contributes **zero** traffic to it. Both stamp streams run at exactly
+20.000 Hz, matching cell A's registered `lidar_expected_hz: 20.0`, and cell A's
+filed `ndt_rate_ratio` ≈ 1.0 against `ndt_expected_hz: 20.0` is consistent with
+NDT being fed one clean 20 Hz stream rather than a mixed 40 Hz one.
+
+### What this does to the §6 ruling — stated, NOT re-adjudicated
+
+The spec's hypothesis names double **publication**. On cell A there are two
+publish*ers* and one publish*er* emitting. So:
+
+- **P1's count criterion did not measure the phenomenon its own hypothesis
+  names.** The count is 2 and that is a true measurement; what it is not is
+  evidence of double publication on cell A.
+- The differential the hypothesis rests on — double publication present on B,
+  absent on A — is therefore **not refuted by this evidence** after all, and
+  branch (a) or (b) may be the correct ruling.
+- §6's ruling of **(c)** remains **procedurally correct on the pre-declared
+  criterion as written**, and it is left standing in this record exactly as it
+  was, unedited. It is **not substantively established**, and the campaign must
+  not build on it until that is resolved.
+
+**This task stops here and reports BLOCKED.** Re-adjudicating to (a) or (b)
+would mean reshaping the spec's branch table against a criterion the spec
+itself declared, after seeing data — which is precisely what the pre-declaration
+exists to prevent. That is the owner's call, not this task's. What is needed is
+a ruling on whether P1's count criterion stands as written (in which case (c)
+holds) or is superseded by a publication-based criterion (in which case Phase 0
+must be re-run with the kill probes P3/P4 that were skipped on the strength of
+P1).
+
+Note for whoever takes that decision: the kill probes were never run and the
+relay was never killed on either cell, so **no data was destroyed by this
+outcome** — re-running Phase 0 from P2 onward costs two live runs and no
+recollection.
