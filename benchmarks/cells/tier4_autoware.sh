@@ -795,18 +795,38 @@ done
 # the same ordering that fails for map_loader. What differs is that the helper
 # WAITS for its own subscriber matching to settle BEFORE publishing, so the
 # sample goes out as live data to already-matched readers. That is a reasoned
-# mitigation, NOT a demonstrated cure, which is why the verification is
-# mandatory and this step fails the bring-up when it does not take.
+# mitigation, NOT a demonstrated cure.
 #
-# AND WHAT THE VERIFICATION CANNOT SEE: it gates on topic_state_monitor, which
-# is the same CLASS as behavior_path_planner but is not the planner --
+# THIS STEP WAS ONCE FATAL, AND IS NOW ADVISORY. It originally failed the
+# bring-up when the verification did not take. results/B/run-031 refuted that
+# design from its own log: the step failed (3 attempts, 60 s each, its
+# verification endpoint never OK) while THE SAME RUN delivered the re-published
+# map to lanelet2_map_visualization (:1123, :2149, :3147) and
+# vector_map_tf_generator (:1128, :2155, :3152) on all three attempts -- a
+# different process each time, so real inter-process receipt. The fatal form
+# turned a possibly-armable run into a crash:cell-launch and, because it fires
+# BEFORE any route exists, left the actual question untested: that run's
+# behavior_path_planner logged `waiting for scenario_topic` 38 times and never
+# evaluated its map check at all. The campaign's pass criteria are the arm
+# succeeding and control_cmd flowing; this step is an ADDED precondition and is
+# not one of them, so it now records and continues. If the map never reaches
+# the planner the run still fails -- at the arm, more informatively.
+#
+# AND WHAT THE VERIFICATION CANNOT SEE: it reads topic_state_monitor, which is
+# the same CLASS as behavior_path_planner but is not the planner --
 # results/B/run-028 has the monitor recovering at +23.2s in a run where the
 # planner reported `waiting for map` for 53.3s more, to teardown. The planner's
 # own report only exists once a route is set, i.e. after this step.
 #
-# CLOSED-LOOP ONLY, and that is a SAFETY property rather than a preference:
-# cell B's fifteen filed static runs ARE the static verdict pool and branch (c)
-# forbids recollecting them, so the static bring-up must not acquire a step.
+# CLOSED-LOOP ONLY, and that is a SAFETY property rather than a preference.
+# THREE DISTINCT COUNTS get confused here, so each is named: cell B has 17
+# non-excluded STATIC runs, of which 10 (run-013..run-022) are the
+# DUEL-ADMISSIBLE static verdict pool, and 0 statics are excluded. It is the
+# 10-run pool the A-vs-B static verdict is computed from; all 17 were measured
+# without this step. Branch (c) forbids recollecting them, so the static
+# bring-up must not acquire a step. (Recomputed from every manifest, 2026-08-01;
+# an earlier revision of this comment said "fifteen", which matches none of the
+# three.)
 # tests/benchmarks/test_vector_map_gate.py executes THIS block for real, with
 # both arms, and asserts the static one reaches no container command at all.
 #
@@ -827,7 +847,10 @@ if [ "${BENCH_ARM:-}" = "closed-loop" ]; then
       "cleanly. NOT fatal, by design (see section 5's header): the campaign's" \
       "pass criteria are the arm and control_cmd, and this is an added" \
       "precondition. Continuing to the arm, where the planner reports on the" \
-      "map itself via 'waiting for map' once a route exists."
+      "map itself via 'waiting for map' once a route exists." \
+      "$BENCH_RUN_DIR/vector-map-delivery.json names which half did not" \
+      "happen, in verdict_code: exit 3 the capture, 4 the publisher matching," \
+      "5 the verification, 6 a crash before any report could be written."
   fi
 fi
 

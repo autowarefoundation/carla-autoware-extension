@@ -48,9 +48,9 @@ match it -- which is the same event ordering that fails for `map_loader`. What
 is different, and what the design rests on, is that this script WAITS for its
 own subscriber matching to settle BEFORE publishing, so the sample goes out as
 live data to readers that are already matched rather than as history served on
-match. That is a reasoned mitigation, NOT a demonstrated cure, which is why the
-verification step below is mandatory rather than advisory and why the whole
-step fails the bring-up loudly when it does not take.
+match. That is a reasoned mitigation, NOT a demonstrated cure. It was once the
+reason the verification below was mandatory; it is not any more -- see the next
+paragraph, which supersedes that reading.
 
 ADVISORY, NOT FATAL -- and WHY IT CHANGED. This step was originally a gate
 that aborted the bring-up. `benchmarks/results/B/run-031` refuted that design
@@ -102,6 +102,7 @@ import argparse
 import json
 import sys
 import time
+import traceback
 
 import rclpy
 from autoware_map_msgs.msg import LaneletMapBin
@@ -121,6 +122,7 @@ EXIT_OK = 0
 EXIT_NO_CAPTURE = 3  # the retained sample never reached THIS process either
 EXIT_NO_MATCH = 4  # our publisher never matched any subscriber
 EXIT_NOT_VERIFIED = 5  # published, but the in-stack monitor never went OK
+EXIT_CRASHED = 6  # an exception escaped before a normal report could be written
 
 # The monitor node whose receipt is the gate. Named once, here, because the
 # same string is what `--report` records and what the launcher's failure text
@@ -345,8 +347,19 @@ class VectorMapRepublisher(Node):
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
+    return main_with_args(build_arg_parser().parse_args(argv))
+
+
+def main_with_args(args) -> int:
     report: dict = {"topic": args.topic, "attempts": []}
+
+    # Seeded so EVERY exit path carries them, including the no-capture and
+    # no-match returns. A key that is present on some outcomes and absent on
+    # others makes `verified is not True` and `"verified" not in report` mean
+    # different things to a reader, which is exactly the ambiguity this campaign
+    # keeps paying for.
+    report["verified"] = False
+    report["verified_relog"] = False
 
     rclpy.init()
     node = VectorMapRepublisher(args.topic)
@@ -425,12 +438,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _finish(node, report: dict, code: int, args) -> int:
-    # `verdict_code` is the real outcome and is ALWAYS recorded. `exit_code`
-    # stays the key it has been since run-031 so the two reports compare
-    # directly; under --advisory the process still exits 0, because this step
-    # is an added precondition and not one of the campaign's pass criteria.
+    # THREE keys, because one was ambiguous. `verdict_code` is the real
+    # outcome. `exit_code` KEEPS ITS HISTORICAL MEANING -- the verdict, not the
+    # process status -- because results/B/run-031's filed report already uses it
+    # that way and renaming it would break comparison with the one run that
+    # matters most here; it is retained for that reason alone and a reader
+    # should prefer `verdict_code`. `process_exit_code` is what this process
+    # actually returns to the shell, which under --advisory is always 0 because
+    # the step is an added precondition and not one of the campaign's pass
+    # criteria.
     report["verdict_code"] = code
     report["exit_code"] = code
+    report["process_exit_code"] = EXIT_OK if args.advisory else code
     report["advisory"] = bool(args.advisory)
     report["monitor_final"] = node.monitor_snapshot()
     report["relog_final"] = count_relog_markers(read_launch_log(args.launch_log))
@@ -443,5 +462,45 @@ def _finish(node, report: dict, code: int, args) -> int:
     return EXIT_OK if args.advisory else code
 
 
+def _write_crash_report(args, exc: BaseException) -> None:
+    """A crash before `_finish` used to leave NO report at all, and the advisory
+    call site prints only that the step "did not complete cleanly" -- so the one
+    artifact a reader would go looking for would not exist. Best-effort, and
+    never allowed to mask the original exception."""
+    if not getattr(args, "report", ""):
+        return
+    try:
+        with open(args.report, "w") as fh:
+            json.dump(
+                {
+                    "topic": getattr(args, "topic", ""),
+                    "crashed": True,
+                    "error": "%s: %s" % (type(exc).__name__, exc),
+                    "traceback": traceback.format_exc(),
+                    "verified": False,
+                    "verified_relog": False,
+                    "verdict_code": EXIT_CRASHED,
+                    "exit_code": EXIT_CRASHED,
+                    "process_exit_code": EXIT_OK if args.advisory else EXIT_CRASHED,
+                    "advisory": bool(getattr(args, "advisory", False)),
+                },
+                fh,
+                indent=2,
+                sort_keys=True,
+            )
+    except OSError:
+        pass
+
+
+def _cli() -> int:
+    args = build_arg_parser().parse_args()
+    try:
+        return main_with_args(args)
+    except BaseException as exc:  # noqa: BLE001 -- recorded, then re-raised
+        _write_crash_report(args, exc)
+        print("CRASHED before writing a report: %r" % (exc,), file=sys.stderr)
+        raise
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(_cli())

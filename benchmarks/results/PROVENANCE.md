@@ -1604,10 +1604,15 @@ confound is absent on the one bring-up that changed only the middleware. n = 1.
 the A-vs-B closed-loop equivalence verdict is NOT COMPUTABLE.** What is
 unaffected:
 
-- the **static-arm** verdict, whose pool (`run-013`…`run-027`, `run-029`,
-  `run-030`) is complete and untouched — the delivery workaround is closed-loop
-  only, pinned by a test that asserts the static bring-up reaches no container
-  command at all;
+- the **static-arm** verdict. Three counts get confused here, so each is named,
+  all recomputed from every manifest on 2026-08-01: cell B has **17 non-excluded
+  static runs** (`run-013`…`run-027`, `run-029`, `run-030`), of which
+  **10 — `run-013`…`run-022` — are the DUEL-ADMISSIBLE pool** the A-vs-B static
+  verdict is actually computed from, and **0 statics are excluded** (cell A:
+  13 non-excluded static, 10 duel-admissible `run-003`…`run-012`, 0 excluded).
+  All of them are complete and untouched: the delivery workaround is
+  closed-loop only, pinned by a test that asserts the static bring-up reaches no
+  container command at all;
 - **cell C**, which supplies closed-loop confirmatory data on the extension path.
 
 ### What was tried and did not work
