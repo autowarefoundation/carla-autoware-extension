@@ -1,0 +1,11 @@
+[INFO] [1785612968.572096323] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785612969.795487797] [arm_and_goal]: arm observations [localized]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.001 ego_speed_mps=0.000
+[INFO] [1785612969.805097071] [arm_and_goal]: arm observations [pre-engage]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.001 ego_speed_mps=0.000
+[INFO] [1785612969.807632400] [arm_and_goal]: MRM config: /control/vehicle_cmd_gate use_emergency_handling=false (the perception-off false MRM; same configuration as the proven extension sequence and as every promoted gate number)
+[WARN] [1785612969.811114088] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785612971.812138625] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[INFO] [1785612973.815236081] [arm_and_goal]: change_to_autonomous: SUCCEEDED -- per-approach observation, record it (R4.3); the proven /autoware/engage publish still runs next
+[INFO] [1785612974.818758409] [arm_and_goal]: /autoware/engage: published engage=true x5
+[INFO] [1785612978.210356511] [arm_and_goal]: post-engage state: mode_autonomous=True is_autoware_control_enabled=True (R4.3 observation; only mode_autonomous gates ARMED)
+[INFO] [1785612978.210617518] [arm_and_goal]: arm observations [post-engage]: mode=2 autonomous=True is_autoware_control_enabled=True is_autonomous_mode_available=False control_cmd_hz~19.67 n=67 nonzero_longitudinal=62/67 frac=0.925 peak_abs_velocity=0.258 ego_displacement_m=0.028 ego_speed_mps=0.116
+ARMED: localized, route set to (81571.616, 50019.827), autonomous engaged

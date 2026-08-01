@@ -1643,3 +1643,166 @@ real short-lived process's cmdline, and under load the process is gone before
 the read). Re-run on an idle host the suite is **1028 passed / 0 failed /
 1 skipped**. Neither flake is a regression, and neither is silenced: both are
 timing-sensitive reads that the launcher's own comments already warn about.
+
+---
+
+## 8. Task 7 confirmatory cell C collection (live, 2026-08-01)
+
+Cell C is `approach: extension` on `NishishinjukuMap` — **not** the tier4-native
+cell. Its closed-loop path was smoke-proven in Task 4 (`C/run-002`). This section
+records the confirmatory collection: **5 valid static + 5 valid closed-loop**,
+all `duel_admissible: false` (cell C is confirmatory, never primary-duel data).
+No verdict, no delta and no cross-cell figure appears here or was computed — the
+only analysis output consulted was each run's own gate and exclusion state.
+
+Preamble held before the first boot: `ROS_DOMAIN_ID=0`, 1-min loadavg **0.17**,
+governor `powersave` (recorded, unchanged), no non-desktop GPU consumer
+(Xorg / gnome-shell / browser / terminal only on the RTX 5090), no pre-existing
+`UnrealEditor`/`CarlaUE4` process. `docker compose … down` + `up -d` +
+`bootstrap_carla_msgs.sh` before every `run.sh` invocation, and the host was
+drained to 1-min loadavg < 2 before each one.
+
+| run | arm | outcome | filed as |
+| --- | --- | --- | --- |
+| `C/run-003` | static | warm-up (pre-registered discard) | excluded `warmup:nishi` |
+| `C/run-004` | static | scored | not excluded |
+| `C/run-005` | static | scored | not excluded |
+| `C/run-006` | static | scored | not excluded |
+| `C/run-007` | static | scored | not excluded |
+| `C/run-008` | static | scored | not excluded |
+| `C/run-009` | closed-loop | **armed but never drove — UNSCORED** | not excluded, **not valid** (see §8.2) |
+| `C/run-010` | closed-loop | scored | not excluded |
+| `C/run-011` | closed-loop | scored | not excluded |
+| `C/run-012` | closed-loop | scored | not excluded |
+| `C/run-013` | closed-loop | scored | not excluded |
+| `C/run-014` | closed-loop | scored (make-up for `run-009`) | not excluded |
+
+### 8.1 The criterion-5 warm-up, and why it is charged once per session
+
+`exclusions.md` criterion 5 reads "Nishi-Shinjuku **first run after a CARLA
+boot**". Taken to the letter that would exclude *every* cell C run, because
+`teardown.sh` stops the editor and runs `docker compose down` at the end of every
+run, so `run.sh --runs N` boots CARLA N times. The campaign's operative reading —
+established in Task 4, where `C/run-002` was accepted immediately after the
+`C/run-001` warm-up under exactly this per-run boot behaviour — is **one warm-up
+per session cold start**, the state the 107 s cold-start lag of P1 Verdict 5
+actually lives in (shader/DDC and page-cache warmth, which survives an editor
+restart). `C/run-003` is this session's warm-up and is excluded `warmup:nishi`,
+verbatim from criterion 5.
+
+The warm-up was run on the **static** arm while the runs it precedes span both
+arms. That is sound because criterion 5's requirement is that "the warm-up run
+spawns the exact sensor suite", and the sensor suite is arm-independent:
+`cells/extension.sh` derives `SPAWN_ARGS` from `BENCH_ROUTE_FILE` alone (:116),
+and `BENCH_ARM` reaches only `LAUNCH_ARM` (:139), never the spawn.
+
+### 8.2 `C/run-009`: armed, never drove, unscored — and NOT excludable
+
+`run-009` reached `ARMED: localized, route set to (81571.616, 50019.827),
+autonomous engaged`, and the harness's own gate printed `OK:
+/control/command/control_cmd is flowing`. It then did not move:
+
+| run | GT rows | max GT displacement from spawn |
+| --- | --- | --- |
+| `C/run-009` | 3245 | **0.000 m** |
+| `C/run-010` | 3172 | 231.242 m |
+| `C/run-011` | 3169 | 231.250 m |
+| `C/run-012` | 3171 | 231.209 m |
+| `C/run-013` | 3170 | 231.180 m |
+| `C/run-014` | 3172 | 231.183 m |
+
+The M5 gate therefore refused to score it — `QUALITY GATE FAIL: cannot resolve
+the closed-loop spatial window: no odometry sample inside the spatial window` —
+and, by design, **no `quality.json` was written** so its consumers fail loudly.
+
+The arm log names the proximate condition: `is_autonomous_mode_available=False`
+pre-engage, `change_to_autonomous` refused five times with "The target mode is
+not available. Please check the diagnostics.", then the documented
+`/autoware/engage` fallback took, and post-engage the gated control output was
+present but **commanded nothing** — `control_cmd_hz~7.67 n=23
+nonzero_longitudinal=0/23 frac=0.000 peak_abs_velocity=0.000` — at less than half
+the rate every other run of this collection reached. Post-engage arm
+observations, verbatim from each run's `arm.log`:
+
+| run | post-engage control command |
+| --- | --- |
+| `C/run-009` | `control_cmd_hz~7.67 n=23 nonzero_longitudinal=0/23 frac=0.000` |
+| `C/run-010` | `control_cmd_hz~19.67 n=68 nonzero_longitudinal=62/68 frac=0.912` |
+| `C/run-011` | `control_cmd_hz~19.67 n=65 nonzero_longitudinal=61/65 frac=0.938` |
+| `C/run-012` | `control_cmd_hz~19.67 n=68 nonzero_longitudinal=62/68 frac=0.912` |
+| `C/run-013` | `control_cmd_hz~19.67 n=66 nonzero_longitudinal=61/66 frac=0.924` |
+| `C/run-014` | `control_cmd_hz~19.67 n=67 nonzero_longitudinal=62/67 frac=0.925` |
+
+`run-009`'s preflight loadavg was **1.56**, the *lowest* of the five, so host
+load is not the explanation. **The root cause is not established here** — this
+section records what the run did, not why.
+
+**It is filed unexcluded and it is not counted.** No `exclusions.md` criterion
+1–10 matches, and none was stretched to fit:
+
+- Criterion 2 covers `gate:control_cmd-silent`, "the gated control command never
+  flowing after a successful engage". Here it *did* flow, at 7.67 Hz over 23
+  samples — all-zero longitudinal is not silence, and `run.sh` step 14 correctly
+  declined to fire the exclusion.
+- Criterion 1 does not apply: nothing crashed, `up` succeeded, teardown reported
+  a stopped tree.
+- There is deliberately **no quality-based criterion**. A run that fails to drive
+  is a *failing run*, not an excludable one.
+
+This is the "neither valid nor excludable" state registered as a carry-forward
+risk after Phase 0 (`B/run-025`, `B/run-026`), now observed once on cell C on a
+run with **no** diagnostic intervention in it. It is left exactly as the harness
+filed it — nothing hand-written, nothing deleted — and `C/run-014` was collected
+as the make-up run so the closed-loop arm reaches n = 5 valid.
+
+### 8.3 Batch aborts: `run.sh --runs N` has no inter-run pacing
+
+`scripts/duel.sh` owns the campaign's pacing floor and load top-up; `run.sh`'s
+own `--runs N` loop has neither, while `preflight.sh` hard-refuses at 1-min
+loadavg ≥ 8 (criterion 6). A closed-loop run leaves the host near loadavg 17, so
+the chained batch aborted twice at the next run's preflight:
+
+```
+PREFLIGHT FAIL: hostload:17.05 (1-min loadavg >= 8; exclusions.md criterion 6)
+PREFLIGHT FAIL: hostload:13.45 (1-min loadavg >= 8; exclusions.md criterion 6)
+```
+
+Both aborts landed at step 3, **before** the run directory exists, so each left
+no directory and no `hostload:` exclusion — the header contract ("an abort before
+step 4 leaves no run directory at all") held, verified against `ls
+benchmarks/results/C/`. Collection resumed with the remaining `--runs`, as the
+plan's resume rule directs. The static batch chained all five without aborting;
+a static run sheds load faster than a closed-loop one.
+
+### 8.4 Measurement condition disclosed: preflight loadavg spread
+
+Because `run.sh` does not pace, the runs inside a chained batch started at higher
+residual load than the runs that opened an invocation. Per-run preflight loadavg
+as filed in each manifest's `placement.loadavg`:
+
+| run | 004 | 005 | 006 | 007 | 008 | 009 | 010 | 011 | 012 | 013 | 014 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| loadavg | 1.47 | 4.43 | 3.13 | 4.68 | 5.38 | 1.56 | 5.31 | 1.63 | 1.67 | 5.24 | 1.84 |
+
+Every value is under `preflight.sh`'s registered gate of 8 and under `duel.sh`'s
+registered pacing target of 6, so all of them were collected inside the
+campaign's own registered host-load conditions. The spread is recorded here
+rather than corrected, because correcting it after the fact would mean choosing
+which runs to keep on a condition that is not a pre-registered exclusion.
+
+### 8.5 Integrity pass
+
+Task 5 Step 2 semantics, over every `benchmarks/results/C/run-*`: manifest
+validates through `analysis.manifest.load_manifest`, `quality.json` present,
+watchdog marker (`clock_stall.marker`) absent, exclusion reason (where present)
+verbatim from the `exclusions.md` vocabulary — plus, for the closed-loop arm,
+engage recorded in `arm.log` and `goal_closest_approach_m` non-null.
+
+All thirteen runs pass every check except `C/run-009`, which fails
+`quality_json_present` and `goal_closest_approach_m_non_null` for the reason in
+§8.2. Both filed exclusions read `warmup:nishi`, verbatim from criterion 5.
+
+**Valid, excluding warm-ups and exclusions: 5 static (`run-004…008`) and 5
+closed-loop (`run-010`, `run-011`, `run-012`, `run-013`, `run-014`).** Task 4's
+`C/run-002` remains a valid, unexcluded closed-loop run in the same pool but is
+bring-up class and is not counted toward this task's five.
