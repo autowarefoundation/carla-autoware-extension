@@ -1,0 +1,4 @@
+[INFO] [1785608781.074831905] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+terminate called after throwing an instance of 'rclcpp::exceptions::RCLError'
+  what():  Failed to get information by topic for publishers:rcl node's context is invalid, at ./src/rcl/node.c:428: error not set
+[ros2run]: Aborted

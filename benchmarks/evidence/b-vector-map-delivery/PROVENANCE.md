@@ -381,18 +381,19 @@ two stacks at once.
 
 ### Files kept here
 
-| file                                                              | what it is                                                                    |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `map_probe.py`                                                    | one late- or early-joining subscriber; prints receipt time and payload length |
-| `diag_probe.py`                                                   | point-in-time `/diagnostics` read of the map topic monitors                   |
-| `diag_watch.py`                                                   | the same, watched from t = 0, one line per state change                       |
-| `monitor_convergence.py`                                          | recomputes the filed-run rows of the table above from tracked launch logs     |
-| `probe.sh`                                                        | the in-run probe driver                                                       |
-| `planner_readiness.py`                                            | which readiness input the planner was still missing when a run ended          |
-| `smoke_helper.sh`, `smoke-republisher.log`                        | the applied fix exercised against two replica bring-ups, one of them failing  |
-| `replica.sh`, `replica2.sh`                                       | the replica bench, passes 1 and 2                                             |
-| `udp_big.xml`                                                     | probe-only 16 MiB-socket-buffer variant of `observer/config/udp_only.xml`     |
-| `probe-inrun.log`, `replica-bench.log`, `replica-bench-pass2.log` | raw captures                                                                  |
+| file                                                              | what it is                                                                               |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `map_probe.py`                                                    | one late- or early-joining subscriber; prints receipt time and payload length            |
+| `diag_probe.py`                                                   | point-in-time `/diagnostics` read of the map topic monitors                              |
+| `diag_watch.py`                                                   | the same, watched from t = 0, one line per state change                                  |
+| `monitor_convergence.py`                                          | recomputes the filed-run rows of the table above from tracked launch logs                |
+| `probe.sh`                                                        | the in-run probe driver                                                                  |
+| `planner_readiness.py`                                            | which readiness input the planner was still missing when a run ended                     |
+| `smoke_helper.sh`, `smoke-republisher.log`                        | the applied fix exercised against two replica bring-ups, one of them failing             |
+| `cyclone_probe.sh`, `cyclone-probe-driver.log`                    | the cyclonedds bounding probe (`B/run-033`): exact command, transport in force, preamble |
+| `replica.sh`, `replica2.sh`                                       | the replica bench, passes 1 and 2                                                        |
+| `udp_big.xml`                                                     | probe-only 16 MiB-socket-buffer variant of `observer/config/udp_only.xml`                |
+| `probe-inrun.log`, `replica-bench.log`, `replica-bench-pass2.log` | raw captures                                                                             |
 
 These are retained evidence, not maintained code: they are the exact scripts
 that produced the figures above (`benchmarks/evidence/**` is excluded from
@@ -530,3 +531,17 @@ one bring-up in three. It does not fix delivery.
 
 **Not recommended:** changing the DDS profile. The 16 MiB variant has no
 evidence behind it (above), and the file is hashed into every filed B manifest.
+
+## Outcome: bounded to the Fast-DDS transport, and cell B closed-loop rescoped
+
+`B/run-033` — one deliberate, non-duel cyclonedds deviation run — **armed on the
+first attempt**, drove to within **0.103 m** of the goal and passed its quality
+gate (`gate_pass: true`, `reasons: []`), with `waiting for map` × 0 and
+`waiting for route` × 0. On the same host, image digest, bundle, fork build and
+launch line, changing only the middleware took cell B from 0-for-14 to armed.
+
+The full finding, the attribution boundary (n = 1, uncontrolled Fast-DDS
+version/kernel/loopback, and Task 9's warning that the cyclone cell is not
+measurement-grade), the rescope, and the list of what was tried and did not work
+are in `benchmarks/results/PROVENANCE.md` §7.11. Read that before quoting any of
+this.

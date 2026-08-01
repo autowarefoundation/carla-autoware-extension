@@ -1,0 +1,37 @@
+=== PREAMBLE at 1785608560 ===
+ 11:22:40 up 1 day,  2:16,  3 users,  load average: 1.40, 9.60, 8.57
+NVIDIA GeForce RTX 5090, 1099 MiB, 5 %
+governor: powersave
+unreal/carla processes:
+  none
+=== HYGIENE ===
+=== EXACT COMMAND ===
+BENCH_TIER4_TRANSPORT_DEVIATION="task5 cyclonedds bounding probe: is the latched-delivery defect Fast-DDS-specific?" \
+  bash benchmarks/run.sh B --arm closed-loop --rmw rmw_cyclonedds_cpp --dds-profile none
+run.sh exit=0
+stop: 52 of pid 120's tree still up; SIGINT
+stop: pid 120 tree gone
+autoware launch + concat relay stopped (2 pid file(s) checked, 54 process(es) in the recorded trees, 0 survivor(s); container now: 3 running, 3 defunct)
+teardown: SIGTERM tier4 autoware_demo.py (pid 1329749)
+teardown: SIGTERM carla (pid 1329138)
+teardown: saved tier4-autoware.log
+teardown: saved tier4-concat-relay.log
+teardown: done
+
+12. finalize_rtf: fill resources.csv's rtf column from clock.csv
+      $ python3 -m benchmarks.sampler.finalize_rtf --resources /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033/resources.csv --clock /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033/clock.csv
+
+13. M5 gate: write quality.json (pose_error, goal, NDT rate, G1 ladder)
+      $ python3 -m benchmarks.scripts.write_quality --run-dir /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033
+/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033/quality.json: gate_pass=True branch=absolute ndt_rate_ratio=1.000 pose_err_max_m=0.138
+
+14. exclusions: clock stall, short unpaced window, silent control gate
+      $ if /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033/clock_stall.marker exists: write_manifest --exclude 'stall:clock'
+      none
+
+15. smoke: the results tree renders through the real analysis path
+      $ python3 -c 'benchmarks.report.summarize_run(/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033); render_cell(/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B)'
+      OK (/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033/report.md)
+
+run 1/1 complete: /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/B/run-033
+=== CYCLONE PROBE DONE at 1785608798 ===

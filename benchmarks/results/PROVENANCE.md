@@ -1476,3 +1476,161 @@ it ran while the host was still shedding `run-032`'s teardown (1-min loadavg
 / 1 skipped** on an idle host (loadavg 0.18). The launcher's own comment already
 warns that the poll cap is "a FLOOR, not a ceiling -- load stretches it
 further"; this is that, observed from the test side.
+
+## 7.11 FINDING: latched-topic delivery to `behavior_path_planner`, bounded to the Fast-DDS transport — and cell B's closed-loop rescope
+
+This is a first-class campaign finding, not a footnote. Full evidence, probe
+scripts and raw captures: `benchmarks/evidence/b-vector-map-delivery/`.
+
+### The defect, characterised
+
+**Latched (`TRANSIENT_LOCAL`) messages, published once, are received promptly by
+`topic_state_monitor_*` and NOT by `behavior_path_planner`. The two behave as
+INDEPENDENT DRAWS, not as proxies for one another.** Measured on two topics, in
+runs where the planner's own readiness log names what it was missing:
+
+| topic | monitor receipt | planner receipt |
+| --- | --- | --- |
+| `/map/vector_map` | +0.05 s … +23.2 s, or **never** (2 of 6 bring-ups) | **never**, in `run-008` and `run-028` |
+| `/planning/mission_planning/route` | **+≤3.7 s** (`run-032`) | **≥55.8 s late** (`run-032`) |
+
+The divergence is visible in single runs, in both directions:
+
+- `run-028`: monitor OK at +23.2 s while the planner was still `waiting for map`
+  at +95 s, to teardown.
+- `run-032`: monitor had the route at +≤3.7 s (`:1339` last not-OK block,
+  `:1390` first block without it) while the planner logged its **first**
+  `waiting for route` at `:1468` — 3.1 s *after* the monitor already had it —
+  and its **last** at `:2430`, ≥55.8 s after `mission_planner` produced the
+  route at `:1317`. Engage went out at 1785606593.756; the post-engage window
+  closed at 1785606642.660 with `control_cmd_hz~0.00 n=0`.
+- `run-031`: the monitor received **none** of three re-publications while
+  `lanelet2_map_visualization` (`:1123`, `:2149`, `:3147`) and
+  `vector_map_tf_generator` (`:1128`, `:2155`, `:3152`) received every one —
+  inter-process, from a different process than the publisher.
+
+Blocker breakdown across every cell-B run that reached the arm and failed it
+(the six `gate:arm-failed` runs; the other seven of the 13 closed-loop attempts
+are 6 `crash:cell-launch` + 1 `crash:collect_gt` and never reached the arm):
+**map 2** (`run-008`, `run-028`), **route 3** (`run-009/010/011`),
+**operation_mode 1** (`run-012`).
+
+The map half was **reproduced standalone** — same image digest, bundle and
+launch line, no CARLA and no harness at all (`replica-bench.log`): consecutive
+runs of one script two minutes apart gave "never in 113 s" and "0.97 s".
+
+### The bounding probe: `B/run-033`, cyclonedds — IT ARMED
+
+One deliberate, non-duel deviation run (owner ruling). **Exact command:**
+
+```text
+BENCH_TIER4_TRANSPORT_DEVIATION="task5 cyclonedds bounding probe: is the latched-delivery defect Fast-DDS-specific?" \
+  bash benchmarks/run.sh B --arm closed-loop --rmw rmw_cyclonedds_cpp --dds-profile none
+```
+
+**Transport actually in force:** the Autoware container ran
+`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` with **no `CYCLONEDDS_URI` and no
+profile mounted at all**. `observer/config/udp_only.xml` is a **Fast-DDS**
+profile: it was **not mounted, not read, and consumed by nothing** in this run.
+`--dds-profile none` rather than the harness's cyclone default
+(`docker/cyclonedds.xml`) because that profile pins interfaces to `lo`, under
+which Task 9's matrix **row 10** measured the fork invisible to this image (no
+list, no echo, no rate). **Row 11** — cyclone, no profile — is the only
+non-Fast-DDS cell in which the fork is readable, and it works by binding the
+host's routable NIC.
+
+**This is a DEVIATION from cell B's registered transport and is not a cell-B run
+in the normal sense.** Its `manifest.json` says so on its face —
+`transport.rmw = rmw_cyclonedds_cpp`, `dds_profile_sha256 = ""` — which does not
+match `cells.yaml`'s registration. `duel_admissible: false`. The launcher prints
+a `DEVIATION` banner naming the reason; that banner goes to the runner's
+terminal, not into the run directory (the same gap §7.6 recorded), so the
+manifest's transport block is what a later reader must key on.
+
+**Result — cell B armed for the first time in 14 closed-loop attempts, and
+scored a clean pass:**
+
+| | fastrtps `udp_only` (`run-032`) | **cyclonedds (`run-033`)** |
+| --- | --- | --- |
+| planner `waiting for map` | 0 | **0** |
+| planner `waiting for route` | **10**, last ≥55.8 s late | **0** |
+| planner blocked on, at end | route | **only `scenario_topic` ×5, last −161 s (bring-up)** |
+| AD API `change_to_autonomous` | refused, fell back | **SUCCEEDED** (fallback still ran) |
+| post-engage | `control_cmd_hz~0.00 n=0` | **`~5.00 n=15`, nonzero 11/15, ego 0.153 m/s** |
+| arm verdict | ARM FAIL | **ARMED** |
+| `control_cmd` rows recorded | — | **2935** |
+| final diag not-OK set | `control_command`, `objects`, `pointcloud`, `pointcloud_map`, `trajectory`, `trajectory_follower`, `transform` | **`objects`, `pointcloud` only** (perception, off by design) |
+| `quality.json` | not reached | **`gate_pass: true`, `reasons: []`** |
+| `pose_err_max_m` | — | 0.138 |
+| `goal_closest_approach_m` | — | **0.103** |
+
+So on the same host, same image digest, same map bundle, same fork build, same
+launch line and the same harness commit, **changing only the middleware takes
+cell B from 0-for-14 to armed, driven to the goal within 0.103 m, and passing
+its quality gate.**
+
+### The attribution boundary — read this before quoting the finding
+
+The defect is a property of **the as-shipped tier4 transport configuration on
+this host**, and the cyclonedds probe bounds it to the Fast-DDS side of that
+configuration. It is **NOT established as an intrinsic property of the
+tier4-native approach**, and this record must not be read as though it were:
+
+- **n = 1** on the cyclonedds side. One arming run is not a rate, exactly as two
+  failing bring-ups were not one.
+- **Fast-DDS version, kernel, and loopback behaviour are uncontrolled.** The
+  Autoware image ships Fast-DDS 2.6.11 and the fork builds against 2.11.2; no
+  other version pair was tried.
+- **The cyclonedds cell is itself not measurement-grade.** Task 9's README says
+  in terms not to use rows 6/11 for measurement, because they bind the host's
+  routable NIC and Cyclone's graph is flaky for bare-DDS publishers. `run-033`
+  is a bounding probe, **not** a proposal to re-register cell B's transport, and
+  nothing in it licenses swapping the middleware for collection.
+- The probe shows the defect **does not occur** under a different middleware on
+  this host. It does not show *why*, and it does not show that Fast-DDS is at
+  fault rather than the interaction between the fork's SHM-only locators, the
+  `udp_only.xml` workaround they force, and this host's loopback.
+
+**One observation that touches a standing ruling, recorded and NOT acted on.**
+`run-033`'s `ndt_rate_ratio` is **1.000**, against 0.257–0.989 across every
+filed Fast-DDS B run (0.303 on `run-030`). Cell B's failing M5 rate gate is the
+**registered branch-(c) confound**, and this task neither reopens nor amends
+that ruling — but a reader deciding branch (c)'s future should know that the
+confound is absent on the one bring-up that changed only the middleware. n = 1.
+
+### The consequence — rescope
+
+**Cell B's closed-loop arm is not collectable under its registered transport, so
+the A-vs-B closed-loop equivalence verdict is NOT COMPUTABLE.** What is
+unaffected:
+
+- the **static-arm** verdict, whose pool (`run-013`…`run-027`, `run-029`,
+  `run-030`) is complete and untouched — the delivery workaround is closed-loop
+  only, pinned by a test that asserts the static bring-up reaches no container
+  command at all;
+- **cell C**, which supplies closed-loop confirmatory data on the extension path.
+
+### What was tried and did not work
+
+- **The per-topic re-publish** (`injector/republish_vector_map.py`, commit
+  `a3ba158`, made advisory in `2dbec06`). It works for the map — `run-032` and
+  `run-033` both logged `waiting for map` × 0 — but it **does not scale**: the
+  route is published *after* the planner starts by construction, so it can never
+  use the late-joiner path the map fix relies on, and `operation_mode` would need
+  a third. Its value on a bring-up that genuinely needed it is **UNTESTED**:
+  `run-032` and `run-033` both had `pre_republish_delivered: true`, so it had
+  nothing to repair, and `run-031` — the one bring-up that needed it — is the one
+  where it did not take within three attempts.
+- **The fatal form of that gate.** It aborted `run-031` on an oracle its own log
+  refuted, converting a possibly-armable run into `crash:cell-launch`. Made
+  advisory; the refuted oracle is kept in the record with what refuted it.
+- **`verified_relog` fast-path artifact:** it reads `false` on `run-032`/`run-033`
+  despite delivery, because the re-log check re-reads the launch log immediately
+  after the monitor's wait returns — 7 ms after publication. The two oracles are
+  **not comparable when the monitor verifies instantly**. Left unchanged rather
+  than fixed mid-validation.
+- **Still NOT ESTABLISHED:** whether `run-032`'s planner finally received the
+  route at ~1785606630 or merely stopped cycling; the route topic's delivery was
+  never probed live (a live `ros2 topic info -v` returned `Unknown topic`, the
+  known CLI discovery limitation under this transport, **not** evidence of
+  absence).
