@@ -1,0 +1,123 @@
+################ SMOKE ITERATION 1 [t=1785604471.435626376]
+--- publish marker ---
+[component_container_mt-15] [INFO] [1785604481.212335911] [map.lanelet2_map_loader]: Succeeded to load lanelet2_map. Map is published.
+--- settle 40s, then run the REAL helper exactly as the launcher calls it ---
+{"attempts": [{"attempt": 1, "monitor": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "1785604484.26 [s]", "level": 0, "status": "OK"}}, "verified": true, "verify_wait_s": 0.005}], "capture_wait_s": 6.009, "captured": true, "data_bytes": 1305281, "exit_code": 0, "matching_settled": true, "monitor_final": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "1785604484.26 [s]", "level": 0, "status": "OK"}}, "pre_republish_delivered": true, "pre_republish_monitor": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "1785604484.26 [s]", "level": 0, "status": "OK"}}, "subscriber_count": 17, "topic": "/map/vector_map", "verified": true}
+--- helper exit=0 ---
+--- report ---
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "1785604484.26 [s]",
+          "level": 0,
+          "status": "OK"
+        }
+      },
+      "verified": true,
+      "verify_wait_s": 0.005
+    }
+  ],
+  "capture_wait_s": 6.009,
+  "captured": true,
+  "data_bytes": 1305281,
+  "exit_code": 0,
+  "matching_settled": true,
+  "monitor_final": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "1785604484.26 [s]",
+      "level": 0,
+      "status": "OK"
+    }
+  },
+  "pre_republish_delivered": true,
+  "pre_republish_monitor": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "1785604484.26 [s]",
+      "level": 0,
+      "status": "OK"
+    }
+  },
+  "subscriber_count": 17,
+  "topic": "/map/vector_map",
+  "verified": true
+}--- publishers on the topic after the re-publish ---
+Type: autoware_map_msgs/msg/LaneletMapBin
+Publisher count: 0
+Subscription count: 4
+################ SMOKE ITERATION 2 [t=1785604549.572836629]
+--- publish marker ---
+[component_container_mt-15] [INFO] [1785604558.454680762] [map.lanelet2_map_loader]: Succeeded to load lanelet2_map. Map is published.
+--- settle 40s, then run the REAL helper exactly as the launcher calls it ---
+{"attempts": [{"attempt": 1, "monitor": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "0.00 [s]", "level": 2, "status": "NotReceived"}}, "verified": false, "verify_wait_s": 60.013}, {"attempt": 2, "monitor": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "0.00 [s]", "level": 2, "status": "NotReceived"}}, "verified": false, "verify_wait_s": 60.015}, {"attempt": 3, "monitor": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "1785604731.79 [s]", "level": 0, "status": "OK"}}, "verified": true, "verify_wait_s": 0.303}], "capture_wait_s": 6.003, "captured": true, "data_bytes": 1305281, "exit_code": 0, "matching_settled": true, "monitor_final": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "1785604731.79 [s]", "level": 0, "status": "OK"}}, "pre_republish_delivered": false, "pre_republish_monitor": {"topic_state_monitor_vector_map: map_topic_status": {"last_message_time": "0.00 [s]", "level": 2, "status": "NotReceived"}}, "subscriber_count": 17, "topic": "/map/vector_map", "verified": true}
+--- helper exit=0 ---
+--- report ---
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "0.00 [s]",
+          "level": 2,
+          "status": "NotReceived"
+        }
+      },
+      "verified": false,
+      "verify_wait_s": 60.013
+    },
+    {
+      "attempt": 2,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "0.00 [s]",
+          "level": 2,
+          "status": "NotReceived"
+        }
+      },
+      "verified": false,
+      "verify_wait_s": 60.015
+    },
+    {
+      "attempt": 3,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "1785604731.79 [s]",
+          "level": 0,
+          "status": "OK"
+        }
+      },
+      "verified": true,
+      "verify_wait_s": 0.303
+    }
+  ],
+  "capture_wait_s": 6.003,
+  "captured": true,
+  "data_bytes": 1305281,
+  "exit_code": 0,
+  "matching_settled": true,
+  "monitor_final": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "1785604731.79 [s]",
+      "level": 0,
+      "status": "OK"
+    }
+  },
+  "pre_republish_delivered": false,
+  "pre_republish_monitor": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "0.00 [s]",
+      "level": 2,
+      "status": "NotReceived"
+    }
+  },
+  "subscriber_count": 17,
+  "topic": "/map/vector_map",
+  "verified": true
+}--- publishers on the topic after the re-publish ---
+Type: autoware_map_msgs/msg/LaneletMapBin
+Publisher count: 1
+Subscription count: 4
+=== smoke done at t=1785604744.082704898 ===

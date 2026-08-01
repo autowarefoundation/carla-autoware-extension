@@ -261,19 +261,82 @@ this task's static run could not observe the planner's map state directly. The
 map question was answered instead through subscribers that can be read at any
 time.
 
+### 6. The planner's own report, across all six arm failures — the NOT TESTED gap, closed from filed data
+
+**AMENDMENT (2026-08-01, owner ruling to apply the fix).** The gap the section
+below originally left open — "`behavior_path_planner`'s own receipt of the map
+was never observed directly" — turns out to be closable **with no new run**,
+and the answer changes the picture. `isDataReady()` emits one throttled
+`waiting for <input>` line for the FIRST input it finds missing, in a fixed
+order, so the planner's **last** such line names what it was still missing,
+from the node itself rather than from a proxy endpoint. `planner_readiness.py`,
+tracked here, recomputes this from any run's launch log.
+
+Run over every cell-B run that reached the arm and failed it — the six
+`gate:arm-failed` runs, which are 6 of the 13 closed-loop attempts (the other
+seven are 6 `crash:cell-launch` + 1 `crash:collect_gt` and never reached the
+arm):
+
+| run       | planner blocked on | its last readiness line | counts                                |
+| --------- | ------------------ | ----------------------- | ------------------------------------- |
+| `run-008` | **map**            | −2.2 s (teardown)       | scenario 6, route 3, **map 8**        |
+| `run-009` | route              | −49.4 s                 | scenario 3, route 4                   |
+| `run-010` | route              | −9.9 s                  | scenario 4, route 12                  |
+| `run-011` | route              | −2.0 s (teardown)       | scenario 11, route 4                  |
+| `run-012` | **operation_mode** | −5.6 s (teardown)       | scenario 4, route 4, operation_mode 7 |
+| `run-028` | **map**            | −2.2 s (teardown)       | scenario 3, route 2, **map 11**       |
+
+**This reconciles an arithmetic that did not work.** A ~1-in-3 delivery defect
+predicts roughly 4 of 6 arm attempts succeeding; all six failed, which under a
+single map-only cause has probability ≈ 0.14 %. The table says why: **the map is
+the blocker in 2 of the 6, not 6 of 6.**
+
+- **2 of 6 (`run-008`, `run-028`) blocked on the map**, to teardown — the
+  planner's own statement that its map pointer was null with scenario and route
+  both satisfied. That is this document's defect, confirmed **at the planner**
+  rather than inferred from `topic_state_monitor_vector_map`.
+- **3 of 6 (`run-009`, `run-010`, `run-011`) blocked on the ROUTE**, never
+  reaching the map check. `run-011` also failed the route service itself
+  (`set_route_points: no response (spin timed out)`, its `arm.log`).
+- **1 of 6 (`run-012`) got PAST the map** and blocked on `operation_mode`.
+
+So the planner does **not** fail on the map at a higher rate than the monitor
+does — it fails on _different inputs_ in different runs, and the map is one of
+at least three. All six end with `/planning/trajectory` not-OK and
+`Waiting for trajectory data` up to teardown, so no trajectory ever formed in
+any of them; they simply did not stall in the same place.
+
+**A pattern worth naming, and NOT ESTABLISHED as a shared cause.**
+`/map/vector_map`, `/planning/mission_planning/route` and
+`/system/operation_mode/state` are all latched (`TRANSIENT_LOCAL`) topics
+published once or rarely, and all three appear here as inputs an already-running
+subscriber did not get. §7.4's cell-E finding — the route published by
+`mission_planner` never reaching `behavior_path_planner` — is the same shape on
+a **different** transport (cyclonedds). That is suggestive of one defect class
+rather than three, and it is recorded as a **hypothesis with a named next
+probe** (repeat this task's delivery measurement against the route and
+`operation_mode` topics), not as a finding: nothing here measured either topic's
+delivery.
+
+**Consequence for the fix, stated before it was validated:** it addresses 2 of
+the 6 historical arm failures. It is necessary, and on this evidence it is not
+sufficient.
+
 ## What was NOT tested
 
 Stated explicitly, because this campaign has three times had a claim outrun its
 measurement:
 
-- **`behavior_path_planner`'s own receipt of the map was never observed
-  directly.** On the static arm it never reaches the check (above), and under
-  cell B's transport the ros2 CLI could not enumerate the node to introspect it.
-  The planner's failure in `run-028` is attributed to the mechanism above by two
-  steps of inference: its QoS is identical to the endpoint that _was_ measured
-  failing, and it is in the same already-running class. A direct measurement
-  needs a closed-loop run, which this diagnostic was not authorised to make.
-- **Whether any fix makes cell B arm.** Not tested; no fix was applied.
+- ~~**`behavior_path_planner`'s own receipt of the map was never observed
+  directly.**~~ **CLOSED by section 6 above**, from filed data: the planner's
+  own `waiting for map` line is its report that the map pointer is null, and it
+  names the map in 2 of the 6 arm failures. The original entry read: "On the
+  static arm it never reaches the check, and under cell B's transport the ros2
+  CLI could not enumerate the node to introspect it. The planner's failure in
+  `run-028` is attributed to the mechanism above by two steps of inference." The
+  inference was sound for `run-028` and `run-008`; what it missed is that four
+  other runs failed elsewhere entirely.
+- **Whether the fix makes cell B arm** — see the validation section below.
 - **Whether cyclonedds is immune.** n = 1. One clean bring-up is not a rate.
 - **The 16 MiB socket-buffer variant proves nothing about the fix.** It was run
   once (monitor OK at +0.11 s) and the stock configuration _also_ succeeded on
@@ -325,6 +388,8 @@ two stacks at once.
 | `diag_watch.py`                                                   | the same, watched from t = 0, one line per state change                       |
 | `monitor_convergence.py`                                          | recomputes the filed-run rows of the table above from tracked launch logs     |
 | `probe.sh`                                                        | the in-run probe driver                                                       |
+| `planner_readiness.py`                                            | which readiness input the planner was still missing when a run ended          |
+| `smoke_helper.sh`, `smoke-republisher.log`                        | the applied fix exercised against two replica bring-ups, one of them failing  |
 | `replica.sh`, `replica2.sh`                                       | the replica bench, passes 1 and 2                                             |
 | `udp_big.xml`                                                     | probe-only 16 MiB-socket-buffer variant of `observer/config/udp_only.xml`     |
 | `probe-inrun.log`, `replica-bench.log`, `replica-bench-pass2.log` | raw captures                                                                  |
@@ -333,12 +398,57 @@ These are retained evidence, not maintained code: they are the exact scripts
 that produced the figures above (`benchmarks/evidence/**` is excluded from
 `ruff` for this reason — see `.pre-commit-config.yaml`).
 
-## Proposed fix — DESCRIBED, NOT APPLIED
+## The fix — PROPOSED here, then APPLIED on the owner's ruling
 
-No harness file was modified. `benchmarks/cells/tier4_autoware.sh` was
-off-limits for this task and the decision is the operator's, because any change
-on the B path mid-campaign has to be weighed against B's already-filed static
-runs.
+**Status: APPLIED** (2026-08-01, owner ruling "apply the fix, validate with 3
+consecutive cell-B closed-loop runs"). It is a **harness-injected workaround for
+a measured transport defect** — not a gate adjustment, not a threshold change,
+and not a DDS profile edit. What landed:
+
+| piece                                           | where                                          |
+| ----------------------------------------------- | ---------------------------------------------- |
+| the re-publish + verify node                    | `benchmarks/injector/republish_vector_map.py`  |
+| the closed-loop-only call site                  | `benchmarks/cells/tier4_autoware.sh` section 5 |
+| behavioural pins (both arms, executed for real) | `tests/benchmarks/test_vector_map_gate.py`     |
+| the per-run record it files                     | `<run>/vector-map-delivery.json`               |
+
+`transport.dds_profile_sha256` is unchanged, so cell B's already-filed runs stay
+transport-comparable, and the static arm reaches no new step — pinned by a test
+that asserts the recorder file does not exist, i.e. that no container command
+ran at all, rather than that a harmless one did.
+
+### The fix, exercised on the FAILING path before any live run was spent on it
+
+`smoke_helper.sh` ran the real node against two consecutive replica bring-ups
+(same image, bundle, launch line and cell-B transport, no CARLA, no harness);
+raw capture in `smoke-republisher.log`. The second bring-up landed on the
+failing side of the defect, which is the case that matters:
+
+|                                | bring-up 1                              | bring-up 2                                                    |
+| ------------------------------ | --------------------------------------- | ------------------------------------------------------------- |
+| `pre_republish_delivered`      | **true** (monitor already had it, +3 s) | **false** — `NotReceived`, `last_message_time 0.00`, at +40 s |
+| captured retained sample       | 1 305 281 B in 6.0 s                    | 1 305 281 B in 6.0 s                                          |
+| matched subscribers at publish | 17, settled                             | 17, settled                                                   |
+| attempt 1                      | verified in 0.005 s                     | **NOT verified** after 60.013 s                               |
+| attempt 2                      | —                                       | **NOT verified** after 60.015 s                               |
+| attempt 3                      | —                                       | **verified in 0.303 s**                                       |
+| exit                           | 0                                       | 0                                                             |
+
+**So the re-publish does rescue a bring-up that had already failed** — bring-up 2
+went from `NotReceived` to `OK` and the gate passed. Two things in that column
+are worth stating rather than rounding away:
+
+- **The retry is load-bearing, not decoration.** Two publications reached
+  nothing; only the third took. `--attempts 3` was chosen before this ran, and
+  on this evidence a single-shot re-publish would have failed the gate.
+- **17 matched subscribers, and the first two publications still did not
+  arrive.** Matching is therefore _not_ sufficient for delivery here, which
+  sharpens the honest limit already recorded above: waiting for matching makes
+  the re-publish work most of the time, not always. The corresponding worst
+  case is a run that needs a 4th attempt, and that run fails the gate loudly by
+  design rather than proceeding to a silent unarmed teardown.
+
+The original proposal, kept verbatim because the applied form follows it:
 
 **Recommended minimal fix — a re-publish-and-verify bring-up step**, added to
 `cells/tier4_autoware.sh` after the Autoware launch and before the arm:

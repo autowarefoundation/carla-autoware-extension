@@ -29,6 +29,12 @@
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_MAP:?}" "${BENCH_RUN_DIR:?}"
+# BENCH_ARM is required rather than defaulted: section 5 below keys the
+# vector-map delivery gate off it, and an UNSET value would silently skip
+# that gate on a closed-loop run -- the exact silent-pass this campaign
+# spent thirteen unarmed attempts paying for. cells/tier4-native.sh already
+# requires it and forwards it, so this can only fire on a wiring mistake.
+: "${BENCH_ARM:?}"
 : "${BENCH_RPC_PORT:?}" "${BENCH_ROUTE_FILE:?}" "${BENCH_AUTOWARE_IMAGE:?}"
 : "${BENCH_AW_CONTAINER:?}" "${TIER4_DEMO_PID_FILE:?}"
 
@@ -703,5 +709,87 @@ $(cx "$AW_ENV
   (log saved to $BENCH_RUN_DIR/tier4-autoware.log)"
   sleep 5
 done
+
+# ---------------------------------------------------------------------------
+# 5. /map/vector_map re-publish + delivery gate -- CLOSED-LOOP ARM ONLY
+# ---------------------------------------------------------------------------
+# A HARNESS-INJECTED WORKAROUND FOR A MEASURED TRANSPORT DEFECT. It is not a
+# gate adjustment, not a threshold change, and it does not touch the DDS
+# profile: `transport.dds_profile_sha256` stays byte-identical in every
+# manifest, so this cell's already-filed runs remain transport-comparable.
+#
+# THE DEFECT, MEASURED (Task 4b, 2026-08-01; full evidence, every raw capture
+# and the refuted alternatives in benchmarks/evidence/b-vector-map-delivery/):
+# `/map/lanelet2_map_loader` publishes ONE 1 305 281-byte LaneletMapBin from
+# its constructor, RELIABLE / KEEP_LAST(1) / TRANSIENT_LOCAL, and every
+# subscriber in the stack -- behavior_path_planner included, read off the live
+# graph -- asks for exactly that QoS, so there is NO durability mismatch. A
+# late-joining subscriber with that QoS got the retained sample 9 times out of
+# 9 (0.028-2.643 s). What is unreliable is delivery to subscribers that ALREADY
+# EXIST when that single publication happens. On the in-stack
+# /system/topic_state_monitor_vector_map, same QoS, first receipt relative to
+# `Map is published.` over six Fast-DDS udp_only bring-ups was
+#
+#   +20.2s (run-028) | NEVER +98.2s (run-029) | +11.5s (run-030) |
+#   NEVER +113.35s (replica V1) | +0.97s (replica V1b) | +0.05s (replica p2)
+#
+# -- TWO OUTRIGHT FAILURES IN SIX, and REPRODUCED STANDALONE with the same
+# image, bundle and launch line, no CARLA and no harness at all (V1 vs V1b are
+# consecutive runs of one script two minutes apart). That localises it to the
+# rmw_fastrtps_cpp + observer/config/udp_only.xml transport this family alone
+# runs; A/C/E run rmw_cyclonedds_cpp, and a cyclonedds control delivered at
+# +0.24s (n=1, NOT a claim of immunity).
+#
+# WHY A RE-PUBLISH RATHER THAN A PROFILE CHANGE. The only path measured failing
+# is Fast-DDS's TRANSIENT_LOCAL historical delivery on match. Re-publishing
+# after the readers are matched turns the map into ordinary LIVE data -- the
+# path the rest of this stack uses successfully at 20 Hz. Editing udp_only.xml
+# was the obvious alternative and is REJECTED above; the 16 MiB socket-buffer
+# variant was tried once and proves nothing against a 2-in-6 failure.
+#
+# HONEST LIMIT, kept here because a reader acts on this file: the re-publish
+# creates a NEW writer, and an already-running reader must still match it --
+# the same ordering that fails for map_loader. What differs is that the helper
+# WAITS for its own subscriber matching to settle BEFORE publishing, so the
+# sample goes out as live data to already-matched readers. That is a reasoned
+# mitigation, NOT a demonstrated cure, which is why the verification is
+# mandatory and this step fails the bring-up when it does not take.
+#
+# AND WHAT THE VERIFICATION CANNOT SEE: it gates on topic_state_monitor, which
+# is the same CLASS as behavior_path_planner but is not the planner --
+# results/B/run-028 has the monitor recovering at +23.2s in a run where the
+# planner reported `waiting for map` for 53.3s more, to teardown. The planner's
+# own report only exists once a route is set, i.e. after this step.
+#
+# CLOSED-LOOP ONLY, and that is a SAFETY property rather than a preference:
+# cell B's fifteen filed static runs ARE the static verdict pool and branch (c)
+# forbids recollecting them, so the static bring-up must not acquire a step.
+# tests/benchmarks/test_vector_map_gate.py executes THIS block for real, with
+# both arms, and asserts the static one reaches no container command at all.
+#
+# /out is the run-directory bind-mount, so the pre-state snapshot and the
+# verification record become filed evidence instead of terminal output -- the
+# gap §7.6 recorded when a real observation had no filed artifact behind it.
+if [ "${BENCH_ARM:-}" = "closed-loop" ]; then
+  echo "closed-loop arm: re-publishing /map/vector_map, then gating on delivery"
+  cx "$AW_ENV
+    python3 /work/benchmarks/injector/republish_vector_map.py \
+      --settle-s 5 --capture-timeout-s 90 --match-timeout-s 60 \
+      --verify-timeout-s 60 --attempts 3 \
+      --report /out/vector-map-delivery.json" ||
+    fail_with_log "the /map/vector_map re-publish + delivery gate FAILED, so
+  behavior_path_planner would have blocked on 'waiting for map' and no
+  trajectory would ever have formed (results/B/run-008, run-028). The run's own
+  /out/vector-map-delivery.json names which half did not happen -- exit 3 the
+  capture, 4 the publisher matching, 5 the verification -- and
+  benchmarks/evidence/b-vector-map-delivery/ carries the measurement this step
+  works around. Exit 5 with a captured sample and a non-zero subscriber count
+  means the re-publish did NOT take, which is the workaround's known limit
+  (see above), not a new fault: recycle the whole stack on a quiet host.
+  Do NOT tune the timeouts -- the delivery either happens in the first second
+  or does not happen at all in 113 s."
+  echo "OK: /map/vector_map re-published and delivery verified"
+fi
+
 save_aw_log
 echo "OK: tier4 Autoware stack up on $BENCH_MAP and localizing"
