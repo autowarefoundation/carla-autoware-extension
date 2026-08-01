@@ -199,17 +199,21 @@ compose_exec '
   # copied from this file.
   #
   # Fixed by polling for the cmdline to hold STEADY for 2 continuous seconds
-  # (20 identical reads, 0.1s apart) inside a 5s overall bound, rewriting the
-  # sidecar each time a new steady value is reached rather than stopping at
-  # the first one: if a still-settling read gets mistaken for final and
-  # written, a later real change is still caught and the sidecar is
-  # corrected, as long as the true post-exec value itself goes steady with
-  # >= 2s left in the bound. Bounded so a stuck read cannot hang the launch;
-  # past the bound the sidecar keeps whatever it last wrote (or stays
-  # unwritten if nothing was ever steady long enough), which can be stale in
-  # theory but was not observed even at effectively ZERO added delay before
-  # this fix existed -- real exec latency here is orders of magnitude under
-  # the 2s threshold. Touches only /proc for the pid already recorded; the
+  # -- 21 identical reads (aw_stable starts at 0 and needs 20 MATCHES
+  # against the read before it, so the 21st read is the first that counts),
+  # 0.1s apart -- rewriting the sidecar each time a new steady value is
+  # reached rather than stopping at the first one: if a still-settling read
+  # gets mistaken for final and written, a later real change is still
+  # caught and the sidecar is corrected, as long as the true post-exec
+  # value itself goes steady with >= 2s left in the budget. Capped at 50
+  # polls so a stuck read cannot hang the launch; that cap is a FLOOR, not
+  # a ceiling -- the polls, forks and sleeps measured ~5.17s idle even with
+  # nothing to wait for, and load stretches it further, never shortens it.
+  # Past the cap the sidecar can be left holding a STALE pre-exec value,
+  # not merely absent (fix round 1, F6.2) -- in theory, but this was not
+  # observed even at effectively ZERO added delay before this fix existed
+  # -- real exec latency here is orders of magnitude under the 2s
+  # threshold. Touches only /proc for the pid already recorded; the
   # launched process itself is not touched (no ptrace/strace attach, which
   # would itself be a launch-timing change).
   aw_cmd="" aw_prev="" aw_stable=0 aw_tries=0
@@ -250,6 +254,34 @@ while [ "$elapsed" -lt "$READY_TIMEOUT_S" ]; do
       # does not exist until the runner spawns the LiDAR moments from now -- topic_tools relay
       # waits for the publisher and begins forwarding once it appears, so starting it here (ego
       # not yet up) is correct. Record its PID for --stop.
+      #
+      # SAME FORK/EXEC RACE AS THE AW_PIDFILE WRITE ABOVE (fix round 1, F3)
+      # -- this is `nohup ... &` too, so it gets the identical hold-STEADY-
+      # for-2s, capped-at-50-polls loop; see the AW_PIDFILE comment above
+      # for the full mechanism. Ends the same way that block does -- `done`
+      # with no trailing `|| true` -- because the trailing `echo "concat
+      # relay pid ..."` after it is what pins compose_exec's own exit
+      # status here, exactly as it already does for the AW_PIDFILE block
+      # above (confirmed unaffected by fix round 1, F1); do not remove that
+      # echo without adding `|| true` to the loop in its place.
+      #
+      # BLAST RADIUS, stated so this reads as scoped rather than alarming
+      # (fix round 1, F3): a surviving relay keeps publishing onto
+      # $RELAY_OUT, NDT's own input topic -- worse than an ordinary
+      # survivor. Under the BENCHMARK harness (cells/extension.sh:148 sets
+      # AW_COMPOSE="$COMPOSE") it is bounded ONCE: teardown.sh:357-359 takes
+      # `docker compose down --remove-orphans` regardless of whether this
+      # sidecar guard ever skips. Under the OPERATOR path (run_e2e.sh:254's
+      # `launch_autoware.sh --stop`) there is NO such backstop: nothing
+      # removes the compose container, and the NEXT launch overwrites this
+      # exact pidfile with the new relay's pid, so a survivor becomes
+      # referenced by no pid file at all and stop_launch_tree.sh can never
+      # reach it again -- CLAUDE.md's recorded "DDS ghost nodes accumulate"
+      # gotcha, mechanised. That is the real exposure this fix closes; the
+      # duel itself (which runs under the harness, not run_e2e.sh directly)
+      # is not at cross-run risk from it. What a survivor does to a single
+      # run's own NDT rate is not established from code and needs a live
+      # stack, correctly left open by this round.
       echo "OK: starting single-LiDAR concat relay $RELAY_IN -> $RELAY_OUT"
       # $RELAY_* / $! expand IN THE CONTAINER (passed via -e); single quotes intentional.
       # shellcheck disable=SC2016
@@ -257,7 +289,22 @@ while [ "$elapsed" -lt "$READY_TIMEOUT_S" ]; do
         source /opt/ros/humble/setup.bash 2>/dev/null; export ROS_DOMAIN_ID=0
         nohup ros2 run topic_tools relay "$RELAY_IN" "$RELAY_OUT" >/tmp/e2e-concat-relay.log 2>&1 &
         echo $! >"$RELAY_PIDFILE"
-        tr "\0" " " </proc/$(cat "$RELAY_PIDFILE")/cmdline >"$RELAY_PIDFILE.cmd" 2>/dev/null || true
+        rel_cmd="" rel_prev="" rel_stable=0 rel_tries=0
+        while [ "$rel_tries" -lt 50 ]; do
+          rel_cmd="$(tr "\0" " " \
+            </proc/$(cat "$RELAY_PIDFILE")/cmdline 2>/dev/null)"
+          if [ -n "$rel_cmd" ] && [ "$rel_cmd" = "$rel_prev" ]; then
+            rel_stable=$((rel_stable + 1))
+            if [ "$rel_stable" -ge 20 ]; then
+              printf "%s" "$rel_cmd" >"$RELAY_PIDFILE.cmd" 2>/dev/null
+            fi
+          else
+            rel_stable=0
+          fi
+          rel_prev="$rel_cmd"
+          rel_tries=$((rel_tries + 1))
+          sleep 0.1
+        done
         echo "concat relay pid $(cat "$RELAY_PIDFILE")"'
       exit 0
     fi
