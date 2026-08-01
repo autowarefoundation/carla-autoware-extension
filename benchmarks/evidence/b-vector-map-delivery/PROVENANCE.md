@@ -448,6 +448,43 @@ are worth stating rather than rounding away:
   case is a run that needs a 4th attempt, and that run fails the gate loudly by
   design rather than proceeding to a silent unarmed teardown.
 
+### Validation: STOPPED at run 1, and what run 1 proved instead
+
+`B/run-031` (closed-loop, non-duel) **failed the gate**, exit 5 — captured
+1 305 281 B in 6.0 s, 16 matched subscribers, matching settled,
+`pre_republish_delivered false`, then three re-publish attempts each waiting
+60 s with `topic_state_monitor_vector_map` staying `NotReceived`. Excluded
+`crash:cell-launch` (criterion 1). Per the owner's ruling the fix was not
+iterated on and no fourth run was taken.
+
+**The run's log says the re-publish was delivered anyway** — just not to the
+endpoint the gate reads. `run-031/tier4-autoware.log`:
+
+| line              | t                     | event                                                                                                   |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `:347`            | 1785605088.396        | `Succeeded to load lanelet2_map. Map is published.`                                                     |
+| `:398` / `:419`   | 1785605088.641 / .790 | `lanelet2_map_visualization: Map is loaded` / `vector_map_tf_generator: broadcast static tf` (original) |
+| `:1123` / `:1128` | 1785605117.126 / .143 | both again — **attempt 1 delivered**                                                                    |
+| `:2149` / `:2155` | 1785605177.156 / .176 | both again — **attempt 2 delivered**                                                                    |
+| `:3147` / `:3152` | 1785605237.147 / .159 | both again — **attempt 3 delivered**                                                                    |
+| `:545`…`:4343`    | —                     | `topic_rate_check/vector_map ERROR` in **71 of 72** diag blocks                                         |
+
+The helper runs in its own process, so each of those three is an inter-process
+delivery that landed. **The publication mechanism works; the verification
+endpoint is what never received.** Combined with `run-028` (monitor OK at
++23.2 s, planner still blocked at +95 s), the two runs bracket the same point
+from opposite sides: `topic_state_monitor_vector_map` is an independent draw,
+not a proxy for the planner.
+
+**So the gate as built is over-strict**, and it aborts the bring-up _before_ a
+route exists, which is the only condition under which the planner reports on the
+map — `run-031`'s planner logged `waiting for scenario_topic` 38 times and
+nothing else. **NOT TESTED: whether `run-031` would have armed.**
+
+Across the two failing bring-ups observed so far the re-publish flipped the
+monitor **1 of 2** (replica smoke: rescued on attempt 3; `run-031`: not rescued
+in 3). n = 2 is not a rate.
+
 The original proposal, kept verbatim because the applied form follows it:
 
 **Recommended minimal fix — a re-publish-and-verify bring-up step**, added to

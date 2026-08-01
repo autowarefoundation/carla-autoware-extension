@@ -1231,3 +1231,98 @@ proposed minimal fix — a re-publish-and-verify bring-up step that leaves
 `dds_profile_sha256` byte-identical, with a zero-perturbation gate-only
 alternative — is written up in the evidence document for the operator's
 decision.
+
+### 7.8 The delivery workaround applied, and validation STOPPED at run 1 (2026-08-01)
+
+Owner ruling after §7.7: apply the fix, validate with three consecutive cell-B
+closed-loop runs, then proceed to the duel. **Validation stopped at run 1, which
+failed.** Per the ruling the fix was not iterated on, no fourth run was taken,
+and no criterion was adjusted.
+
+**What landed** (commit `a3ba158`, `fix(bench)`): `injector/republish_vector_map.py`
+(capture the retained sample -> wait for its own publisher to match a settled
+reader set -> re-publish -> gate on delivery), called from
+`cells/tier4_autoware.sh` section 5 **on the closed-loop arm only**, pinned by
+`tests/benchmarks/test_vector_map_gate.py` (which executes the real gating block
+for both arms and asserts the static one reaches no container command at all),
+recording `<run>/vector-map-delivery.json`. It is a **harness-injected
+workaround for a measured transport defect** — not a gate adjustment, not a
+threshold change. `transport.dds_profile_sha256` is byte-identical, so cell B's
+filed runs stay transport-comparable, and the static path acquires no step.
+
+**§7.7's 6-of-6 arithmetic, reconciled from filed data — there IS a second
+blocker.** `behavior_path_planner` reports the FIRST input it finds missing, so
+its last readiness line names the blocker
+(`evidence/b-vector-map-delivery/planner_readiness.py`). Across the six
+`gate:arm-failed` runs — the only 6 of 13 closed-loop attempts that reached the
+arm:
+
+| run | planner blocked on |
+| --- | --- |
+| `run-008` | **map**, to teardown |
+| `run-009` | route |
+| `run-010` | route |
+| `run-011` | route (its `arm.log` also has `set_route_points: no response`) |
+| `run-012` | **operation_mode** — it got PAST the map |
+| `run-028` | **map**, to teardown |
+
+**The map is the blocker in 2 of 6, not 6 of 6.** Three fail on the route and
+one on `operation_mode`. All six end with `/planning/trajectory` not-OK and no
+trajectory ever formed; they simply stall in different places. So this fix was
+known to be **necessary and not sufficient before validation started**.
+
+**Validation run 1: `B/run-031`, FAILED, excluded `crash:cell-launch`** (a
+registered criterion-1 exclusion: `cells/<approach>.sh up` itself failed). The
+gate refused the bring-up with exit 5 — published, never verified:
+
+```text
+capture_wait_s 6.0   captured true   data_bytes 1305281
+subscriber_count 16  matching_settled true   pre_republish_delivered false
+attempt 1 verified false (60.048 s) | 2 false (60.022 s) | 3 false (60.027 s)
+```
+
+**And the run carries a finding that matters more than its verdict: the
+re-published map WAS delivered — to some in-stack subscribers and not to the
+one the gate verifies.** From `run-031/tier4-autoware.log`:
+
+| line | t | event |
+| --- | --- | --- |
+| `:347` | 1785605088.396 | `lanelet2_map_loader: Succeeded to load lanelet2_map. Map is published.` |
+| `:398` / `:419` | 1785605088.641 / .790 | `lanelet2_map_visualization: Map is loaded` / `vector_map_tf_generator: broadcast static tf` — the ORIGINAL publication |
+| `:1123` / `:1128` | 1785605117.126 / .143 | both again — **re-publish attempt 1 DELIVERED** |
+| `:2149` / `:2155` | 1785605177.156 / .176 | both again — **attempt 2 DELIVERED** |
+| `:3147` / `:3152` | 1785605237.147 / .159 | both again — **attempt 3 DELIVERED** |
+| `:545` … `:4343` | — | `/autoware/map/topic_rate_check/vector_map ERROR` in **71 of 72** diag blocks |
+
+The helper is a separate process, so those three deliveries are inter-process
+and they landed every time. `topic_state_monitor_vector_map`, in a different
+container, received **none** of them (`NotReceived`, `last_message_time 0.00`,
+throughout ~220 s). So the re-publish mechanism works as a publication; what
+failed is the endpoint the gate reads.
+
+**Consequence, stated plainly: the gate as built is over-strict, and this run's
+verdict is NOT evidence that the planner lacked the map.** §7.7 already recorded
+that the monitor and the planner fail independently (`run-028`: monitor OK at
++23.2 s, planner still blocked at +95 s); `run-031` is the mirror image, with
+the monitor failing while two other in-stack subscribers succeeded. Because the
+gate aborts the bring-up **before** any route is set, `behavior_path_planner`
+never evaluated its map check at all — its 38 readiness lines all read
+`waiting for scenario_topic`. **NOT TESTED: whether `run-031` would have armed.**
+
+Ruled out for this run: no bring-up crash caused it. `component_container_mt-34`
+(`mission_planner_container`) and `mt-41` do abort, at 1785605307 (`:4476`,
+`:4514`) — that is **7 s after the gate had already failed** and is the teardown
+SIGINT storm, not the cause. `pose_instability_detector` died early (`:873-875`,
+`std::runtime_error`), which is pre-existing and unrelated to map delivery.
+
+The fix had been exercised on the failing path before this run
+(`evidence/b-vector-map-delivery/smoke-republisher.log`): a replica bring-up
+that was `NotReceived` at +40 s was rescued, but only on **attempt 3**. So across
+the two failing bring-ups now observed, the re-publish flipped the monitor
+**1 of 2**. That is the workaround's measured reliability, on n = 2, and it is
+not a rate.
+
+Everything §7.7 disclosed still stands: the `/map/pointcloud_map` observation is
+unchanged and the branch-(c) NDT ruling is not reopened; the replica bench's
+`use_sim_time:=false` deviation and the trailing-whitespace trim on the tracked
+captures remain as disclosed.
