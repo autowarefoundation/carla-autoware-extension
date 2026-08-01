@@ -1095,6 +1095,14 @@ hypothesis for whoever picks the question up.
 
 ## FINAL RULING: branch (c) — no recovery; the hypothesis is wrong
 
+> **THE CAUSAL WORDING IN THIS SECTION IS OVERSTATED AND IS CORRECTED IN §12.**
+> Kept unedited, per the convention that a claim stays in the record with the
+> diagnostic that corrected it. P4 selects (c) by **failing to demonstrate
+> recovery**, not by demonstrating that killing the relay stops NDT — this run's
+> own filed `observer.csv` shows NDT **resuming** with `concatenate_data` as sole
+> publisher, 4.2 s after the probe's window closed. **The branch ruling and the
+> 9.0 Hz threshold are unaffected**; only the causal claim is.
+
 Note precisely what is and is not concluded. The **differential is real** —
 cell B genuinely has two emitters where cell A has one, which fix round 1's
 correction restored to the record. What the intervention test shows is that the
@@ -1118,3 +1126,99 @@ reclassification of B `run-013…022` under `exclusions.md` criterion 3; no
 fire — the A static pair-halves keep `duel_admissible: true`). No gate was
 tuned, no threshold moved, no run excluded. Cell B's M5 failures stand and the
 verdict carries them.
+
+---
+
+## 12. Fix round 3 — the post-kill zeros are UNATTRIBUTED, and NDT resumed on `run-027`
+
+Added 2026-08-01 after review. No live run was taken for this section: every
+figure comes from the **already-filed** `observer.csv` of runs this task filed.
+It corrects a claim §11.5 made, and it is the **same class of error as the
+count-vs-emission correction in §10** — claiming more than the measurement
+carries — which is why it is registered with the same prominence rather than
+folded in as a wording tweak.
+
+### 12.1 The measured fact: NDT resumed after the kill, relay gone
+
+`benchmarks/results/B/run-027/observer.csv`:
+
+| arrival (UTC)    | event                                                                       |
+| ---------------- | --------------------------------------------------------------------------- |
+| 14:03:39.632     | last NDT pose **before** the kill                                           |
+| ≈ 14:03:54       | relay kill completes (SIGTERM → SIGKILL escalation)                         |
+| **14:04:23.537** | **NDT pose — ≈ 29 s AFTER the kill, `concatenate_data` the sole publisher** |
+| **14:04:24.292** | **NDT pose**                                                                |
+| 14:04:24.537     | observer stream ends (teardown)                                             |
+
+```bash
+python3 - <<'PY'
+import csv, datetime
+rows = [r for r in csv.DictReader(open("benchmarks/results/B/run-027/observer.csv"))
+        if "pose_estimator/pose_with_covariance" in r["topic"]]
+for r in rows[-4:]:
+    ns = int(r["arrival_system_ns"])
+    print(datetime.datetime.fromtimestamp(ns / 1e9, datetime.UTC).strftime("%H:%M:%S.%f")[:-3])
+PY
+```
+
+**Why §11.3 reported 0.000 Hz anyway.** `probe_relay_kill_transition.py`'s
+observation window closed at **14:04:19Z** — **4.2 s before** the first
+resumption sample. The zero it printed is a **window artifact, not an absence**.
+§11.3's caveat 2 already disclosed that NDT stopped _before_ the kill on this
+run; the resumption is the other half of the same picture and was missed until
+the filed observer stream was read directly.
+
+### 12.2 The structural gap: no run pairs a pre-kill baseline with a post-kill measurement
+
+Each run checked against its own filed `observer.csv`:
+
+| run         | pre-kill NDT baseline                                   | post-kill NDT measurement       | why it cannot carry a causal claim                                                                                                              |
+| ----------- | ------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `B/run-024` | **yes** — 331 poses, clean 4.830 Hz                     | **none**                        | observer stream ends 13:46:46.346, **7 s before** the kill at 13:46:53                                                                          |
+| `B/run-025` | none of its own                                         | zero over ≈ 50 s                | kill instant never timestamped; last NDT pose 13:51:41.320 is ≈ 3.7 s **before** the post-kill census, so NDT silence already preceded the kill |
+| `B/run-026` | none of its own                                         | zero over ≈ 43 s                | relay confirmed **still alive** 3 s after `kill`; NDT already down; run M5-**unscoreable**                                                      |
+| `B/run-027` | 1.600 Hz, then 0 from t≈10 s — **12 s before** the kill | 2 poses, then the window closed | NDT stopped **before** the kill and **resumed** after it                                                                                        |
+
+**No run pairs a live pre-kill NDT baseline with a post-kill measurement on the
+same stack.** The post-kill zeros are therefore **unattributed**: nothing in the
+filed data establishes that the kill caused them, and `run-027` positively shows
+NDT returning without the relay.
+
+### 12.3 The ruling is unaffected — (c) stands by elimination
+
+Restated correctly: **P4 selects (c) by failing to demonstrate recovery**, not by
+showing that killing the relay stops NDT.
+
+- **(a) Recovery** requires **≥ 9.0 Hz sustained** post-kill. The best post-kill
+  reading on any of the four runs is `run-027`'s 2 poses over ≈ 30 s ≈ **0.07
+  Hz** — two orders of magnitude short. No plausible correction for any confound
+  above reaches 9.0 Hz.
+- **(b)** is genuinely unmet: P3 passed; concat's output is a well-formed,
+  non-empty `base_link` cloud stream.
+- **(c)** is what remains.
+
+The branch table, the 9.0 Hz threshold and the fix mechanism (**NONE**) are
+untouched, and no re-run is required. What changes is only the claim P4 is said
+to support.
+
+Two claims from §11.5 that are **withdrawn**, explicitly: that the relay is
+"load-bearing", and that removing the second publisher "stops NDT entirely".
+Neither is established by these four runs.
+
+### 12.4 The P3-vs-P4 tension, confronted
+
+§11.4 left "a usable 7.6 Hz cloud stream drives NDT to exactly zero" resting
+entirely on the untested duplicate-stamp hypothesis, eight lines below the
+disclosure that NDT had stopped on its own — without putting the two together.
+
+**The `run-027` resumption substantially dissolves the tension.** NDT did **not**
+sit at zero on `concatenate_data`'s output; it returned ≈ 29 s after the relay
+died. What the filed data shows is a slow, intermittent, unreliable NDT on cell
+B on **both** sides of the kill — consistent with this cell's already-registered
+instability (`B/run-025` and `B/run-026` M5-**unscoreable**, `run-027` scoring
+`ndt_rate_ratio=0.039`, and §4.1 of `results/PROVENANCE.md` recording a filed
+range of 0.257–0.989).
+
+So the duplicate-stamp mechanism has **less** to explain than §11.4 implied. It
+remains **NOT TESTED** — a hypothesis for whoever picks it up, never a finding,
+wherever it appears in this record.
