@@ -1164,3 +1164,70 @@ This compounds the 0-byte `gt.log` noted in §7.5: the python-bridge family file
 precisely the fact this guard exists to prove. Making the guard's result reach
 the run directory is the obvious follow-up; it is **not** done here (fix round 1
 is documentation only).
+
+### 7.7 Cell B's `waiting for map` blocker, settled live (2026-08-01)
+
+The diagnostic §7.1 handed off ran, as one non-duel cell-B `--arm static` run —
+**`B/run-030`**, `excluded: false`, `duel_admissible: false`. Full evidence,
+every command and every raw capture: **`benchmarks/evidence/b-vector-map-delivery/`**.
+Preamble held: `ROS_DOMAIN_ID=0`, preflight loadavg 0.36, governor `powersave`
+(recorded, unchanged), no pre-existing `UnrealEditor`/`CarlaUE4`, engine BuildId
+`4210e602-78ec-46e1-8f2f-03fadbe036a3`. The run's `quality.json` fails only on
+`ndt_rate_ratio = 0.303` — the **registered** M5 confound (§4.1, §6),
+`pose_err_max_m = 0.054`.
+
+**Answer to §7.1's two open questions: `map_loader` DOES publish the lanelet
+map, and its `transient_local` sample DOES reach a subscriber that joins late.**
+Measured on `B/run-030`'s own live stack: a late-joining
+`RELIABLE / KEEP_LAST(1) / TRANSIENT_LOCAL` subscriber received **1 305 281
+bytes in 0.173 s**, and `ros2 topic echo --once` returned the message. Across
+this task's nine probe subscriptions the sample arrived **9 times out of 9**.
+
+**So the failing link moves one step, and the map hypothesis survives in a
+narrower form.** `/map/lanelet2_map_loader` publishes exactly one retained
+sample from its constructor; **every** subscriber in the stack —
+`behavior_path_planner` included, read off the live graph — requests the
+publisher's exact QoS, so **there is no durability mismatch**. What is
+unreliable is delivery to the subscribers that are **already running when that
+one publication happens**. On the in-stack `topic_state_monitor_vector_map`,
+same QoS, over six Fast-DDS `udp_only` bring-ups:
+
+| bring-up | first receipt, relative to `Map is published.` |
+| --- | --- |
+| `B/run-028` | +20.2 … +23.2 s |
+| `B/run-029` | **NEVER** (not-OK at +98.2 s, last block of the run) |
+| `B/run-030` | +11.5 … +14.6 s |
+| replica V1 | **NEVER** (`NotReceived` at +113.35 s) |
+| replica V1b | +0.97 s |
+| replica pass 2 | +0.05 s |
+
+**Two of six never delivered it.** V1 and V1b are consecutive runs of the same
+script, two minutes apart. The failure was **reproduced standalone** — same
+image, same bundle, same launch line, no CARLA, no harness — which localises it
+to the `rmw_fastrtps_cpp` + `observer/config/udp_only.xml` transport that **cell
+B alone runs**; cells A/C/E run `rmw_cyclonedds_cpp`. A cyclonedds control
+bring-up delivered at +0.24 s, but n = 1 and that is **not** a claim that
+cyclonedds is immune.
+
+**Why B's static runs file cleanly and every closed-loop attempt dies.**
+`behavior_path_planner` checks its inputs in a fixed order, visible in the filed
+logs: scenario → route → map. A static arm sets no route, so no scenario is
+selected, so the planner stops at the *first* check and never evaluates the map
+(`waiting for scenario_topic` × 16-17, `waiting for map` × 0, on `run-029` and
+`run-030` alike). `run-028` is the only run that got far enough to report the
+map missing.
+
+**NOT TESTED, stated so it is not read as more than it is:**
+`behavior_path_planner`'s own receipt of the map was never observed directly —
+the static arm cannot reach its map check, and under cell B's transport the ros2
+CLI could not enumerate the node. Its failure in `run-028` is attributed to the
+mechanism above by inference from an endpoint with identical QoS in the same
+already-running class. Also not tested: whether any fix makes cell B arm, and
+whether a 16 MiB socket-buffer profile helps (one passing run against a 2-in-6
+failure has no power).
+
+**Nothing was fixed.** `benchmarks/cells/tier4_autoware.sh` is untouched; the
+proposed minimal fix — a re-publish-and-verify bring-up step that leaves
+`dds_profile_sha256` byte-identical, with a zero-perturbation gate-only
+alternative — is written up in the evidence document for the operator's
+decision.
