@@ -386,7 +386,7 @@ cx "test -f $MAP_DIR/lanelet2_map.osm" >/dev/null 2>&1 ||
 # launch_vehicle_interface:=false because the fork IS the vehicle interface.
 #
 # The line after echo $! writes the SAME sidecar
-# scripts/e2e/launch_autoware.sh:185-227 writes for the extension family --
+# scripts/e2e/launch_autoware.sh:185-229 writes for the extension family --
 # stop_launch_tree.sh's pid-reuse guard compares a recorded pid's /proc
 # cmdline against this file (Task 17c, D2). Best-effort and never allowed to
 # fail the launch: an absent sidecar only means that guard is skipped, never
