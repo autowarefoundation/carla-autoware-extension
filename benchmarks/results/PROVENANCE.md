@@ -1716,9 +1716,34 @@ autonomous engaged`, and the harness's own gate printed `OK:
 | `C/run-013` | 3170 | 231.180 m |
 | `C/run-014` | 3172 | 231.183 m |
 
-The M5 gate therefore refused to score it — `QUALITY GATE FAIL: cannot resolve
-the closed-loop spatial window: no odometry sample inside the spatial window` —
-and, by design, **no `quality.json` was written** so its consumers fail loudly.
+#### The M5 gate's refusal, verbatim
+
+The refusal text is **not** in the run directory: `write_quality` declines to
+write anything rather than write a partial `quality.json`, and the reason goes to
+the harness's stdout, which is not a filed artifact. It is transcribed here so
+the record — not a temp file — carries it. Steps 13–14 of `run-009`, verbatim:
+
+```
+13. M5 gate: write quality.json (pose_error, goal, NDT rate, G1 ladder)
+      $ python3 -m benchmarks.scripts.write_quality --run-dir .../benchmarks/results/C/run-009
+QUALITY GATE FAIL: cannot resolve the closed-loop spatial window: no odometry sample inside the spatial window
+WARN: the M5 gate did not score .../benchmarks/results/C/run-009 (named reason above);
+      no quality.json is written, so its consumers fail loudly
+
+14. exclusions: clock stall, short unpaced window, silent control gate
+      $ if .../benchmarks/results/C/run-009/clock_stall.marker exists: write_manifest --exclude 'stall:clock'
+      none
+```
+
+(Absolute paths abbreviated to `...`; nothing else altered.) Step 14 printing
+`none` is the harness declining, on its own, to exclude the run — see the
+adjudication below.
+
+**FOR ANY CONSUMER OF THIS CELL:** `C/run-009` is the one run in cell C that is
+`excluded: false` **and** has **no `quality.json`**. Iterating cell C's unexcluded
+runs and assuming a `quality.json` exists **will fault on it**. That is the
+harness's intended fail-loud behaviour and must be special-cased explicitly —
+filtering on `excluded` is not sufficient for this cell.
 
 The arm log names the proximate condition: `is_autonomous_mode_available=False`
 pre-engage, `change_to_autonomous` refused five times with "The target mode is
@@ -1741,6 +1766,37 @@ observations, verbatim from each run's `arm.log`:
 `run-009`'s preflight loadavg was **1.56**, the *lowest* of the five, so host
 load is not the explanation. **The root cause is not established here** — this
 section records what the run did, not why.
+
+#### Root-cause LEAD — the NDT pose rate collapsed. NOT TESTED.
+
+`C/run-009/report.md:33` records `/localization/pose_estimator/pose_with_covariance`
+at **8.35 Hz, p95 298.60 ms**, against 19.96 Hz / ≈53 ms on every other cell C
+run ever filed:
+
+| run | NDT pose Hz | p95 ms |
+| --- | --- | --- |
+| `C/run-009` | **8.35** | **298.60** |
+| `C/run-002` | 19.96 | 52.98 |
+| `C/run-010` | 19.96 | 53.01 |
+| `C/run-011` | 19.96 | 53.22 |
+| `C/run-012` | 19.96 | 53.26 |
+| `C/run-013` | 19.96 | 53.63 |
+| `C/run-014` | 19.96 | 52.63 |
+
+The collapse is **specific to the pose estimator**. In the same run,
+`/sensing/lidar/top/pointcloud_raw_ex` ran 19.95 Hz, `/localization/kinematic_state`
+19.95 Hz and `/control/command/control_cmd` 19.95 Hz — the sensor input and the
+downstream consumers were all nominal, so this is not a general stack slowdown.
+
+**Why it is a lead:** a localization output arriving at 8 Hz with a 299 ms p95
+is a plausible source of the `is_autonomous_mode_available=False` that made
+`change_to_autonomous` refuse five times, and of a control path that then
+commanded zero. **It is NOT asserted as the cause.** Nothing here tests the link:
+no diagnostic was run against the run's localization stack, the direction of
+causation is unestablished (a degraded NDT rate could equally be a *symptom* of
+the same upstream condition), and `run-009` has no `quality.json`, so its
+`ndt_rate_ratio` — the registered M5 rate input — was never computed. Recorded so
+a later reader starts here instead of at the arm log.
 
 **It is filed unexcluded and it is not counted.** No `exclusions.md` criterion
 1–10 matches, and none was stretched to fit:
@@ -1803,11 +1859,48 @@ watchdog marker (`clock_stall.marker`) absent, exclusion reason (where present)
 verbatim from the `exclusions.md` vocabulary — plus, for the closed-loop arm,
 engage recorded in `arm.log` and `goal_closest_approach_m` non-null.
 
-All thirteen runs pass every check except `C/run-009`, which fails
-`quality_json_present` and `goal_closest_approach_m_non_null` for the reason in
-§8.2. Both filed exclusions read `warmup:nishi`, verbatim from criterion 5.
+All fourteen of cell C's runs (`run-001`…`run-014`) pass every check except
+`C/run-009`, which fails `quality_json_present` and
+`goal_closest_approach_m_non_null` for the reason in §8.2. Both filed exclusions
+read `warmup:nishi`, verbatim from criterion 5.
 
 **Valid, excluding warm-ups and exclusions: 5 static (`run-004…008`) and 5
 closed-loop (`run-010`, `run-011`, `run-012`, `run-013`, `run-014`).** Task 4's
 `C/run-002` remains a valid, unexcluded closed-loop run in the same pool but is
 bring-up class and is not counted toward this task's five.
+
+### 8.6 Two artifact discrepancies inside cell C, both disclosed as sound
+
+Neither matches an exclusion criterion and neither was acted on. They are
+recorded so a later reader does not have to re-derive them.
+
+**`C/run-005`'s `gt.log` is 0 bytes.** All thirteen sibling runs carry the same
+251-byte line (`gt base_link anchor: +0.00000000 m (body frame) for approach
+'extension' carla client=0.10.0 server=0.10.0 counting 1 LiDAR…`), which is the
+GT collector's own anchor and publisher-count cross-check. On `run-005` the file
+is empty. **The run itself is sound**: `gt.csv` is complete at 1383 rows,
+`publisher_counts.json` is well-formed, and the run scored (`gate_pass: true`).
+So the loss is confined to the collector's log line, not to its data, and no
+criterion 1–10 applies — in particular not criterion 9 (`crash:collect_gt`), which
+covers a recorder that "exits during start-up, before it has recorded anything
+usable", and this collector recorded 1383 usable rows. Note this is the same
+*class* of gap already recorded as a Task 4 deferred minor for the E-family
+(0-byte `gt.log` with a populated `gt.csv`), now seen once on the extension
+family.
+
+**`harness_git_sha` is not uniform across cell C, and that is immaterial.**
+`C/run-001` and `C/run-002` (Task 4) record `1f439144d696ba031ec46ecfc08f6795efb8ef76`;
+`C/run-003`…`C/run-014` (Task 7) record `4f7aa68dc61870e6267040cefb79778f9607f1aa`.
+Every one is clean — no `-dirty` suffix — so no run straddles a mixed tree.
+Verified rather than assumed: outside `benchmarks/results/` and
+`benchmarks/evidence/`, the entire `1f43914..4f7aa68` range changes exactly three
+files — `benchmarks/cells/tier4_autoware.sh`, `benchmarks/injector/republish_vector_map.py`
+and `tests/benchmarks/test_vector_map_gate.py` — all of which are the cells B/D
+vector-map work. Cell C's own path is **byte-identical** across the two shas:
+`benchmarks/cells/extension.sh` (C's launcher), `benchmarks/run.sh`,
+`benchmarks/scripts/preflight.sh`, `benchmarks/scripts/write_quality.py`,
+`benchmarks/scripts/teardown.sh`, `benchmarks/config/cells.yaml`,
+`benchmarks/config/exclusions.md`, `benchmarks/config/margins.yaml` and all of
+`benchmarks/analysis/`. `run.sh` dispatches `cells/$approach.sh`, and cell C is
+`approach: extension`, so `tier4_autoware.sh` is never on its path. The two shas
+are therefore the same measurement code for this cell.
