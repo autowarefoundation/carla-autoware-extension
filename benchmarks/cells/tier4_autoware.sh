@@ -771,24 +771,21 @@ done
 # verification record become filed evidence instead of terminal output -- the
 # gap §7.6 recorded when a real observation had no filed artifact behind it.
 if [ "${BENCH_ARM:-}" = "closed-loop" ]; then
-  echo "closed-loop arm: re-publishing /map/vector_map, then gating on delivery"
-  cx "$AW_ENV
+  echo "closed-loop arm: re-publishing /map/vector_map (ADVISORY -- never aborts)"
+  if cx "$AW_ENV
     python3 /work/benchmarks/injector/republish_vector_map.py \
       --settle-s 5 --capture-timeout-s 90 --match-timeout-s 60 \
-      --verify-timeout-s 60 --attempts 3 \
-      --report /out/vector-map-delivery.json" ||
-    fail_with_log "the /map/vector_map re-publish + delivery gate FAILED, so
-  behavior_path_planner would have blocked on 'waiting for map' and no
-  trajectory would ever have formed (results/B/run-008, run-028). The run's own
-  /out/vector-map-delivery.json names which half did not happen -- exit 3 the
-  capture, 4 the publisher matching, 5 the verification -- and
-  benchmarks/evidence/b-vector-map-delivery/ carries the measurement this step
-  works around. Exit 5 with a captured sample and a non-zero subscriber count
-  means the re-publish did NOT take, which is the workaround's known limit
-  (see above), not a new fault: recycle the whole stack on a quiet host.
-  Do NOT tune the timeouts -- the delivery either happens in the first second
-  or does not happen at all in 113 s."
-  echo "OK: /map/vector_map re-published and delivery verified"
+      --verify-timeout-s 60 --attempts 3 --advisory \
+      --launch-log $AW_LOG --report /out/vector-map-delivery.json"; then
+    echo "OK: /map/vector_map re-publish step completed -- see" \
+      "$BENCH_RUN_DIR/vector-map-delivery.json for which oracle verified"
+  else
+    echo "ADVISORY: the /map/vector_map re-publish step did not complete" \
+      "cleanly. NOT fatal, by design (see section 5's header): the campaign's" \
+      "pass criteria are the arm and control_cmd, and this is an added" \
+      "precondition. Continuing to the arm, where the planner reports on the" \
+      "map itself via 'waiting for map' once a route exists."
+  fi
 fi
 
 save_aw_log

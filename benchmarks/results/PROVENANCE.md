@@ -1326,3 +1326,65 @@ Everything §7.7 disclosed still stands: the `/map/pointcloud_map` observation i
 unchanged and the branch-(c) NDT ruling is not reopened; the replica bench's
 `use_sim_time:=false` deviation and the trailing-whitespace trim on the tracked
 captures remain as disclosed.
+
+### 7.9 The gate made advisory, and the map/operation_mode unification REFUTED (2026-08-01)
+
+Owner ruling after §7.8: make the delivery step advisory, add the delivery
+oracle that actually worked, then re-validate. Recorded plainly, because this
+campaign is strict about it: **making the step advisory changes no measured
+quantity.** It removes an *added* precondition that is not one of the
+pre-registered pass criteria (the arm succeeding and `control_cmd` flowing). If
+the map genuinely never reaches the planner, the run still fails — at the arm,
+where `behavior_path_planner` reports on the map itself, instead of at a step
+that fires before a route exists.
+
+**Probe: does `topic_rate_check/vector_map` propagate into operation-mode
+availability?** Measured off the last `logging_diag_graph` block of each run.
+
+- **Propagation: CONFIRMED.** `/autoware/map/topic_rate_check/vector_map` is
+  printed as a direct child of `/autoware/map`, which is a direct child of
+  `/autoware/modes/autonomous`. In `run-031` it sits ERROR in **71 of 72**
+  blocks and `/autoware/modes/autonomous` is ERROR throughout. So a
+  non-received vector map does withhold autonomous-mode availability.
+- **The unification is REFUTED.** `run-012` is the only run whose planner
+  blocked on `operation_mode`, and in its final block
+  `topic_rate_check/vector_map` is **ABSENT** — i.e. delivered (it went OK at
+  +17.7 s) — while `/autoware/modes/autonomous` is ERROR anyway, via
+  `topic_rate_check/pointcloud_map`. `run-028` is the same shape. So the map
+  and `operation_mode` are **not one defect with two faces**, and the three
+  blockers stay three.
+- **And a stronger fact that makes the propagation moot in practice:**
+  `/autoware/modes/autonomous` is ERROR in the final block of **every** cell-B
+  run examined (`run-012`, `run-028`, `run-030`, `run-031`), driven by
+  `pointcloud_map` and `transform` regardless of the vector map. Autonomous-mode
+  availability is therefore withheld on 100% of cell-B bring-ups whatever the
+  map does — which is exactly why the harness's documented fallback to the
+  legacy `/autoware/engage` path exists. vector_map's contribution to
+  availability is real, and never decisive.
+- **NOT TESTED, and it is the named next probe:**
+  `behavior_path_planner: waiting for operation_mode` is the planner not
+  receiving the `/system/operation_mode/state` **topic**, which is a different
+  mechanism from the diag-graph availability computation. Nothing here measured
+  that topic's delivery. It is another latched `TRANSIENT_LOCAL` topic, so the
+  one-defect-class hypothesis of §7.7 survives even though this specific
+  unification does not.
+
+**What changed in the harness** (commit `a6c6935`): the step keeps the capture,
+the re-publish and `--attempts 3` (both the replica smoke and `run-031` show the
+retry is load-bearing), keeps recording `topic_state_monitor_vector_map`, and
+**no longer aborts**. It gains the second oracle `run-031` established — a fresh
+`lanelet2_map_visualization: Map is loaded` / `vector_map_tf_generator:
+broadcast static tf` line after a publication, which is inter-process receipt
+because the re-publisher is a different process. Both oracles are recorded per
+attempt (`verified`, `verified_relog`), and the refuted one stays in the record:
+`topic_state_monitor_vector_map` is a poor oracle — `run-028` has it OK while
+the planner stayed blocked 53.3 s longer, `run-031` has it silent while two
+other subscribers received every re-publication. Neither oracle observes the
+planner; only its own `waiting for map` line does, and only once a route exists.
+
+**Housekeeping, noted rather than changed:** `run-031` is filed
+`crash:cell-launch` (criterion 1, "the cell failing to come up at all", which
+its `cells/tier4-native.sh up` failure satisfies). `gate:<detail>` under
+criterion 2 arguably fits a readiness-check abort better, but criterion 2 says
+**pre-registered** readiness check and that step was new, so criterion 1 is the
+safer reading. Left as filed; the ambiguity is recorded here.

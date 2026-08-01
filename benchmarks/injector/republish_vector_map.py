@@ -52,15 +52,44 @@ match. That is a reasoned mitigation, NOT a demonstrated cure, which is why the
 verification step below is mandatory rather than advisory and why the whole
 step fails the bring-up loudly when it does not take.
 
-WHAT THE VERIFICATION CAN AND CANNOT SEE. It gates on
-`/system/topic_state_monitor_vector_map`, which is an in-stack subscriber of
-the same class as `behavior_path_planner` but is NOT the planner.
-`benchmarks/results/B/run-028` proves the two fail independently: the monitor
-recovered at +23.2 s in a run where the planner reported `waiting for map` for
-53.3 s more, up to teardown. So an OK here means the whole-stack failure did
-not occur; it does not prove the planner has the map. The planner's own report
-is its `waiting for map` line, which only exists once a route has been set --
-i.e. on the closed-loop arm, after this script has run.
+ADVISORY, NOT FATAL -- and WHY IT CHANGED. This step was originally a gate
+that aborted the bring-up. `benchmarks/results/B/run-031` refuted that design
+in the most direct way available: the gate failed (3 attempts, 60 s each, its
+verification endpoint never OK) and the SAME run's launch log showed the
+re-published map being delivered on ALL THREE attempts to
+`lanelet2_map_visualization` (`:1123`, `:2149`, `:3147`) and
+`vector_map_tf_generator` (`:1128`, `:2155`, `:3152`) -- both in a different
+process from this script, so each is a real inter-process receipt. The gate
+therefore converted a possibly-armable run into a `crash:cell-launch`, and
+because it fires BEFORE any route exists it left the actual question untested:
+`behavior_path_planner` logged `waiting for scenario_topic` 38 times and never
+evaluated its map check at all.
+
+The campaign's pass criteria are the arm succeeding and `control_cmd` flowing.
+This step is an ADDED precondition and is not one of them, so it records its
+outcome and continues. If the map genuinely never reaches the planner the run
+still fails -- at the arm, loudly, and more informatively than here.
+
+TWO ORACLES, AND WHICH ONE PROVED REPRESENTATIVE. Both are recorded on every
+attempt; the refuted one stays in the record with what refuted it.
+
+  * `topic_state_monitor_vector_map` (`verified`) -- the ORIGINAL oracle, now
+    known to be a poor one. It is an in-stack subscriber of the same class as
+    `behavior_path_planner`, but the two are INDEPENDENT DRAWS, not proxies:
+    `run-028` has the monitor OK at +23.2 s while the planner stayed blocked
+    for 53.3 s more, and `run-031` is the mirror image -- monitor NotReceived
+    for ~220 s while two other in-stack subscribers received every
+    re-publication. Kept because it is the series whose six-bring-up history
+    is quoted above, and dropping it would break that comparability.
+  * the RE-LOG delta (`verified_relog`) -- the oracle `run-031` established.
+    `lanelet2_map_visualization` and `vector_map_tf_generator` each print a
+    line every time they receive a vector map, in a different process from
+    this one, so a FRESH line after a publication is direct evidence that the
+    publication crossed a process boundary. This is the better delivery
+    oracle. It is still not the planner: neither oracle observes
+    `behavior_path_planner`, whose only self-report is its `waiting for map`
+    line, which exists only once a route has been set -- i.e. after this
+    script, during the arm.
 
 SCOPE: the closed-loop arm ONLY. `cells/tier4_autoware.sh` gates the call, and
 cell B's static bring-up must not acquire a step -- B's static runs are already
@@ -104,6 +133,44 @@ MONITOR_SUBSTRING = "topic_state_monitor_vector_map"
 # normalising is not defensive coding -- it is the difference between the gate
 # working and the gate always failing.
 DIAG_OK = 0
+
+# The two nodes that re-log on every vector-map receipt. Both live in the map
+# container -- a DIFFERENT process from this script -- so a fresh line after a
+# publication is inter-process receipt, which is exactly what run-031 showed
+# happening three times while `topic_state_monitor_vector_map` reported none of
+# it. Substrings rather than full lines because the log carries a launch-prefix
+# and a timestamp that vary per run.
+RELOG_MARKERS = (
+    "lanelet2_map_visualization]: Map is loaded",
+    "vector_map_tf_generator]: broadcast static tf",
+)
+
+
+def count_relog_markers(text: str) -> dict:
+    """Occurrences of each re-log marker in a launch log."""
+    return {marker: text.count(marker) for marker in RELOG_MARKERS}
+
+
+def relog_shows_delivery(before: dict, after: dict) -> bool:
+    """True when at least one re-log marker gained a line.
+
+    The DELTA, never the absolute count: `map_loader`'s own original
+    publication always logs one of each, so an absolute test would report
+    delivery on every run including the ones that delivered nothing. Empty
+    dicts -- an unreadable launch log -- yield False, because in this campaign
+    an absence of evidence never reads as a pass.
+    """
+    return any(after.get(m, 0) > before.get(m, 0) for m in RELOG_MARKERS)
+
+
+def read_launch_log(path: str) -> str:
+    """Best-effort read; an unreadable log costs the second oracle, never the
+    run (this step is advisory, and it must not become a new way to fail)."""
+    try:
+        with open(path, errors="ignore") as fh:
+            return fh.read()
+    except OSError:
+        return ""
 
 
 def diag_level(level) -> int:
@@ -177,8 +244,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--verify-timeout-s",
         type=float,
         default=60.0,
-        help="budget for the in-stack monitor to report the map delivered "
-        "after a re-publish",
+        help="budget for the in-stack monitor to report the map delivered after a re-publish",
     )
     p.add_argument(
         "--attempts",
@@ -188,6 +254,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--report; a retry is not a second mechanism, it is the same live "
         "publication tried again against a defect measured to be "
         "nondeterministic at ~2-in-6.",
+    )
+    p.add_argument(
+        "--launch-log",
+        default="/tmp/tier4-autoware.log",
+        help="container-side launch log, read for the re-log delivery oracle",
+    )
+    p.add_argument(
+        "--advisory",
+        action="store_true",
+        help="always exit 0. The real verdict still lands in --report as "
+        "verdict_code; this only decides whether it reaches the caller as an "
+        "exit status. cells/tier4_autoware.sh passes it: see this file's "
+        "header for why run-031 made the fatal form untenable.",
     )
     p.add_argument("--report", default="", help="write a JSON report here")
     return p
@@ -242,10 +321,7 @@ class VectorMapRepublisher(Node):
         return self._captured
 
     def monitor_delivered(self) -> bool:
-        return any(
-            status_reports_delivered(level, values)
-            for level, values in self._diag.values()
-        )
+        return any(status_reports_delivered(level, values) for level, values in self._diag.values())
 
     def monitor_snapshot(self) -> dict:
         return {
@@ -308,36 +384,63 @@ def main(argv: list[str] | None = None) -> int:
     if not matched:
         return _finish(node, report, EXIT_NO_MATCH, args)
 
-    # 4. Publish, then verify. Retry bounded by --attempts.
+    # 4. Publish, then verify against BOTH oracles. Retry bounded by
+    #    --attempts, which run-031 and the replica smoke both showed is
+    #    load-bearing rather than decoration: on the replica the monitor only
+    #    flipped on the THIRD publication.
+    #
+    #    The loop still exits early only on the MONITOR, deliberately. The
+    #    re-log oracle is the better evidence of delivery, but stopping on it
+    #    would shorten the monitor series whose six-bring-up history this
+    #    file's header quotes, and that series is the campaign's only record of
+    #    the underlying defect's rate. Advisory mode makes the extra attempts
+    #    cost bring-up seconds, never a run.
+    any_relog = False
     for attempt in range(1, args.attempts + 1):
+        relog_before = count_relog_markers(read_launch_log(args.launch_log))
         published_at = time.time()
         node.publish_captured()
         ok = node.spin_until(node.monitor_delivered, args.verify_timeout_s)
+        relog_after = count_relog_markers(read_launch_log(args.launch_log))
+        relogged = relog_shows_delivery(relog_before, relog_after)
+        any_relog = any_relog or relogged
         report["attempts"].append(
             {
                 "attempt": attempt,
                 "verified": bool(ok),
+                "verified_relog": bool(relogged),
                 "verify_wait_s": round(time.time() - published_at, 3),
                 "monitor": node.monitor_snapshot(),
+                "relog_before": relog_before,
+                "relog_after": relog_after,
             }
         )
         if ok:
             report["verified"] = True
+            report["verified_relog"] = any_relog
             return _finish(node, report, EXIT_OK, args)
     report["verified"] = False
+    report["verified_relog"] = any_relog
     return _finish(node, report, EXIT_NOT_VERIFIED, args)
 
 
 def _finish(node, report: dict, code: int, args) -> int:
+    # `verdict_code` is the real outcome and is ALWAYS recorded. `exit_code`
+    # stays the key it has been since run-031 so the two reports compare
+    # directly; under --advisory the process still exits 0, because this step
+    # is an added precondition and not one of the campaign's pass criteria.
+    report["verdict_code"] = code
     report["exit_code"] = code
+    report["advisory"] = bool(args.advisory)
     report["monitor_final"] = node.monitor_snapshot()
+    report["relog_final"] = count_relog_markers(read_launch_log(args.launch_log))
     if args.report:
         with open(args.report, "w") as fh:
             json.dump(report, fh, indent=2, sort_keys=True)
     print(json.dumps(report, sort_keys=True))
     node.destroy_node()
     rclpy.shutdown()
-    return code
+    return EXIT_OK if args.advisory else code
 
 
 if __name__ == "__main__":

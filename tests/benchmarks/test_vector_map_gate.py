@@ -71,9 +71,12 @@ from benchmarks.injector.republish_vector_map import (  # noqa: E402
     EXIT_NO_CAPTURE,
     EXIT_NO_MATCH,
     EXIT_OK,
+    RELOG_MARKERS,
     build_arg_parser,
+    count_relog_markers,
     diag_level,
     matching_settled,
+    relog_shows_delivery,
     status_reports_delivered,
 )
 
@@ -132,6 +135,54 @@ def test_a_count_still_climbing_is_not_settled():
     assert matching_settled([(0.0, 1), (3.0, 2), (7.0, 3)], settle_s=5.0) is False
 
 
+# --- the second delivery oracle, added after run-031 refuted the first ------
+
+
+def test_relog_markers_are_the_two_nodes_that_re_log_on_receipt():
+    """`lanelet2_map_visualization` and `vector_map_tf_generator` each print a
+    line every time they receive a vector map. They live in a DIFFERENT process
+    from the re-publisher, so a fresh line is proof of INTER-PROCESS receipt --
+    which is exactly what `topic_state_monitor_vector_map` failed to give on
+    B/run-031 while these two logged all three re-publications."""
+    assert len(RELOG_MARKERS) == 2
+    assert any("lanelet2_map_visualization" in m for m in RELOG_MARKERS)
+    assert any("vector_map_tf_generator" in m for m in RELOG_MARKERS)
+
+
+def test_counting_relog_markers_is_per_marker():
+    text = (
+        "[component_container_mt-15] [map.lanelet2_map_visualization]: Map is loaded\n"
+        "[component_container_mt-15] [map.vector_map_tf_generator]: broadcast static tf. x:1\n"
+        "[component_container_mt-15] [map.lanelet2_map_visualization]: Map is loaded\n"
+        "unrelated line\n"
+    )
+    counts = count_relog_markers(text)
+    assert counts["lanelet2_map_visualization]: Map is loaded"] == 2
+    assert counts["vector_map_tf_generator]: broadcast static tf"] == 1
+
+
+def test_a_fresh_relog_line_on_either_node_is_delivery():
+    before = {m: 1 for m in RELOG_MARKERS}
+    after = dict(before)
+    after[RELOG_MARKERS[0]] = 2
+    assert relog_shows_delivery(before, after) is True
+
+
+def test_no_new_relog_line_is_not_delivery():
+    """The measured shape of a re-publication that went nowhere. Counting
+    ABSOLUTE occurrences instead of the delta would report delivery on every
+    run, because map_loader's own original publication always logs once."""
+    before = {m: 1 for m in RELOG_MARKERS}
+    assert relog_shows_delivery(before, dict(before)) is False
+
+
+def test_a_missing_launch_log_reads_as_no_evidence_not_as_delivery():
+    """If the log cannot be read the counts come back empty. That must not
+    silently satisfy the oracle -- an unreadable log is an absence of evidence,
+    and this campaign's rule is that absence never reads as a pass."""
+    assert relog_shows_delivery({}, {}) is False
+
+
 def test_exit_codes_are_distinct_so_a_failure_names_which_half_broke():
     codes = [EXIT_OK, EXIT_NO_CAPTURE, EXIT_NO_MATCH, EXIT_NOT_VERIFIED]
     assert len(set(codes)) == len(codes)
@@ -143,6 +194,15 @@ def test_cli_defaults_are_the_ones_the_launcher_relies_on():
     assert args.attempts >= 1
     assert args.settle_s > 0
     assert args.verify_timeout_s > 0
+    assert args.launch_log
+
+
+def test_advisory_is_opt_in_on_the_cli_and_the_launcher_opts_in():
+    """The node keeps its real verdict in the report either way; --advisory
+    only decides whether that verdict reaches the caller as an exit status.
+    Default off so the node stays usable as a gate if anyone ever wants one."""
+    assert build_arg_parser().parse_args([]).advisory is False
+    assert build_arg_parser().parse_args(["--advisory"]).advisory is True
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +225,7 @@ def _gating_block() -> str:
     )
     matches = pattern.findall(text)
     assert len(matches) == 1, (
-        f"expected exactly one BENCH_ARM closed-loop gate in {TIER4_CELL}, "
-        f"found {len(matches)}"
+        f"expected exactly one BENCH_ARM closed-loop gate in {TIER4_CELL}, found {len(matches)}"
     )
     return matches[0]
 
@@ -181,16 +240,14 @@ def _run_gate(tmp_path: Path, arm: str, cx_exit: int = 0) -> subprocess.Complete
         "set -euo pipefail\n"
         f'BENCH_ARM="{arm}"\n'
         'AW_ENV="source /opt/ros/humble/setup.bash"\n'
+        "AW_LOG=/tmp/tier4-autoware.log\n"
+        f'BENCH_RUN_DIR="{tmp_path}"\n'
         f'CX_LOG="{tmp_path}/cx.log"\n'
         f'FAIL_LOG="{tmp_path}/fail.log"\n'
         'cx() { printf "%s\\n" "$1" >>"$CX_LOG"; return ' + str(cx_exit) + "; }\n"
-        'fail_with_log() { printf "%s\\n" "$*" >>"$FAIL_LOG"; exit 2; }\n'
-        + block
-        + "\n"
+        'fail_with_log() { printf "%s\\n" "$*" >>"$FAIL_LOG"; exit 2; }\n' + block + "\n"
     )
-    return subprocess.run(
-        ["bash", str(script)], capture_output=True, text=True, timeout=30
-    )
+    return subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=30)
 
 
 def test_static_arm_runs_no_extra_step_at_all(tmp_path: Path):
@@ -225,14 +282,41 @@ def test_the_report_lands_in_the_run_directory(tmp_path: Path):
     assert "--report /out/" in (tmp_path / "cx.log").read_text()
 
 
-def test_a_failing_gate_fails_the_bring_up_loudly(tmp_path: Path):
-    """A silent pass here would put the campaign straight back where it started
-    -- thirteen closed-loop attempts with no named failing link."""
+def test_the_step_is_advisory_and_never_aborts_the_run(tmp_path: Path):
+    """THE property this test file exists to protect, after B/run-031.
+
+    The step was originally fatal. run-031 aborted on it -- and its own launch
+    log then showed the re-published map being delivered to
+    lanelet2_map_visualization and vector_map_tf_generator on all three
+    attempts, while the endpoint the gate read received none of them. A fatal
+    gate keyed on that endpoint therefore converted a possibly-armable run into
+    a crash:cell-launch and left the real question (does the PLANNER have the
+    map) untested, because it fires before a route exists.
+
+    The campaign's pass criteria are the arm succeeding and control_cmd
+    flowing. This step is an added precondition that is not one of them, so it
+    records and continues. If the map genuinely never reaches the planner the
+    run still fails -- at the arm, loudly, and more informatively."""
     proc = _run_gate(tmp_path, arm="closed-loop", cx_exit=1)
-    assert proc.returncode != 0
-    fail_text = (tmp_path / "fail.log").read_text()
-    assert "vector_map" in fail_text
-    assert "republish_vector_map" in fail_text or "delivery" in fail_text
+    assert proc.returncode == 0, proc.stderr
+    assert not (tmp_path / "fail.log").exists(), (
+        "the delivery step aborted the bring-up: " + (tmp_path / "fail.log").read_text()
+    )
+    assert "ADVISORY" in proc.stdout, proc.stdout
+
+
+def test_the_advisory_outcome_is_still_announced_on_the_happy_path(tmp_path: Path):
+    proc = _run_gate(tmp_path, arm="closed-loop", cx_exit=0)
+    assert proc.returncode == 0, proc.stderr
+    assert "/map/vector_map" in proc.stdout
+
+
+def test_the_launcher_asks_for_advisory_mode_explicitly(tmp_path: Path):
+    """Belt and braces: the shell would not abort anyway (it does not use the
+    exit status), but an explicit --advisory means the node's own exit code
+    cannot surprise a future caller that does."""
+    _run_gate(tmp_path, arm="closed-loop")
+    assert "--advisory" in (tmp_path / "cx.log").read_text()
 
 
 @pytest.mark.parametrize("arm", ["static", "closed-loop"])
