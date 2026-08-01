@@ -1388,3 +1388,91 @@ its `cells/tier4-native.sh up` failure satisfies). `gate:<detail>` under
 criterion 2 arguably fits a readiness-check abort better, but criterion 2 says
 **pre-registered** readiness check and that step was new, so criterion 1 is the
 safer reading. Left as filed; the ambiguity is recorded here.
+
+### 7.10 Validation re-run STOPPED at run 1: the map is fixed, the ROUTE is the blocker (2026-08-01)
+
+`B/run-032`, cell B closed-loop, non-duel, harness `2dbec06`, preflight loadavg
+1.05. **ARM FAIL, excluded `gate:arm-failed`.** Per the standing ruling the run
+was not retried, the fix was not iterated on, and no criterion was adjusted.
+
+**The advisory step behaved exactly as ruled, and the map fix worked.** The step
+recorded and continued (`verdict_code 0`, `pre_republish_delivered true`,
+monitor verified on attempt 1 in 0.007 s), the run proceeded to the arm, and
+`behavior_path_planner` logged **`waiting for map` × 0** — against × 8 on
+`run-008` and × 11 on `run-028`. The planner had the map.
+
+**It blocked on the ROUTE instead — the second blocker §7.8 predicted from
+filed data, landing exactly there.** From `run-032/tier4-autoware.log`
+(offsets vs teardown at 1785606658.036):
+
+| line | t | event |
+| --- | --- | --- |
+| `:261` | 1785606537.858 | `mission_planner: waiting lanelet map…` — printed ONCE, so mission_planner had the map promptly |
+| `:1317` | 1785606573.594 (−84.4 s) | `route_handler: getMainLanelets: lanelet_sequence` — **the route exists** |
+| `:1339` | 1785606574.310 (−83.7 s) | last diag block listing `topic_rate_check/route` not-OK |
+| `:1390` | 1785606577.308 (−80.7 s) | first block **without** it — the route monitor received it **≤3.7 s** after the route existed |
+| `:1468` | 1785606580.366 (−77.7 s) | the planner's **first** `waiting for route` — 3.1 s AFTER the monitor already had it |
+| `:2430` | 1785606629.428 (−28.6 s) | the planner's **last** `waiting for route`; it printed nothing further |
+
+So `behavior_path_planner` lacked the route for **≥55.8 s** after
+`mission_planner` produced it and **≥52.1 s** after
+`topic_state_monitor_route` had received it. Engage went out at 1785606593.756
+via the documented `/autoware/engage` fallback; the post-engage window closed at
+1785606642.660 with `mode=2 autonomous=True … control_cmd_hz~0.00 n=0`. No
+trajectory ever formed (`Waiting for trajectory data` × 21, last at −4.4 s;
+`trajectory` in the final not-OK set alongside `control_command`,
+`trajectory_follower`, `transform`, `pointcloud_map`).
+
+**CHARACTERISATION: this is the SAME defect signature as the map, on the route
+topic.** A latched (`TRANSIENT_LOCAL`) message, published once, received
+promptly by `topic_state_monitor_*` and not by `behavior_path_planner`, with
+the two behaving as independent draws:
+
+| | `/map/vector_map` (§7.7) | `/planning/mission_planning/route` (here) |
+| --- | --- | --- |
+| monitor receipt | +0.05 s … +23.2 s, or never | **+≤3.7 s** |
+| planner receipt | never, in `run-008` / `run-028` | **≥55.8 s late** |
+| divergence | `run-028`: monitor OK at +23.2 s, planner blocked +95 s | `run-032`: monitor OK at +3.7 s, planner blocked +55.8 s |
+
+That materially strengthens §7.7's one-defect-**class** hypothesis — latched
+topic non-delivery to an already-running subscriber under the tier4-native
+transport — and it means the route is not a *different* bug so much as the same
+bug on another topic. It also means a per-topic re-publish workaround does not
+scale: the map needed one, the route would need another, and `operation_mode`
+(`run-012`) a third.
+
+**NOT TESTED, and it is what the next probe should measure:** the route topic's
+delivery was not probed live. A live `ros2 topic info -v` attempt on
+`/planning/mission_planning/route` during this run returned
+`Unknown topic` — the same ros2-CLI discovery limitation §7.7 recorded under
+this transport, not evidence the topic was absent. Whether the planner
+eventually received the route at ~1785606630 (it stopped complaining) or simply
+stopped cycling is **not established**: the planner emitted no further line
+either way, and no trajectory followed in the remaining 28 s.
+
+**Also NOT established:** whether the map fix is what let the planner get past
+its map check, or whether this bring-up would have delivered the map anyway.
+`pre_republish_delivered` was already `true` before the re-publish, so on THIS
+run the workaround had nothing to repair. Its value remains untested on a
+bring-up that needed it.
+
+**Recorded artifact of the second oracle:** `verified_relog` came back `false`
+on `run-032` despite delivery, because the re-log check re-reads the launch log
+immediately after the monitor's wait returns — 7 ms after publication here,
+before the container's log write can land. The two oracles are therefore **not
+comparable on runs where the monitor verifies instantly**. Left unchanged
+rather than fixed mid-validation, because editing the harness between runs of a
+validation series would invalidate the series.
+
+**Test-suite note, recorded rather than left silent.** The commit filing
+`run-032` was made from a suite run in which
+`tests/benchmarks/test_teardown.py::test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline`
+FAILED once (1 failed / 1021 passed). It is a **load flake, not a regression**:
+that test executes the REAL sidecar polling loop, which needs the `/proc`
+cmdline to read identically for 2 continuous seconds inside a 50-poll cap, and
+it ran while the host was still shedding `run-032`'s teardown (1-min loadavg
+~10). Re-run in isolation it passes, `tests/benchmarks/test_teardown.py` passes
+16/16 three times consecutively, and the full suite is **1022 passed / 0 failed
+/ 1 skipped** on an idle host (loadavg 0.18). The launcher's own comment already
+warns that the poll cap is "a FLOOR, not a ceiling -- load stretches it
+further"; this is that, observed from the test side.
