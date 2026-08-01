@@ -296,6 +296,12 @@ proc_count() {
 
 TOTAL_TREE=0
 TOTAL_LEFT=0
+# Task 18b, D2. Incremented ONLY on the pid-reuse-guard skip below -- never on
+# an absent pid file, a non-numeric pid, or an already-gone pid, all of which
+# mean nothing needed stopping. A skip means the opposite: a pid file NAMED a
+# tree the guard would not touch, and that tree is PRESUMED still running.
+# The final summary reads this to stop claiming "stopped" when it is not.
+TOTAL_SKIPPED=0
 
 stop_one() {
   local pf="$1" pid kid s tree=() left=()
@@ -335,6 +341,9 @@ stop_one() {
       echo "stop:   '$want'"
       echo "stop:   but pid $pid is now '$got'. Nothing was signalled; the"
       echo "stop:   process this pid file named is already gone. Pid file kept."
+      # Task 18b, D2: this is the one return path where a RECORDED tree is
+      # left untouched and PRESUMED alive -- see TOTAL_SKIPPED's own comment.
+      TOTAL_SKIPPED=$((TOTAL_SKIPPED + 1))
       return 0
     fi
   fi
@@ -414,7 +423,24 @@ done
 # The claim this script is allowed to make, with the counts behind it. The
 # process count is the container's own, so a reader can tell a clean teardown
 # from one that left a stack spinning without trusting this message.
-echo "autoware launch + concat relay stopped" \
-  "($# pid file(s) checked, $TOTAL_TREE process(es) in the recorded trees," \
-  "$TOTAL_LEFT survivor(s); container now: $(proc_count))"
+#
+# Task 18b, D2. Before this, the heading below was UNCONDITIONAL: stop_one's
+# pid-reuse-guard skip returns BEFORE TOTAL_TREE is ever touched, so a run
+# that skipped every pid file still printed "... stopped ... 0 process(es) in
+# the recorded trees, 0 survivor(s)" -- the skip itself was on its own STDOUT
+# line above, but the one line a reader (and Task 18's own check) trusts said
+# the opposite of what happened. The skip is non-fatal and STAYS non-fatal --
+# same exit 0, same never-refuses contract -- only the CLAIM changes: this
+# heading now names what is presumed still running instead of calling it done.
+if [ "$TOTAL_SKIPPED" -gt 0 ]; then
+  echo "autoware launch + concat relay NOT fully stopped:" \
+    "$TOTAL_SKIPPED of $# recorded tree(s) SKIPPED (pid reuse guard) and" \
+    "presumed STILL RUNNING -- see the SKIPPING line(s) above" \
+    "($# pid file(s) checked, $TOTAL_TREE process(es) in the recorded trees," \
+    "$TOTAL_LEFT survivor(s); container now: $(proc_count))"
+else
+  echo "autoware launch + concat relay stopped" \
+    "($# pid file(s) checked, $TOTAL_TREE process(es) in the recorded trees," \
+    "$TOTAL_LEFT survivor(s); container now: $(proc_count))"
+fi
 exit 0

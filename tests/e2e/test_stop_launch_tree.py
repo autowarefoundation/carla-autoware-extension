@@ -144,7 +144,8 @@ def _alive(pid: int) -> bool:
 def _cmdline_of(pid: int) -> str:
     """The pid's command line the way launch_autoware.sh records it -- NUL
     separators turned into spaces, trailing separator included, byte for byte
-    what `tr "\\0" " " </proc/<pid>/cmdline` writes (launch_autoware.sh:191).
+    what `tr "\\0" " " </proc/<pid>/cmdline` writes once its Task 18b polling
+    loop settles (launch_autoware.sh:215-229; the read itself is at :217).
     The pid-reuse guard compares for exact equality, so an approximation here
     would test a different string than the script does."""
     return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
@@ -356,9 +357,10 @@ def test_a_stale_sidecar_does_not_skip_the_next_launchs_teardown(supervisor, tmp
     """The harm behind the previous test, end to end -- the FALSE POSITIVE the
     script header rules out, which a leaked sidecar made reachable.
 
-    launch_autoware.sh writes the sidecar BEST EFFORT (`... || true`,
-    launch_autoware.sh:191), so a launch legitimately produces a pid file with
-    no `.cmd` beside it. If a previous teardown leaked its sidecar at that same
+    launch_autoware.sh writes the sidecar BEST EFFORT (its Task 18b polling
+    loop only ever writes via a plain redirect with no `set -e` in effect,
+    launch_autoware.sh:215-229), so a launch legitimately produces a pid file
+    with no `.cmd` beside it. If a previous teardown leaked its sidecar at that same
     fixed path, the guard compares the OLD command line against the NEW pid,
     sees a mismatch, and SKIPS a teardown that was entirely legitimate -- a
     silent no-op teardown, which is the harmful direction for a campaign that
@@ -400,3 +402,63 @@ def test_stop_reports_an_absent_pidfile_without_refusing(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "absent" in result.stdout
     assert "0 survivor(s)" in result.stdout
+
+
+# --- D2 (Task 18b): a skip must not be reported as a success ---------------
+
+
+def test_summary_reports_a_skip_instead_of_claiming_stopped(supervisor):
+    """D2's real-code-path pin. Before this, stop_one's pid-reuse-guard skip
+    returned BEFORE TOTAL_TREE was ever touched, so the FINAL summary always
+    printed the unconditional "autoware launch + concat relay stopped ...
+    0 survivor(s)" heading even when a recorded, presumably-still-running
+    tree was left completely untouched -- the exact silent-no-op-teardown
+    shape this script exists to end, MEASURED live on 5/10 cell-B static
+    runs (results/B/run-017,019,020,021,022) where that heading printed
+    while 56 processes stayed up in the container. The skip's own
+    "SKIPPING" line was never the problem; the trusted summary line was.
+
+    Forces the real skip path -- a live root with a `.cmd` sidecar that
+    cannot possibly match its real /proc cmdline -- and checks the summary
+    both says so AND stops claiming the unconditional "stopped" heading,
+    while everything non-fatal about the script is unchanged: exit 0, the
+    tree genuinely left alone (still alive), and both files kept for a
+    retry."""
+    pidfile, root, kids = supervisor("sigint_ignored")
+    sidecar = Path(f"{pidfile}.cmd")
+    sidecar.write_text("nothing that ever ran as this pid")
+
+    result = _run_stop(pidfile)
+
+    assert result.returncode == 0, result.stderr
+    assert "SKIPPING" in result.stdout, result.stdout
+    assert "autoware launch + concat relay NOT fully stopped:" in result.stdout, result.stdout
+    assert "1 of 1 recorded tree(s) SKIPPED" in result.stdout, result.stdout
+    assert "presumed STILL RUNNING" in result.stdout, result.stdout
+    # The claim a bare-text scan could not tell apart from the real fix: the
+    # OLD unconditional heading must not appear anywhere in this output.
+    assert "relay stopped (" not in result.stdout, result.stdout
+    # Still never a refusal: the guard declined to touch a live tree, so it
+    # really is still alive, and both files are kept for a retry.
+    assert _alive(root), "the guard should not have touched this tree"
+    assert [pid for pid in kids if _alive(pid)] == kids
+    assert pidfile.exists(), "a skipped pid file must be kept for a retry"
+    assert sidecar.exists(), "a skipped sidecar must be kept for a retry"
+
+
+def test_summary_still_claims_stopped_when_nothing_was_skipped(supervisor):
+    """The inverse of the previous test, so D2 cannot be satisfied by simply
+    always printing the "NOT fully stopped" heading: a normal teardown with
+    no pid-reuse mismatch must still get the original, unconditional
+    "stopped" claim -- the wording this whole file's other tests already
+    depend on."""
+    pidfile, root, kids = supervisor("graceful")
+
+    result = _run_stop(pidfile)
+
+    assert result.returncode == 0, result.stderr
+    assert "SKIPPING" not in result.stdout, result.stdout
+    assert "autoware launch + concat relay stopped (" in result.stdout, result.stdout
+    assert "NOT fully stopped" not in result.stdout, result.stdout
+    assert not _alive(root)
+    assert [pid for pid in kids if _alive(pid)] == []
