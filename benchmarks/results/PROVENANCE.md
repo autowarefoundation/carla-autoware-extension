@@ -1634,3 +1634,12 @@ unaffected:
   never probed live (a live `ros2 topic info -v` returned `Unknown topic`, the
   known CLI discovery limitation under this transport, **not** evidence of
   absence).
+
+**Second load-flake instance, recorded for the same reason as §7.10's.** A suite
+run started while the host was still shedding `run-033`'s teardown failed one
+test with `assert 'os.execv' in ''` — an empty `/proc/<pid>/cmdline` read, the
+same class as §7.10's sidecar flake and the same root cause (these tests read a
+real short-lived process's cmdline, and under load the process is gone before
+the read). Re-run on an idle host the suite is **1028 passed / 0 failed /
+1 skipped**. Neither flake is a regression, and neither is silenced: both are
+timing-sensitive reads that the launcher's own comments already warn about.
