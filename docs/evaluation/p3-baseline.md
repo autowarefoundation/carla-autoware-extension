@@ -70,15 +70,15 @@ favour.**
   (`benchmarks/config/cells.yaml:132`, owed to Tasks 13/20, neither of which
   ran). It is reported as unavailable, never as zero and never as parity.
 
-**And the closed-loop half of the duel is NOT COMPUTABLE.** Cell B attempted the
-closed-loop arm **14 times under its registered transport and armed on none of
-them**. It armed exactly once in the whole campaign, on `B/run-033` — a
-deliberate, non-duel run that changed **only the middleware** and is therefore
-not a cell-B measurement. Fifteen filed cell-B closed-loop runs are excluded;
-the verdict tool's own closed-loop rows print `15 run(s) excluded from B`. There
-is therefore no A-vs-B closed-loop equivalence verdict, and this document does
-not manufacture one. The mechanism is a first-class campaign finding and is
-stated as such in section 5.1.
+**And the closed-loop half of the duel is NOT COMPUTABLE.** Cell B filed **15**
+closed-loop runs under its registered transport and **armed on none of them**;
+all 15 are excluded, which is why the verdict tool's own closed-loop rows print
+`15 run(s) excluded from B`. It armed exactly once in the whole campaign, on
+`B/run-033` — a deliberate, non-duel run that changed **only the middleware**
+and is therefore not a cell-B measurement. There is no A-vs-B closed-loop
+equivalence verdict, and this document does not manufacture one. The mechanism
+is a first-class campaign finding and is stated as such in section 5.1, which
+also carries the exact breakdown of the 15.
 
 **Read the direction of `achieved_rate_ratio`'s verdict label with care.** The
 row prints `b_better`. That label is a polarity artifact, not a result in cell
@@ -116,7 +116,7 @@ PY
 | ----------- | --------------- | ---------------- | ------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A**       | `extension`     | Town10HD_Opt     | static, closed-loop | 14    | **primary duel, side A.** 10 duel-admissible static (`run-003`…`run-012`). Closed-loop: `run-002` only, bring-up class. `run-001`, `run-013`, `run-014` are bring-up/Phase-0 diagnostics.                                                                                                                                           |
 | **B**       | `tier4-native`  | Town10HD_Opt     | static, closed-loop | 33    | **primary duel, side B.** 10 duel-admissible static (`run-013`…`run-022`). Closed-loop: **0 valid** — see 5.1.                                                                                                                                                                                                                      |
-| **C**       | `extension`     | NishishinjukuMap | static, closed-loop | 14    | **confirmatory, never duel data.** 5 valid static (`run-004`…`run-008`) + 5 valid closed-loop (`run-010`…`run-014`).                                                                                                                                                                                                                |
+| **C**       | `extension`     | NishishinjukuMap | static, closed-loop | 14    | **confirmatory, never duel data.** 5 valid static (`run-004`…`run-008`) + 5 valid closed-loop (`run-010`…`run-014`). **`run-009` is `excluded: false` with NO `quality.json` — read 5.3 before iterating this cell.** `run-002` is a valid bring-up-class closed-loop run, not counted in the five.                                 |
 | **E0**      | `python-bridge` | Town10HD_Opt     | static              | 10    | **bridge context, as-shipped image.** 5 valid static — read section 6 before quoting any central tendency.                                                                                                                                                                                                                          |
 | **E**       | `python-bridge` | Town10HD_Opt     | static, closed-loop | 16    | **bridge context, patched image.** 6 valid static. Closed loop **not collected**, per the pre-registered static-only downgrade.                                                                                                                                                                                                     |
 | **CAL-rmw** | `calibration`   | none             | static              | 15    | **calibration.** The `one_hop_wall_ms` margin was **frozen** from these 15 interleaved runs (`p50_cyclonedds` 0.6840 ms, `p50_fastdds-udp` 1.0993 ms) — and the measurement put 2 × abs(Δ) at 0.83 ms, so the pre-registered **floor of 2.0 is what binds**. That is a result, not an agreement. No simulator, no `/clock`, no map. |
@@ -160,8 +160,11 @@ PYTHONPATH=. python3 -m benchmarks.report benchmarks/results > /tmp/p3-report-ta
 as a cell. Handing it a single cell directory instead makes it walk that cell's
 `run-NNN` directories as if _they_ were cells, find no `run-*` inside them, and
 print an empty table — a smoke test that passes on any input, which is worse
-than none (`benchmarks/run.sh:927-935`; `benchmarks/README.md:4058-4061`). The
-root form above is the documented one and is what was run.
+than none. That warning is `benchmarks/run.sh:927-935`'s alone.
+`benchmarks/README.md:4058-4061` is cited only for the invocation form it does
+state — "the entry point for rendering a per-cell report is `python3 -m
+benchmarks.report <results_dir>`" — and NOT for the trap, which it does not
+mention. The root form above is the documented one and is what was run.
 
 **The command exits 1, and the exit is fully explained by cell CAL-rmw.** All
 15 of its rows read `RENDER FAILED: ValueError: need >= 2 paired (sim, wall)
@@ -170,12 +173,24 @@ That is correct behaviour on both sides: CAL-rmw is a `carla: none`,
 container-only cell with **no simulator**, so nothing ever publishes `/clock`
 and `clock.csv` holds a header row and nothing else. `benchmarks/run.sh:996-997`
 takes the `BENCH_HAS_SIM_CLOCK != 1` branch for exactly this cell and
-deliberately does **not** call `report.py`'s renderer; the registered renderer
-for it is `benchmarks/scripts/cal_report.py`, and
-`benchmarks/results/CAL-rmw/PROVENANCE.md:433-448` records that all fifteen runs
-were rendered through it. Nothing was fixed, silenced or worked around here:
-the tool is reporting, loudly and by name, that it was pointed at a cell it does
-not render.
+deliberately does **not** call `report.py`'s renderer — it asserts only that
+rows were recorded, and writes a one-line stub into each run's `report.md`. The
+registered renderer for the cell is `benchmarks/scripts/cal_report.py`.
+Nothing was fixed, silenced or worked around here: the tool is reporting,
+loudly and by name, that it was pointed at a cell it does not render.
+
+**And a citation correction, because the first revision of this paragraph got
+it backwards.** It said `benchmarks/results/CAL-rmw/PROVENANCE.md:433-448`
+"records that all fifteen runs were rendered through `cal_report.py`". That
+passage says close to the opposite: `cal_report.py` "was run to produce the
+unwindowed column of that table, but **its output is not committed as a file
+anywhere**, so nothing under `results/CAL-rmw/` is `cal_report.py` output."
+What each CAL-rmw `report.md` holds is the `run.sh:996-997` stub
+(`# run-001: 624 observer rows, 130 resource samples (no sim clock; CAL
+rendering is Task 16's cal_report.py)`), and **the cell's scored numbers live in
+exactly two places**: that file's own p50 table, and the frozen derivation in
+`benchmarks/config/margins.yaml`'s `one_hop_wall_ms` block. Cite those, not a
+rendering that was never filed.
 
 Every other untagged row rendered. The `(EXCLUDED)`-tagged failures are the
 expected shape of an excluded run whose data was never written — a
@@ -635,6 +650,36 @@ So, on the metrics' own senses:
 **Four computable rows, zero `parity` rows, four separations in the same
 direction.** That is the verdict.
 
+**They are NOT four independent findings, and this is stated here rather than
+left for a reader to infer independence from a table.** Three of the four are
+plausibly downstream of **one** condition — cell B's depressed NDT/transport
+behaviour, for which Phase 0 eliminated a candidate cause and identified
+**none** (see 5.2):
+
+- `achieved_rate_ratio` **is** that deficit, measured directly. Its 0.104 gap is
+  the shortfall itself, not a second, separate result.
+- `lidar_to_ndt_sim_ms` is the sensor→NDT pipeline on the same chain, in the
+  same cell, over the same scoring window. A chain delivering a third of its
+  expected poses is not independent of the latency of the poses it does deliver.
+- `one_hop_wall_ms` is the transport hop those samples traverse — and the
+  campaign's registered account of cell B's loss is precisely a transport
+  property (`rmw_fastrtps_cpp` with SHM off; `benchmarks/README.md`'s A-side
+  instrument-asymmetry bound and `benchmarks/results/CAL-rmw/PROVENANCE.md`).
+
+`carla_process_cpu_pct` is the one row with a **different measurand** — the
+simulator process's own CPU, sampled from `resources.csv` rather than derived
+from the message stream — so it is the least entangled of the four.
+
+**No decomposition is attempted and none may be read in.** This campaign does
+not hold the measurement that would separate "the extension is faster" from
+"cell B's transport is losing samples, and every message-derived metric sees
+it". Assigning a share to each would be exactly the class of claim outrunning
+its measurement that this record keeps catching. What the four rows jointly
+support is the **direction**. What they do not support is a count of four
+independent effects, or any single row's effect size read as an approach
+difference in isolation. The instrument that would settle it is a controlled
+transport comparison — see 9.4.
+
 ### 4.3 What the verdict does NOT say
 
 - **It is not a closed-loop result.** Every closed-loop row is
@@ -659,6 +704,11 @@ false`) and five more in cell C — none of which is duel data — and the
   **up**, never down.
 - **It says nothing about cell B's NDT rate being explained.** The rate deficit
   is a registered confound whose cause Phase 0 did **not** identify. See 5.2.
+  That is about the **cause**. The separate point in 4.2 — that three of the
+  four rows are not independent **of each other**, because they are three views
+  of that same unexplained deficit — is about **non-independence**, and both
+  caveats are needed. Neither substitutes for the other: a reader could accept
+  "the cause is unknown" and still wrongly count four corroborating results.
 - **It is not a per-approach ranking of the three approaches.** The E family is
   context, not a duel side; cell C is confirmatory. No cross-approach
   equivalence statistic was computed and none may be inferred from these rows.
@@ -675,13 +725,47 @@ Full evidence, probe scripts and raw captures:
 received promptly by `topic_state_monitor_*` and **not** by
 `behavior_path_planner`. The two behave as **independent draws**, not as
 proxies for one another, and the divergence is visible in single runs in both
-directions. Across the six cell-B runs that reached the arm and failed it, the
-planner's own last readiness line names three different missing inputs: **map 2**
-(`run-008`, `run-028`), **route 3** (`run-009`/`010`/`011`), **operation_mode 1**
-(`run-012`). The map half was **reproduced standalone** — same image digest,
-same bundle, same launch line, **no CARLA and no harness at all** — where two
-consecutive runs of one script, two minutes apart, gave "never in 113 s" and
-"0.97 s".
+directions. Across the **seven** cell-B runs that reached the arm and failed it,
+the planner's own last readiness line names three different missing inputs:
+**map 2** (`run-008`, `run-028`), **route 4** (`run-009`, `run-010`, `run-011`,
+`run-032`), **operation_mode 1** (`run-012`). The map half was **reproduced
+standalone** — same image digest, same bundle, same launch line, **no CARLA and
+no harness at all** — where two consecutive runs of one script, two minutes
+apart, gave "never in 113 s" and "0.97 s".
+
+**The exact tally, and every figure in it is reproducible.** Cell B filed 15
+closed-loop runs under `rmw_fastrtps_cpp`, plus `B/run-033` under the cyclonedds
+deviation:
+
+| class                                     | n      | runs                                      | reached the arm?            |
+| ----------------------------------------- | ------ | ----------------------------------------- | --------------------------- |
+| `crash:cell-launch`                       | **7**  | `run-001`…`run-006`, `run-031`            | no — the cell never came up |
+| `crash:collect_gt`                        | **1**  | `run-007`                                 | no                          |
+| `gate:arm-failed`                         | **7**  | `run-008`…`run-012`, `run-028`, `run-032` | **yes**, and failed it      |
+| **total under the registered transport**  | **15** | all excluded                              | **0 armed**                 |
+| deviation probe, not a cell-B measurement | 1      | `run-033` (cyclonedds)                    | **yes — ARMED**             |
+
+```bash
+python3 - <<'PY'
+import collections, json, pathlib
+by_reason = collections.defaultdict(list)
+for run in sorted(pathlib.Path("benchmarks/results/B").glob("run-*")):
+    m = json.loads((run / "manifest.json").read_text())
+    if m["arm"] == "closed-loop":
+        by_reason[m["exclusion_reason"] or "NOT EXCLUDED"].append(run.name)
+for reason, runs in sorted(by_reason.items()):
+    print(f"{reason:20s} n={len(runs):2d}  {runs}")
+PY
+```
+
+Two counts are therefore in play and neither may stand in for the other: **15**
+is how many closed-loop runs cell B filed and lost under its registered
+transport, and **7** is how many of those got far enough to attempt the arm. The
+other 8 are crash-class and say nothing about the latched-delivery defect —
+they never reached the point where it bites. An earlier revision of this
+document said "14 times" and "the six runs that reached the arm"; both are
+corrected here, and `run-032` — a seventh `gate:arm-failed`, blocked on the
+route per PROVENANCE §7.10 — is the run both omitted.
 
 **The bounding probe.** `B/run-033`, one deliberate non-duel deviation run
 (owner ruling), changed **only the middleware**:
@@ -770,11 +854,50 @@ was tuned, no threshold moved, no run excluded, no harness file edited.
 
 **What Phase 0 did NOT establish, stated plainly because the verdict carries
 it:** it eliminated double publication as the cause; **it did not identify a
-cause.** The M5 rate gate keeps failing on cell B — nine of the ten
-duel-admissible static runs fail it, on ratios 0.257–0.850, and the tenth
-(`run-019`) could not be scored at all. The gate was never tuned and its 0.9
-threshold was never touched. The verdict carries that fact rather than resolving
-it.
+cause.** The M5 rate gate keeps failing on cell B. The gate was never tuned and
+its 0.9 threshold was never touched. The verdict carries that fact rather than
+resolving it.
+
+**The duel pool's exact split, because two different counts are in circulation
+and one of them is wrong.** Over `B/run-013`…`run-022`:
+
+| outcome                                             | n     | runs                                     | `ndt_rate_ratio` |
+| --------------------------------------------------- | ----- | ---------------------------------------- | ---------------- |
+| `gate_pass: true`                                   | **1** | `run-013`                                | 0.9892           |
+| `gate_pass: false`, all on `ndt rate ratio X < 0.9` | **8** | `run-014`…`run-018`, `run-020`…`run-022` | 0.2569–0.8505    |
+| unscoreable — no `quality.json`                     | **1** | `run-019`                                | —                |
+
+**Eight of the ten fail, not nine.** Reproduce:
+
+```bash
+python3 - <<'PY'
+import json, pathlib
+for run in sorted(pathlib.Path("benchmarks/results/B").glob("run-*")):
+    m = json.loads((run / "manifest.json").read_text())
+    if m["arm"] != "static" or not m["duel_admissible"]:
+        continue
+    q = run / "quality.json"
+    if not q.is_file():
+        print(run.name, "UNSCOREABLE (no quality.json)")
+        continue
+    d = json.loads(q.read_text())
+    print(run.name, "gate_pass=", d["gate_pass"], "ndt_rate_ratio=", round(d["ndt_rate_ratio"], 4))
+PY
+```
+
+An earlier revision of this document said "nine of the ten … fail", which
+contradicted its own §5.1 range of 0.257–**0.989** (that range spans **all**
+filed cell-B runs, and its upper end IS `run-013`'s passing 0.989) and
+**overstated the pervasiveness of the campaign's central unexplained
+confound**. Corrected here. **`benchmarks/results/PROVENANCE.md` §4.1 carries
+the same "Nine cell-B static runs fail the M5 gate" wording and is likewise
+wrong by one**; it is left as written, per the convention that a claim stays in
+the record with the diagnostic that corrected it — this is that diagnostic, and
+§10.3 of that file points back here.
+
+The two ranges are different populations and must not be swapped: **0.2569–
+0.8505** is the eight failing duel-pool runs; **0.257–0.989** is every filed
+Fast-DDS cell-B run, the range §5.1 contrasts `B/run-033`'s 1.000 against.
 
 Two corrections stay in the record with the diagnostics that produced them,
 per the campaign's convention: Phase 0's first ruling rested on a publisher
@@ -845,6 +968,28 @@ reaches n = 5 valid.
 > `need >= 2 arrivals` on a single sample; run.sh's step-15 smoke therefore
 > fails, and its handler files the run under criterion 3's catch-all."
 >
+> §9.9 states in terms that a reader quoting it "must carry **both**" of its
+> claims — the sampling bias (iii) **and** the criterion-substance mismatch
+> (i)–(ii) that produces it. All three items are therefore quoted here, not
+> just the one that bites hardest:
+>
+> "**(i) The reason STRING is verbatim; the criterion's SUBSTANCE does not fit,
+> and this has to be named rather than softened.** `harness:e7ba92a` matches
+> criterion 3's registered form exactly. But criterion 3 reads, in full,
+> 'Harness defect discovered **and fixed** (the run was measured with a broken
+> observer/injector)', and on these two runs: **nothing was broken** … the
+> run's data is intact. **nothing was fixed.** No harness defect was discovered
+> or repaired in response … One message is not a malfunction on this cell; it
+> is **cell E0's registered result in its sharpest form**."
+>
+> "**(ii) What makes it defensible, stated so it cannot be mistaken for
+> manipulation.** The `harness:<commit>` ⇄ criterion-3 mapping is
+> **pre-registered in the harness itself**, at `run.sh:1028-1029` … So the
+> label was applied **mechanically by committed code**, to a rule written
+> before cell E0's data existed, and not chosen after seeing which runs it
+> would drop. The substance mismatch is a property of the pre-registration, not
+> an exercise of discretion inside this task."
+>
 > "**(iii) The exclusion is NOT independent of the measurement.** The runs the
 > filing path drops are precisely the runs where the as-shipped bridge performed
 > **worst**. The six other E0 runs are not a random sample of E0's behaviour:
@@ -856,6 +1001,13 @@ reaches n = 5 valid.
 > "**Any statement about cell E0's central tendency must carry this caveat.**
 > The excluded runs' data is retained in full and is the stronger evidence for
 > E0's registered failure, not weaker."
+>
+> **What §9.9 explicitly does NOT decide, and what does:** it records that
+> whether `exclusions.md:51-52` bites — and cell E0 therefore needs
+> re-collecting under a widened criterion — "is **NOT this task's call**". That
+> question is ruled on in **8.3** of this document: **cell E0 is not
+> re-collected**, on four stated grounds. Read 8.3 with this quote; neither is
+> complete alone.
 
 The size of the effect, measured — reproduce with:
 
@@ -948,14 +1100,14 @@ bear on how their results are read together.
 
 ### 7.1 The P3-era confound rows
 
-| #   | confound                                                                      | what it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | cells                   | where registered                                                          |
-| --- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------- |
-| P0  | **Phase 0 outcome: branch (c)**                                               | Double publication on `/sensing/lidar/concatenated/pointcloud` is **real and differential** — cell B has 2 emitters, cell A has 1 — but it is **not the cause** of cell B's depressed NDT rate: branch (c) was selected by elimination and prescribes no harness change. **The cause is UNEXPLAINED.** Cell B's M5 rate gate keeps failing (0.257–0.850 across the nine gate-failing duel-pool runs; `run-019` unscoreable) and the gate was never tuned.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | B (effect), A (control) | PROVENANCE §6, §6.7, §6.8; evidence `p3-phase0/`                          |
-| P1  | **Observer instrument, and the G1 ladder rung**                               | Every cell in the campaign is observed by the **same** `bench-observer:universe-devel` image (local digest `sha256:b78ec01a…a5385`), with **SHM off**, and a per-cell topic list (`config/observer_topics/<cell>.yaml`). The observer RMW **follows the cell** (`rmw_cyclonedds_cpp` on A/C/E/E0/CAL-rmw, `rmw_fastrtps_cpp` on B), so the instrument is shared-mode in A − B on everything except the transport it is measuring. Separately, the Town10 UE5 cells localize against the **G1 ladder's rung 2** bundle (`town10_pcd_regen`): rung 1's rigid refit measured max NDT error 0.570 m against the 0.5 m absolute gate, rung 2 measures **0.089 m**, and rung 3 was never reached. Rung 2 is **not reproducible from its pin alone** — its input is a live 100 s drive — and its **coverage is bounded by where the ego drove** (~292 m of a 438.9 m route), so it is dense along that corridor and thins beyond it.            | all                     | `pins.yaml` `bench_observer_images`, `town10_pcd_regen`; README G1 ladder |
-| P2  | **pcd variant per cell**                                                      | Read off each manifest's `placement.map_bundle_pin`. **A, B: `town10_pcd_regen`** (the rung-2 rebuild). **C: `nishishinjuku_bundle.pcd_sha256`** (sourced, AWSIM v2.0.0 `Shinjuku-Map.zip`). **E, E0: `autoware_contents.town10_pcd_sha256`** — the **deliberately unshifted** bundle, verified live at `7ed7890e…ee95b`, which carries the +0.475 m cross-track offset the ladder exists to correct. **CAL-rmw: `skipped:no-map:-`.** This is why E/E0 are registered on the **relative** ladder branch with a null `abs_pose_gate_m`: gating them at 0.5 m against that bundle would fail them by map registration under a heading a reader would attribute to the bridge. Four of cell E's six scored runs have `pose_err_max_m` > 0.5 m and would have failed exactly that way.                                                                                                                                                      | all                     | README confound C4 (`:955`); PROVENANCE §9.2                              |
-| P3  | **Container placement and run mode**                                          | `placement.run_mode` and `placement.container_image` differ by family and are recorded per run. **A, B, C: `editor-game`** — the CARLA fork under the Unreal editor, engine BuildId `4210e602-78ec-46e1-8f2f-03fadbe036a3`, with A/C on `carla-autoware-integration` (`carla_version: 0.10-fork`, Autoware `universe-devel` by tag) and B on `carla-autoware-native` (`0.10-tier4`, Autoware pinned by digest `sha256:5c22369a…e8ee`, plus a full `tier4_*` build-identity block). **E, E0: `shipping-headless`**, CARLA **0.9.15**, images `bridge-bench-patched:latest` / `bridge-bench:latest` — a different simulator version and a different container entirely. **CAL-rmw: `container-only`**, no simulator at all. Cross-family comparisons cross a CARLA major version; the A-vs-B duel does not.                                                                                                                                | all                     | each run's `manifest.json`; `pins.yaml`                                   |
-| P4  | **Patch inventory**                                                           | `patches_git_sha` is `ccff4f9` on every P3-era run. Applied patch sets: **`patches/extension/`** — none, README only (the extension carries no patches). **`patches/tier4-native/`** — `0001-toolchain-libm.patch`, `0002-glibc-compat.patch`, `0003-autoware-demo-params.patch`: two build fixes this host needs plus a params change, all on cell B/D's path. **`patches/python-bridge/`** — `0001-lidar-is-dense.patch` and `0002-sensor-config-harmonized.patch`, which is what separates cell **E** (patched, `frequency_hz: 20`) from cell **E0** (as-shipped, `frequency_hz: 11`). `cells/python-bridge.sh` refuses to run either cell against the other's image, in both directions. **So the E-vs-E0 difference IS the patch inventory** — that is the pair's whole purpose.                                                                                                                                                    | B/D, E/E0               | `benchmarks/patches/**`; `pins.yaml` `patches_sha256`; PROVENANCE §9.2    |
-| P5  | **`control_mode: MANUAL` — a per-approach interop gap, recorded not patched** | The two duel approaches differ on exactly the flag: while parked, cell **A** publishes `/vehicle/status/control_mode` = **`4` (MANUAL)** — the extension reporting the ego's live state — and cell **B** publishes **`1` (AUTONOMOUS)** **unconditionally**, from the tier4 fork's `ROS2.cpp:1117` `SetControlMode(ControlMode::AUTONOMOUS)`, with the fork's own `TODO: Add logic to use the input of control mode` beside it. One under-reports its mode; the other reports AUTONOMOUS whether or not it is. **Neither is patched**, deliberately: whether an approach reports its own control mode correctly _is part of the interop completeness being compared_. The `control_mode = MANUAL` → arm-refusal link is **NOT established** — README's own follow-up records that the transition was refused in exactly that state and that `control_mode_request` is the alternative candidate. No python-bridge reading is registered. | A, B                    | README `:2159-2413`, table at `:2324`                                     |
+| id   | confound                                                                      | what it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | cells                   | where registered                                                                      |
+| ---- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| P3-1 | **Phase 0 outcome: branch (c)**                                               | Double publication on `/sensing/lidar/concatenated/pointcloud` is **real and differential** — cell B has 2 emitters, cell A has 1 — but it is **not the cause** of cell B's depressed NDT rate: branch (c) was selected by elimination and prescribes no harness change. **The cause is UNEXPLAINED.** Cell B's M5 rate gate keeps failing on **eight** of the ten duel-pool runs (0.2569–0.8505; `run-013` passes at 0.9892, `run-019` is unscoreable — see 5.2 for the full split) and the gate was never tuned.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | B (effect), A (control) | PROVENANCE §6, §6.7, §6.8; evidence `p3-phase0/`                                      |
+| P3-2 | **Observer instrument, and the G1 ladder rung**                               | Every cell in the campaign is observed by the **same** `bench-observer:universe-devel` image (local digest `sha256:b78ec01a…a5385`), with **SHM off**, and a per-cell topic list (`config/observer_topics/<cell>.yaml`). The observer RMW **follows the cell** (`rmw_cyclonedds_cpp` on A/C/E/E0/CAL-rmw, `rmw_fastrtps_cpp` on B), so the instrument is shared-mode in A − B on everything except the transport it is measuring. Separately, the Town10 UE5 cells localize against the **G1 ladder's rung 2** bundle (`town10_pcd_regen`): rung 1's rigid refit measured max NDT error 0.570 m against the 0.5 m absolute gate, rung 2 measures **0.089 m**, and rung 3 was never reached. Rung 2 is **not reproducible from its pin alone** — its input is a live 100 s drive — and its **coverage is bounded by where the ego drove** (~292 m of a 438.9 m route), so it is dense along that corridor and thins beyond it.                                                                                                                                                                                                                                                                                                                                 | all                     | `benchmarks/pins.yaml` `bench_observer_images` / `town10_pcd_regen`; README G1 ladder |
+| P3-3 | **pcd variant per cell**                                                      | Read off each manifest's `placement.map_bundle_pin`. **A, B: `town10_pcd_regen`** (the rung-2 rebuild). **C: `nishishinjuku_bundle.pcd_sha256`** (sourced, AWSIM v2.0.0 `Shinjuku-Map.zip`). **E, E0: `autoware_contents.town10_pcd_sha256`** — the **deliberately unshifted** bundle, verified live at `7ed7890e…ee95b`, which carries the +0.475 m cross-track offset the ladder exists to correct. **CAL-rmw: `skipped:no-map:-`.** This is why E/E0 are registered on the **relative** ladder branch with a null `abs_pose_gate_m`: gating them at 0.5 m against that bundle would fail them by map registration under a heading a reader would attribute to the bridge. Four of cell E's six scored runs have `pose_err_max_m` > 0.5 m and would have failed exactly that way.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | all                     | README confound C4 (`:955`); PROVENANCE §9.2                                          |
+| P3-4 | **Container placement and run mode**                                          | `placement.run_mode` and `placement.container_image` differ by family and are recorded per run. **A, B, C: `editor-game`** — the CARLA fork under the Unreal editor, engine BuildId `4210e602-78ec-46e1-8f2f-03fadbe036a3`, with A/C on `carla-autoware-integration` (`carla_version: 0.10-fork`, Autoware `universe-devel` by tag) and B on `carla-autoware-native` (`0.10-tier4`, Autoware pinned by digest `sha256:5c22369a…e8ee`, plus a full `tier4_*` build-identity block). **E, E0: `shipping-headless`**, CARLA **0.9.15**, images `bridge-bench-patched:latest` / `bridge-bench:latest` — a different simulator version and a different container entirely. **CAL-rmw: `container-only`**, no simulator at all. Cross-family comparisons cross a CARLA major version; the A-vs-B duel does not.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | all                     | each run's `manifest.json`; `benchmarks/pins.yaml`                                    |
+| P3-5 | **Patch inventory**                                                           | `patches_git_sha` is `ccff4f9` on **every non-excluded run in the campaign**, and on every run any P3 conclusion rests on. It is NOT uniform over the whole tree: 20 of the 102 filed manifests carry one of five earlier shas (`B/run-001`…`run-004` `8aeed44`, `B/run-005`…`run-012` `31aac85`, `E/run-001`…`run-004` `ec998b4`, `E/run-005`…`run-007` `b81200d`, `E/run-008` `4557e5c`) and **every one of those 20 is `excluded: true`** — the stale pre-P3 runs retained as history. Reproduce with the census in 9.1. Applied patch sets: **`patches/extension/`** — none, README only (the extension carries no patches). **`patches/tier4-native/`** — `0001-toolchain-libm.patch`, `0002-glibc-compat.patch`, `0003-autoware-demo-params.patch`: two build fixes this host needs plus a params change, all on cell B/D's path. **`patches/python-bridge/`** — `0001-lidar-is-dense.patch` and `0002-sensor-config-harmonized.patch`, which is what separates cell **E** (patched, `frequency_hz: 20`) from cell **E0** (as-shipped, `frequency_hz: 11`). `cells/python-bridge.sh` refuses to run either cell against the other's image, in both directions. **So the E-vs-E0 difference IS the patch inventory** — that is the pair's whole purpose. | B/D, E/E0               | `benchmarks/patches/**`; `benchmarks/pins.yaml` `patches_sha256`; PROVENANCE §9.2     |
+| P3-6 | **`control_mode: MANUAL` — a per-approach interop gap, recorded not patched** | The two duel approaches differ on exactly the flag: while parked, cell **A** publishes `/vehicle/status/control_mode` = **`4` (MANUAL)** — the extension reporting the ego's live state — and cell **B** publishes **`1` (AUTONOMOUS)** **unconditionally**, from the tier4 fork's `ROS2.cpp:1117` `SetControlMode(ControlMode::AUTONOMOUS)`, with the fork's own `TODO: Add logic to use the input of control mode` beside it. One under-reports its mode; the other reports AUTONOMOUS whether or not it is. **Neither is patched**, deliberately: whether an approach reports its own control mode correctly _is part of the interop completeness being compared_. The `control_mode = MANUAL` → arm-refusal link is **NOT established** — README's own follow-up records that the transition was refused in exactly that state and that `control_mode_request` is the alternative candidate. No python-bridge reading is registered.                                                                                                                                                                                                                                                                                                                      | A, B                    | README `:2159-2413`, table at `:2324`                                                 |
 
 ### 7.2 The pre-registered confounds that still apply
 
@@ -967,7 +1119,7 @@ Indexed, not restated. Read them at the cited line in `benchmarks/README.md`.
 | Map provenance: self-built Town10 pcd vs sourced Nishi pcd (C4) — keeps only its A/B-vs-C comparison now that `D` is struck                                                     | A/A-hf vs C         | `:955`           |
 | Perception load: clear-road stand-in vs real CUDA perception                                                                                                                    | A/B/C/D vs E family | `:1025`          |
 | Sensing graph: `carla_sensor_kit` vs `awsim_labs_sensor_kit`                                                                                                                    | E family vs A/B/C/D | `:1059`          |
-| Ground truth is the CARLA actor origin; localization is `base_link` — and the GT anchor is **per-approach**, not campaign-wide (`extension` +0.000 m, `python-bridge` −1.425 m) | all                 | `:1097`, `:1135` |
+| Ground truth is the CARLA actor origin; localization is `base_link` — and the GT anchor is **per-approach**, not campaign-wide (`extension` +0.000 m, `python-bridge` −1.425 m) | all                 | `:1097`, `:1132` |
 | Physics substepping: B disables it at 20 Hz, A leaves CARLA's default on                                                                                                        | A vs B              | `:1249`          |
 | CAL-seam: a per-publish allocation the fork side alone carries — **and `C1(a)` seam overhead is now UNMEASURED**, the cell having been struck                                   | —                   | `:1281`, `:3330` |
 | DDS middleware and transport: the B family runs a different one (`rmw_fastrtps_cpp` + `observer/config/udp_only.xml`, SHM off)                                                  | B vs all            | `:1323`          |
@@ -1079,17 +1231,17 @@ exercise of discretion. It is named here rather than softened.
 
 ### 8.4 Measurement-condition deviations, disclosed
 
-| #   | deviation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | status                                                                            |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| 1   | **`duel.sh` gained inter-run pacing mid-campaign** (120 s floor + a bounded, load-triggered top-up). Inter-run host-idle time is a measurement condition, so this is a **dated amendment**, not a transparent bugfix. `MAX_LOADAVG` and criterion 6 were **not** changed — relaxing the gate would tune a validity condition to fit the measurement. Pair 1 (`A/run-003`, `B/run-013`) predates it; its ~31.5 s gap is **reconstructed** from committed byte content, not recorded. Recorded behaviour over the 17 paced gaps: top-up fired on **5 of 17** (5/10/15/15/20 s), the 300 s ceiling was **never** reached, total pacing wait 2105 s.                                                                                                                                                                                                                                                                                                                                                                               | disclosed, PROVENANCE §3, §4.2                                                    |
-| 2   | **The duel's first-slot alternation realised 6/4, not 5/5.** `duel.sh` alternates which cell takes a pair's first slot so neither always pays the cold-cache cost. Because the duel was filed as `--pairs 10` (aborted after pair 1) plus `--pairs 9`, and every invocation starts its own pair 1 with cell A, cell A went first in **6** of the ten static pairs. A one-slot imbalance introduced by an abort, not by a design change; not correctable without re-running filed pairs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | disclosed, PROVENANCE §4.3                                                        |
-| 3   | **A live teardown defect left the Autoware stack up on 5 of the 10 cell-B static runs.** A racy sidecar write (reading `/proc/$pid/cmdline` on the line after `nohup ros2 launch …`, racing `ros2`'s own exec) makes `stop_launch_tree.sh`'s pid-reuse guard misfire. **It did NOT invalidate any run**: teardown runs after the scoring window closes, `teardown.sh`'s `docker rm -f` killed all 56 processes immediately after, every subsequent preflight passed, and no run was refused or excluded. What was lost is the graceful SIGINT ladder on those five. **Not fixed** — changing how a run is launched mid-measurement changes the measured configuration.                                                                                                                                                                                                                                                                                                                                                         | disclosed, PROVENANCE §5                                                          |
-| 4   | **`harness_git_sha` is not uniform, within cells or across them.** Even the duel pool spans two shas: pair 1 on `177256e`, pairs 2–10 on `5a28339` (the pacing amendment). Cell C spans `1f43914` and `4f7aa68`; cell E/E0's collection is uniform on `e7ba92a`. Verified rather than assumed — see 9.3 for the blast radius, which is the fact a P4 comparison actually needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | disclosed, PROVENANCE §8.6; 9.3 below                                             |
-| 5   | **Two 0-byte `gt.log` classes**, both with populated `gt.csv`. The python-bridge family's is root-caused (python block-buffering over a non-TTY `docker exec`, whose client — not the in-container interpreter — receives run.sh's SIGTERM) and **fixed** by `-e PYTHONUNBUFFERED=1`, so E-family runs from `e7ba92a` forward file the applied GT anchor. `C/run-005`'s single 0-byte `gt.log` is a **different, unexplained one-off**: its `gt.csv` is complete at 1383 rows, `publisher_counts.json` is well-formed, and the run scored `gate_pass: true`. No criterion 1–10 applies to either — in particular not criterion 9, which covers a recorder that exits "before it has recorded anything usable".                                                                                                                                                                                                                                                                                                                 | disclosed, PROVENANCE §7.5, §8.6, §9.4                                            |
-| 6   | **Per-run preflight loadavg spread inside chained cell-C batches** (1.47–5.38 across the eleven runs). `run.sh --runs N` has no inter-run pacing, unlike `duel.sh`. Every value is under `preflight.sh`'s registered gate of 8 **and** under `duel.sh`'s registered target of 6, so all were collected inside the campaign's own registered host-load conditions. Recorded rather than corrected: correcting it afterwards would mean choosing which runs to keep on a condition that is not a pre-registered exclusion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | disclosed, PROVENANCE §8.4                                                        |
-| 7   | **`benchmarks/config/observer_topics/B.yaml` does not carry `/map/vector_map`**, so **no filed run in this campaign can answer the latched-delivery question from data already on disk.** It needed the live probes of PROVENANCE §7.7–§7.11, which is why that finding rests on evidence under `benchmarks/evidence/` rather than on run artifacts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | disclosed, PROVENANCE §7.1                                                        |
-| 8   | **The load-sensitive test flake is REPRODUCIBLE ON DEMAND, and this task characterised it further.** `test_teardown.py::test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline` executes the real sidecar polling loop and reads a real short-lived process's `/proc/<pid>/cmdline`; under load the process is gone before the read and it fails `assert 'os.execv' in ''`. This task hit it **twice**, both times while the host was shedding a `pre-commit run --all-files` — once at 1-min loadavg **42.68**, once at 1-min **1.71** but 5-min **14.25**, which shows the **1-min average alone is not a sufficient quiet signal for this test**. Gated on 1-min < 1.0 **and** 5-min < 3.0 instead, with nothing else changed: `tests/benchmarks/test_teardown.py` **16 passed** in isolation, and the full suite **1075 passed, 1 skipped** — the baseline. Not a regression and not silenced; the launcher's own comment already warns the poll cap is "a FLOOR, not a ceiling -- load stretches it further". | disclosed, PROVENANCE §7.10, §7.11; the 5-min-average characterisation added here |
-| 9   | **`benchmarks/report.py` exits 1 over the full results root**, driven entirely by cell CAL-rmw, which has no simulator and therefore no `/clock`. Its registered renderer is `scripts/cal_report.py`. Not fixed, not suppressed — see section 3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disclosed here                                                                    |
+| #   | deviation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | status                                                                            |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| 1   | **`duel.sh` gained inter-run pacing mid-campaign** (120 s floor + a bounded, load-triggered top-up). Inter-run host-idle time is a measurement condition, so this is a **dated amendment**, not a transparent bugfix. `MAX_LOADAVG` and criterion 6 were **not** changed — relaxing the gate would tune a validity condition to fit the measurement. Pair 1 (`A/run-003`, `B/run-013`) predates it; its ~31.5 s gap is **reconstructed** from committed byte content, not recorded. Recorded behaviour over the 17 paced gaps: top-up fired on **5 of 17** (5/10/15/15/20 s), the 300 s ceiling was **never** reached, total pacing wait 2105 s.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | disclosed, PROVENANCE §3, §4.2                                                    |
+| 2   | **The duel's first-slot alternation realised 6/4, not 5/5.** `duel.sh` alternates which cell takes a pair's first slot so neither always pays the cold-cache cost. Because the duel was filed as `--pairs 10` (aborted after pair 1) plus `--pairs 9`, and every invocation starts its own pair 1 with cell A, cell A went first in **6** of the ten static pairs. A one-slot imbalance introduced by an abort, not by a design change; not correctable without re-running filed pairs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | disclosed, PROVENANCE §4.3                                                        |
+| 3   | **A live teardown defect left the Autoware stack up on 5 of the 10 cell-B static runs.** A racy sidecar write (reading `/proc/$pid/cmdline` on the line after `nohup ros2 launch …`, racing `ros2`'s own exec) makes `stop_launch_tree.sh`'s pid-reuse guard misfire. **It did NOT invalidate any run**: teardown runs after the scoring window closes, `teardown.sh`'s `docker rm -f` killed all 56 processes immediately after, every subsequent preflight passed, and no run was refused or excluded. What was lost is the graceful SIGINT ladder on those five. **Not fixed** — changing how a run is launched mid-measurement changes the measured configuration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disclosed, PROVENANCE §5                                                          |
+| 4   | **`harness_git_sha` is not uniform, within cells or across them.** Even the duel pool spans two shas: pair 1 on `177256e`, pairs 2–10 on `5a28339` (the pacing amendment). Cell C spans `1f43914` and `4f7aa68`. **Cell E/E0's collection is uniform on `e7ba92a` only for the runs that count** — all 11 valid static runs and both cells' Task-8 exclusions carry it, while `E0/run-001` is on `1f43914` and `E/run-001`…`run-009` carry five other shas; every one of those is excluded or bring-up class. Verified rather than assumed — see 9.3 for the blast radius, which is the fact a P4 comparison actually needs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | disclosed, PROVENANCE §8.6; 9.3 below                                             |
+| 5   | **Two 0-byte `gt.log` classes**, both with populated `gt.csv`. The python-bridge family's is root-caused (python block-buffering over a non-TTY `docker exec`, whose client — not the in-container interpreter — receives run.sh's SIGTERM) and **fixed** by `-e PYTHONUNBUFFERED=1`, so E-family runs from `e7ba92a` forward file the applied GT anchor. `C/run-005`'s single 0-byte `gt.log` is a **different, unexplained one-off**: its `gt.csv` is complete at 1383 rows, `publisher_counts.json` is well-formed, and the run scored `gate_pass: true`. No criterion 1–10 applies to either — in particular not criterion 9, which covers a recorder that exits "before it has recorded anything usable".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | disclosed, PROVENANCE §7.5, §8.6, §9.4                                            |
+| 6   | **Per-run preflight loadavg spread inside chained cell-C batches** (1.47–5.38 across the eleven runs). `run.sh --runs N` has no inter-run pacing, unlike `duel.sh`. Every value is under `preflight.sh`'s registered gate of 8 **and** under `duel.sh`'s registered target of 6, so all were collected inside the campaign's own registered host-load conditions. Recorded rather than corrected: correcting it afterwards would mean choosing which runs to keep on a condition that is not a pre-registered exclusion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disclosed, PROVENANCE §8.4                                                        |
+| 7   | **`benchmarks/config/observer_topics/B.yaml` does not carry `/map/vector_map`**, so **no filed run in this campaign can answer the latched-delivery question from data already on disk.** It needed the live probes of PROVENANCE §7.7–§7.11, which is why that finding rests on evidence under `benchmarks/evidence/` rather than on run artifacts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | disclosed, PROVENANCE §7.1                                                        |
+| 8   | **The load-sensitive test flake is REPRODUCIBLE ON DEMAND, and this task characterised it further.** `test_teardown.py::test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline` executes the real sidecar polling loop and reads a real short-lived process's `/proc/<pid>/cmdline`; under load the process is gone before the read and it fails `assert 'os.execv' in ''`. This task hit it **twice**, both times while the host was shedding a `pre-commit run --all-files` — once at 1-min loadavg **42.68**, once at 1-min **1.71** but 5-min **14.25**, which shows the **1-min average alone is not a sufficient quiet signal for this test**. Gated on 1-min < 1.0 **and** 5-min < 3.0 instead, with nothing else changed: `tests/benchmarks/test_teardown.py` **16 passed** in isolation, and the full suite **1075 passed, 1 skipped** — the baseline as it stood then. (The review wave since added 9 tests, so the current baseline is **1084 passed, 1 skipped**; the 1075 figure is retained here because it is what this observation was made against.) Not a regression and not silenced; the launcher's own comment already warns the poll cap is "a FLOOR, not a ceiling -- load stretches it further". | disclosed, PROVENANCE §7.10, §7.11; the 5-min-average characterisation added here |
+| 9   | **`benchmarks/report.py` exits 1 over the full results root**, driven entirely by cell CAL-rmw, which has no simulator and therefore no `/clock`. Its registered renderer is `scripts/cal_report.py`. Not fixed, not suppressed — see section 3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | disclosed here                                                                    |
 
 ### 8.5 One deferred annotation, closed by this task
 
@@ -1148,29 +1300,55 @@ Both were already ruled on and are recorded here rather than posed:
 **P4 will be run, in a later session.** Everything P4 needs is in this document
 and in `benchmarks/results/PROVENANCE.md` §10. Neither depends on any
 out-of-repo workspace: the plan's SDD scratch directory is git-ignored and is
-deleted when the plan finishes, so nothing P4 needs lives only there.
+deleted when the plan finishes, so nothing **P3 owes P4** lives only there.
+
+**One thing is NOT here and cannot be: P4's own scope.** It is registered
+nowhere in this repository, and this document does not invent it — see 9.4,
+which states the gap plainly rather than leaving a promise the repo cannot
+keep.
 
 ### 9.1 The environment identity P4 must match — and it is verifiable
 
 Every filed run records the identity of what produced it, so P4 does not have to
 take the environment on trust. The keys, all in `manifest.json`:
 
-| key                            | what it pins                      | P3 value on the duel pool                                                                                     |
-| ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `carla_version`                | which fork/build of the simulator | `0.10-fork` (A/C), `0.10-tier4` (B), `0.9.15` (E/E0)                                                          |
-| `autoware_image`               | the Autoware container            | `ghcr.io/autowarefoundation/autoware:universe-devel` (A/C), the same by **digest** `sha256:5c22369a…e8ee` (B) |
-| `patches_git_sha`              | the applied patch inventory       | `ccff4f9` on every P3-era run                                                                                 |
-| `harness_git_sha`              | the measurement code              | see 9.3 — **it moved during P3**                                                                              |
-| `transport.dds_profile_sha256` | the DDS profile actually in force | `1eeef31e…f2865` (cyclone cells), `9886f744…65098` (cell B), `""` (E/E0, no profile)                          |
-| `placement.engine_build_id`    | the shared Unreal engine          | `4210e602-78ec-46e1-8f2f-03fadbe036a3`                                                                        |
+| key                            | what it pins                      | P3 value on the duel pool                                                                                                     |
+| ------------------------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `carla_version`                | which fork/build of the simulator | `0.10-fork` (A/C), `0.10-tier4` (B), `0.9.15` (E/E0)                                                                          |
+| `autoware_image`               | the Autoware container            | `ghcr.io/autowarefoundation/autoware:universe-devel` (A/C), the same by **digest** `sha256:5c22369a…e8ee` (B)                 |
+| `patches_git_sha`              | the applied patch inventory       | `ccff4f9` on every non-excluded run; 20 excluded stale runs carry five earlier shas (see 7.1, row P3-5, and the census below) |
+| `harness_git_sha`              | the measurement code              | see 9.3 — **it moved during P3**                                                                                              |
+| `transport.dds_profile_sha256` | the DDS profile actually in force | `1eeef31e…f2865` (cyclone cells), `9886f744…65098` (cell B), `""` (E/E0, no profile)                                          |
+| `placement.engine_build_id`    | the shared Unreal engine          | `4210e602-78ec-46e1-8f2f-03fadbe036a3`                                                                                        |
 
 **P4 must re-verify all six at its start**, before collecting anything.
 Cross-session drift in the fork build, the Autoware image, or the DDS profile
 would make P4 **incomparable to P3** — and it would do so silently, because
 every one of these can move without any run failing.
 
+The census that prints all six for every filed run, and the source of the
+per-key figures above:
+
+```bash
+python3 - <<'PY'
+import collections, json, pathlib
+seen = collections.defaultdict(list)
+for m in sorted(pathlib.Path("benchmarks/results").glob("*/run-*/manifest.json")):
+    d = json.loads(m.read_text())
+    key = (
+        d["carla_version"], d["autoware_image"], d["patches_git_sha"][:7],
+        d["harness_git_sha"][:7], d["transport"]["dds_profile_sha256"][:8],
+        d["placement"].get("engine_build_id", "-"), d["excluded"],
+    )
+    seen[key].append(f"{m.parent.parent.name}/{m.parent.name}")
+for key, runs in sorted(seen.items(), key=lambda kv: kv[1][0]):
+    print(f"{len(runs):3d}  excluded={key[6]!s:5s} carla={key[0]:11s} patches={key[2]} "
+          f"harness={key[3]} dds={key[4]:8s} buildid={key[5][:8]}  {runs[0]}..{runs[-1]}")
+PY
+```
+
 **Engine BuildId `4210e602-78ec-46e1-8f2f-03fadbe036a3` stays pinned, and
-RELINK REMAINS FORBIDDEN.** `pins.yaml:247-259`: a `carla-unreal-editor` rebuild
+RELINK REMAINS FORBIDDEN.** `benchmarks/pins.yaml:247-259`: a `carla-unreal-editor` rebuild
 in **any** tree relinks the shared engine and invalidates every tree that shares
 it; "no further engine relink is permitted from here on (D8)". `exclusions.md`
 criterion 8 excludes any run whose BuildId is found to mismatch after start.
@@ -1180,9 +1358,14 @@ criterion 8 excludes any run whose BuildId is found to mismatch after start.
 This is not a P3-only condition. Under cell B's registered transport
 (`rmw_fastrtps_cpp` + `benchmarks/observer/config/udp_only.xml`, SHM off), the
 latched-topic delivery defect of section 5.1 blocks the arm nondeterministically
-and per-topic. Cell B is **0 for 14** closed-loop attempts under that transport.
-A P4 design that assumes cell B can be armed will lose the runs it budgets for
-that, exactly as P3 lost fifteen filed cell-B closed-loop runs to it.
+and per-topic. **Cell B is 0-for-15 on the closed-loop arm under that
+transport** — 7 of the 15 reached the arm and failed it, and 8 never got that
+far (see 5.1's tally and its reproduction command). A P4 design that assumes
+cell B can be armed will lose the runs it budgets for that. **Attribute the
+loss carefully**: of P3's 15, the 7 `gate:arm-failed` runs are the ones the
+latched-delivery defect accounts for; the other 8 are crash-class
+(`crash:cell-launch` ×7, `crash:collect_gt` ×1) and were lost to bring-up, not
+to this defect.
 
 The per-topic re-publish workaround (`injector/republish_vector_map.py`, made
 advisory in `2dbec06`) fixes the **map** and **does not scale**: the route is
@@ -1238,56 +1421,147 @@ git diff --name-only 5a28339 269b931 -- . \
   ':(exclude)benchmarks/results' ':(exclude)benchmarks/evidence'
 ```
 
-Two of those are on cells A and C's path, and **both are inert for them**:
+**FOUR of those are on cells A and C's path, and two of the four are
+EXECUTABLE changes.** Cells A and C are `approach: extension`, and
+`benchmarks/cells/extension.sh:192` launches `scripts/e2e/run_e2e.sh`, which
+runs `scripts/e2e/launch_autoware.sh`, which in turn drives
+`scripts/e2e/stop_launch_tree.sh` on its `--stop` path (`launch_autoware.sh:155`).
+Both of those `scripts/e2e/` files changed **executably** in this range:
 
-- `benchmarks/scripts/teardown.sh` — a **one-line comment** citation fix
-  (`:311-316` → `:361`). No executable change. Verify:
-  `git diff 5a28339 269b931 -- benchmarks/scripts/teardown.sh`.
-- `benchmarks/config/cells.yaml` — 206 insertions, but the semantic change is
-  confined to cells **E and E0**. Every other cell's parsed registration is
-  **identical** across the range. Verify:
+| file on A/C's path                | change                                                                                                  | comment-stripped md5, `5a28339` → `269b931` |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `scripts/e2e/launch_autoware.sh`  | **executable** — +87/−2; the Task-18b fork/exec settle loop, which polls for up to ~5 s during bring-up | `07436b102c07` → `4797c56ecd45`             |
+| `scripts/e2e/stop_launch_tree.sh` | **executable** — +54/−6; the teardown-summary and pid-reuse-guard work                                  | `f4912c09ee75` → `917ec5a3d1ba`             |
+| `benchmarks/scripts/teardown.sh`  | comment only — a one-line citation fix (`:311-316` → `:361`)                                            | unchanged                                   |
+| `benchmarks/config/cells.yaml`    | registry — semantic change confined to cells **E** and **E0**                                           | A/C parse-identical                         |
 
-  ```bash
-  python3 - <<'PY'
-  import subprocess, yaml, json
-  def load(rev):
-      txt = subprocess.run(["git", "show", f"{rev}:benchmarks/config/cells.yaml"],
-                           capture_output=True, text=True, check=True).stdout
-      return {c["id"]: c for c in yaml.safe_load(txt)["cells"]}
-  old, new = load("5a28339"), load("269b931")
-  for cid in sorted(set(old) | set(new)):
-      same = json.dumps(old.get(cid), sort_keys=True) == json.dumps(new.get(cid), sort_keys=True)
-      print(f"{cid:9s} identical={same}")
-  PY
-  ```
+Reproduce the hashes with:
 
-  Output: `identical=True` for A, A-hf, B, B-hf, B45, C, CAL-rmw, CAL-seam and
-  D; `identical=False` for **E** and **E0** only.
+```bash
+for f in scripts/e2e/launch_autoware.sh scripts/e2e/stop_launch_tree.sh \
+         benchmarks/cells/extension.sh benchmarks/run.sh scripts/e2e/run_e2e.sh; do
+  for r in 5a28339 269b931; do
+    printf '%-34s %s %s\n' "$f" "$r" \
+      "$(git show "$r:$f" | sed 's/[[:space:]]*#.*$//' | grep -v '^[[:space:]]*$' | md5sum | cut -c1-12)"
+  done
+done
+```
 
-So the reviewed blast radius is **cells B and D** (the `tier4_autoware.sh`
-vector-map work) and **cells E/E0** (the bridge grounding and the `set -u` fix),
-with **cell A's and cell C's measurement paths byte-identical** —
-`cells/extension.sh`, `run.sh`, `preflight.sh`, `write_quality.py`,
-`config/exclusions.md`, `config/margins.yaml` and all of `analysis/` are
-untouched across the whole span.
+**CONSEQUENCE, AND IT IS P4-FACING: cell A and cell C DID NOT RUN THE SAME
+LAUNCHER.** The `scripts/e2e/` changes landed in six commits on the evening of
+2026-07-31 (`3cf06ef`, `6d06608`, `2742dbf`, `161cf75`, `cdb22aa`, `7056a6e`),
+which sits **between** the two cells' collections:
 
-### 9.4 P4 is the natural place to settle the transport question
+| runs                                                 | `harness_git_sha`     | relative to the `scripts/e2e/` change |
+| ---------------------------------------------------- | --------------------- | ------------------------------------- |
+| **cell A duel pool** `run-003` / `run-004`…`run-012` | `177256e` / `5a28339` | **before** — the whole pool           |
+| cell A Phase-0 diagnostics `run-013`, `run-014`      | `d7460ab` / `f0f8b4b` | after                                 |
+| **cell C** `run-001`…`run-002` / `run-003`…`run-014` | `1f43914` / `4f7aa68` | **after** — every run                 |
 
-Section 5.1's finding is bounded to "the as-shipped tier4 transport
-configuration on this host" and is explicitly **not** attributed to the
-tier4-native approach. Settling it needs a controlled transport comparison, and
-**P4 already has transport as a registered axis** and inherits **CAL-rmw's
-frozen `one_hop_wall_ms` margin of 2.0**, derived from 15 interleaved
-calibration runs (`p50_cyclonedds` 0.6840 ms, `p50_fastdds-udp` 1.0993 ms; the
-formula put 2 × |Δ| at 0.83 ms, so the 2.0 floor binds). That is the right
-instrument for the question, and `B/run-033` is a single non-duel bounding
-probe, not a substitute for it.
+**The A-vs-B static verdict is unaffected**: cell A's pool is entirely
+pre-change and internally consistent on this axis, and cell B is
+`approach: tier4-native`, which does not reach `scripts/e2e/` at all. **But any
+A-vs-C comparison must account for it** — the two cells ran different bring-up
+and teardown code, and this document draws no A-vs-C statistic for that reason
+among others (cell C is confirmatory and `duel_admissible: false` throughout).
 
-Two things P4 must **not** do with `run-033`: treat it as a cell-B measurement
-(its manifest says on its face that its transport does not match `cells.yaml` —
-`transport.rmw = rmw_cyclonedds_cpp`, `dds_profile_sha256 = ""`,
+An earlier revision of this section said "cell A's and cell C's measurement
+paths byte-identical" and counted two files rather than four. That was **false**
+and is corrected here rather than quietly dropped; it is exactly the class of
+claim this campaign keeps catching, and it was labelled "verified rather than
+asserted", which made it worse.
+
+Verify the `cells.yaml` half with:
+
+```bash
+python3 - <<'PY'
+import subprocess, yaml, json
+def load(rev):
+    txt = subprocess.run(["git", "show", f"{rev}:benchmarks/config/cells.yaml"],
+                         capture_output=True, text=True, check=True).stdout
+    return {c["id"]: c for c in yaml.safe_load(txt)["cells"]}
+old, new = load("5a28339"), load("269b931")
+for cid in sorted(set(old) | set(new)):
+    same = json.dumps(old.get(cid), sort_keys=True) == json.dumps(new.get(cid), sort_keys=True)
+    print(f"{cid:9s} identical={same}")
+PY
+```
+
+Output: `identical=True` for A, A-hf, B, B-hf, B45, C, CAL-rmw, CAL-seam, D
+and E-opt — all ten other registered cells; `identical=False` for **E** and
+**E0** only.
+
+**So the reviewed blast radius is: cells B and D** (the `tier4_autoware.sh`
+vector-map work), **cells E/E0** (the bridge grounding and the `set -u` fix),
+**and the shared `scripts/e2e/` bring-up + teardown code that cells A and C
+run** — which moved between their two collections, as above.
+
+What IS byte-identical across the whole span, and this list is enumerated
+rather than generalised because the generalisation is what went wrong above —
+each verified by `git show <rev>:<path> | md5sum` at both endpoints:
+`benchmarks/cells/extension.sh`, `benchmarks/run.sh`,
+`scripts/e2e/run_e2e.sh`, `benchmarks/scripts/preflight.sh`,
+`benchmarks/scripts/write_quality.py`, `benchmarks/report.py`,
+`benchmarks/scripts/duel_verdict.py`, `benchmarks/config/exclusions.md`,
+`benchmarks/config/margins.yaml`, and every file under
+`benchmarks/analysis/`. **The analysis and scoring code did not move at all** —
+which is the part the verdict actually rests on.
+
+### 9.4 The transport question, and an OPEN ITEM the handoff cannot close
+
+> **"P4" means three different things in this campaign's vocabulary. Fix the
+> referent before reading anything below.**
+>
+> | usage                     | what it is                                                                                                | where                               |
+> | ------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+> | **P4, the phase**         | the next phase of the evaluation campaign, deferred to a later session                                    | this section, section 9 generally   |
+> | **P4, the Phase-0 probe** | the pre-declared probe "NDT rate with the relay stopped, vs ≥ 9.0 Hz", whose failure selected branch (c)  | 5.2's branch table; PROVENANCE §6.7 |
+> | ~~P4, a confound row~~    | **removed** — this document's confound rows were relabelled `P3-1`…`P3-6` precisely to end this collision | 7.1                                 |
+>
+> Every bare "P4" outside 5.2 means the phase.
+
+**OPEN ITEM, and it falsifies part of this section's first revision: P4's scope
+is registered NOWHERE in this repository.** That revision asserted "P4 already
+has transport as a registered axis". It does not. Checkable:
+`grep -c P4 benchmarks/README.md` returns **0**, and `benchmarks/config/cells.yaml`
+registers no transport axis — its `sweep_arms` are `paced` / `unpaced` /
+`ablation`, and `transport` appears only as a per-run recorded block, never as a
+dimension to sweep. The claim is withdrawn.
+
+This matters because section 9 opens by promising that everything P4 needs lives
+in this document and in PROVENANCE §10, and **the SDD workspace that held P4's
+plan is git-ignored scratch that is deleted when this plan finishes.** The
+honest statement of what survives:
+
+- **What P3 owes P4 IS committed and complete**: the environment identity to
+  re-verify (9.1), the `harness_git_sha` move and its blast radius (9.3), cell
+  B's closed-loop blocker (9.2), the verdict and every caveat on it, and the
+  full deviations log (section 8).
+- **What P4's own scope is, is NOT committed anywhere.** Whoever runs P4 must
+  re-derive or re-register it. This document does not invent it, because a
+  scope written here by the wrap would be a pre-registration authored after
+  seeing P3's results — precisely what the campaign's no-tuning rule forbids.
+
+**What the repository DOES hold for the transport question, stated as fact
+rather than as a promise about P4.** Section 5.1's finding is bounded to "the
+as-shipped tier4 transport configuration on this host" and is explicitly **not**
+attributed to the tier4-native approach; settling it needs a controlled
+transport comparison. The campaign already built one instrument for that and it
+is committed and frozen: **cell `CAL-rmw`**, 15 interleaved runs at the duel
+size across three DDS configurations (5 each, visible as three distinct
+`dds_profile_sha256` values in the 9.1 census), from which
+`benchmarks/config/margins.yaml`'s `one_hop_wall_ms` margin was frozen
+(`p50_cyclonedds` 0.6840 ms, `p50_fastdds-udp` 1.0993 ms; the registered formula
+put 2 × abs(Δ) at 0.83 ms, so the pre-registered floor of 2.0 binds). A
+transport phase that reuses that cell and that margin inherits a
+measurement-grade baseline rather than starting cold. `B/run-033` is a single
+non-duel bounding probe and is **not** a substitute for it.
+
+Two things any later phase must **not** do with `run-033`: treat it as a cell-B
+measurement (its manifest says on its face that its transport does not match
+`cells.yaml` — `transport.rmw = rmw_cyclonedds_cpp`, `dds_profile_sha256 = ""`,
 `duel_admissible: false`), and read its `ndt_rate_ratio` of 1.000 as reopening
-branch (c). Both are recorded as observations at n = 1.
+branch (c). Both are observations at n = 1.
 
 ## 10. Reproduction index
 
@@ -1304,4 +1578,4 @@ root at commit `269b931` on an idle host.
 | 6   | section 9.3's per-cell registration diff                     | the `cells.yaml` comparison in 9.3                                                                                                                                             |
 | 7   | the per-cell metric bindings quoted throughout               | `PYTHONPATH=. python3 -c "from benchmarks.scripts.cell_info import load_cells_doc, metrics_for; d=load_cells_doc(None); print(metrics_for(d,'A')); print(metrics_for(d,'B'))"` |
 | 8   | the M5 quality figures quoted in sections 2, 5 and 6         | `python3 -c "import json,pathlib;[print(p.parent.name, json.loads(p.read_text())) for p in sorted(pathlib.Path('benchmarks/results').glob('*/run-*/quality.json'))]"`          |
-| 9   | the test-suite baseline                                      | `python3 -m pytest tests/ -q` → **1075 passed, 1 skipped**                                                                                                                     |
+| 9   | the test-suite baseline                                      | `python3 -m pytest tests/ -q` → **1084 passed, 1 skipped** (1075 before the review wave added 9 tests)                                                                         |

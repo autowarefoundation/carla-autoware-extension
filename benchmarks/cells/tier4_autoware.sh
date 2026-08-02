@@ -840,17 +840,39 @@ if [ "${BENCH_ARM:-}" = "closed-loop" ]; then
       --settle-s 5 --capture-timeout-s 90 --match-timeout-s 60 \
       --verify-timeout-s 60 --attempts 3 --advisory \
       --launch-log $AW_LOG --report /out/vector-map-delivery.json"; then
-    echo "OK: /map/vector_map re-publish step completed -- see" \
-      "$BENCH_RUN_DIR/vector-map-delivery.json for which oracle verified"
+    # RAN is not VERIFIED, and this message may not blur the two. Under
+    # --advisory the node's _finish returns EXIT_OK for EVERY verdict it can
+    # reach, so this branch is taken on 0, 3, 4 and 5 alike -- including
+    # EXIT_NO_CAPTURE, where nothing was ever published. An earlier revision
+    # said "step completed", which reads as success and is true of a run whose
+    # capture never happened. verdict_code is the outcome; this is only that
+    # the process got far enough to write one.
+    echo "OK: the /map/vector_map re-publish step RAN AND RECORDED A VERDICT" \
+      "-- which is NOT the same as the map being verified. Under --advisory" \
+      "the node exits 0 for every verdict it can reach, so read verdict_code" \
+      "in $BENCH_RUN_DIR/vector-map-delivery.json: 0 verified (and the" \
+      "verified / verified_relog keys name which oracle saw it), exit 3 the" \
+      "capture never happened, 4 the publisher matching never settled," \
+      "5 the verification never went OK. Only 0 means the map was observed" \
+      "to arrive."
   else
+    # What actually reaches here, stated precisely: NOT verdicts 3/4/5. With
+    # --advisory the node returns EXIT_OK for all of those, so they take the
+    # branch above. This branch is the PROCESS failing -- a crash before or
+    # during the report write, or `cx` never running the command at all. An
+    # earlier revision enumerated 3/4/5 here, which no reader could ever have
+    # observed.
     echo "ADVISORY: the /map/vector_map re-publish step did not complete" \
       "cleanly. NOT fatal, by design (see section 5's header): the campaign's" \
       "pass criteria are the arm and control_cmd, and this is an added" \
       "precondition. Continuing to the arm, where the planner reports on the" \
       "map itself via 'waiting for map' once a route exists." \
-      "$BENCH_RUN_DIR/vector-map-delivery.json names which half did not" \
-      "happen, in verdict_code: exit 3 the capture, 4 the publisher matching," \
-      "5 the verification, 6 a crash before any report could be written."
+      "This branch is NOT verdict_code 3/4/5 -- with --advisory those all" \
+      "exit 0 and take the branch above. Reaching here means the PROCESS" \
+      "failed: a crash before or during the report write (verdict_code 6)," \
+      "or the container command itself never running. So" \
+      "$BENCH_RUN_DIR/vector-map-delivery.json may hold a crash stub, or be" \
+      "absent entirely."
   fi
 fi
 

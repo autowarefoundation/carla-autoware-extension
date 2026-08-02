@@ -456,6 +456,18 @@ def _finish(node, report: dict, code: int, args) -> int:
     if args.report:
         with open(args.report, "w") as fh:
             json.dump(report, fh, indent=2, sort_keys=True)
+        # Recorded on `args` -- the one object both this function and
+        # `_write_crash_report` already receive -- the INSTANT a complete
+        # report reaches disk, and deliberately not before. Three statements
+        # still follow below (a print, destroy_node, rclpy.shutdown), any of
+        # which can raise; without this flag that exception reaches `_cli`,
+        # which calls `_write_crash_report`, which would then OVERWRITE the
+        # complete report with a crash stub -- destroying the run's only
+        # verdict artifact on the way out. Set after the `with` block closes,
+        # so a crash DURING the dump (a truncated, unparsable file) still
+        # leaves the flag False and still gets the stub, which is correct:
+        # there is no complete report there to protect.
+        args.report_written = True
     print(json.dumps(report, sort_keys=True))
     node.destroy_node()
     rclpy.shutdown()
@@ -466,8 +478,23 @@ def _write_crash_report(args, exc: BaseException) -> None:
     """A crash before `_finish` used to leave NO report at all, and the advisory
     call site prints only that the step "did not complete cleanly" -- so the one
     artifact a reader would go looking for would not exist. Best-effort, and
-    never allowed to mask the original exception."""
+    never allowed to mask the original exception.
+
+    REFUSES TO OVERWRITE A COMPLETE REPORT. The docstring above says "a crash
+    before `_finish`", but `_cli` catches every exception from anywhere in the
+    call, and `_finish` itself does three more things AFTER its report reaches
+    disk (a print, `destroy_node`, `rclpy.shutdown`). A failure in any of them
+    used to land here and replace a real verdict -- the run's only evidence of
+    what the delivery step actually measured -- with a stub saying `crashed:
+    true, verified: false`, which reads exactly like a step that never ran. The
+    `report_written` flag `_finish` sets makes the docstring's assumption true
+    instead of merely assumed. A run that crashes on the way out therefore
+    keeps its verdict and reports the crash on stderr and via the process exit
+    status, which is where a shutdown fault belongs.
+    """
     if not getattr(args, "report", ""):
+        return
+    if getattr(args, "report_written", False):
         return
     try:
         with open(args.report, "w") as fh:
@@ -481,7 +508,13 @@ def _write_crash_report(args, exc: BaseException) -> None:
                     "verified_relog": False,
                     "verdict_code": EXIT_CRASHED,
                     "exit_code": EXIT_CRASHED,
-                    "process_exit_code": EXIT_OK if args.advisory else EXIT_CRASHED,
+                    # `getattr` on BOTH lines, not just the one below: this
+                    # path runs after an arbitrary exception, and the whole
+                    # point of the defaulting is that `args` may not carry
+                    # every attribute a normal run would.
+                    "process_exit_code": (
+                        EXIT_OK if getattr(args, "advisory", False) else EXIT_CRASHED
+                    ),
                     "advisory": bool(getattr(args, "advisory", False)),
                 },
                 fh,

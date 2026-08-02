@@ -38,6 +38,7 @@ Two things need pinning and they need pinning DIFFERENTLY.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -48,6 +49,19 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 TIER4_CELL = REPO / "benchmarks" / "cells" / "tier4_autoware.sh"
+
+# Text unique to ONE branch of the launcher's advisory if/else. Named
+# constants rather than inline literals because four tests below depend on
+# their branch-uniqueness, and a literal repeated four times is exactly how
+# that property gets broken silently.
+#
+# Each must be contiguous on a SINGLE source line as well as present in
+# stdout, because the assertions run against both: the launcher's echoes are
+# split across continuation lines, so a phrase that spans two of them (e.g.
+# "did not complete cleanly", which the shell joins but the file does not
+# contain) matches the run and silently never matches the source.
+RAN_BRANCH_MARKER = "RAN AND RECORDED A VERDICT"
+FAILED_BRANCH_MARKER = "step did not complete"
 
 
 class _StubModule(types.ModuleType):
@@ -69,7 +83,9 @@ for _name in (
 ):
     sys.modules.setdefault(_name, _StubModule(_name))
 
+from benchmarks.injector import republish_vector_map as rvm  # noqa: E402
 from benchmarks.injector.republish_vector_map import (  # noqa: E402
+    EXIT_CRASHED,
     EXIT_NOT_VERIFIED,
     EXIT_NO_CAPTURE,
     EXIT_NO_MATCH,
@@ -189,7 +205,12 @@ def test_exit_codes_match_the_numbers_the_launcher_tells_the_operator():
     """`cells/tier4_autoware.sh`'s advisory message tells a reader to key off
     these numbers -- "exit 3 the capture, 4 the publisher matching, 5 the
     verification". Asserting only that four constants differ would pass while
-    the code and that message drifted apart, which is the failure this pins."""
+    the code and that message drifted apart, which is the failure this pins.
+
+    They live in the step-RAN branch, not the step-FAILED one: under
+    `--advisory` every one of these verdicts exits 0, so the RAN branch is the
+    only place a reader can ever meet them (see
+    `test_the_failure_branch_does_not_claim_verdicts_that_cannot_reach_it`)."""
     assert (EXIT_OK, EXIT_NO_CAPTURE, EXIT_NO_MATCH, EXIT_NOT_VERIFIED) == (0, 3, 4, 5)
     launcher = TIER4_CELL.read_text()
     assert "exit 3 the" in launcher and "4 the publisher matching" in launcher
@@ -204,7 +225,7 @@ def test_the_parser_accepts_the_launcher_s_real_flags_with_the_real_values():
     block = _gating_block()
     flags = re.search(r"republish_vector_map\.py(.*?)\"", block, re.DOTALL).group(1)
     argv = [w for w in flags.replace("\\\n", " ").split() if w != "\\"]
-    argv = [w.replace("$AW_LOG", "/tmp/tier4-autoware.log").replace("/out/", "/out/") for w in argv]
+    argv = [w.replace("$AW_LOG", "/tmp/tier4-autoware.log") for w in argv]
     args = build_arg_parser().parse_args(argv)
     assert args.attempts == 3
     assert args.settle_s == 5
@@ -322,13 +343,60 @@ def test_the_step_is_advisory_and_never_aborts_the_run(tmp_path: Path):
     assert not (tmp_path / "fail.log").exists(), (
         "the delivery step aborted the bring-up: " + (tmp_path / "fail.log").read_text()
     )
-    assert "ADVISORY" in proc.stdout, proc.stdout
+    # Keyed on text unique to the ELSE branch. An earlier version asserted
+    # `"ADVISORY" in proc.stdout`, which the UNCONDITIONAL pre-branch echo
+    # ("... (ADVISORY -- never aborts)") already satisfies -- so deleting the
+    # whole if/else body left it green. Same for the happy-path test below and
+    # its `"/map/vector_map"`. Both now assert their own branch's marker AND
+    # the ABSENCE of the other's, so one message that tries to serve both
+    # cannot satisfy either test.
+    assert FAILED_BRANCH_MARKER in proc.stdout, proc.stdout
+    assert RAN_BRANCH_MARKER not in proc.stdout, proc.stdout
 
 
 def test_the_advisory_outcome_is_still_announced_on_the_happy_path(tmp_path: Path):
+    """And it announces RAN, not VERIFIED.
+
+    Under `--advisory` the node returns EXIT_OK for verdicts 0, 3, 4 and 5
+    alike, so reaching this branch says only that the process wrote a report --
+    a run whose capture never happened (EXIT_NO_CAPTURE) lands here too. The
+    message must send the reader to `verdict_code` rather than read as success,
+    which is what these assertions pin."""
     proc = _run_gate(tmp_path, arm="closed-loop", cx_exit=0)
     assert proc.returncode == 0, proc.stderr
-    assert "/map/vector_map" in proc.stdout
+    assert RAN_BRANCH_MARKER in proc.stdout, proc.stdout
+    assert FAILED_BRANCH_MARKER not in proc.stdout, proc.stdout
+    assert "verdict_code" in proc.stdout, proc.stdout
+
+
+def test_neither_branch_marker_is_printed_before_the_branch(tmp_path: Path):
+    """The reason the two tests above can be trusted at all.
+
+    Both markers must live INSIDE their branch. If either ever migrated into
+    the unconditional echo that precedes the `if`, both tests above would pass
+    on a launcher whose entire if/else body had been deleted -- which is
+    exactly the hole this file used to have. Asserted against the launcher
+    text, not a run, so it catches the migration at its source."""
+    block = _gating_block()
+    preamble = block.split("if cx ", 1)[0]
+    assert RAN_BRANCH_MARKER not in preamble, preamble
+    assert FAILED_BRANCH_MARKER not in preamble, preamble
+    assert block.count(RAN_BRANCH_MARKER) == 1
+    assert block.count(FAILED_BRANCH_MARKER) == 1
+
+
+def test_the_failure_branch_does_not_claim_verdicts_that_cannot_reach_it(tmp_path: Path):
+    """With `--advisory`, `_finish` returns EXIT_OK for EVERY verdict it can
+    reach (0/3/4/5), so the shell's else branch is the PROCESS failing, not a
+    non-verified verdict. An earlier revision of that message enumerated
+    "exit 3 the capture, 4 the publisher matching, 5 the verification" as
+    things a reader might see there; none of them can occur. The numbers now
+    live in the branch that actually reports them."""
+    block = _gating_block()
+    ran_branch, failed_branch = block.split("  else\n", 1)
+    assert "exit 3 the" in ran_branch and "4 the publisher matching" in ran_branch
+    assert "exit 3 the" not in failed_branch
+    assert "NOT verdict_code 3/4/5" in failed_branch
 
 
 def test_the_launcher_asks_for_advisory_mode_explicitly(tmp_path: Path):
@@ -541,3 +609,160 @@ def test_cyclonedds_with_a_profile_mounts_it_as_cyclonedds_uri(tmp_path: Path):
         "/repo/docker/cyclonedds.xml:/dds-profile.xml:ro",
     ]
     assert not any("FASTRTPS" in w for w in words)
+
+
+# ---------------------------------------------------------------------------
+# 5. the crash report must never destroy a real one
+#
+# `_cli` wraps the WHOLE call in `except BaseException` and hands the exception
+# to `_write_crash_report`. That helper's docstring assumed "a crash before
+# `_finish`" -- but `_finish` does three more things AFTER its report reaches
+# disk (a print, `destroy_node`, `rclpy.shutdown`), and a failure in any of
+# them used to land in exactly the same handler and overwrite the finished
+# report with `{"crashed": true, "verified": false, ...}`. That stub is
+# indistinguishable from a step that never ran, on the one artifact the run
+# exists to produce. These tests pin the guard and, equally, pin that the
+# original behaviour survives everywhere it was right.
+# ---------------------------------------------------------------------------
+
+
+class _FakeNode:
+    def __init__(self) -> None:
+        self.destroyed = False
+
+    def monitor_snapshot(self) -> dict:
+        return {"level": "OK"}
+
+    def destroy_node(self) -> None:
+        self.destroyed = True
+
+
+def _finish_args(tmp_path: Path, *, advisory: bool = True):
+    args = build_arg_parser().parse_args(
+        [
+            "--advisory" if advisory else "--attempts",
+            *([] if advisory else ["3"]),
+            "--report",
+            str(tmp_path / "vector-map-delivery.json"),
+            "--launch-log",
+            str(tmp_path / "launch.log"),
+        ]
+    )
+    (tmp_path / "launch.log").write_text("")
+    return args
+
+
+def test_a_report_that_reached_disk_is_never_overwritten_by_the_crash_stub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """THE regression. `_finish` completes its write, then `rclpy.shutdown()`
+    raises on the way out -- a real possibility on a stack being torn down.
+    The verdict must survive."""
+    args = _finish_args(tmp_path)
+    boom = RuntimeError("shutdown raced teardown")
+
+    def _raise() -> None:
+        raise boom
+
+    monkeypatch.setattr(rvm.rclpy, "shutdown", _raise)
+
+    node = _FakeNode()
+    with pytest.raises(RuntimeError):
+        rvm._finish(node, {"topic": "/map/vector_map", "verified": True}, EXIT_OK, args)
+    # This is precisely what `_cli`'s handler does next.
+    rvm._write_crash_report(args, boom)
+
+    filed = json.loads(Path(args.report).read_text())
+    assert filed["verified"] is True, filed
+    assert filed["verdict_code"] == EXIT_OK, filed
+    assert "crashed" not in filed, filed
+
+
+def test_a_crash_before_the_report_is_written_still_files_the_stub(tmp_path: Path):
+    """The behaviour the guard must NOT take away: with no completed report,
+    a crash still leaves the artifact a reader will go looking for."""
+    args = _finish_args(tmp_path)
+    rvm._write_crash_report(args, RuntimeError("died during capture"))
+
+    filed = json.loads(Path(args.report).read_text())
+    assert filed["crashed"] is True
+    assert filed["verdict_code"] == EXIT_CRASHED
+    assert filed["verified"] is False
+    assert "died during capture" in filed["error"]
+
+
+def test_a_crash_DURING_the_report_write_still_files_the_stub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The boundary case the flag is placed to get right. If `json.dump` itself
+    fails, what is on disk is truncated and unparsable -- there is no complete
+    report to protect -- so the stub is the correct outcome. The flag is set
+    only AFTER the `with` block closes, which is what makes this work."""
+    args = _finish_args(tmp_path)
+    boom = RuntimeError("disk went away mid-dump")
+
+    def _explode(*a, **kw):
+        raise boom
+
+    monkeypatch.setattr(rvm.json, "dump", _explode)
+
+    node = _FakeNode()
+    with pytest.raises(RuntimeError):
+        rvm._finish(node, {"topic": "/map/vector_map", "verified": True}, EXIT_OK, args)
+    assert getattr(args, "report_written", False) is False
+    monkeypatch.undo()
+    rvm._write_crash_report(args, boom)
+
+    assert json.loads(Path(args.report).read_text())["crashed"] is True
+
+
+def test_the_guard_keys_off_a_completed_write_not_off_the_file_existing(tmp_path: Path):
+    """A stale report left at the same path by an earlier invocation must NOT
+    be mistaken for this run's completed one. The flag lives on `args`, which
+    is per-invocation, so a pre-existing file is still replaced."""
+    args = _finish_args(tmp_path)
+    Path(args.report).write_text(json.dumps({"verified": True, "stale": True}))
+    rvm._write_crash_report(args, RuntimeError("died during capture"))
+
+    filed = json.loads(Path(args.report).read_text())
+    assert filed["crashed"] is True
+    assert "stale" not in filed
+
+
+def test_finish_records_the_write_and_still_returns_the_advisory_status(tmp_path: Path):
+    """The flag is a side effect on `args`, so it must not disturb what
+    `_finish` returns, nor what it files. Under --advisory the process status
+    is 0 while `verdict_code` keeps the real outcome -- the three-key contract
+    `_finish`'s own comment sets out."""
+    args = _finish_args(tmp_path)
+    node = _FakeNode()
+    rc = rvm._finish(node, {"topic": "/map/vector_map"}, EXIT_NOT_VERIFIED, args)
+
+    assert rc == EXIT_OK
+    assert args.report_written is True
+    assert node.destroyed is True
+    filed = json.loads(Path(args.report).read_text())
+    assert filed["verdict_code"] == EXIT_NOT_VERIFIED
+    assert filed["process_exit_code"] == EXIT_OK
+    assert filed["advisory"] is True
+
+
+def test_the_crash_stub_defaults_every_args_attribute_it_reads(tmp_path: Path):
+    """`_write_crash_report` runs after an ARBITRARY exception, so `args` may
+    not carry what a normal run's does. Every read is defaulted -- including
+    `advisory`, which one line used to read bare while the line beside it used
+    `getattr`."""
+    bare = types.SimpleNamespace(report=str(tmp_path / "r.json"))
+    rvm._write_crash_report(bare, RuntimeError("very early"))
+
+    filed = json.loads(Path(bare.report).read_text())
+    assert filed["advisory"] is False
+    assert filed["process_exit_code"] == EXIT_CRASHED
+    assert filed["topic"] == ""
+
+
+def test_no_report_path_means_no_crash_file_anywhere(tmp_path: Path):
+    """`--report` is optional; without it the helper must be a no-op rather
+    than inventing a path."""
+    rvm._write_crash_report(build_arg_parser().parse_args([]), RuntimeError("x"))
+    assert list(tmp_path.iterdir()) == []
