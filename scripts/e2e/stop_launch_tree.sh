@@ -87,7 +87,7 @@
 # above. A `.cmd` that OUTLIVES its pid file gets compared against the NEXT
 # launch's pid, and that launch can legitimately have no sidecar of its own to
 # overwrite it with -- launch_autoware.sh writes it best-effort (never able to
-# fail the launch, launch_autoware.sh:185-233). The comparison is then exact and
+# fail the launch, launch_autoware.sh:209-257). The comparison is then exact and
 # still wrong, and it skips a REAL teardown: precisely the false positive
 # claimed above to be impossible. MEASURED 2026-07-31, before this was fixed:
 # a graceful (rung-1) teardown removed the pid file and left the sidecar, the

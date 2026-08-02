@@ -145,7 +145,7 @@ def _cmdline_of(pid: int) -> str:
     """The pid's command line the way launch_autoware.sh records it -- NUL
     separators turned into spaces, trailing separator included, byte for byte
     what `tr "\\0" " " </proc/<pid>/cmdline` writes once its Task 18b polling
-    loop settles (launch_autoware.sh:219-233; the read itself is at :221).
+    loop settles (launch_autoware.sh:243-257; the read itself is at :245).
     The pid-reuse guard compares for exact equality, so an approximation here
     would test a different string than the script does."""
     return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
@@ -359,7 +359,7 @@ def test_a_stale_sidecar_does_not_skip_the_next_launchs_teardown(supervisor, tmp
 
     launch_autoware.sh writes the sidecar BEST EFFORT (its Task 18b polling
     loop only ever writes via a plain redirect with no `set -e` in effect,
-    launch_autoware.sh:219-233), so a launch legitimately produces a pid file
+    launch_autoware.sh:243-257), so a launch legitimately produces a pid file
     with no `.cmd` beside it. If a previous teardown leaked its sidecar at that same
     fixed path, the guard compares the OLD command line against the NEW pid,
     sees a mismatch, and SKIPS a teardown that was entirely legitimate -- a

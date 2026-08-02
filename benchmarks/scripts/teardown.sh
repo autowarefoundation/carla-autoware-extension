@@ -97,7 +97,7 @@ stop_container() {
 # Delivery: `docker exec -i <container> bash -s -- <pidfiles>`, piping the
 # script in on stdin. scripts/e2e/launch_autoware.sh's own --stop path
 # uses compose_exec_script for the identical "no bind mount needed" reason
-# (launch_autoware.sh:89-94), but that helper wraps `docker compose exec`,
+# (launch_autoware.sh:113-118), but that helper wraps `docker compose exec`,
 # and this family's container is a bare `docker run` with AW_COMPOSE=""
 # (cells/tier4-native.sh:144) -- there is no compose file for it to
 # target. `docker exec -i` piping the script on stdin gets the same

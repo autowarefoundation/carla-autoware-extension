@@ -45,6 +45,30 @@ READY_TIMEOUT_S=300                         # bounded; a slow cold container can
 # node's own output_frame), so the relay needs no transform. (The concat node is left with its
 # stock 3-topic config; it stays silent with a single publisher, so the relay
 # is the sole publisher on the concatenated topic -- verified live after bring-up.)
+#
+# ^^^ TWO CLAIMS ABOVE ARE REFUTED BY MEASUREMENT. Kept as written, with the
+# refutation attached, per the convention that a claim stays in the record with the
+# diagnostic that corrected it. Registered at benchmarks/results/PROVENANCE.md S6.6
+# and deferred to the P3 wrap task, which is what landed this note; comment-only, no
+# executable change.
+#
+#   1. "HARD-REQUIRES >= 2 input topics ... and never loads" is FALSE on this rig.
+#      Phase 0's P1 publisher census measured /sensing/lidar/concatenate_data LOADED
+#      and ADVERTISING a publisher on RELAY_OUT alongside //relay -- 2 advertisers,
+#      not 1 (PROVENANCE S6.1, S6.5; benchmarks/evidence/p3-phase0/).
+#   2. "the relay is the sole publisher on the concatenated topic" is therefore FALSE
+#      as stated. What the comment gets right in SUBSTANCE though not in MECHANISM is
+#      that the concat node is SILENT: measured on the same stack state, RELAY_OUT /
+#      RELAY_IN message ratio 0.995 (398/400), ZERO RELAY_OUT stamps absent from
+#      RELAY_IN, ZERO duplicate stamps, and ros2 topic hz 19.957 on RELAY_OUT against
+#      19.960 on RELAY_IN. So every message here IS a relay forward -- but the concat
+#      node is silent WHILE HOLDING A PUBLISHER, not by failing to load.
+#
+# Nothing in this file was changed on the strength of that. The relay stays; it is the
+# sole EMITTER, which is the property the localization chain actually depends on. The
+# cell-B counterpart of this comment (benchmarks/cells/tier4_autoware.sh, "THAT PREMISE
+# IS REFUTED") already carries its own refutation in place and needed no change --
+# there, unlike here, the concat node emits too (2 emitters, 72 duplicate stamps).
 RELAY_IN=/sensing/lidar/top/pointcloud_before_sync
 RELAY_OUT=/sensing/lidar/concatenated/pointcloud
 

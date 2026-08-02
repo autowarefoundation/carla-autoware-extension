@@ -685,6 +685,22 @@ the annotation is scheduled for after all live collection completes. The
 cell-B-side counterpart comment (`tier4_autoware.sh`'s "THAT PREMISE IS
 REFUTED") already carries its own refutation in place and needs no change.
 
+**CLOSED 2026-08-01 by the P3 wrap (§10.3).** All live collection completed, so
+the annotation landed: `scripts/e2e/launch_autoware.sh:48-71` now carries the
+refutation of both claims, comment-only, with no executable change. The original
+claim at `:44-47` is kept exactly as written, per the convention that a claim
+stays in the record with the diagnostic that corrected it. The insertion shifted
+the file's later line numbers by 24, and every in-repo citation that shifts
+with it was corrected in the same commit and each re-verified against its new
+target: `benchmarks/scripts/teardown.sh:100` (`:89-94` → `:113-118`,
+`compose_exec_script`), `benchmarks/cells/tier4_autoware.sh:438` and
+`scripts/e2e/stop_launch_tree.sh:90` (`:185-233` → `:209-257`, the pid-file
+write plus its Task-18b settle loop) and
+`tests/e2e/test_stop_launch_tree.py:148,362` (`:219-233` → `:243-257`, read at
+`:221` → `:245`). Every edited file took a **comment-only** change; no
+measured configuration moved. `benchmarks/evidence/p3-phase0/probe-transcripts.md`'s
+`:46` and this section's own `:44-47` sit above the insertion and are unaffected.
+
 ### 6.7 FINAL RULING (fix round 2, 2026-08-01): branch (c), on P3 and P4 as pre-declared
 
 **Owner ruling that reopened the protocol**, recorded because it is what makes
@@ -2480,3 +2496,360 @@ than restate the value —
 
 `tests/benchmarks/test_write_quality.py`'s registry-wide ladder assertion also
 gained a `selected_relative` set, so E/E0's branch is pinned from both sides.
+
+---
+
+## 10. The P3 wrap (Task 9, live 2026-08-01): the verdict, the deviations log, and the handoff to P4
+
+**This section is written to be self-contained for a P4 reader.** The campaign's
+published record is `docs/evaluation/p3-baseline.md`; the plan's own workspace
+(`.superpowers/sdd/**`) is git-ignored scratch and is deleted when the plan
+finishes, so **nothing P4 needs lives only there**. Everything below is in this
+repository.
+
+No filed run was deleted, reclassified, re-scored or hand-edited by this task.
+Nothing under `benchmarks/results/*/run-*/` changed.
+
+### 10.1 The verdict, computed exactly ONCE
+
+No verdict, delta or cross-cell median existed in this repository before this
+task, and none is recomputed after it. One invocation, no filtering flags:
+
+```bash
+PYTHONPATH=. python3 benchmarks/scripts/duel_verdict.py A B | tee /tmp/p3-duel-verdict.md
+```
+
+Exit status 0. `--results` defaulted to `benchmarks/results`, `--margins` to
+`benchmarks/config/margins.yaml`, `--min-n` to the pre-registered 10. **No
+filtering flag is needed**: `duel_verdict.py` drops excluded runs and drops runs
+that are not `duel_admissible`, on two separate counters, so the static pool is
+the 10 pairs **by construction**. The counts it dropped are printed in the
+table's own `notes` column.
+
+Static arm, n = 10 per side (`A/run-003`…`run-012` × `B/run-013`…`run-022`):
+
+| metric | Δ median (A − B) | 95% CI | margin | printed verdict |
+| --- | --- | --- | --- | --- |
+| `one_hop_wall_ms` | −6.281 ms | [−6.542, −5.828] | 2.0 | `a_better` |
+| `lidar_to_ndt_sim_ms` | −5.817 ms | [−8.106, −4.976] | 5.0 | `a_better` |
+| `control_staleness_ms` | — | — | 10.0 | `insufficient-data` (UNAVAILABLE) |
+| `carla_process_cpu_pct` | −12.873 pp | [−16.698, −11.129] | 10.0 | `a_better` |
+| `achieved_rate_ratio` | +0.104 | [+0.090, +0.114] | 0.02 | `b_better` |
+
+M2 three-way reconciliation from the same invocation, static arm: cell A
+`publisher_drop_rate` median 0.021 / max 0.385, `observer_loss_rate` median
+0.000 / max 0.000; cell B `publisher_drop_rate` median 0.020 / max 0.022,
+`observer_loss_rate` median 0.085 / max 0.108. Both cells' non-zero
+`publisher_drop_rate` on this arm is the §1 teardown-ordering artefact, not a
+real publisher loss.
+
+Every closed-loop row is `insufficient-data` at n = 0/0.
+
+**HEADLINE: on the static arm the two approaches are NOT equivalent on any
+computable metric — no row returns `parity`, all four computable rows fall
+entirely outside their pre-registered margin, and all four separate in the
+extension's favour.**
+
+**Two readings a later task must not get wrong.**
+
+1. **`achieved_rate_ratio`'s `b_better` label is a polarity artefact, not a
+   tier4-native win.** `benchmarks/config/margins.yaml`'s header registers
+   `delta = extension - tier4-native; lower is better`, and
+   `analysis/stats.py`'s `equivalence_decision` applies that convention
+   uniformly. But `benchmarks/README.md:575-594` registers what this particular
+   fraction is *for* — "Taken in the sim domain, the ratio measures dropped or
+   skipped frames instead, which is what M2 is for" — so it is a **shortfall
+   detector** against each cell's own `lidar_expected_hz` (20.0 on A, 10.0 on B),
+   and **higher is better** on this metric alone among the five.
+   `equivalence_decision` prints `b_better` exactly when the whole CI sits above
+   zero, i.e. when median(A) > median(B), so Δ = +0.104 with CI [+0.090, +0.114]
+   says **cell B falls 0.104 of its own registered target FURTHER SHORT than cell
+   A does** — five times the margin, in cell A's favour. The direction follows
+   from the printed sign; no new statistic is needed. The reconciliation row
+   corroborates it independently on a different quantity: cell A loses **0.000**
+   of its frames observer-side, cell B loses **0.085–0.108**.
+   *Do not cross-read `benchmarks/report.py`'s `hz` column against this metric*:
+   that column is an **arrival**-domain rate and `achieved_rate_ratio` is
+   computed on **sim** header stamps, deliberately, so that RTF cannot land
+   inside a 0.02 margin.
+2. **`control_staleness_ms` is UNAVAILABLE, never zero and never parity.** Cell
+   A's `control_published_time_topic` is `null` (`config/cells.yaml:132`, owed
+   to Tasks 13/20, neither of which ran), so the metric is unbound for the whole
+   duel and the tool says so without touching a run directory.
+
+### 10.2 There is NO closed-loop equivalence verdict, and that is a result
+
+**Cell B never armed closed-loop under its registered transport: 0 of 14
+attempts. Fifteen filed cell-B closed-loop runs are excluded — the verdict
+tool's own closed-loop rows print `15 run(s) excluded from B`.** The mechanism is §7.11's
+first-class finding — latched (`TRANSIENT_LOCAL`) messages, published once,
+reaching `topic_state_monitor_*` promptly and `behavior_path_planner` not at
+all, nondeterministically and per-topic (map ×2, route ×3, operation_mode ×1
+across the six runs that reached the arm), **reproduced standalone with no CARLA
+and no harness**. The cyclonedds bounding probe `B/run-033` armed on the first
+try and passed its gate.
+
+**So the A-vs-B closed-loop equivalence verdict is NOT COMPUTABLE**, and this
+task did not manufacture one.
+
+**The attribution boundary of §7.11 is restated here because this is where a
+P4 reader will meet it:** the defect is a property of **the as-shipped tier4
+transport configuration on this host**. It is **NOT established as intrinsic to
+the tier4-native approach** — the cyclonedds side is **n = 1**, Fast-DDS
+version / kernel / loopback are uncontrolled, and this repository's own README
+says in terms that the cyclone rows are not measurement-grade. This campaign has
+caught three separate claims outrunning their measurements; this finding must
+not become the fourth.
+
+**Recorded, NOT acted on:** `B/run-033`'s `ndt_rate_ratio` is **1.000** against
+**0.257–0.989** on every filed Fast-DDS cell-B run — the branch-(c) confound
+absent on the one bring-up that changed only the middleware. **Owner ruling: an
+n = 1 observation with its attribution boundary attached. Branch (c) is neither
+reopened nor amended.**
+
+### 10.3 The deviations log, complete
+
+#### Branches not taken, and the tasks that did not run
+
+| item | outcome | why |
+| --- | --- | --- |
+| Phase 0 branch **(a)**, relay removal | **not selected** | needs P4 NDT ≥ 9.0 Hz post-kill; best post-kill reading on any of four runs ≈ 0.07 Hz (§6.8) |
+| Phase 0 branch **(b)**, concat suppression | **not selected** | trigger is "P3 fails: empty/malformed clouds"; P3 passed — well-formed, non-empty `base_link` clouds at 7.612 Hz |
+| Phase 0 branch **(c)** | **SELECTED**, by elimination (§6.7, §6.8) | registered fix mechanism: **NONE** |
+| **Task 2** — the branch-(a)/(b) fix | **SKIPPED** | conditional on (a)/(b); (c) fired and prescribes no harness change |
+| **Task 3** — criterion-3 reclassification of B `run-013`…`run-022`, plus `--revoke-duel` on cell A's pair-halves | **SKIPPED** | same condition. A's static pair-halves therefore **keep `duel_admissible: true`** and B's ten stay filed and unexcluded — recorded explicitly so no later task applies the spec's "Consequence of (a)/(b) for the A pair-halves" paragraph by reflex |
+| **Task 5** — 10-fresh-pair static recollection | **SKIPPED** | same condition; the pools stand exactly as filed |
+| M5 gate threshold | **never touched** | 0.9 throughout, on every cell, at every point in P3 |
+
+**And what branch (c) does NOT settle, stated plainly because the verdict
+carries it: Phase 0 eliminated double publication as the cause of cell B's
+depressed NDT rate; it did NOT identify a cause.** Nine of the ten
+duel-admissible cell-B static runs fail the M5 rate gate (0.257–0.850) and the
+tenth (`run-019`) could not be scored at all. The gate was never tuned. The root
+cause is **UNEXPLAINED** and the verdict is published carrying that fact.
+
+#### The "neither valid nor excludable" gap — three runs, record only
+
+`C/run-009`, `B/run-025`, `B/run-026`. Each ran to completion, matches **none**
+of `exclusions.md`'s ten criteria, and could not be scored by the M5 gate, so
+each is filed **unexcluded with no `quality.json`**.
+
+**The frozen ten-criterion vocabulary has no category for "ran, was not
+excludable, could not be scored."** There is deliberately no quality-based
+criterion at all, and `exclusions.md:52-53` forbids editing the criteria after
+the first P3 measurement run — so the vocabulary cannot be widened now either.
+
+**Owner ruling: record only, freeze held.** No retroactive reclassification, no
+criterion added or edited, no manifest touched. Any amendment is left to a future
+campaign, where a pre-registration change belongs.
+
+`C/run-009` is the load-bearing instance because it had **no** diagnostic
+intervention in it (§8.2); `B/run-025`/`run-026` are the Phase 0 relay-kill
+diagnostics, and `B/run-029` — a clean, un-intervened cell-B run — filed a
+`quality.json` normally, which supports reading their absence as an artefact of
+that intervention (§7.2).
+
+#### Cell E0, criterion 3, and the ruling NOT to re-collect
+
+`E0/run-005` and `run-006` are filed `harness:e7ba92a`. §9.9 establishes that
+the reason **string** is verbatim from criterion 3 while the criterion's
+**substance** does not fit: nothing was broken and nothing was fixed.
+
+A strict reading of `exclusions.md:51-52` — "any exclusion not matching 1-10
+invalidates the campaign for that cell and requires a fresh cell" — would
+therefore require re-collecting cell E0.
+
+**CONTROLLER RULING: cell E0 is NOT re-collected.** Four grounds:
+
+1. **A fresh cell reproduces the identical filing.** The `harness:<commit>` ⇄
+   criterion-3 mapping is pre-registered in committed code at
+   `benchmarks/run.sh:1028-1029`, predates cell E0's data, and was not touched by
+   any task that filed it (§9.9 (ii) carries the byte-identity check). Cell E0's
+   NDT starvation is its **registered expected outcome**, written down in advance
+   at §9.3. A fresh cell would starve the same way, fail the same step-15 smoke,
+   and be filed under the same catch-all.
+2. **The criteria may not be edited after the first P3 run**, so widening the
+   vocabulary is not available either. Both doors are closed by the same
+   pre-registration, which is what it is for.
+3. **Owner ruling: record-only, freeze held** for this whole class — the same
+   ruling that governs the three unscoreable runs above.
+4. **Cell E0 is a bridge cell outside the duel.** No verdict, delta or margin
+   decision rests on it.
+
+#### Cell E0's published pool is FIVE runs, and `E0/run-001` is NOT pooled
+
+§9.5 left this open and required the wrap to state which it did. **The wrap does
+not pool `E0/run-001` as a sixth run.** Cell E0's published static pool is
+`run-002`, `run-003`, `run-004`, `run-007`, `run-008`. Four grounds:
+
+1. **`run-001` was collected under a different registration** —
+   `harness_git_sha: 1f43914` against the pool's `e7ba92a`, the §9.2 grounding
+   commit. When it ran, E0's `lidar_expected_hz`, `ndt_expected_hz`,
+   `ladder_branch` and `abs_pose_gate_m` were all `null` and the M5 gate could
+   not score the cell at all.
+2. **Pooling it would make §9.9's bias WORSE — measured, not argued.**
+   `run-001` carries **10** NDT poses, against the pool's 8 / 17 / 8 / 6 / 6 and
+   the two dropped runs' 1 / 1. Adding it pushes an already-upward-biased pool
+   further up.
+3. It is **bring-up class** (`duel_admissible: false`), filed by the Task 4 smoke
+   pass whose purpose was to prove a path, not to measure it.
+4. **The campaign already resolved this exact shape the same way** — §8.5, on
+   `C/run-002`.
+
+`E0/run-001`'s measurements are reported **beside** the pool, never inside it.
+And **§9.9 is quoted inline beside cell E0's row** in
+`docs/evaluation/p3-baseline.md`, not merely cited, per §9.5's second item: any
+central-tendency statement about cell E0 is optimistically biased by a mechanism
+correlated with E0's own registered failure, and the bias cannot be estimated
+from the surviving pool.
+
+#### Cell E's closed loop, and what its absence does NOT mean
+
+Not collected, per the pre-registered static-only downgrade (§9.1). **The
+python-bridge approach's closed-loop evidence is STRUCTURAL, not measured.**
+Nothing in this record may be read as the bridge having been measured
+closed-loop and found wanting; it was never measured closed-loop at all, because
+it could not be armed.
+
+#### Measurement-condition deviations, all previously disclosed
+
+Indexed here so the log is complete in one place; each is written up at the
+section named.
+
+| deviation | section |
+| --- | --- |
+| Static-arm `publisher_drop_rate` is a teardown-ordering artefact — symmetric across A and B, not a duel-margin metric, closed-loop arm immune, correct fix inside the frozen `analysis/` tree | §1 |
+| `duel.sh` gained inter-run pacing mid-campaign — a dated amendment, not a transparent bugfix; `MAX_LOADAVG` and criterion 6 unchanged; pair 1's gap reconstructed, not recorded | §3 |
+| The duel's first-slot alternation realised **A first in 6 of 10**, not 5/5, because of the pair-2 abort | §4.3 |
+| A racy sidecar write left the Autoware stack up on **5 of 10** cell-B static runs; **no measurement was affected** and no run was invalidated; not fixed | §5 |
+| `harness_git_sha` is not uniform, within cells or across them — even the duel pool spans `177256e` (pair 1) and `5a28339` (pairs 2–10) | §8.6, 10.4 |
+| Two 0-byte `gt.log` classes: the python-bridge one root-caused and fixed (`PYTHONUNBUFFERED=1`); `C/run-005`'s a different, unexplained one-off with a complete `gt.csv` | §7.5, §8.6, §9.4 |
+| Preflight loadavg spread inside chained cell-C batches (1.47–5.38), all under the registered gate of 8 and target of 6; recorded rather than corrected | §8.4 |
+| `observer_topics/B.yaml` carries no `/map/vector_map`, so no filed run can answer the latched-delivery question from disk — it needed live probes | §7.1 |
+| Load-sensitive test flakes, all `/proc/<pid>/cmdline` reads under host load; all pass idle; none silenced. **This task hit `test_teardown.py::test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline` TWICE** (`assert 'os.execv' in ''`, §7.11's form), both times while the host was shedding a `pre-commit run --all-files`: once at 1-min loadavg **42.68**, and once at 1-min **1.71** with 5-min **14.25** — so **the 1-min average alone is not a sufficient quiet signal for this test**. Gated on 1-min < 1.0 AND 5-min < 3.0 instead, nothing else changed: `test_teardown.py` **16 passed** in isolation and the full suite **1075 passed, 1 skipped**, the baseline | §7.10, §7.11 |
+| `benchmarks/report.py` exits 1 over the full results root, driven **entirely** by cell CAL-rmw, which has no simulator and therefore no `/clock`; its registered renderer is `scripts/cal_report.py` (`run.sh:996-997`, `CAL-rmw/PROVENANCE.md:433-448`). Not fixed, not suppressed | `docs/evaluation/p3-baseline.md` §3 |
+
+#### One deferred annotation, closed by this task
+
+§6.6 recorded a refuted premise left in place in `scripts/e2e/launch_autoware.sh`
+(cell A's relay) with its in-file annotation "deliberately deferred to the P3
+wrap task", because cell A was about to carry hours of live duel collection and
+line-shifting that file risked live runs for no gain. **All live collection is
+complete, so the annotation is landed by this task** as a comment-only change
+with no executable effect, with every in-repo line-number citation that shifts
+with it corrected in the same commit. The cell-B-side counterpart comment in
+`benchmarks/cells/tier4_autoware.sh` already carries its own refutation and is
+unchanged.
+
+#### The two standing owner questions, answered rather than posed
+
+- **PR #29 stays in DRAFT.** The branch is pushed; the PR is not flipped to
+  ready-for-review.
+- **P4 is DEFERRED to a later session, and it WILL be run.** This record
+  therefore hands off rather than closing the campaign — §10.4.
+
+### 10.4 HANDOFF TO P4 — read this before collecting anything
+
+#### The environment identity P4 must match, and it is verifiable
+
+Every filed run records the identity of what produced it, so P4 need not take
+the environment on trust. In `manifest.json`: **`carla_version`**,
+**`autoware_image`**, **`patches_git_sha`**, **`harness_git_sha`**,
+**`transport.dds_profile_sha256`**, and **`placement.engine_build_id`**.
+
+P3's values on the duel pool: `carla_version` `0.10-fork` (cells A/C),
+`0.10-tier4` (cell B), `0.9.15` (cells E/E0); `autoware_image`
+`ghcr.io/autowarefoundation/autoware:universe-devel` on A/C and the same by
+**digest** `sha256:5c22369a…e8ee` on B; `patches_git_sha` `ccff4f9` on every
+P3-era run; `dds_profile_sha256` `1eeef31e…f2865` on the cyclone cells,
+`9886f744…65098` on cell B, `""` on E/E0.
+
+**P4 MUST RE-VERIFY ALL SIX AT ITS START, before collecting anything.**
+Cross-session drift in the fork build, the Autoware image, or the DDS profile
+would make P4 **incomparable to P3** — and silently, because every one of these
+can move without any run failing.
+
+**Engine BuildId `4210e602-78ec-46e1-8f2f-03fadbe036a3` stays pinned, and
+RELINK REMAINS FORBIDDEN.** `pins.yaml:247-259`: a `carla-unreal-editor` rebuild
+in **any** tree relinks the shared engine and invalidates every tree that shares
+it — "no further engine relink is permitted from here on (D8)".
+`exclusions.md` criterion 8 excludes any run whose BuildId is found to mismatch
+after start.
+
+#### `harness_git_sha` MOVED during P3 — what that costs a P4↔P3 comparison
+
+Three harness changes landed after the duel pool was collected:
+
+1. **`1f43914`** — the python-bridge `set -u` fix: `cells/python-bridge.sh`'s
+   base_link anchor guard sat 65 lines above the `IMAGE=` resolution it reads,
+   so every python-bridge cell aborted `plan` with `IMAGE: unbound variable`.
+   Moved **verbatim** below the resolution; what it checks did not change (§7.6).
+2. **`a3ba158` → `2dbec06`** — the `/map/vector_map` re-publish step, added to
+   `cells/tier4_autoware.sh` **on the closed-loop arm only**, then made
+   **advisory** (§7.8, §7.9). `transport.dds_profile_sha256` is byte-identical,
+   so cell B's filed runs stay transport-comparable, and the static path acquired
+   no step.
+3. **`0c869ef`** — the registered opt-in for a deliberate tier4 transport
+   deviation (`BENCH_TIER4_TRANSPORT_DEVIATION`), which is what let `B/run-033`
+   run at all (§7.11).
+
+**Comparisons *within* P4 are unaffected.** **P4↔P3 comparisons must account for
+the move.**
+
+**The reviewed blast radius, verified rather than asserted: cells B and D (the
+`tier4_autoware.sh` vector-map work) plus cells E/E0 (the bridge grounding and
+the `set -u` fix) — with cell A's and cell C's measurement paths
+BYTE-IDENTICAL.** Across `5a28339..269b931`, outside `benchmarks/results/` and
+`benchmarks/evidence/`, exactly thirteen files change:
+`benchmarks/cells/python-bridge.sh`, `benchmarks/cells/tier4_autoware.sh`,
+`benchmarks/config/cells.yaml`, `benchmarks/injector/republish_vector_map.py`,
+`benchmarks/scripts/teardown.sh`, `scripts/e2e/launch_autoware.sh`,
+`scripts/e2e/stop_launch_tree.sh`, and six files under `tests/`. Two of those
+are on cells A/C's path and both are inert for them: `teardown.sh`'s change is a
+**one-line comment** citation fix (`:311-316` → `:361`) with no executable
+effect, and `cells.yaml`'s 206 insertions leave **every cell except E and E0
+parsed-identical**. Reproduce both checks with the commands in
+`docs/evaluation/p3-baseline.md` §9.3. Untouched across the whole span:
+`cells/extension.sh`, `run.sh`, `preflight.sh`, `write_quality.py`,
+`config/exclusions.md`, `config/margins.yaml` and all of `analysis/`.
+
+#### Cell B's closed-loop blocker will affect any P4 arm that tries to arm B
+
+This is not a P3-only condition. Under cell B's registered transport
+(`rmw_fastrtps_cpp` + `benchmarks/observer/config/udp_only.xml`, SHM off), the
+§7.11 latched-delivery defect blocks the arm nondeterministically and per-topic.
+Cell B is **0 for 14**. A P4 design that assumes cell B can be armed will lose
+the runs it budgets for that, exactly as P3 lost fifteen filed cell-B
+closed-loop runs to it. The per-topic
+re-publish workaround fixes the **map** and **does not scale** — the route is
+published *after* the planner starts by construction, so it can never use the
+late-joiner path the map fix relies on, and `operation_mode` would need a third
+(§7.11, "What was tried and did not work").
+
+#### P4 is the natural place to settle the transport question
+
+§7.11's finding is bounded to the as-shipped tier4 transport configuration **on
+this host** and is explicitly not attributed to the tier4-native approach.
+Settling it needs a controlled transport comparison, and **P4 already carries
+transport as a registered axis** and inherits **CAL-rmw's frozen
+`one_hop_wall_ms` margin of 2.0**, derived from 15 interleaved calibration runs
+(`p50_cyclonedds` 0.6840 ms, `p50_fastdds-udp` 1.0993 ms; 2 × |Δ| = 0.83 ms, so
+the 2.0 floor binds — `config/margins.yaml`,
+`benchmarks/results/CAL-rmw/PROVENANCE.md`). That is the right instrument;
+`B/run-033` is a single non-duel bounding probe, not a substitute for it.
+
+Two things P4 must **not** do with `run-033`: treat it as a cell-B measurement —
+its manifest says on its face that its transport does not match `cells.yaml`
+(`transport.rmw = rmw_cyclonedds_cpp`, `dds_profile_sha256 = ""`,
+`duel_admissible: false`) — and read its `ndt_rate_ratio` of 1.000 as reopening
+branch (c). Both are n = 1 observations.
+
+#### One consumer trap P4 will hit if it iterates cell C
+
+**`C/run-009` is `excluded: false` and has NO `quality.json`.** Iterating cell
+C's unexcluded runs and assuming a `quality.json` exists **will fault on it**.
+Filtering on `excluded` is **not sufficient** for this cell; special-case it
+explicitly. Full statement, with the M5 gate's verbatim refusal: §8.2. Its
+NDT-rate collapse (8.35 Hz against 19.95–19.96 elsewhere, pose-estimator
+specific) is a **lead, NOT TESTED**, and must stay that way until something
+tests it.
