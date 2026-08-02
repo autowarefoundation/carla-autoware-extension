@@ -106,8 +106,15 @@ for cell in sorted(p for p in root.iterdir() if p.is_dir()):
             print(f"{cell.name}/{run.name}: NO MANIFEST")
             continue
         m = json.loads(mp.read_text())
+        # `.get`, not `m["duel_admissible"]`: the field was introduced by the
+        # 2026-07-30 amendment (Task 15b) and is ABSENT from every manifest
+        # filed before it -- B/run-001..012 and E/run-001..008. Indexing raises
+        # KeyError on those 20, which is how the first revision of this command
+        # shipped broken. "absent" is itself provenance and is printed as such,
+        # never defaulted to false.
+        duel = m.get("duel_admissible", "absent(pre-2026-07-30)")
         print(f"{cell.name}/{run.name}: arm={m['arm']} excluded={m['excluded']} "
-              f"reason={m['exclusion_reason']!r} duel_admissible={m['duel_admissible']} "
+              f"reason={m['exclusion_reason']!r} duel_admissible={duel} "
               f"quality_json={(run / 'quality.json').is_file()}")
 PY
 ```
@@ -737,13 +744,13 @@ apart, gave "never in 113 s" and "0.97 s".
 closed-loop runs under `rmw_fastrtps_cpp`, plus `B/run-033` under the cyclonedds
 deviation:
 
-| class                                     | n      | runs                                      | reached the arm?            |
-| ----------------------------------------- | ------ | ----------------------------------------- | --------------------------- |
-| `crash:cell-launch`                       | **7**  | `run-001`…`run-006`, `run-031`            | no — the cell never came up |
-| `crash:collect_gt`                        | **1**  | `run-007`                                 | no                          |
-| `gate:arm-failed`                         | **7**  | `run-008`…`run-012`, `run-028`, `run-032` | **yes**, and failed it      |
-| **total under the registered transport**  | **15** | all excluded                              | **0 armed**                 |
-| deviation probe, not a cell-B measurement | 1      | `run-033` (cyclonedds)                    | **yes — ARMED**             |
+| class                                     | n      | runs                                                         | reached the arm?                 |
+| ----------------------------------------- | ------ | ------------------------------------------------------------ | -------------------------------- |
+| `crash:cell-launch`                       | **7**  | `run-001`…`run-006`; **`run-031` — see the carve-out below** | no — except `run-031`, which did |
+| `crash:collect_gt`                        | **1**  | `run-007`                                                    | no                               |
+| `gate:arm-failed`                         | **7**  | `run-008`…`run-012`, `run-028`, `run-032`                    | **yes**, and failed it           |
+| **total under the registered transport**  | **15** | all excluded                                                 | **0 armed**                      |
+| deviation probe, not a cell-B measurement | 1      | `run-033` (cyclonedds)                                       | **yes — ARMED**                  |
 
 ```bash
 python3 - <<'PY'
@@ -760,9 +767,29 @@ PY
 
 Two counts are therefore in play and neither may stand in for the other: **15**
 is how many closed-loop runs cell B filed and lost under its registered
-transport, and **7** is how many of those got far enough to attempt the arm. The
-other 8 are crash-class and say nothing about the latched-delivery defect —
-they never reached the point where it bites. An earlier revision of this
+transport, and **7** is how many of those got far enough to attempt the arm.
+
+**CARVE-OUT — `B/run-031` is a delivery loss wearing a launch-crash label, and
+the row above must not be read as covering it.** Of the 8 crash-class runs, 7
+genuinely never came up and therefore say nothing about the latched-delivery
+defect. `run-031` is the exception: its cell came up far enough to produce a
+**551 KB `tier4-autoware.log`** and a filed `vector-map-delivery.json`
+recording `captured: true`, `data_bytes: 1305281`, `subscriber_count: 16`,
+`matching_settled: true`, **three** re-publish attempts and
+`verified: false, exit_code: 5` (`EXIT_NOT_VERIFIED`). What failed was the
+delivery gate, which was **fatal at the time**; `cells/tier4-native.sh up`
+failed as a consequence and the run was filed criterion 1. PROVENANCE §7.9
+already recorded the labelling ambiguity as housekeeping
+("`gate:<detail>` under criterion 2 arguably fits a readiness-check abort
+better … criterion 1 is the safer reading. Left as filed"), and §7.8 records
+the finding that matters more than the verdict: that run's own log shows the
+re-published map **being delivered** to `lanelet2_map_visualization` and
+`vector_map_tf_generator` on all three attempts while the endpoint the gate
+read received none of them. So `run-031` belongs to the defect's evidence, not
+outside it. **NOT TESTED: whether `run-031` would have armed** — the gate
+aborted before any route was set. The direction of the original gloss was
+conservative (it under-counts the defect's reach), but it was false for 1 of 8,
+and it is corrected rather than left standing. An earlier revision of this
 document said "14 times" and "the six runs that reached the arm"; both are
 corrected here, and `run-032` — a seventh `gate:arm-failed`, blocked on the
 route per PROVENANCE §7.10 — is the run both omitted.
@@ -777,7 +804,7 @@ BENCH_TIER4_TRANSPORT_DEVIATION="task5 cyclonedds bounding probe: is the latched
 
 It **armed on the first try**, drove to within `goal_closest_approach_m`
 **0.103 m**, and passed its quality gate (`gate_pass: true`, `reasons: []`) —
-against 0-for-14 on the registered transport.
+against 0-for-15 on the registered transport (the tally above).
 
 **THE ATTRIBUTION BOUNDARY — read this before quoting the finding.** The defect
 is a property of **the as-shipped tier4 transport configuration on this host**.
@@ -895,9 +922,25 @@ wrong by one**; it is left as written, per the convention that a claim stays in
 the record with the diagnostic that corrected it — this is that diagnostic, and
 §10.3 of that file points back here.
 
-The two ranges are different populations and must not be swapped: **0.2569–
-0.8505** is the eight failing duel-pool runs; **0.257–0.989** is every filed
-Fast-DDS cell-B run, the range §5.1 contrasts `B/run-033`'s 1.000 against.
+**And the ranges, stated correctly — the first repair of this passage got the
+population label wrong.** It said `0.257–0.989` was "every filed Fast-DDS
+cell-B run". It is not; it is the **duel pool's own** min–max over its nine
+scoreable runs. The three figures, all recomputed from `quality.json`:
+
+| range             | population                                                                                                                               | n   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| **0.2569–0.8505** | the **failing** duel-pool runs                                                                                                           | 8   |
+| **0.2569–0.9892** | **all scoreable duel-pool runs** — the same population plus `run-013`'s pass                                                             | 9   |
+| **0.0386–0.9892** | all scoreable filed cell-B **static** runs (adds `run-023`, `run-024`, `run-027`, `run-029`, `run-030`; `run-027`'s 0.0386 is the floor) | 14  |
+
+So the first two are **one population** differing only by whether the passing
+run is included — not, as that revision claimed, "two different populations
+that must not be swapped". The count fix (eight, not nine) is unaffected and
+stands. `0.257–0.989` as §5.1 and PROVENANCE §7.11 use it — the range
+`B/run-033`'s 1.000 is contrasted against — is the **duel pool's** scoreable
+range, and both places label it "every filed Fast-DDS B run", which is the same
+mislabelling; the contrast itself is unharmed, since 1.000 sits above every one
+of the 14.
 
 Two corrections stay in the record with the diagnostics that produced them,
 per the campaign's convention: Phase 0's first ruling rested on a publisher
@@ -1297,7 +1340,7 @@ Both were already ruled on and are recorded here rather than posed:
 
 ## 9. Handoff to P4
 
-**P4 will be run, in a later session.** Everything P4 needs is in this document
+**P4 will be run, in a later session.** Everything **P3 owes P4** is in this document
 and in `benchmarks/results/PROVENANCE.md` §10. Neither depends on any
 out-of-repo workspace: the plan's SDD scratch directory is git-ignored and is
 deleted when the plan finishes, so nothing **P3 owes P4** lives only there.
@@ -1335,17 +1378,81 @@ import collections, json, pathlib
 seen = collections.defaultdict(list)
 for m in sorted(pathlib.Path("benchmarks/results").glob("*/run-*/manifest.json")):
     d = json.loads(m.read_text())
+    # Abbreviate, but NEVER by slicing: `sha[:7]` drops the "-dirty" suffix
+    # `write_manifest.py:19-22` appends when the working tree differed from
+    # HEAD, so a truncating census structurally cannot surface the one thing
+    # about these two keys most worth surfacing.
+    def short(sha):
+        head, _, tail = sha.partition("-")
+        return head[:7] + ("-" + tail if tail else "")
+
     key = (
-        d["carla_version"], d["autoware_image"], d["patches_git_sha"][:7],
-        d["harness_git_sha"][:7], d["transport"]["dds_profile_sha256"][:8],
+        d["carla_version"], d["autoware_image"], short(d["patches_git_sha"]),
+        short(d["harness_git_sha"]), d["transport"]["dds_profile_sha256"][:8],
         d["placement"].get("engine_build_id", "-"), d["excluded"],
     )
     seen[key].append(f"{m.parent.parent.name}/{m.parent.name}")
 for key, runs in sorted(seen.items(), key=lambda kv: kv[1][0]):
-    print(f"{len(runs):3d}  excluded={key[6]!s:5s} carla={key[0]:11s} patches={key[2]} "
-          f"harness={key[3]} dds={key[4]:8s} buildid={key[5][:8]}  {runs[0]}..{runs[-1]}")
+    print(f"{len(runs):3d}  excluded={key[6]!s:5s} carla={key[0]:11s} patches={key[2]:14s} "
+          f"harness={key[3]:14s} dds={key[4]:8s} buildid={key[5][:8]}  {runs[0]}..{runs[-1]}")
 PY
 ```
+
+#### PROVENANCE CAVEAT: 20 manifests carry `-dirty` shas, and 12 of them sit behind the frozen margin
+
+**Disclosed, not repaired.** `benchmarks/scripts/write_manifest.py:19-22`
+appends `-dirty` to `harness_git_sha` (and `patches_git_sha`) when the working
+tree differed from HEAD, and says why the suffix exists: without it the field
+**asserts** a tie-back — README's "any result can be tied back to the exact
+analysis code that scored it" — "which a dirty tree makes false". Twenty of the
+102 filed manifests carry it, on **both** keys:
+
+| runs                        | n      | `excluded` | what they are                                                    |
+| --------------------------- | ------ | ---------- | ---------------------------------------------------------------- |
+| `CAL-rmw/run-004`…`run-015` | **12** | **false**  | the calibration cell the `one_hop_wall_ms` margin is frozen from |
+| `B/run-024`…`run-027`       | 4      | false      | Phase 0 diagnostics, `duel_admissible: false`                    |
+| `B/run-001`…`run-004`       | 4      | true       | stale pre-P3 runs, retained as history                           |
+
+```bash
+python3 - <<'PY'
+import collections, json, pathlib
+dirty = collections.defaultdict(list)
+for m in sorted(pathlib.Path("benchmarks/results").glob("*/run-*/manifest.json")):
+    d = json.loads(m.read_text())
+    if "-dirty" in d["harness_git_sha"] or "-dirty" in d["patches_git_sha"]:
+        dirty[(m.parent.parent.name, d["excluded"])].append(m.parent.name)
+for (cell, excluded), runs in sorted(dirty.items()):
+    print(f"{cell:8s} excluded={excluded!s:5s} n={len(runs):2d}  {runs[0]}..{runs[-1]}")
+PY
+```
+
+**What this touches and what it does not, stated precisely because the
+distinction is the whole point.**
+
+- **The verdict's INPUTS are clean.** Both duel pools — `A/run-003`…`run-012`
+  and `B/run-013`…`run-022` — are clean on **both** keys, verified run by run.
+  No run the A-vs-B verdict is computed from carries a dirty sha.
+- **What is not fully pinned is the code state behind the MARGIN the verdict is
+  compared against.** 12 of the 15 CAL-rmw runs from which
+  `benchmarks/config/margins.yaml`'s `one_hop_wall_ms` margin was frozen carry
+  dirty shas, so those runs cannot be tied back to an exact commit. The
+  measurement stands as filed; its code provenance does not.
+- **Bounded by the margin's own arithmetic.** That derivation put 2 × abs(Δ) at
+  **0.83 ms** against a pre-registered **floor of 2.0**, and the floor is what
+  binds — the frozen value would be 2.0 for any measured delta up to 1.0 ms. The
+  dirty provenance would have to move the calibration by more than a factor of
+  two before it could move the margin at all. That bounds the exposure; it does
+  not remove it.
+
+**NOT REPAIRED, deliberately, and the reasoning is the campaign's own.**
+`margins.yaml` is **frozen** and its own header forbids re-derivation once
+collection has started, so re-collecting CAL-rmw could not be allowed to change
+the margin — which makes re-collection the same self-defeating remedy as the
+cell E0 criterion-3 case in 8.3: it would cost live runs and could not alter the
+artifact it was run to justify. Nothing under `benchmarks/results/` was touched
+and `margins.yaml` was not opened. **This is an item P4 should be aware of**: a
+margin with fully pinned provenance means a fresh calibration under a clean
+tree, registered as such in advance — not a retroactive repair of this one.
 
 **Engine BuildId `4210e602-78ec-46e1-8f2f-03fadbe036a3` stays pinned, and
 RELINK REMAINS FORBIDDEN.** `benchmarks/pins.yaml:247-259`: a `carla-unreal-editor` rebuild
@@ -1364,8 +1471,10 @@ far (see 5.1's tally and its reproduction command). A P4 design that assumes
 cell B can be armed will lose the runs it budgets for that. **Attribute the
 loss carefully**: of P3's 15, the 7 `gate:arm-failed` runs are the ones the
 latched-delivery defect accounts for; the other 8 are crash-class
-(`crash:cell-launch` ×7, `crash:collect_gt` ×1) and were lost to bring-up, not
-to this defect.
+(`crash:cell-launch` ×7, `crash:collect_gt` ×1) and were lost to bring-up —
+**with one carve-out: `B/run-031` came up, ran the delivery step, and was
+filed criterion 1 only because that step was fatal at the time. It belongs to
+this defect's evidence.** See 5.1.
 
 The per-topic re-publish workaround (`injector/republish_vector_map.py`, made
 advisory in `2dbec06`) fixes the **map** and **does not scale**: the route is
@@ -1504,8 +1613,19 @@ each verified by `git show <rev>:<path> | md5sum` at both endpoints:
 `benchmarks/scripts/write_quality.py`, `benchmarks/report.py`,
 `benchmarks/scripts/duel_verdict.py`, `benchmarks/config/exclusions.md`,
 `benchmarks/config/margins.yaml`, and every file under
-`benchmarks/analysis/`. **The analysis and scoring code did not move at all** —
-which is the part the verdict actually rests on.
+`benchmarks/analysis/`. **No analysis or scoring CODE moved** — which is the
+part the verdict actually rests on.
+
+One qualification, because the sentence above would otherwise overreach the way
+this section already had to be corrected once: `benchmarks/config/cells.yaml`
+is a **scoring input**, not just a registry — `duel_verdict.py` resolves every
+per-cell binding through `cell_info.metrics_for` against it — and it did move,
++206/−19, inside this same span. What makes that harmless here is proved 24
+lines above rather than asserted: **every cell except E and E0 is
+parsed-identical across the range**, so cells A, B, C and CAL-rmw were scored
+against byte-identical bindings. The claim is "no scoring code moved, and no
+binding the verdict reads moved", not "nothing under `benchmarks/config/`
+moved".
 
 ### 9.4 The transport question, and an OPEN ITEM the handoff cannot close
 

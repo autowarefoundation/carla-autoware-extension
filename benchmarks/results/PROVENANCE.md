@@ -290,6 +290,17 @@ watchdog stall marker, and renders through `report.py`'s strict path.
 
 ### 4.1 Cell B's nine gate-failing runs are retained, unexcluded, and disclosed
 
+> **COUNT CORRECTED — it is EIGHT, not nine. See §10.3, "COUNT CORRECTION".**
+> This heading and the paragraph below say "nine"; recomputed from every
+> `quality.json` on 2026-08-01, the ten duel-admissible cell-B static runs split
+> **1 pass (`run-013`, 0.9892) / 8 fail (0.2569–0.8505) / 1 unscoreable
+> (`run-019`)**. The table two paragraphs above already recorded
+> `M5 gate_pass = true: 1 (run-013)`, so the two never agreed. Both are left as
+> written, per the convention that a claim stays in the record with the
+> diagnostic that corrected it — this pointer is how a reader reaches that
+> diagnostic without having to find it 2 400 lines away. Reproduction command:
+> `docs/evaluation/p3-baseline.md` §5.2.
+
 Nine cell-B static runs fail the M5 gate, and all nine fail it on the **same
 named reason**: `ndt rate ratio <r> < 0.9`, with `r` between **0.257 and 0.850**
 against cell B's registered `ndt_expected_hz` of 10.0. The tenth,
@@ -2624,7 +2635,7 @@ Recomputed from every manifest, 2026-08-01:
 
 | class | n | runs | reached the arm? |
 | --- | --- | --- | --- |
-| `crash:cell-launch` | **7** | `run-001`…`run-006`, `run-031` | no |
+| `crash:cell-launch` | **7** | `run-001`…`run-006`; **`run-031` — carve-out below** | no — except `run-031`, which did |
 | `crash:collect_gt` | **1** | `run-007` | no |
 | `gate:arm-failed` | **7** | `run-008`…`run-012`, `run-028`, `run-032` | **yes**, and failed it |
 | total, registered transport | **15** | all excluded | **0 armed** |
@@ -2642,6 +2653,21 @@ for reason, runs in sorted(by_reason.items()):
     print(f"{reason:20s} n={len(runs):2d}  {runs}")
 PY
 ```
+
+**CARVE-OUT: `B/run-031` is a delivery loss wearing a launch-crash label.** Of
+the 8 crash-class runs, 7 genuinely never came up. `run-031` did: it produced a
+**551 KB `tier4-autoware.log`** and a filed `vector-map-delivery.json` recording
+`captured: true`, `data_bytes: 1305281`, `subscriber_count: 16`,
+`matching_settled: true`, three re-publish attempts and
+`verified: false, exit_code: 5` (`EXIT_NOT_VERIFIED`). The **delivery gate**
+failed — fatal at the time — and `cells/tier4-native.sh up` failed as a
+consequence, which is why it carries criterion 1. §7.9 already logged that
+labelling ambiguity as housekeeping, and §7.8 records that this run's own log
+shows the re-published map **being delivered** to `lanelet2_map_visualization`
+and `vector_map_tf_generator` on all three attempts while the gate's endpoint
+received none. So `run-031` belongs to the defect's evidence, not outside it.
+**NOT TESTED: whether it would have armed** — the gate aborted before a route
+existed.
 
 **15** is how many closed-loop runs cell B filed and lost under its registered
 transport; **7** is how many reached the arm. The other 8 are crash-class and
@@ -2717,11 +2743,22 @@ fact.
 > pervasiveness of the campaign's central unexplained confound, which is why it
 > is corrected rather than tidied away.
 >
-> **Two ranges, two populations, not interchangeable.** **0.2569–0.8505** is
-> the eight failing duel-pool runs. **0.257–0.989** is every filed Fast-DDS
-> cell-B run — its upper end IS `run-013`'s passing 0.989 — and that is the
-> range §7.11 contrasts `B/run-033`'s 1.000 against. Reproduction command:
-> `docs/evaluation/p3-baseline.md` §5.2.
+> **The ranges, stated correctly — the first version of this note mislabelled
+> them.** It called `0.257–0.989` "every filed Fast-DDS cell-B run". It is not;
+> it is the **duel pool's own** min–max over its nine scoreable runs, so it and
+> `0.2569–0.8505` are ONE population differing only by whether the passing run
+> is included. Recomputed from `quality.json`:
+>
+> | range | population | n |
+> | --- | --- | --- |
+> | **0.2569–0.8505** | the **failing** duel-pool runs | 8 |
+> | **0.2569–0.9892** | all **scoreable** duel-pool runs (adds `run-013`'s pass) | 9 |
+> | **0.0386–0.9892** | all scoreable filed cell-B **static** runs (`run-027`'s 0.0386 is the floor) | 14 |
+>
+> §7.11 uses `0.257–0.989` with the same "every filed Fast-DDS B run" label and
+> carries the same mislabelling; the contrast it draws is unharmed, because
+> `B/run-033`'s 1.000 sits above all 14. The count fix (eight, not nine) is
+> unaffected. Reproduction command: `docs/evaluation/p3-baseline.md` §5.2.
 
 #### The "neither valid nor excludable" gap — three runs, record only
 
@@ -2881,6 +2918,38 @@ those 20 is `excluded: true`**, the stale pre-P3 runs retained as history);
 cell B, `""` on E/E0. The census that prints all six keys for every filed run is
 in `docs/evaluation/p3-baseline.md` §9.1.
 
+**PROVENANCE CAVEAT ON THE FROZEN MARGIN — disclosed, deliberately NOT
+repaired.** `benchmarks/scripts/write_manifest.py:19-22` appends `-dirty` to
+`harness_git_sha` and `patches_git_sha` when the working tree differed from
+HEAD, and says why: without the suffix the field **asserts** a tie-back to the
+exact code that scored the run, "which a dirty tree makes false". **Twenty of
+the 102 filed manifests carry it on both keys**: `CAL-rmw/run-004`…`run-015`
+(**12**, none excluded), `B/run-024`…`run-027` (4, none excluded, Phase 0
+diagnostics) and `B/run-001`…`run-004` (4, excluded, stale pre-P3).
+
+- **The verdict's INPUTS are clean.** Both duel pools — `A/run-003`…`run-012`
+  and `B/run-013`…`run-022` — are clean on both keys, verified run by run.
+- **What is not fully pinned is the code state behind the MARGIN the verdict is
+  compared against**: 12 of the 15 CAL-rmw runs that `config/margins.yaml`'s
+  `one_hop_wall_ms` margin was frozen from carry dirty shas. The measurement
+  stands as filed; its code provenance does not.
+- **Bounded by that margin's own arithmetic**: the derivation put 2 × |Δ| at
+  0.83 ms against a pre-registered floor of **2.0**, and the floor binds for any
+  |Δ| ≤ 1.0 ms — so the calibration would have to move by more than 2× before
+  the margin could move at all. That bounds the exposure; it does not remove it.
+- **NOT repaired**, for the campaign's own reason: `margins.yaml` is frozen and
+  may not be re-derived after collection began, so re-collecting CAL-rmw could
+  not be allowed to change the margin — the same self-defeating remedy as the
+  cell E0 criterion-3 case. `margins.yaml` was not opened and no run directory
+  was touched. **P4 should be aware of it**: a fully-pinned margin means a fresh
+  calibration under a clean tree, registered in advance — not a retroactive
+  repair of this one.
+
+The census command in `docs/evaluation/p3-baseline.md` §9.1 abbreviates shas
+**without slicing**, because `sha[:7]` structurally cannot surface a `-dirty`
+suffix; an earlier revision of it did slice, and could not have shown any of
+this.
+
 **P4 MUST RE-VERIFY ALL SIX AT ITS START, before collecting anything.**
 Cross-session drift in the fork build, the Autoware image, or the DDS profile
 would make P4 **incomparable to P3** — and silently, because every one of these
@@ -2966,7 +3035,8 @@ This is not a P3-only condition. Under cell B's registered transport
 armed will lose the runs it budgets for that. **Attribute the loss carefully:**
 of P3's 15, the **7** `gate:arm-failed` runs are what this defect accounts for;
 the other **8** are crash-class (`crash:cell-launch` ×7, `crash:collect_gt` ×1)
-and were lost to bring-up, never reaching the point where the defect bites. The
+and were lost to bring-up — **except `B/run-031`, see §10.2's carve-out: it came
+up, ran the delivery step, and is part of this defect's evidence.** The
 per-topic
 re-publish workaround fixes the **map** and **does not scale** — the route is
 published *after* the planner starts by construction, so it can never use the
