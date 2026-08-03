@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -91,15 +92,78 @@ def test_sim_ns_rounds_rather_than_truncates():
     assert collect_gt.sim_ns_from_elapsed(1.15) == 1_150_000_000
 
 
-def _counting_approaches() -> set[str]:
-    """The approaches whose launcher turns `--count-lidar` on, read from
-    the committed launchers themselves (`run.sh`: "cells/<approach>.sh is
-    invoked as `plan` or `up`") rather than from a hand-kept list here."""
+def _gt_count_lidar_for_arm(script: Path, bench_arm: str) -> str | None:
+    """The value `script`'s launch.env would carry for `GT_COUNT_LIDAR` on
+    `bench_arm`, or None when this launcher does not write the key at all.
+
+    Obtained by extracting the REAL decision block and the REAL launch.env
+    line out of the launcher and RUNNING them as bash -- the extract-then-
+    execute idiom of `test_sweep_args.py` / `test_teardown.py`. This used to
+    be a `^GT_COUNT_LIDAR="1"` source match, which stopped being an answer
+    the moment P4's ablation arm made the switch conditional
+    (`GT_COUNT_LIDAR="$LAUNCH_GT_COUNT_LIDAR"`): the scan then matched
+    nothing and reported that NO launcher counts, silently emptying the loop
+    below -- one more instance of this suite's binding rule that a text scan
+    is not a pin. Evaluating the real chain (BENCH_ARM ->
+    BENCH_ARM_IS_ABLATION -> LAUNCH_GT_COUNT_LIDAR -> the launch.env line)
+    answers for any arm and cannot be fooled by a spelling change.
+    """
+    text = script.read_text()
+    env_line = re.search(r'^(GT_COUNT_LIDAR="[^"]*")$', text, re.M)
+    if not env_line:
+        return None
+    arm_flag = re.search(
+        r'^(BENCH_ARM_IS_ABLATION=0\n\[ "\$BENCH_ARM" = "ablation" \] '
+        r"&& BENCH_ARM_IS_ABLATION=1)$",
+        text,
+        re.M,
+    )
+    switches = re.search(r"^(LAUNCH_GT_ENABLED=.*?\nfi)$", text, re.M | re.DOTALL)
+    # A launcher with no ablation branch at all (calibration.sh,
+    # python-bridge.sh -- neither registers a sweep arm) writes the key as a
+    # literal, so its env line alone is the whole chain. Nothing is asserted
+    # about which shape a launcher has: `set -u` below turns a half-extracted
+    # chain into a real non-zero exit, which the returncode check catches with
+    # bash's own message rather than this file's guess at one.
+    parts = ["set -euo pipefail", f'BENCH_ARM="{bench_arm}"']
+    parts += [m.group(1) for m in (arm_flag, switches) if m]
+    parts.append(env_line.group(1))
+    parts.append("printf 'RESULT<<%s>>\\n' \"$GT_COUNT_LIDAR\"")
+    snippet = "\n".join(parts) + "\n"
+    result = subprocess.run(
+        ["bash", "-c", snippet], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert result.returncode == 0, f"{script}: {result.stderr}"
+    match = re.search(r"RESULT<<(.*?)>>", result.stdout)
+    assert match, f"{script}: snippet printed no RESULT marker: {result.stdout!r}"
+    return match.group(1)
+
+
+def _counting_approaches(bench_arm: str = "static") -> set[str]:
+    """The approaches whose launcher turns `--count-lidar` on for `bench_arm`,
+    read from the committed launchers themselves (`run.sh`: "cells/<approach>.sh
+    is invoked as `plan` or `up`") rather than from a hand-kept list here."""
     return {
         path.stem
         for path in CELLS_DIR.glob("*.sh")
-        if re.search(r'^GT_COUNT_LIDAR="1"', path.read_text(), re.M)
+        if _gt_count_lidar_for_arm(path, bench_arm) == "1"
     }
+
+
+def test_the_ablation_arm_turns_the_publisher_side_count_off():
+    """The M4 ablation arm's own half of the contract, on the REAL launchers:
+    `publisher_counts.json` must be ABSENT on that arm (publishing is disabled
+    by design), and `sweep_verdict._publisher_rate_ratio` reads an absent file
+    as "not measurable" while a file-backed 0 would FIRE the ceiling's
+    publisher disjunct. `--count-lidar` is what writes the file, so the switch
+    that must be off is this one."""
+    sweep_launchers = [
+        CELLS_DIR / "extension.sh",
+        CELLS_DIR / "tier4-native.sh",
+    ]
+    for script in sweep_launchers:
+        assert _gt_count_lidar_for_arm(script, "static") == "1", script
+        assert _gt_count_lidar_for_arm(script, "ablation") == "0", script
 
 
 def test_publisher_counts_key_matches_every_reconciled_cells_registered_topic():

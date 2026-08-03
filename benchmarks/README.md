@@ -912,17 +912,45 @@ launchers refuse a `--class` whose sensor arguments are not spelled out, because
 nothing maps a class id onto them (`cells/tier4-native.sh`'s
 `BENCH_TIER4_SWEEP_ARGS` refusal and `cells/extension.sh`'s
 `BENCH_RUNNER_SWEEP_ARGS` refusal — a sweep run that quietly used the baseline
-VLP16 rig would be filed as a `32ch` measurement). So the operator must supply
-those arguments by hand — for the tier4 side, in the form that launcher's own
-message gives: `BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000"`
-(patch 0003's flags, matching `32ch`'s registered `channels` / `points_per_second`).
-The class→arguments mapping itself is still unwritten on **both** sides, and the
-two name different owners: the tier4 side was owed to **Task 26**, which is
-struck, so it now has **no owner** and that refusal is permanent until someone
-writes it; the extension side is owed to **Task 12** per
-`cells/extension.sh`'s own refusal text. The ruling that reinstatement is "a
-decision, not an edit" is about the **pre-registration** — the branch needs no
-new amendment — and is not a claim that no operator work is involved.
+VLP16 rig would be filed as a `32ch` measurement). So, at the time of this
+paragraph, the operator had to supply those arguments by hand — for the
+tier4 side, in the form that launcher's own message gave:
+`BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000"` (patch
+0003's flags, matching `32ch`'s registered `channels` / `points_per_second`)
+— until Task 6 closed the mapping gap (below).
+The class→arguments mapping itself was, at the time of the paragraph above,
+still unwritten on **both** sides, and the two named different owners: the
+tier4 side was owed to **Task 26**, which is struck, so it had **no owner**
+and that refusal was permanent until someone wrote it; the extension side
+was owed to **Task 12** per `cells/extension.sh`'s own refusal text. The
+ruling that reinstatement is "a decision, not an edit" is about the
+**pre-registration** — the branch needs no new amendment — and is not a
+claim that no operator work is involved.
+
+**Closed 2026-08-03 (Task 6).** Both refusals above are now conditional, not
+unconditional: `cells/tier4-native.sh` and `cells/extension.sh` each carry a
+`case "$BENCH_CLASS_ID"` block, immediately before the refusal text quoted
+above, that derives the sensor arguments for a _registered_ class id and
+still refuses only an _unregistered_ one — an unmapped class would file a
+run under the wrong workload label, which is a false measurement rather
+than an out-of-scope one, and that half of the refusal is unchanged. An
+explicit `BENCH_TIER4_SWEEP_ARGS` / `BENCH_RUNNER_SWEEP_ARGS` still wins
+over the derivation. The mapping, matching `sweep_classes`' own
+`channels` / `points_per_second`:
+
+| Class id | `channels` | `points_per_second` | Derived sensor arguments                                                             |
+| -------- | ---------: | ------------------: | ------------------------------------------------------------------------------------ |
+| `vlp16`  |         16 |             288 000 | `--lidar-channels 16 --lidar-pps 288000`                                             |
+| `32ch`   |         32 |           1 200 000 | `--lidar-channels 32 --lidar-pps 1200000`                                            |
+| `128ch`  |        128 |           4 600 000 | **not mapped** — still refuses on both launchers; struck on either M4 branch (below) |
+
+This is the tooling half of the pre-registered **32ch auto-branch
+registration**, quoted verbatim: "per cell, if no vlp16 ceiling disjunct
+fires, the 32ch class executes mechanically; 128ch stays struck on either
+branch." Taking the branch now costs neither a `cells.yaml` edit (the
+registry already carried the entry) nor hand-supplied environment (this
+mapping supplies it) — only the M4 ceiling criterion's own data-driven
+choice of which branch a cell is on, exactly as pre-registered.
 
 **Read the reason precisely.** Every strike is an owner **time-budget**
 decision, taken on two measurements (recorded in the amendment). **None of
