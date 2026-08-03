@@ -45,16 +45,84 @@ file is also what keeps `run.sh` step 7's clock watchdog from excluding every
 ablation run as `stall:clock`, and what gives step 15's smoke the >= 2 rows
 `fit_sim_wall_affine` needs.
 
-`bench_observer` still runs (run.sh step 6 starts it unconditionally, and its
-constructor is what creates the `observer.csv` `sweep_verdict.py` requires to
-EXIST), and it TRUNCATES `clock.csv` when it opens it -- after the launcher
-started this client at step 5. `ClockCsvWriter` therefore appends
-(`O_APPEND` places every write at the file's current end, atomically) and
-writes the header only when the file is absent or empty: the observer's
-truncation discards this client's bring-up rows and the file continues,
-cleanly, as "the observer's identical header + this client's rows from step 6
-on". Losing the pre-step-6 rows costs nothing -- they are bring-up, outside
-every scoring window.
+WHY THE ABLATION ARM BOOTS CARLA WITHOUT `--ros2` (measured 2026-08-03)
+A bring-up probe booted the extension fork's editor exactly as this arm did
+before that measurement -- `--ros2 --rmw=cyclonedds --ros2-extension`, no
+runner, no Autoware -- and probed it from the campaign's own matched
+Humble/cyclonedds instrument (the host's Jazzy CLI cannot even parse the fork's
+type hashes, so it is not a trustworthy witness here). Two findings, both
+load-bearing:
+
+  * `/clock` is not merely advertised, it EMITS at 19.959 Hz (two windows, 21
+    and 41 samples, min 0.050 s / max 0.051 s) once this client ticks the
+    world. So `bench_observer` would be an ACTIVE, per-row-flushed writer to
+    `clock.csv` at the same time as this one -- two byte streams at two
+    independent offsets in one file. This also SETTLES the open contradiction
+    benchmarks/README.md records as "Task 14's to settle" for the extension
+    fork: a `--ros2` editor publishes `/clock` with no runner attached.
+  * a `/carla/<vehicle>/ray_cast2/point_cloud` topic is advertised for a rig
+    spawned with NO `ros_*` attributes and no `enable_for_ros()`. Removing the
+    attributes does NOT stop the server's native layer from standing a
+    publisher up for the sensor, so "publishing disabled" was not actually
+    true under `--ros2`.
+
+Booted with no `--ros2` at all, the same instrument sees only its own
+`/parameter_events` and `/rosout`: the server is silent, nothing can publish,
+and this client is the unambiguous sole writer of `clock.csv`. That is the boot
+the launchers' ablation branch now uses. It is what makes the arm's name true,
+and it is also the right baseline for the decomposition -- a DDS participant
+standing publishers up is transport cost, not raycast cost. The direction is
+safe for the disclosed lower bound above: dropping the ROS 2 layer can only
+make the baseline SMALLER, and `T - B` stays a lower bound as long as
+`B >= pure raycast`, which the client-stream hop already guarantees.
+
+THIS WRITER STILL DEFENDS ITSELF, so the file contract does not rest on that
+boot flag staying dropped. `bench_observer` runs on every arm (run.sh step 6
+starts it unconditionally, and its constructor is what creates the
+`observer.csv` `sweep_verdict.py` requires to EXIST). Its clock.csv behaviour
+was verified live rather than assumed: it opens the file with
+`std::ofstream::open` (i.e. O_TRUNC) at step 6 -- AFTER the launcher started
+this client at step 5 -- and its header is BUFFERED, not flushed (only the
+`/clock` callback and the destructor flush). Measured: a clock.csv holding a
+header and two rows became **0 bytes** the instant the observer started, stayed
+0 bytes for the whole run, and gained its 27-byte header only when SIGINT ran
+the destructor. So `ClockCsvWriter`:
+
+  * appends (`O_APPEND` places each write at the file's current end,
+    atomically) and tracks exactly how many bytes it has written;
+  * on `size < expected` -- the step-6 truncation -- RE-ASSERTS the header and
+    carries on. Without that the file is headerless for the whole run,
+    `clock_watchdog.newest_arrival_ns` hands the first data row to
+    `csv.DictReader` as field NAMES and KeyErrors on every row, and every
+    ablation run is excluded `stall:clock` after the 30 s grace. The
+    re-assertion is idempotent against the observer's own teardown flush, which
+    writes the same 27 bytes at offset 0: `CLOCK_HEADER` is byte-identical to
+    `bench_observer.cpp`'s literal (pinned by a test).
+  * on `size > expected` -- something else is EXTENDING the file, i.e. `/clock`
+    is flowing after all -- STANDS DOWN: it stops writing clock.csv for the
+    rest of the run and says so loudly, on stderr and in
+    `raycast_baseline.json`. The observer's own per-row-flushed series is then
+    the better one anyway, and it feeds finalize_rtf and the watchdog exactly
+    as on every other arm. Yielding is always safe; interleaving two byte
+    streams in one file never is.
+
+DISCLOSED RIG DIFFERENCES, beyond the RPC hop above. Each is stated with the
+direction it biases `T - B`, because a reader can only use the number if the
+direction is known:
+  * The baseline spawns the top LiDAR only. Cell A's measured rig is LiDAR +
+    IMU, and cell B's demo additionally spawns IMU, GNSS, vehicle_status and a
+    traffic-light camera. Their publish cost therefore lands inside `T - B`.
+    It is a per-run CONSTANT, independent of the sweep class, so it shifts the
+    intercept of transport-vs-class and not its slope -- which is what the
+    sweep reads.
+  * Cell B's demo applies `max_substep_delta_time=0.001, max_substeps=10`
+    (patch 0003's `DEFAULT_SUBSTEP_CONFIG`); this client leaves CARLA's own
+    physics-substepping defaults in place. With one stationary vehicle the
+    difference is small, and its direction is safe: CARLA's defaults substep
+    a 0.05 s tick where the demo's configuration cannot, so the baseline is if
+    anything INFLATED, which makes `T - B` more conservative, not less.
+  * The mount pose is the committed sensor-kit pose for both rigs -- exact for
+    `--rig extension`, an estimate for `--rig tier4` (see `default_mount`).
 
 IMPORT DISCIPLINE. ``carla`` is imported lazily inside ``main()``, after
 argument parsing, so this module -- and the rig builders the unit tests
@@ -186,32 +254,58 @@ def default_mount() -> tuple[tuple[float, float, float], tuple[float, float, flo
     For `--rig tier4` it is an APPROXIMATION, and a disclosed one: that
     family's mount lives in the fork's own `autoware_demo.py` transform chain
     (ego -> base_link -> sensor_kit -> lidar), which is not committed to this
-    repo, so there is nothing here to derive it from. Both stacks model the
-    same AWSIM sensor kit, so the difference is centimetre-scale and changes
-    scene occlusion, not the ray budget (channels x points_per_second x range)
-    the sweep classes move. `--mount` overrides it for an operator who has the
-    fork's real numbers to hand; it is not silently assumed away.
+    repo, so there is nothing here to derive it from. Ray COUNT is independent
+    of it (channels x points_per_second is what the sweep classes move), so it
+    cannot invalidate `T - B` the way a different ray budget would -- but
+    per-ray cost does track traced distance and what each ray terminates on,
+    so a wrong mount is not free either, and "both stacks model the same AWSIM
+    kit, so it is centimetre-scale" is an argument, not evidence.
+
+    PLAN OF RECORD for closing it, which needs no fork-tree access: on cell B's
+    first MEASURED (non-ablation) run a CARLA client is already attached for
+    ground truth, so read the spawned LiDAR actor's transform relative to the
+    ego through the API, record it, and pass it to `--mount` on that cell's
+    ablation runs. Until that is done the tier4 baseline carries this estimate,
+    and `--mount` is the seam it goes through.
     """
     kit = load_kit()
     return carla_attach_location(kit, TOP_LIDAR_FRAME), carla_attach_rotation(kit, TOP_LIDAR_FRAME)
 
 
 class ClockCsvWriter:
-    """Appender for the run directory's `clock.csv`.
+    """Self-defending appender for the run directory's `clock.csv`.
 
-    APPEND, not truncate, and the header only when the file is empty: this
-    client and `bench_observer` both open the same file, the observer second
-    and with `O_TRUNC` (see the module docstring). `O_APPEND` makes every write
-    land at the file's current end atomically, so the observer's truncation
-    costs this writer its earlier rows and nothing else -- no interleaving, no
-    NUL padding, no second header. Flushed per row because the clock watchdog
-    (run.sh step 7) reads this file to decide whether the run stalled: a
-    buffered writer would look exactly like a frozen sim.
+    See the module docstring for the measured `bench_observer` behaviour this
+    is built against. Three rules, each paid for by a live observation:
+
+      * APPEND (`O_APPEND` = every write at the file's current end, atomically)
+        and FLUSH PER ROW. The flush is not tidiness: `clock_watchdog.py` polls
+        this file once a second as the run's liveness signal and excludes the
+        run once the newest arrival stamp ages past 5 s, so a block-buffered
+        writer looks exactly like a frozen sim -- the same reasoning
+        `bench_observer.cpp` gives for flushing clock.csv and nothing else.
+      * SIZE SHRANK -> the observer truncated the file when it opened it at
+        run.sh step 6. Re-assert the header (byte-identical to the observer's
+        own, so its buffered copy landing at offset 0 at teardown is a no-op)
+        and carry on. Without this the file is headerless for the whole run and
+        the watchdog KeyErrors its way to a `stall:clock` exclusion.
+      * SIZE GREW BEYOND WHAT WE WROTE -> another process is extending the
+        file. STAND DOWN permanently rather than interleave two byte streams:
+        the only writer that can do this is the observer with a live `/clock`,
+        whose series is strictly better than ours anyway.
+
+    `rows`, `header_reasserts` and `stood_down`/`stand_down_reason` are
+    reported in `raycast_baseline.json` so a run's own file records which of
+    these happened instead of it having to be inferred later.
     """
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
         self.rows = 0
+        self.header_reasserts = 0
+        self.stood_down = False
+        self.stand_down_reason = ""
+        self._expected_size = 0
         self._f = None
 
     def __enter__(self) -> ClockCsvWriter:
@@ -223,15 +317,58 @@ class ClockCsvWriter:
 
     def open(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        needs_header = not self.path.exists() or self.path.stat().st_size == 0
         self._f = open(self.path, "a", newline="")
-        if needs_header:
-            self._f.write(CLOCK_HEADER)
-            self._f.flush()
+        # Whatever is already there is somebody else's (nothing writes this
+        # file before step 5 in practice); count it as ours only so far as the
+        # size bookkeeping is concerned, and add the header if the file is new.
+        self._expected_size = self._observed_size() or 0
+        if self._expected_size == 0:
+            self._emit(CLOCK_HEADER)
+
+    def _observed_size(self) -> int | None:
+        try:
+            return self.path.stat().st_size
+        except OSError:
+            return None
+
+    def _emit(self, text: str) -> None:
+        self._f.write(text)
+        self._f.flush()
+        self._expected_size += len(text)
+
+    def _stand_down(self, reason: str) -> None:
+        self.stood_down = True
+        self.stand_down_reason = reason
+        print(
+            f"raycast_baseline: STANDING DOWN from {self.path}: {reason}. "
+            "Another process is writing this file (a live /clock through "
+            "bench_observer is the only candidate), and its series is the "
+            "authoritative one; this client will keep ticking the world but "
+            "will not write another clock row.",
+            file=sys.stderr,
+        )
 
     def write(self, clock_ns: int, arrival_system_ns: int) -> None:
-        self._f.write(f"{int(clock_ns)},{int(arrival_system_ns)}\n")
-        self._f.flush()
+        if self.stood_down:
+            return
+        size = self._observed_size()
+        if size is None:
+            # The file went away entirely (not something any component of this
+            # harness does). Reopen rather than keep writing into an orphaned
+            # inode nothing will ever read.
+            self.close()
+            self.open()
+        elif size < self._expected_size:
+            # run.sh step 6: bench_observer truncated it. Our rows from before
+            # that point are gone -- they are bring-up, outside every scoring
+            # window -- and the file needs its header back.
+            self._expected_size = size
+            self._emit(CLOCK_HEADER)
+            self.header_reasserts += 1
+        elif size > self._expected_size:
+            self._stand_down(f"file is {size} bytes, {self._expected_size} written by this client")
+            return
+        self._emit(f"{int(clock_ns)},{int(arrival_system_ns)}\n")
         self.rows += 1
 
     def close(self) -> None:
@@ -345,7 +482,18 @@ def _summary_path(out_dir: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    # 1/tick_hz is the sync fixed delta, so a non-positive value is a
+    # ZeroDivisionError or a negative delta several lines below, after the
+    # connect. Refused here, by name, in the style the rest of this harness
+    # refuses things -- unreachable through the launchers (both read the value
+    # from the registry, which refuses a null) but reachable by hand.
+    if args.tick_hz <= 0:
+        parser.error(
+            f"--tick-hz must be > 0 (got {args.tick_hz}): it is inverted into the "
+            "world's fixed_delta_seconds"
+        )
 
     # Everything above is argument resolution and must stay CARLA-free: the
     # `--help` path is exercised offline by the unit tests and by the operator
@@ -361,8 +509,10 @@ def main(argv: list[str] | None = None) -> int:
 
     fixed_delta = 1.0 / args.tick_hz
     print(f"raycast_baseline: rig={args.rig} class={args.class_id or '-'} attrs={attrs}")
-    print(f"raycast_baseline: tick {args.tick_hz} Hz (fixed_delta {fixed_delta:.6f} s), "
-          f"duration cap {args.duration_s} s, mount {location} {rotation}")
+    print(
+        f"raycast_baseline: tick {args.tick_hz} Hz (fixed_delta {fixed_delta:.6f} s), "
+        f"duration cap {args.duration_s} s, mount {location} {rotation}"
+    )
 
     stop = {"stop": False}
 
@@ -480,6 +630,14 @@ def main(argv: list[str] | None = None) -> int:
             "duration_cap_s": args.duration_s,
             "ticks": ticks,
             "clock_rows_written": clock.rows,
+            # The clock.csv contention record (see ClockCsvWriter): one
+            # re-assert is the NORMAL case (bench_observer truncating the file
+            # at run.sh step 6), and `clock_stood_down` true means /clock was
+            # flowing after all and the observer's series -- not this one -- is
+            # what the run was scored from.
+            "clock_header_reasserts": clock.header_reasserts,
+            "clock_stood_down": clock.stood_down,
+            "clock_stand_down_reason": clock.stand_down_reason,
             "sensor_callbacks": sink.count,
             "started_system_ns": started_ns,
             "ended_system_ns": time.time_ns(),
@@ -489,7 +647,9 @@ def main(argv: list[str] | None = None) -> int:
         _summary_path(args.out_dir).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
         print(
             f"raycast_baseline: {ticks} ticks, {sink.count} sensor callbacks, "
-            f"{clock.rows} clock rows -> {_summary_path(args.out_dir)}"
+            f"{clock.rows} clock rows"
+            + (f" (STOOD DOWN: {clock.stand_down_reason})" if clock.stood_down else "")
+            + f" -> {_summary_path(args.out_dir)}"
         )
     return 0
 

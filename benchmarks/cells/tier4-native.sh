@@ -313,9 +313,25 @@ mkdir -p "$BENCH_RUN_DIR"
 # domain 123 while every container of this harness lands on 0: the stack
 # starts, looks healthy, and not one topic is ever discovered. That is Task
 # 9's measured matrix row 7. `env` execs in place, so $! is still the
-# editor's own PID and the PID-file contract below is unchanged.
+# editor's own PID and the PID-file contract below is unchanged. On the
+# ablation arm the pin is a no-op (no ROS 2 layer runs); it is kept anyway.
+#
+# `--ros2` is DROPPED on the ablation arm, and that is the arm's central
+# mechanism rather than an optimisation. MEASURED 2026-08-03 on the extension
+# fork (the same native ROS 2 layer; bring-up probe through the matched
+# Humble/cyclonedds instrument): WITH `--ros2` the editor EMITS /clock at
+# 19.959 Hz with no runner attached -- which would make bench_observer an
+# active, per-row-flushed writer to the very clock.csv this arm's client has to
+# write -- and it ADVERTISES `/carla/<vehicle>/ray_cast2/point_cloud` for a rig
+# spawned with no ros_* attributes and no enable_for_ros(), i.e. dropping the
+# attributes alone does NOT disable publishing. WITHOUT the flag the same
+# instrument sees no CARLA topic at all. See
+# benchmarks/scripts/raycast_baseline.py's module docstring for the evidence
+# and for why a smaller baseline still leaves `T - B` a lower bound.
+ROS2_ARGS=(--ros2)
+[ "$BENCH_ARM_IS_ABLATION" = "1" ] && ROS2_ARGS=()
 nohup env ROS_DOMAIN_ID=0 "$EDITOR" "$UPROJECT" "$BENCH_MAP" \
-  -game --ros2 "-carla-rpc-port=$BENCH_RPC_PORT" \
+  -game ${ROS2_ARGS[@]+"${ROS2_ARGS[@]}"} "-carla-rpc-port=$BENCH_RPC_PORT" \
   -RenderOffScreen -nosound >"$LAUNCH_LOG" 2>&1 &
 echo $! >"$CARLA_PID_FILE"
 

@@ -174,14 +174,17 @@ if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
   BENCH_GT_PYTHON to an interpreter that has the fork's 0.10 client wheel AND
   can import runner.kit."
 
-  # The stale-.so gate run_e2e.sh:126 fronts every live extension run with.
+  # The stale-.so gate run_e2e.sh:126 fronts every live extension run with. It
+  # checks libUnrealEditor-Carla.so -- the CARLA plugin that implements the
+  # sensors and the raycast -- so it is load-bearing here even though this arm
+  # does not load the ROS 2 extension .so. run_e2e.sh's OTHER preflight
+  # (`--extension-check`, the extension .so's ABI) is deliberately NOT run:
+  # this arm boots without --ros2-extension, so that file is never dlopen'd and
+  # a gate on it would assert something this run does not depend on.
   CARLA_ROOT="$BENCH_CARLA_TREE" \
   CARLA_UNREAL_ENGINE_PATH="${CARLA_UNREAL_ENGINE_PATH:-$HOME/src/UnrealEngine}" \
     bash "$BENCH_REPO/scripts/e2e/verify_editor_artifact.sh" ||
     fail "the editor-artifact gate refused this run (named reason above)"
-  # ...and its cheap ABI preflight, for the same reason.
-  (cd "$BENCH_REPO" && python3 -m runner --extension-check --extension-so "$EXT_SO") ||
-    fail "the extension .so failed its ABI preflight (see above)"
 
   # sweep_verdict.py scores paced and ablation at the SAME paced tick target
   # (its `manifest.arm == "unpaced"` branch is the only one that substitutes
@@ -303,27 +306,42 @@ mkdir -p "$BENCH_RUN_DIR"
 # ablation arm: CARLA only, then the publish-disabled baseline client.
 # --------------------------------------------------------------------------
 if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
-  # run_e2e.sh's own editor line, verbatim except for the map source
-  # (BENCH_MAP, so the cell decides) -- including `--ros2 --rmw=cyclonedds
-  # --ros2-extension`. Keeping the ROS 2 layer ON is deliberate and is what
-  # makes this a BASELINE rather than a different server: the arm ablates the
-  # sensor's EMISSION (no ros_* attributes, no enable_for_ros), not the
-  # server's transport layer, so `total - baseline` isolates publishing rather
-  # than also crediting the DDS participant's existence.
+  # run_e2e.sh's own editor line, with the map from BENCH_MAP and -- the one
+  # material difference -- NO `--ros2`, no `--rmw`, no `--ros2-extension`.
   #
-  # TRAP (run_e2e.sh's own header): a SINGLE-dash `-ros2` silently DISABLES
-  # ROS2 -- it is an unrecognised flag UE just ignores. The double-dash form
-  # below is the verified-working one; never "fix" it to a single dash.
+  # MEASURED 2026-08-03 (bring-up probe; the matched Humble/cyclonedds
+  # instrument, not the host's Jazzy CLI, which cannot even parse this fork's
+  # type hashes). Booted WITH `--ros2` and no runner:
+  #   * `/clock` EMITS at 19.959 Hz as soon as a client ticks the world -- so
+  #     bench_observer becomes an ACTIVE, per-row-flushed writer to the same
+  #     clock.csv this arm's client has to write, two byte streams in one file.
+  #     (That also settles benchmarks/README.md's open "Task 14's to settle"
+  #     contradiction for this fork: a --ros2 editor publishes /clock with no
+  #     runner attached.)
+  #   * `/carla/<vehicle>/ray_cast2/point_cloud` is ADVERTISED for a rig
+  #     spawned with no ros_* attributes and no enable_for_ros() -- so
+  #     "publishing disabled" was not actually true under --ros2.
+  # Booted WITHOUT it, the same instrument sees only its own /parameter_events
+  # and /rosout: the server is silent. That is what makes this arm's name true,
+  # and it is the right baseline besides -- a DDS participant standing
+  # publishers up is transport cost, not raycast cost. The direction is safe
+  # for the disclosed lower bound (dropping the layer can only make the
+  # baseline smaller, and the client-stream RPC hop already holds it above pure
+  # raycast). The extension .so is not loaded for the same reason: it IS the
+  # native publisher layer, so it belongs on the `total` side, not the baseline.
   #
-  # ROS_DOMAIN_ID=0 is pinned ON THIS PROCESS for the same reason
-  # cells/tier4-native.sh pins it on the editor: this host's login shell
-  # exports 123 (~/.zshrc:126) and `nohup` inherits it.
-  export CYCLONEDDS_URI="file://$BENCH_REPO/docker/cyclonedds.xml"
+  # TRAP, kept because it applies the moment anyone re-adds the flag
+  # (run_e2e.sh's own header): a SINGLE-dash `-ros2` silently DISABLES ROS2 --
+  # an unrecognised flag UE just ignores -- so the working form is the
+  # double-dash `--ros2 --rmw=cyclonedds --ros2-extension=<path>`.
+  #
+  # ROS_DOMAIN_ID=0 is still pinned ON THIS PROCESS (this host's login shell
+  # exports 123, ~/.zshrc:126, and `nohup` inherits it): a no-op while no ROS 2
+  # layer runs, and one less thing to get wrong if one ever does.
   nohup env ROS_DOMAIN_ID=0 \
     "${CARLA_UNREAL_ENGINE_PATH:-$HOME/src/UnrealEngine}/Engine/Binaries/Linux/UnrealEditor" \
     "$BENCH_CARLA_TREE/Unreal/CarlaUnreal/CarlaUnreal.uproject" "$BENCH_MAP" \
-    -game -RenderOffScreen -nosound \
-    --ros2 --rmw=cyclonedds "--ros2-extension=$EXT_SO" >"$LAUNCH_LOG" 2>&1 &
+    -game -RenderOffScreen -nosound >"$LAUNCH_LOG" 2>&1 &
   # CARLA_PID_FILE holds the EDITOR's own pid on this arm, where the normal
   # path stores run_e2e.sh's (which owns the editor through its own EXIT
   # trap). teardown.sh's extension case stops whatever that file names, so it
