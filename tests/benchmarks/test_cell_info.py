@@ -145,10 +145,19 @@ def test_metric_topics_are_topics_the_observer_actually_records(doc, cell):
     which reads downstream as "this transport delivered nothing" rather than as
     a configuration error -- the exact failure mode observer_topics/
     CAL-seam.yaml's deliberately-empty list exists to avoid. `null` bindings
-    are skipped: they are the registered "not chosen yet" state."""
+    are skipped: they are the registered "not chosen yet" state.
+
+    `control_published_time_topic` joined this tuple 2026-08-03 (Task 5's fix
+    round 1): `_observer_topics()` parses every `<topic>|<type>|<kind>` line
+    generically regardless of `kind`, so a `published_time` row is exactly as
+    checkable here as a `generic`/`pose`/`odometry` one, and the same
+    almost-right-line failure this test guards against for the other three
+    keys applies to this one -- a drift between cells.yaml's binding and the
+    topic actually subscribed in observer_topics/<cell>.yaml would otherwise
+    surface only as a silently empty published_time.csv, not a failing test."""
     metrics = cell_info.metrics_for(doc, cell)
     registered = _observer_topics(cell)
-    for key in ("lidar_topic", "ndt_topic", "control_topic"):
+    for key in ("lidar_topic", "ndt_topic", "control_topic", "control_published_time_topic"):
         if metrics[key] is not None:
             assert metrics[key] in registered, f"{cell}: {key} not in observer_topics"
 
@@ -271,16 +280,22 @@ def test_bcyc_metrics_mirror_cell_b(doc):
 
 def test_cell_a_registers_the_control_published_time_topic(doc):
     """REGISTERED 2026-08-03 (Task 5, P4 transport-sweep plan), closing the
-    gap Tasks 13/20 left open (this file's ALL_CELL_IDS parametrizations
-    already require the binding to be a topic the observer records once
-    non-null; this pins the VALUE). observer_topics/A.yaml has carried this
-    row since 2026-07-30 (Task 15b's live discovery on cell A's own stack,
-    commit 2453984); only cells.yaml's binding was missing, which left
+    gap Tasks 13/20 left open. observer_topics/A.yaml has carried this row
+    since 2026-07-30 (Task 15b's live discovery on cell A's own stack, commit
+    2453984); only cells.yaml's binding was missing, which left
     control_staleness_ms UNAVAILABLE for the whole P3 duel
     (docs/evaluation/p3-baseline.md Sec.1). Same value as cell B's -- the
     same Autoware graph family (vehicle_cmd_gate's PublishedTimePublisher on
     the gated /control/command/control_cmd) -- not because the two cells
-    were merged."""
+    were merged.
+
+    NOT redundant with test_metric_topics_are_topics_the_observer_actually_
+    records's ALL_CELL_IDS parametrization (this file, above): that test
+    checks MEMBERSHIP only -- that whatever cells.yaml binds is also a
+    topic observer_topics/<cell>.yaml subscribes to -- so a binding pointed
+    at the WRONG (but still observed) PublishedTime topic would pass it
+    silently. This test pins the exact expected VALUE, which membership
+    alone cannot catch."""
     assert (
         cell_info.metrics_for(doc, "A")["control_published_time_topic"]
         == "/control/command/control_cmd/debug/published_time"
