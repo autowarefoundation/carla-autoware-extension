@@ -251,16 +251,69 @@ autoware_045:
 # deliberate engine build. This pin is the BuildId every preflight must
 # match against; a mismatch means that tree's editor modules are stale
 # and need their own carla-unreal-editor rebuild before it will boot.
-# This value settled after two follow-up rounds past Task 4's own
-# rebuild (extension rebuild bumped it again, tier4 rebuild held it
-# steady) -- see the Task 4 report's fix-report section. No further
-# engine relink is permitted from here on (D8).
+# The previous value 4210e602-78ec-46e1-8f2f-03fadbe036a3 settled after
+# two follow-up rounds past Task 4's own rebuild (extension rebuild
+# bumped it again, tier4 rebuild held it steady) -- see the Task 4
+# report's fix-report section. Every filed result and every evidence
+# document under benchmarks/results/ and benchmarks/evidence/ still
+# carries 4210e602: those record what produced them and are NOT updated.
+#
+# D8 LIFT, owner-authorized, executed EXACTLY ONCE on 2026-08-03.
+# Reason: CAL-seam revival (P4 spec decision 6) needs the fork's in-core
+# bench cloud publisher compiled in, and that cannot exist without one
+# carla-unreal-editor rebuild. Round log (P4 Task 9):
+#   round 1  extension tree carla-unreal-editor  -> 4210e602 => bc08ce19
+#   round 2  extension tree, post-commit rebuild -> held bc08ce19 steady
+#   round 3  tier4 tree carla-unreal-editor      -> held bc08ce19 steady
+# Converged: engine + both trees' project AND plugin manifests (5 of 5)
+# all report bc08ce19. **D8 IS RE-INSTATED as of this commit: no further
+# engine relink is permitted for the remainder of the campaign.**
+#
+# !! CELL A IS NOT CLEARED TO COLLECT ON THIS BUILD !!
+# scripts/e2e/verify_editor_artifact.sh REFUSES the extension tree:
+#   PREFLIGHT FAIL: .../libUnrealEditor-Carla.so (1784854960) is OLDER
+#   than HEAD commit (1785781990).
+# The extension tree's editor plugin .so is frozen at 2026-07-23 18:02
+# and the remedy that check names ("rebuild target carla-unreal-editor")
+# DOES NOT refresh it on this host. Measured three times with before/
+# after mtime snapshots: every carla-unreal-editor build invoked from
+# ~/src/carla-autoware-integration writes libUnrealEditor-Carla.{so,
+# debug,sym} and libUnrealEditor-CarlaUnreal.* into ~/src/carla-autoware-
+# native instead, because the shared engine's UnrealEditor editor-module
+# state is bound to the tier4 tree (12 files under Engine/Intermediate/
+# Build/Linux/x64/UnrealEditor reference carla-autoware-native, 1
+# references carla-autoware-integration; both projects are named
+# CarlaUnreal.uproject). The artifact written there is tier4-sourced, not
+# contaminated -- it carries none of the integration fork's extension-seam
+# symbols (MakeExtensionHost / TeardownExtensionEndpoints), which the
+# 2026-07-23 integration artifact does carry.
+# CONSEQUENCE: the fork's in-core twin (/bench/incore_cloud) is present in
+# libcarla-ros2-native.so and referenced by libcarla-server.a, but the
+# editor module a live run actually loads predates it, so the twin would
+# never be constructed and the in-core side of the CAL-seam pair would be
+# silently empty. Re-binding the engine's editor-module state to the
+# integration tree is a SECOND engine-level intervention and is therefore
+# NOT authorized by the single registered relink round; it needs its own
+# registration. Until then: CAL-seam collection is BLOCKED, and cell A is
+# gated by verify_editor_artifact.sh on its own.
 engine:
-  build_id: 4210e602-78ec-46e1-8f2f-03fadbe036a3 # settled value, all 3 trees agree
+  build_id: bc08ce19-f19c-46fe-808f-dbb2b0ddf41a # 2026-08-03 relink round; all 3 trees agree (5/5 manifests)
 extension_carla_fork:
   path: ~/src/carla-autoware-integration
   branch: feat/autoware-seminative-phase-b
+  # DELIBERATELY still ae166d80d, NOT the in-core-twin commit 5981f5168.
+  # This pin names the fork revision the loaded editor artifact was built
+  # from, and that artifact is the 2026-07-23 one -- built from ae166d80d.
+  # Advancing it to 5981f5168 while libUnrealEditor-Carla.so predates that
+  # commit would assert a build that does not exist on this host. It moves
+  # only when the extension tree's editor artifact is genuinely rebuilt
+  # (see the CELL A note above).
   sha: ae166d80d022f838b78f4a2daab1ca2880a7c8aa
+  # The in-core CAL-seam twin, committed but NOT yet in any editor
+  # artifact. Kept here so the revision is not lost while the artifact
+  # blocker stands.
+  incore_twin_sha: 5981f5168a0d87ffacddc4635f73e1373e185ad6
+  incore_twin_status: committed-not-built-into-editor-artifact
 tier4_carla_fork:
   path: ~/src/carla-autoware-native
   branch: tier4/autoware-support

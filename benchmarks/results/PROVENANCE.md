@@ -3078,3 +3078,163 @@ explicitly. Full statement, with the M5 gate's verbatim refusal: §8.2. Its
 NDT-rate collapse (8.35 Hz against 19.95–19.96 elsewhere, pose-estimator
 specific) is a **lead, NOT TESTED**, and must stay that way until something
 tests it.
+
+## 11. The registered relink round (P4 Task 9, 2026-08-03): engine BuildId moved, and why CAL-seam still cannot collect
+
+This section is APPENDED, not a rewrite. §10's statement that "Engine BuildId
+`4210e602-78ec-46e1-8f2f-03fadbe036a3` stays pinned, and RELINK REMAINS
+FORBIDDEN" was accurate when filed and is left exactly as written; what follows
+is the owner-authorized, singly-registered exception to it and its outcome.
+Every filed manifest, `launch.log` and evidence document keeps `4210e602` —
+those record what produced them.
+
+### 11.1 What was authorized, and what it bought
+
+D8 was lifted **once**, on 2026-08-03, for one reason: reviving cell **CAL-seam**
+(P4 spec decision 6). CAL-seam measures the cost of the C-ABI seam by publishing
+the same synthetic point cloud twice and pairing the two one-hop latencies —
+`/bench/seam_cloud` from the out-of-tree extension `.so` (committed since
+2026-07-30, `extension/src/publishers/BenchCloudPublisher.{h,cpp}`) against
+`/bench/incore_cloud` from inside the CARLA fork process. The in-core half did
+not exist. Creating it means new C++ in the fork, and new C++ in the fork means
+one `carla-unreal-editor` rebuild, which by P1 Verdict 3 relinks the shared
+engine for every tree that uses it.
+
+The in-core twin is now committed on the extension fork
+(`~/src/carla-autoware-integration`, branch `feat/autoware-seminative-phase-b`,
+commit `5981f5168a0d87ffacddc4635f73e1373e185ad6`, "feat(ros2): add env-gated
+bench in-core cloud publisher (CAL-seam)"). It is gated on
+`$CARLA_BENCH_INCORE_CLOUD=1`, so with the variable unset a production run is
+byte-identical to a build without it.
+
+**The measurement-validity constraint was honoured and checked, not asserted.**
+The twin calls `BlobCreatePublisher` / `BlobPublish` — the very functions the
+extension's `host_.publish` vtable slot lands in — rather than the fork's
+Fast-DDS `publishers/CarlaLidarPublisher` path. Had it used the latter, the
+paired delta would have measured "Fast-DDS versus CycloneDDS, plus the seam" and
+would have isolated nothing. Evidence: a `-M` dependency scan of the new
+translation unit pulls **0** `fastdds/` or `fastrtps/` headers and **0**
+`middleware/` or `publishers/Carla*` headers; the DDS it reaches is reached only
+through the pure-C-ABI declarations in `ExtensionBlobEndpoints.h`. The template
+message serializes through the fork's own `serialize_to_cdr` to **921 905 bytes**
+and round-trips, with the field table taken from the shared
+`kLidarFieldsExtended` rather than re-typed.
+
+One residual confound is recorded rather than hidden: the two twins do **not**
+share a serializer implementation and cannot — the extension side uses
+`rosidl_typesupport_fastrtps_cpp`, which needs ROS 2 packages `carla-server` is
+deliberately built without. Both are fastcdr emitting classic CDR v1
+little-endian with the 4-byte encapsulation header, so the wire bytes are the
+same format, but the emitting code differs and that difference sits inside the
+measured delta. Any report quoting this instrument must say so.
+
+### 11.2 The relink itself: converged in three rounds
+
+| round | tree built (`carla-unreal-editor`)    | engine BuildId after |
+| ----- | ------------------------------------- | -------------------- |
+| —     | (before)                              | `4210e602-78ec-46e1-8f2f-03fadbe036a3` |
+| 1     | extension `~/src/carla-autoware-integration` | `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` (bumped) |
+| 2     | extension, post-commit rebuild        | `bc08ce19…` (held steady) |
+| 3     | tier4 `~/src/carla-autoware-native`   | `bc08ce19…` (held steady) |
+
+Converged: **5 of 5** manifests — the engine's, and both trees' project *and*
+plugin `UnrealEditor.modules` — report `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a`.
+This reproduces the P1/Task-4 pattern exactly (an extension rebuild bumps it, a
+tier4 rebuild holds it steady). `benchmarks/pins.yaml`'s `engine.build_id` is
+re-pinned to the new value and **D8 is re-instated in the same commit: no
+further engine relink is permitted for the remainder of the campaign.**
+
+`TIER4_TREE=~/src/carla-autoware-native bash benchmarks/scripts/verify_tier4_artifact.sh`
+**PASSES** (exit 0): `tier4_git_sha=6315b856f8faf2118578322eb20a2b902a45a384`,
+`tier4_worktree=registered-patches`,
+`tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e`,
+`tier4_stale_ack=none`.
+
+### 11.3 LIVE DEFECT: the extension tree's editor artifact cannot be rebuilt on this host, so CAL-seam is BLOCKED
+
+`bash scripts/e2e/verify_editor_artifact.sh` **REFUSES** (exit 1):
+
+```text
+PREFLIGHT FAIL: /home/youtalk/src/carla-autoware-integration/Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so (1784854960) is OLDER than HEAD commit (1785781990).
+  -> rebuild target carla-unreal-editor before any live run.
+```
+
+**The remedy that check names does not work on this host, and that was measured,
+not assumed.** `libUnrealEditor-Carla.so` in the extension tree is frozen at
+2026-07-23 18:02. Three `carla-unreal-editor` builds were run from
+`~/src/carla-autoware-integration` (rounds 1, 2 and 4) with full before/after
+mtime snapshots of both trees' `Binaries` directories. All three wrote the same
+26 files, split the same way every time:
+
+- **20 files into `carla-autoware-integration`** — the monolithic game binary
+  `CarlaUnreal`, the runtime DDS dependencies, and both `UnrealEditor.modules`
+  manifests (which is why the BuildId converged);
+- **6 files into `carla-autoware-native`** — `libUnrealEditor-Carla.{so,debug,sym}`
+  and `libUnrealEditor-CarlaUnreal.{so,debug,sym}`.
+
+That is: the shared engine's `UnrealEditor` editor-module state is bound to the
+**tier4** tree. Under
+`~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor`, **12**
+files reference `carla-autoware-native` and **1** references
+`carla-autoware-integration`. Both projects are named `CarlaUnreal.uproject`,
+and the tier4 tree was the last one configured against this engine
+(2026-07-27/28) — which also explains why the extension artifact's mtime stops
+dead at 2026-07-23, the last date on which an extension-tree editor build
+actually landed in the extension tree.
+
+**The tier4 artifact is NOT contaminated, and that was checked rather than
+assumed.** The `.so` those extension-tree builds write into the tier4 tree
+carries **none** of the integration fork's extension-seam symbols
+(`carla::ros2::MakeExtensionHost`, `carla::ros2::TeardownExtensionEndpoints`),
+which the 2026-07-23 integration artifact does carry, and the tier4 source tree
+has no `LibCarla/source/carla/ros2/extension/` directory at all. The file
+written there is tier4-sourced.
+
+**Consequence for CAL-seam.** The in-core twin is present in
+`libcarla-ros2-native.so` (verified: `carla::ros2::BenchIncoreCloudInit()` and
+`BenchIncoreCloudOnTick()` exported `T`) and referenced from `libcarla-server.a`
+(verified: both `U`), and the freshly relinked game binary `CarlaUnreal` carries
+those undefined references too. But `scripts/e2e/run_e2e.sh` launches the
+**engine's `UnrealEditor`** against the integration `.uproject`, so the module a
+live cell-A run loads is `libUnrealEditor-Carla.so` — the 2026-07-23 one, whose
+`ROS2::Enable` and `ROS2::SetTimestamp` predate the twin. The twin would never be
+constructed, and **the in-core side of the CAL-seam pair would be silently
+empty** — a publisher that is simply absent, which downstream would read as "the
+in-core path has no latency". That is the worst available failure for this
+instrument, which is why this is filed as a blocker rather than worked around.
+
+**CAL-seam collection is BLOCKED.** No CAL-seam run may be started until the
+extension tree's editor artifact is genuinely rebuilt. Cell A is independently
+gated by `verify_editor_artifact.sh` (`run_e2e.sh:126`), which refuses on its
+own, so no run can slip past this by accident.
+
+**Why it was not repaired here.** Re-binding the shared engine's editor-module
+state to the integration tree — regenerating that project's UE project files, or
+clearing `Engine/Intermediate/Build/Linux/x64/UnrealEditor`'s Carla state — is a
+**second engine-level intervention** on an engine three trees share, and it would
+relink the engine again. The authorization obtained was for exactly **one**
+registered relink round, and that round is spent and re-instated. A repair needs
+its own registration; it is not something to slip in under a round that was
+authorized for a different purpose.
+
+### 11.4 What is pinned, and what deliberately is not
+
+`benchmarks/pins.yaml`:
+
+- `engine.build_id` → `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a`. This is **true and
+  verified across all 5 manifests**, and pinning it is what keeps
+  `preflight.sh`'s BuildId comparison honest for every tree — cell B included,
+  which is otherwise unaffected and whose artifact gate passes.
+- `extension_carla_fork.sha` → **deliberately left at
+  `ae166d80d022f838b78f4a2daab1ca2880a7c8aa`.** That pin names the fork revision
+  the loaded editor artifact was built from, and that artifact is the 2026-07-23
+  one, built from `ae166d80d`. Advancing it to the in-core-twin commit while
+  `libUnrealEditor-Carla.so` predates that commit would assert a build that does
+  not exist on this host.
+- `extension_carla_fork.incore_twin_sha` → `5981f5168a0d87ffacddc4635f73e1373e185ad6`,
+  with `incore_twin_status: committed-not-built-into-editor-artifact`, so the
+  revision is not lost while the blocker stands.
+
+Suite at this commit: **1084 passed, 1 skipped** (the skip is
+`test_observer_contract.py:105`, docker end-to-end, `BENCH_E2E=1`) — the
+pre-existing baseline, held exactly. `pre-commit run --all-files` clean.
