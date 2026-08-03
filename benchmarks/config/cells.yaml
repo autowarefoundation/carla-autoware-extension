@@ -813,23 +813,37 @@ cells:
     # their unit tests are all committed and green. They will simply never be
     # exercised by a measurement, and that is disclosed rather than tidied
     # away -- nothing here is deleted.
-    dropped: owner-time-budget-2026-07-30
+    #
+    # REINSTATED 2026-08-03 by the owner (P4 transport-sweep plan, spec
+    # decision 6), on the D8 lift that makes the fork-side twin publisher
+    # buildable (Task 9: LibCarla/source/carla/ros2/ROS2.cpp,
+    # $CARLA_BENCH_INCORE_CLOUD=1). The strike history above stays exactly as
+    # it is -- the record that a mandatory cell sat unlaunchable for five
+    # weeks does not become less true because it is no longer struck. `dropped:`
+    # is removed below; `mandatory: true` was never touched by either the
+    # strike or this reinstatement. cells/calibration.sh's CAL-seam branch and
+    # config/observer_topics/CAL-seam.yaml's two-topic list are Task 8 of that
+    # same plan.
     arms: [static]
     metrics:
-      # NOT REGISTERED: the seam/in-core publisher pair is Task 14 and names
-      # no topic yet; observer_topics/CAL-seam.yaml is deliberately empty for
-      # the same reason, and cells/calibration.sh refuses to launch the cell.
+      # STILL NOT REGISTERED: CAL-seam's own paired publishers are a
+      # transport/serialization instrument, not a localization or control
+      # stack -- there is no NDT and no gated command to bind these to, with
+      # or without a strike.
       lidar_topic:
       ndt_topic:
       control_topic:
       control_published_time_topic:
       cpu_process_label: carla-server
-      # NOT REGISTERED either: Task 14 owns what ticks this cell's world, if
-      # anything does -- it is a transport/serialization calibration, not a
-      # drive, and cells/calibration.sh refuses to launch it today. Registering
-      # the extension cells' 20.0 here would assert a tick nothing commits to.
-      tick_hz:
-      lidar_expected_hz: # Task 14
+      # REGISTERED 2026-08-03 (Task 8), on the reinstatement above: the e2e
+      # sync loop's tick rate (scripts/e2e/run_e2e.sh, what drives
+      # ext_on_tick -- extension/src/ExtensionInit.cpp) drives this cell's
+      # world now that cells/calibration.sh actually boots it.
+      tick_hz: 20.0
+      # REGISTERED 2026-08-03 (Task 8): both bench publishers' wall-clock-
+      # decimated rate (extension/src/publishers/BenchCloudPublisher.h and
+      # the fork's ROS2.cpp twin, both gated at 10 Hz).
+      lidar_expected_hz: 10.0
       ndt_expected_hz: # no localization stack in this cell
       ladder_branch: # no localization stack in this cell
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)

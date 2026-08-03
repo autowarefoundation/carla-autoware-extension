@@ -17,18 +17,30 @@ every `carla: none` cell, which today means CAL-rmw.
     `benchmarks/config/margins.yaml` is derived from those p50s. The tool is
     LIVE; only its SEAM use is dead. See results/CAL-rmw/PROVENANCE.md.
 
-WHAT IS DEAD is the C1(a) seam half, and it is deliberately kept
+WHAT WAS DEAD was the C1(a) seam half, and it was deliberately kept
 (2026-07-30). Cell CAL-seam was STRUCK by the owner's core-duel scope cut
 (config/cells.yaml `dropped:`; benchmarks/README.md's 2026-07-30 amendment),
-so there is no C1(a) table in the results and C1(a) seam overhead is
+so there was no C1(a) table in the results and C1(a) seam overhead stayed
 UNMEASURED -- not weakly measured. An owner TIME-BUDGET decision, not a
 technical block: this module and its unit tests
-(tests/benchmarks/test_cal_report.py) are complete and green, and so is the
-extension-side publisher they were written for
+(tests/benchmarks/test_cal_report.py) were complete and green throughout, and
+so was the extension-side publisher they were written for
 (extension/src/publishers/BenchCloudPublisher.{h,cpp}, registered in
-ExtensionInit.cpp). Nothing is deleted, so a later campaign can pick the seam
-instrument up; nobody should read its presence as evidence that the SEAM was
-measured.
+ExtensionInit.cpp). Nothing was deleted, so a later campaign could pick the
+seam instrument up.
+
+REINSTATED 2026-08-03 (Task 8, P4 transport-sweep plan). Cell CAL-seam's
+strike is un-struck: `config/cells.yaml`'s `dropped:` key is removed
+(`mandatory: true` stays, as it did throughout the strike), the fork-side
+twin publisher now exists (Task 9's D8 lift), and
+`benchmarks/cells/calibration.sh` no longer refuses to launch it -- see that
+file's own header for the launch recipe. This module and its tests did not
+change: they were already correct for a live CAL-seam run, the same way the
+SCOPE CORRECTED paragraph above already established for CAL-rmw. What
+changes is that a CAL-seam `run_dir` this module is pointed at may now be a
+REAL measurement rather than only a fixture -- Task 10 owns collecting the
+first one, and only that collection, not this reinstatement, turns "seam
+overhead is UNMEASURED" into a number.
 
 CAL-seam pairs the SAME synthetic sensor_msgs/PointCloud2 message published
 two ways on one CARLA fork process -- through the extension's C-ABI seam .so

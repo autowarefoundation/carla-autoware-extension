@@ -1014,8 +1014,13 @@ def test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound
     `0002-sensor-config-harmonized.patch` -- and there is now NO committed null
     left to drive it. `--class` only resolves for the three cells
     `sweep_classes.applies_to` lists (A, B, E), and all three are registered;
-    the remaining nulls (A-hf, B-hf, E-opt, CAL-seam) belong to cells no sweep
-    class applies to, so `merge` rejects them before the binding is ever read.
+    the remaining nulls (A-hf, B-hf, E-opt) belong to cells no sweep class
+    applies to, so `merge` rejects them before the binding is ever read.
+    CAL-seam left this "remaining nulls" set on 2026-08-03 too (Task 8, P4
+    transport-sweep plan, `lidar_expected_hz: 10.0`), but it was never in it
+    for the reason the other three are: `--class` never applied to a
+    calibration cell in the first place, so its departure does not change
+    which cells this refusal exercises.
 
     So the null is INJECTED through `--cells-yaml` rather than borrowed. That is
     strictly weaker evidence than a real committed null and is labelled as such:

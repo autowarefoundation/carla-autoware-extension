@@ -137,12 +137,15 @@ EXIT_UNKNOWN_ID = 2
 # B, B45 and D LEFT this mapping on 2026-07-30: Task 13 registered their
 # tick_hz (20.0) from the launcher constant it landed, so a null tick_hz on one
 # of them is no longer a known pending dependency and must not be reported as
-# one. B-hf stays, now owned by Task 26 (its 100 Hz configuration), as does
-# A-hf; CAL-seam is Task 14's.
+# one. CAL-seam LEFT this mapping on 2026-08-03: Task 8 (P4 transport-sweep
+# plan) reinstated the cell and registered tick_hz: 20.0 from the same
+# run_e2e.sh sync-loop rate cell A already cites, so a null tick_hz on it is
+# no longer a known pending dependency either (benchmarks/README.md's
+# 2026-08-03 amendment). B-hf stays, now owned by Task 26 (its 100 Hz
+# configuration), as does A-hf.
 TICK_HZ_PENDING_TASK = {
     "A-hf": 26,
     "B-hf": 26,
-    "CAL-seam": 14,
 }
 
 

@@ -350,12 +350,28 @@ exists — nothing else — so that is what the rule tests, applied per run:
 **Expected branch per cell, so a surprise is loud.** The calibration-approach
 cells (`cells.yaml` `approach: calibration` — `CAL-rmw` and `CAL-seam`) are
 expected to take the unfittable branch: they are transport/serialization
-instruments with no simulation loop, and `config/processes/CAL-seam.yaml`
-registers no ticking runner, unlike cells A/C which register `python3 -m
-runner`. Every other cell is expected to take the fittable branch. A run that
-takes the branch its cell was not expected to take is a **loud finding to be
-reported, not a silent fallback** — it means the cell did not run the way it
-is registered to.
+instruments, not driving cells, and the M5/M2 windowing this branch feeds has
+no meaning for either of them. Every other cell is expected to take the
+fittable branch. A run that takes the branch its cell was not expected to
+take is a **loud finding to be reported, not a silent fallback** — it means
+the cell did not run the way it is registered to.
+
+> **CAL-seam's supporting evidence changed 2026-08-03 (Task 8).** This
+> paragraph used to also cite `config/processes/CAL-seam.yaml` registering
+> "no ticking runner" as evidence CAL-seam has no simulation loop. That is no
+> longer true: CAL-seam's reinstatement (see the Cell matrix section and
+> `cells/calibration.sh`'s CAL-seam branch) boots the identical
+> `scripts/e2e/run_e2e.sh` spawn+tick runner cell A uses, and
+> `config/processes/CAL-seam.yaml` now registers it, precisely so its CPU is
+> not misattributed. Whether CAL-seam's CARLA process therefore also
+> publishes `/clock` — the actual question this "expected branch" rule
+> depends on, not the process map — is exactly the "Open contradiction... now
+> PERMANENTLY UNSETTLED" callout above's question, and it is still open: see
+> that callout's 2026-08-03 update. This paragraph's "unfittable branch
+> expected" conclusion for CAL-seam is UNCHANGED here on purpose — Task 8
+> reinstates the launch path, not this finding — but a reader should not cite
+> the now-corrected "no ticking runner" clause as independent support for it
+> any more.
 
 **Who builds that check.** Nothing enforces the paragraph above today, and it
 is the half of this rule that makes the discriminator safe rather than merely
@@ -396,6 +412,19 @@ check lives there once rather than twice.
 > it — and register `CAL-seam`'s `tick_hz`, left `null` here for the same
 > reason — before the cell is first run. It is unlaunchable today
 > (`cells/calibration.sh` refuses it), so nothing is blocked meanwhile.
+>
+> **UPDATE 2026-08-03 (Task 8, P4 transport-sweep plan).** The cell is no
+> longer unlaunchable: `cells/calibration.sh` gained a CAL-seam branch, and
+> `cells.yaml`'s `tick_hz` is now registered at `20.0` (the e2e sync loop's
+> rate — the same value cell A registers, since CAL-seam boots through the
+> identical `scripts/e2e/run_e2e.sh` recipe minus Autoware). Registering
+> `tick_hz` is NOT the same as settling the contradiction above: it records
+> what the harness now _asserts_ the cell does, not what a run _observed_ it
+> do. Whether CAL-seam's `/clock` actually ticks — and therefore which of
+> `has_sim_clock` or `cal_report.py`'s no-`/clock` premise is wrong — is still
+> only answerable by watching a real run's `clock.csv`, which is Task 10's to
+> do on the first live CAL-seam collection. This entry stays open until that
+> observation is made and recorded.
 
 **Recorded consequence for Task 16.** The `one_hop_wall_ms` margin is frozen
 from CAL-rmw, which takes the unfittable branch: an observer-windowed, unfitted
@@ -447,9 +476,21 @@ halves are evidenced for that cell and only that cell:
 CAL-rmw and states "stamp is system now() so the CAL analysis
 (`cal_report.py`) is a same-host wall-clock difference", and
 `cells/calibration.sh` launches `bench_pub` plus the observer and nothing else.
-**`CAL-seam` is not covered by this sentence**: its publisher pair is Task 14
-and does not exist, so neither its stamp domain nor its `/clock` status is
-known — see the open contradiction recorded under "Scoring window" above. A
+**`CAL-seam` is not covered by this sentence**: its publisher pair
+(`benchmarks/patches/extension/README.md`, Task 14) does not have both
+publishers evidenced against a live run — so neither its stamp domain nor its
+`/clock` status is known — see the open contradiction recorded under
+"Scoring window" above.
+
+> **UPDATE 2026-08-03 (Task 8, P4 transport-sweep plan).** This sentence used
+> to say the pair "does not exist". That was already imprecise: the extension
+> half (`BenchCloudPublisher`) predates the 2026-07-30 strike. What changed
+> today is the launch path — `cells/calibration.sh` now boots CAL-seam with
+> both halves enabled (see the Cell matrix section) — not the pair's
+> existence. The stamp-domain / `/clock` question this paragraph defers is
+> still open; only Task 10's first live collection settles it.
+
+A
 simulated cell's stamps are sim-domain, so the fit is required there. The duel
 term therefore carries the fit's error on top of the transport it measures, and
 a duel row must be read next to that run's `fit_residual_ns`
@@ -832,17 +873,20 @@ after the first P3 measurement run.
 
 ### Scope: the core duel only (owner decision, 2026-07-30)
 
-**Six of the twelve registered cells will not be measured.** The owner cut the
-campaign's scope to the core duel; the full per-item reasoning is the
+**Five of the twelve registered cells will not be measured.** The owner cut
+the campaign's scope to the core duel; the full per-item reasoning is the
 2026-07-30 "core-duel scope cut" entry in the `Amendments made so far:` list
 under `## Pre-registration`, and the strike is machine-readable in `cells.yaml`
-as a `dropped:` key.
+as a `dropped:` key. **`CAL-seam` was a sixth struck cell until 2026-08-03**,
+when the owner reinstated it (P4 transport-sweep plan, spec decision 6, on
+the D8 lift that makes its fork-side twin publisher buildable — Task 9); see
+that date's entry in the amendments list for what reinstating it changed.
 
-| status                                                   | cells                                                          |
-| -------------------------------------------------------- | -------------------------------------------------------------- |
-| **in scope**                                             | `A`, `B` (the primary duel, n ≥ 10), `C`, `E0`, `E`, `CAL-rmw` |
-| **struck** — was `mandatory: true` (amendment items)     | `CAL-seam`, `B45`                                              |
-| **struck** — was already `mandatory: false` (note items) | `D`, `E-opt`, `A-hf`, `B-hf`                                   |
+| status                                                   | cells                                                                      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **in scope**                                             | `A`, `B` (the primary duel, n ≥ 10), `C`, `E0`, `E`, `CAL-rmw`, `CAL-seam` |
+| **struck** — was `mandatory: true` (amendment items)     | `B45`                                                                      |
+| **struck** — was already `mandatory: false` (note items) | `D`, `E-opt`, `A-hf`, `B-hf`                                               |
 
 The M4 LiDAR-load sweep is reduced to a ceiling confirmation at the duel size,
 so `sweep_classes`' `32ch` and `128ch` are struck too, and the M4 **camera-load
@@ -888,8 +932,9 @@ result about any of them may be inferred from its absence. `B45` in particular
 was expected to surface a hard-fork-maintenance result: the campaign is
 choosing not to look, which is a different statement from "it failed". The
 struck entries stay **registered, not deleted** — `mandatory: true` still
-stands on `CAL-seam` and `B45`, because that flag is what records that a
-mandatory cell was given up.
+stands on `B45` (and stood on `CAL-seam` throughout its 2026-07-30 –
+2026-08-03 strike, before and after), because that flag is what records that
+a mandatory cell was given up.
 
 ## Known confounds
 
@@ -1280,19 +1325,28 @@ beside the B-family M5 numbers.
 
 ### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
 
-> **MOOT AS A CONFOUND — the cell is struck and there are no CAL-seam numbers (2026-07-30).** The
-> owner's core-duel scope cut dropped cell CAL-seam (`cells.yaml` `dropped:`; the 2026-07-30
-> amendment below), so **C1(a) seam overhead is UNMEASURED**: the paired seam-vs-in-core delta this
-> entry qualifies was, in `scripts/cal_report.py`'s own words, "the only measurement the
-> seam-overhead claim rests on", and it will not be taken. Two consequences for the text below.
-> First, its closing instruction — "Task 22's confound table must state this alongside the CAL-seam
-> numbers" — **is withdrawn**: there are no CAL-seam numbers to state it alongside. What Task 22
-> owes instead is the plain statement that C1(a) has **no evidence**, not weak evidence.
-> Second, the asymmetry itself is **still a true fact about the committed code** on both sides, so
-> the entry is kept in full rather than deleted: it is the analysis a revived CAL-seam would need on
-> day one, and it also records that the extension side's preallocated `msg_` is not merely a style
-> choice. An owner **time-budget** decision, not a defect and not an infeasibility — this confound
-> was never a reason the cell could not run.
+> **WAS MOOT AS A CONFOUND — the cell was struck and there were no CAL-seam numbers (2026-07-30 –
+> 2026-08-03).** The owner's core-duel scope cut dropped cell CAL-seam (`cells.yaml` `dropped:`; the
+> 2026-07-30 amendment below), so **C1(a) seam overhead stayed UNMEASURED**: the paired seam-vs-in-core
+> delta this entry qualifies was, in `scripts/cal_report.py`'s own words, "the only measurement the
+> seam-overhead claim rests on", and it was not taken while the strike held. Two consequences held
+> for the text below. First, its closing instruction — "Task 22's confound table must state this
+> alongside the CAL-seam numbers" — was withdrawn: there were no CAL-seam numbers to state it
+> alongside, so what Task 22 owed instead was the plain statement that C1(a) had **no evidence**, not
+> weak evidence. Second, the asymmetry itself was **still a true fact about the committed code** on
+> both sides, so the entry was kept in full rather than deleted: it was the analysis a revived
+> CAL-seam would need on day one, and it also records that the extension side's preallocated `msg_`
+> is not merely a style choice. An owner **time-budget** decision, not a defect and not an
+> infeasibility — this confound was never a reason the cell could not run.
+>
+> **REINSTATED 2026-08-03 (Task 8, P4 transport-sweep plan).** CAL-seam is un-struck (see the Cell
+> matrix section above and that date's `Amendments made so far:` entry); `cells/calibration.sh` now
+> launches it. This does NOT yet produce CAL-seam numbers — Task 8 only makes the cell launchable
+> again, the same way it was before the strike. Task 22's withdrawn instruction above is REINSTATED
+> alongside it: once Task 10 collects a live CAL-seam run, its confound table must state this
+> per-publish allocation asymmetry alongside the CAL-seam numbers, not merely note the difference —
+> exactly the original instruction this callout had withdrawn. Until that collection happens, C1(a)
+> still has no evidence; only the reason ("struck") has changed to "not yet collected".
 
 CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
 CARLA fork process — through the extension's C-ABI seam (`/bench/seam_cloud`) and by an in-core
@@ -3863,6 +3917,32 @@ A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
   matching row, inherited from B.yaml by Task 4); `config/margins.yaml`,
   `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
   frozen file touched.
+- **2026-08-03 (Task 8 of the P4 transport-sweep plan) — cell CAL-seam
+  reinstated, un-striking the 2026-07-30 core-duel scope cut.** `config/
+cells.yaml`'s CAL-seam entry loses its `dropped: owner-time-budget-
+2026-07-30` key (the strike comment stays, extended with this note) and
+  gains `tick_hz: 20.0` / `lidar_expected_hz: 10.0`; `mandatory: true` is
+  unchanged, so the record still shows a mandatory cell was struck and is now
+  un-struck, not that it was always optional. The reinstatement rides on the
+  D8 lift (Task 9) that makes the fork-side twin of `BenchCloudPublisher`
+  buildable -- CAL-seam's own paired instrument, gated by
+  `benchmarks/patches/extension/README.md`'s `$CARLA_BENCH_SEAM_CLOUD` /
+  `$CARLA_BENCH_INCORE_CLOUD` env vars -- so both halves of the pair now
+  exist. `config/observer_topics/CAL-seam.yaml` replaces its
+  deliberately-empty list with the two topics (`/bench/seam_cloud`,
+  `/bench/incore_cloud`); `config/processes/CAL-seam.yaml` is (re)written,
+  derived from `A.yaml` minus its Autoware-side entries.
+  `cells/calibration.sh`'s permanent-looking CAL-seam refusal is replaced
+  with a launch branch that boots the extension fork editor via
+  `scripts/e2e/run_e2e.sh` with `WITH_AUTOWARE=0` and both bench-publisher
+  env vars set, reusing the `extension` family's launch/teardown plumbing
+  (`ARM_ENABLED="0"`, no Autoware container) -- the refusal history in that
+  file's header stays, with this reinstatement appended. Completeness: C1(a)
+  seam overhead was UNMEASURED with no weaker evidence standing in for it;
+  this task makes the cell launchable again so a later task (Task 10) can
+  collect it -- it does not itself produce CAL-seam numbers. `config/
+margins.yaml`, `config/exclusions.md` and `benchmarks/analysis/**`
+  byte-identical; no frozen file touched.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
