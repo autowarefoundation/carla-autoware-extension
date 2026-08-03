@@ -396,7 +396,7 @@ def test_tier4_sensor_tick_matches_the_launchers_rotation_hz():
     assert raycast_baseline.tier4_rig_attributes()["sensor_tick"] == str(1.0 / float(m.group(1)))
 
 
-@pytest.mark.parametrize("cell", ["A", "B"])
+@pytest.mark.parametrize("cell", ["A", "B", "B-cyc"])
 def test_the_ablation_client_is_sampled_by_a_process_map_label(cell):
     """I3: without an entry matching the client, resources.csv records the
     ablation arm's ONLY process as nothing at all -- and `sample_pattern_entry`
@@ -406,17 +406,52 @@ def test_the_ablation_client_is_sampled_by_a_process_map_label(cell):
 
     The pattern is checked against the command line the launcher really
     produces (`env` execs in place, so the module path survives on the
-    process's own cmdline), not merely for existence."""
+    process's own cmdline), not merely for existence.
+
+    `B-cyc` JOINED THIS PARAMETRIZATION 2026-08-03 (P4 whole-branch review,
+    blocker B1) and the reason is worth keeping: it is the cell the P4 sweep
+    actually sweeps, and it was the one cell this guard did not cover. Cells A
+    and B were fixed by Task 7's I3 round, ordered "before any GPU-hours";
+    B-cyc was registered in a different lane, in ignorance of that round, and
+    so shipped with exactly the defect the round existed to remove. Its
+    launcher IS cell B's (`approach: tier4-native`), so the command line is the
+    same one -- only the process-map entry was missing."""
     doc = yaml.safe_load(
         (REPO_ROOT / "benchmarks" / "config" / "processes" / f"{cell}.yaml").read_text()
     )
     patterns = [e["pattern"] for e in doc["processes"] if "pattern" in e]
-    launcher = {"A": "extension.sh", "B": "tier4-native.sh"}[cell]
+    launcher = {"A": "extension.sh", "B": "tier4-native.sh", "B-cyc": "tier4-native.sh"}[cell]
     cmdline = (REPO_ROOT / "benchmarks" / "cells" / launcher).read_text()
     assert "-m benchmarks.scripts.raycast_baseline" in cmdline
     assert any(
         p in "python3 -m benchmarks.scripts.raycast_baseline --host localhost" for p in patterns
     ), f"processes/{cell}.yaml has no entry matching the ablation client's cmdline: {patterns}"
+
+
+def test_bcyc_process_map_body_stays_byte_identical_to_cell_bs():
+    """B2: `processes/B-cyc.yaml`'s header CLAIMS the file is a byte-for-byte
+    copy of `processes/B.yaml` below the header, and that claim silently became
+    FALSE at merge time -- one lane copied B.yaml, another added the
+    `raycast-baseline` entry to B.yaml, both merged textually clean, and
+    nothing anywhere compared them again. The consequence was the defect the
+    test above exists to catch.
+
+    So the header's claim gets a machine check rather than a promise. Compared
+    from `processes:` down, because the headers deliberately differ (B-cyc's
+    records the transport derivation and this history); everything below is the
+    copy the claim is about."""
+
+    def body(name):
+        text = (REPO_ROOT / "benchmarks" / "config" / "processes" / name).read_text()
+        marker = "\nprocesses:\n"
+        assert marker in text, f"processes/{name} has no `processes:` block"
+        return text[text.index(marker) :]
+
+    assert body("B-cyc.yaml") == body("B.yaml"), (
+        "processes/B-cyc.yaml's body has drifted from processes/B.yaml's. Its "
+        "own header states the byte-for-byte copy as a standing obligation: "
+        "mirror the B.yaml edit here in the same commit, or amend that header."
+    )
 
 
 def test_clock_writer_does_not_duplicate_a_header_that_already_exists(tmp_path):

@@ -4048,6 +4048,33 @@ A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
   task (Task 10) can collect it -- it does not itself produce CAL-seam
   numbers. `config/margins.yaml`, `config/exclusions.md` and
   `benchmarks/analysis/**` byte-identical; no frozen file touched.
+- **2026-08-03 (P4 whole-branch review) — cell `B-cyc` is registered as a SWEEP
+  TARGET, not only as a cell.** `config/cells.yaml`'s three `sweep_classes`
+  entries (`vlp16`, `32ch`, `128ch`) each gain `B-cyc` in `applies_to`. Being a
+  registered cell (Task 4) and being a registered sweep target are different
+  registrations, and only the first had been made: `cell_info.merge` raises
+  `UnknownIdError` for a class whose `applies_to` omits the cell, and `run.sh`
+  resolves the merged cell JSON before `--check-args` returns, so
+  `run.sh B-cyc --arm paced --class vlp16` and `--arm ablation --class vlp16`
+  both refused outright — i.e. the sweep could not run against the one cell
+  this campaign phase exists to sweep. All three classes rather than `vlp16`
+  alone, because `applies_to` records which cells a class is DEFINED for while
+  which classes the campaign RUNS is scope, recorded separately in that
+  block's strike comment: `32ch` stays the pre-registered step-up, `128ch`
+  stays struck on either branch, and both launchers still refuse `128ch` for
+  want of a sensor-argument mapping, so nothing is un-struck here. B-cyc is
+  cell B's rig exactly — same fork tree, same launcher, same sensor arguments,
+  differing only in DDS transport — and a sweep class pins
+  `channels`/`points_per_second` only, so any class defined for B is defined
+  for B-cyc by construction. `config/processes/B-cyc.yaml` gains the
+  `raycast-baseline` entry its original (`processes/B.yaml`) had gained in a
+  parallel lane after the copy was taken, restoring the byte-for-byte-body
+  claim its own header makes (now machine-checked by
+  `tests/benchmarks/test_raycast_baseline.py`); without it B-cyc's ablation
+  client would have been sampled by nothing and filed a flat 0.0% CPU instead
+  of failing loudly. `config/margins.yaml`, `config/exclusions.md` and
+  `benchmarks/analysis/**` byte-identical; no frozen file touched, and no
+  metric, threshold, margin, aggregation rule or scoring window is edited.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

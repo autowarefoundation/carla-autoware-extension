@@ -1058,10 +1058,32 @@ cells:
 # someone writes it. So reinstating `32ch` is a DECISION rather than an
 # amendment -- which is what "anticipated" means above -- but not a decision
 # with zero operator cost.
+#
+# `B-cyc` ADDED TO EVERY `applies_to` 2026-08-03 (P4 whole-branch review,
+# blocker B1). Registering B-cyc as a CELL (Task 4) did not register it as a
+# SWEEP TARGET, and the two are not the same thing: `cell_info.merge` raises
+# `UnknownIdError` for a class whose `applies_to` omits the cell, and run.sh
+# resolves the merged cell JSON BEFORE `--check-args` returns -- so
+# `run.sh B-cyc --arm paced --class vlp16` and `--arm ablation --class vlp16`
+# both refused outright, i.e. the P4 sweep's own two collection tasks could not
+# run against the one cell P4 exists to sweep. The three lanes that built P4
+# were file-disjoint by construction and this registration fell between them;
+# the clean textual merge hid it.
+#
+# All THREE classes, not only `vlp16`, and the distinction is the one this
+# block already draws: `applies_to` records which cells a class is DEFINED
+# for, while which classes the campaign RUNS is scope, recorded in the strike
+# comment above. B-cyc is cell B's rig exactly -- same fork tree, same
+# launcher, same sensor arguments; only the DDS transport differs, and a sweep
+# class pins `channels`/`points_per_second` only -- so any class defined for B
+# is defined for B-cyc by construction. Nothing is un-struck here: `32ch`
+# remains the pre-registered step-up, `128ch` remains struck on either branch,
+# and both launchers still refuse `128ch` for want of a sensor-argument
+# mapping.
 sweep_classes:
-  - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
-  - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }
-  - { id: 128ch, channels: 128, points_per_second: 4600000, applies_to: [A, B, E] }
+  - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, B-cyc, E] }
+  - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, B-cyc, E] }
+  - { id: 128ch, channels: 128, points_per_second: 4600000, applies_to: [A, B, B-cyc, E] }
 sweep_arms: [paced, unpaced, ablation] # ablation = publish-disabled baseline
 # M4 camera-load arm (spec: M4): each approach's native camera path, observer
 # as the only consumer, topic names as-emitted. 20 fps == the 20 Hz tick

@@ -278,6 +278,32 @@ def test_bcyc_metrics_mirror_cell_b(doc):
     assert cell_info.metrics_for(doc, "B-cyc") == cell_info.metrics_for(doc, "B")
 
 
+@pytest.mark.parametrize("class_id", ["vlp16", "32ch", "128ch"])
+def test_bcyc_is_a_registered_sweep_target(doc, class_id):
+    """REGISTERED AS A SWEEP TARGET 2026-08-03 (P4 whole-branch review,
+    blocker B1). Being a registered CELL is not the same as being a registered
+    sweep target: `merge` raises `UnknownIdError` for a class whose
+    `applies_to` omits the cell, and `run.sh` resolves the merged cell JSON
+    BEFORE `--check-args` returns -- so with B-cyc missing from `applies_to`,
+    `run.sh B-cyc --arm paced --class vlp16` and `--arm ablation --class
+    vlp16` both refused outright and the P4 sweep's own two collection tasks
+    could not run at all.
+
+    All three classes, not only `vlp16`: `applies_to` records which cells a
+    class is DEFINED for, and B-cyc is cell B's rig exactly (same fork tree,
+    same launcher, same sensor arguments -- only the DDS transport differs, and
+    a sweep class pins channels/points_per_second only). Which classes this
+    campaign chooses to RUN is a separate, scope-level record kept as the
+    strike comment above `sweep_classes` -- `32ch` is the pre-registered
+    step-up and `128ch` stays struck on either branch -- and both launchers
+    still refuse `128ch` for want of a sensor-argument mapping. Registering
+    applicability is therefore not un-striking anything."""
+    merged = cell_info.merge(doc, "B-cyc", class_id)
+    assert merged["class_id"] == class_id
+    # The merge really carries B-cyc's own cell fields, not a sibling's.
+    assert merged["approach"] == "tier4-native"
+
+
 def test_cell_a_registers_the_control_published_time_topic(doc):
     """REGISTERED 2026-08-03 (Task 5, P4 transport-sweep plan), closing the
     gap Tasks 13/20 left open. observer_topics/A.yaml has carried this row

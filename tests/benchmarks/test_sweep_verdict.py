@@ -1012,9 +1012,14 @@ def test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound
     B's rate from the launcher constant it landed, then on cell E until Task 8
     registered the whole bridge family from
     `0002-sensor-config-harmonized.patch` -- and there is now NO committed null
-    left to drive it. `--class` only resolves for the three cells
-    `sweep_classes.applies_to` lists (A, B, E), and all three are registered;
-    the remaining nulls (A-hf, B-hf, E-opt) belong to cells no sweep class
+    left to drive it. `--class` only resolves for the cells
+    `sweep_classes.applies_to` lists -- (A, B, E) when this was written, plus
+    `B-cyc` since 2026-08-03 (P4 whole-branch review, blocker B1: B-cyc was a
+    registered CELL but not a registered SWEEP TARGET, so the sweep could not
+    run against the one cell P4 exists to sweep) -- and every one of them is
+    registered; B-cyc's `metrics` block is cell B's field for field, so it
+    arrives fully bound and does not reopen this test's search for a real null.
+    The remaining nulls (A-hf, B-hf, E-opt) belong to cells no sweep class
     applies to, so `merge` rejects them before the binding is ever read.
     CAL-seam left this "remaining nulls" set on 2026-08-03 too (Task 8, P4
     transport-sweep plan, `lidar_expected_hz: 10.0`), but it was never in it
