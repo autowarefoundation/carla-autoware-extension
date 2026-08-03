@@ -145,7 +145,8 @@ fi
 #
 #   SUPERSEDED (1): "the same fork tree, the same extension .so, the same
 #   `--ros2 --rmw=cyclonedds` server".
-#   SUPERSEDED (2): "every gate that invocation is fronted by is re-run here".
+#   SUPERSEDED (2): "every gate that invocation is fronted by is re-run here
+#   (see the artifact gate and the ABI preflight in the ablation block)".
 #   SUPERSEDED (3), from the "Why not simply" paragraph below, where the
 #   correction is applied in place rather than quoted a second time: the editor
 #   invocation here was "run_e2e.sh's own, line for line, with the runner and

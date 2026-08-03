@@ -3567,6 +3567,31 @@ hypothesis this instrument exists to support. A seam that still measures cheap
 under this ordering is a robust result; a seam that measures cheap under the
 opposite ordering would not be.
 
+> **DIRECTION ARGUMENT CORRECTED 2026-08-03 (P4 whole-branch review) — the
+> paragraph above stays verbatim as the pre-registration it was, and THE
+> PRE-REGISTERED RULE BELOW IS UNCHANGED and still binds.** What is wrong in
+> it is "seam-first means the **seam** pays any cold-cache / first-writer
+> cost": on the cell as actually launched, the seam's write path is already
+> **warm** by the time the bench publish happens. CAL-seam boots through
+> `scripts/e2e/run_e2e.sh`, which unconditionally passes
+> `--ros2 --rmw=cyclonedds --ros2-extension=<so>` and unconditionally ends in
+> `python3 -m runner`, so the ego's top LiDAR is spawned with native `ros_*`
+> attributes and roughly 921 KB of point cloud crosses this same seam at
+> 20 Hz in `SensorManager.PostPhysTick` — **before** `OnPostTick` drives
+> either twin. The seam is a late writer on a path a large sensor burst has
+> just walked that frame, not the frame's first writer. Two consequences:
+> the paired delta `C1(a)` **survives** — the burst is common-mode, landing
+> ahead of both publishes alike — but the **conservatism claim does not**:
+> with the cold-cache asymmetry largely absent, the residual order effect
+> between the two adjacent publishes is smaller than the paragraph above
+> assumes, and its sign is **not established**. The rule is therefore doing
+> MORE work than when it was written, not less — it used to stand on this
+> direction argument and now stands on its own, which is exactly the
+> situation pre-registration exists for, so it is left UNCHANGED here.
+> Authoritative statement of this correction, with the full derivation:
+> `benchmarks/README.md:1563-1589` ("DIRECTION ARGUMENT CORRECTED
+> 2026-08-03 (P4 whole-branch review)").
+
 **This is now the largest residual confound**, ahead of the serializer difference
 recorded in §11.1 — which §11.8 reduced to a difference of *code* rather than of
 *payload* (both sides emit an identical 921 905 bytes, same overhead, same type

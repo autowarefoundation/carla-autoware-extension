@@ -94,7 +94,7 @@ def test_unknown_class_exits_2(capsys):
 
 
 def test_class_not_registered_for_cell_is_an_error(doc):
-    # 32ch applies_to [A, B, E]; C is a registered cell but not a sweep cell.
+    # 32ch applies_to [A, B, B-cyc, E]; C is a registered cell but not a sweep cell.
     with pytest.raises(cell_info.UnknownIdError, match="not registered for cell 'C'"):
         cell_info.merge(doc, "C", "32ch")
 

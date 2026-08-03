@@ -1594,10 +1594,15 @@ table must state this alongside the CAL-seam numbers, not merely note the differ
 > whatever the data turns out to say — deciding how to read a number after seeing it is the
 > post-hoc move this campaign's no-peeking discipline exists to prevent. Reordering those two call
 > sites changes the measurement and invalidates this rule. Also recorded in the twin's TU comment
-> block, in the `Amendments made so far:` list below, and in `results/PROVENANCE.md` §11.9 — the
-> TU comment carries the uncorrected direction argument and lives in the fork tree
-> (`~/src/carla-autoware-integration`), outside this repository; correct it there on the next
-> fork-side commit, and read this entry as authoritative until then.
+> block, in the `Amendments made so far:` list below, and in `results/PROVENANCE.md` §11.9, which
+> now carries this same correction as an appended dated block (its pre-registered paragraph stays
+> verbatim). After that append, the **only** place still carrying the uncorrected direction argument
+> is the twin's TU comment block itself, in the fork tree
+> (`~/src/carla-autoware-integration/LibCarla/source/carla/ros2/extension/BenchIncoreCloudPublisher.cpp`),
+> outside this repository — it must stay uncorrected for now: editing it there moves that tree's
+> HEAD past the editor artifact's mtime and trips `scripts/e2e/verify_editor_artifact.sh`, forcing a
+> full rebuild before the live collection phase this correction is filed ahead of. It is owed on the
+> next fork-side commit; until then, read this entry as authoritative.
 >
 > **What Task 22 owes, restated:** the withdrawn instruction is reinstated in amended form — the
 > confound table must state the serializer difference (§11.8: same bytes, different code) and this
@@ -4184,8 +4189,8 @@ B-cyc.yaml` and `config/processes/B-cyc.yaml` are byte-for-byte copies of
   the SAME topic and type (`autoware_internal_msgs/msg/PublishedTime`) cell B
   registers, because both approaches gate through `vehicle_cmd_gate` and the
   same `PublishedTimePublisher` implementation stamps the gated
-  `/control/command/control_cmd` on either stack. `config/observer_topics/
-A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
+  `/control/command/control_cmd` on either stack. `config/observer_topics/A.yaml`
+  already carried this row (Task 15b, 2026-07-30, live discovery on
   cell A's own stack) -- only the cells.yaml binding was missing, and this
   task closes that gap without duplicating the observer line; its "STILL
   OWED" note is amended to record the closure rather than rewritten. This is
@@ -4257,8 +4262,8 @@ A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
 - **2026-08-03 (P4 whole-branch review) — what the CAL-seam instrument
   actually runs is registered, ahead of Task 10's first collection.**
   `cells/calibration.sh`'s CAL-seam branch boots `scripts/e2e/run_e2e.sh`,
-  which **unconditionally** passes `--ros2 --rmw=cyclonedds
---ros2-extension=<so>` (`run_e2e.sh:288`) and **unconditionally** ends in
+  which **unconditionally** passes `--ros2 --rmw=cyclonedds --ros2-extension=<so>`
+  (`run_e2e.sh:288`) and **unconditionally** ends in
   `python3 -m runner` (`:328`), spawning the ego and top LiDAR with native
   `ros_*` attributes. CAL-seam therefore runs the full cell-A publishing rig,
   and that fact was registered nowhere — each of its three consequences is
