@@ -105,11 +105,42 @@ fi
 # `transport cost = total - baseline`. On this family that is the editor boot
 # below MINUS the Autoware half -- no container, no autoware_demo.py -- with
 # benchmarks/scripts/raycast_baseline.py taking the demo's place as the world's
-# only client and only tick authority. The editor invocation itself, including
-# `--ros2`, is unchanged: the arm ablates the SENSOR's emission (no ros_*
-# attributes, no enable_for_ros), not the server's transport layer, so
-# `total - baseline` isolates publishing rather than also crediting the DDS
-# participant's existence.
+# only client and only tick authority.
+#
+# THE SENTENCE BELOW IS SUPERSEDED (2026-08-03, corrected by the P4
+# whole-branch review). It is the arm's PRE-FIX definition and it states the
+# opposite of what the code does; a later fix updated the code and the inner
+# comments and left this header standing. That matters more than an ordinary
+# stale comment: an analyst writing the wrap from this block would state a
+# baseline definition that is not the one measured, and the two readings
+# disagree on a real question -- whether `total - baseline` is credited with
+# the DDS participant's existence. Kept verbatim because it is the reasoning
+# the arm was designed under, and because in a campaign whose confound record
+# IS the deliverable, seeing what changed is how the answer stays legible.
+#
+#   SUPERSEDED: "The editor invocation itself, including `--ros2`, is
+#   unchanged: the arm ablates the SENSOR's emission (no ros_* attributes, no
+#   enable_for_ros), not the server's transport layer, so `total - baseline`
+#   isolates publishing rather than also crediting the DDS participant's
+#   existence."
+#
+# WHAT THE CODE DOES. `--ros2` is DROPPED on the ablation arm: see `ROS2_ARGS`
+# further down, emptied for exactly this arm, and the MEASURED 2026-08-03 note
+# beside it, which calls dropping the flag "the arm's central mechanism". The
+# superseded reading was refuted by measurement rather than by argument -- with
+# `--ros2` the editor ADVERTISES `/carla/<vehicle>/ray_cast2/point_cloud` for a
+# rig spawned with no ros_* attributes and no enable_for_ros(), so ablating the
+# sensor's attributes does NOT disable publishing, and the same boot emits
+# /clock at 19.959 Hz into the very clock.csv this arm's client has to write.
+#
+# So `total - baseline` DOES also credit the DDS participant's existence, and
+# that is now deliberate rather than a tolerated error: a DDS participant
+# standing publishers up is transport cost, which belongs on the `total` side
+# of the decomposition, not inside the baseline. The direction is disclosed
+# where the arm's reading rules live, benchmarks/scripts/raycast_baseline.py's
+# module docstring -- dropping the layer can only make the baseline SMALLER, so
+# `T - B` grows, and it grows TOWARD the quantity of interest rather than past
+# it, because the old form was subtracting transport from transport.
 BENCH_ARM_IS_ABLATION=0
 [ "$BENCH_ARM" = "ablation" ] && BENCH_ARM_IS_ABLATION=1
 

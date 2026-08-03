@@ -132,19 +132,43 @@ fi
 # The M4 sweep's ABLATION arm (registered in cells.yaml `sweep_arms`): the
 # identical LiDAR rig with PUBLISHING DISABLED, so the sweep can decompose
 # `transport cost = total - baseline`. This branch boots the cell's CARLA side
-# exactly as the normal path does -- the same fork tree, the same extension
-# .so, the same `--ros2 --rmw=cyclonedds` server -- MINUS Autoware and MINUS
-# the ego-spawning runner, and then runs benchmarks/scripts/raycast_baseline.py
-# as the world's only client and only tick authority.
+# from the same fork tree the normal path uses, MINUS Autoware, MINUS the
+# ego-spawning runner and MINUS the whole ROS 2 layer, and then runs
+# benchmarks/scripts/raycast_baseline.py as the world's only client and only
+# tick authority.
+#
+# TWO CLAIMS IN THIS HEADER WERE SUPERSEDED (2026-08-03, corrected by the P4
+# whole-branch review). They are the arm's PRE-FIX description; a later fix
+# updated the code and the inner comments and left this block standing. Kept
+# verbatim, because they record what the arm was designed to be and the
+# difference is the finding:
+#
+#   SUPERSEDED (1): "the same fork tree, the same extension .so, the same
+#   `--ros2 --rmw=cyclonedds` server".
+#   SUPERSEDED (2): "every gate that invocation is fronted by is re-run here".
+#
+# On (1): the editor line in the ablation block below carries NO `--ros2`, no
+# `--rmw` and no `--ros2-extension` -- see the MEASURED 2026-08-03 note there.
+# The extension .so is NOT loaded on this arm, deliberately: it IS the native
+# publisher layer, so it belongs on the `total` side of the decomposition, not
+# in the baseline. Only the fork TREE is shared.
+# On (2): exactly ONE of run_e2e.sh's two preflights is re-run here -- the
+# stale-.so editor-artifact gate, which is load-bearing because it checks
+# libUnrealEditor-Carla.so, the plugin that implements the sensors and the
+# raycast. The OTHER (`--extension-check`, the extension .so's ABI) is
+# deliberately NOT run, for the reason its own comment in the ablation block
+# gives: this arm never dlopens that file, so gating on it would assert
+# something the run does not depend on. "Every gate" was true of the boot the
+# sentence described and is not true of the boot the code performs.
 #
 # Why not simply `WITH_AUTOWARE=0 bash scripts/e2e/run_e2e.sh`: that path still
 # ends in `python3 -m runner`, which spawns the ego with the fork's native ROS 2
-# publisher attributes on the LiDAR. The baseline would then pay the whole
-# transport cost it exists to subtract, and `total - baseline` would collapse
-# to ~0. The editor invocation below is run_e2e.sh's own, line for line, with
-# the runner and the Autoware bring-up dropped; every gate that invocation is
-# fronted by is re-run here (see the artifact gate and the ABI preflight in the
-# ablation block), because preflight.sh does NOT run the extension family's
+# publisher attributes on the LiDAR -- and it passes `--ros2 --rmw=cyclonedds
+# --ros2-extension` unconditionally besides. The baseline would then pay the
+# whole transport cost it exists to subtract, and `total - baseline` would
+# collapse to ~0. The editor invocation below is run_e2e.sh's own with the ROS 2
+# flags, the runner and the Autoware bring-up dropped, and the artifact gate
+# re-run, because preflight.sh does NOT run the extension family's
 # editor-artifact gate itself -- it reaches it through
 # `cells/extension.sh -> run_e2e.sh:126` (preflight.sh:295), which this branch
 # bypasses. Without re-running it, the ablation arm would be the one path in
