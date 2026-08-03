@@ -1460,6 +1460,16 @@ in **any** tree relinks the shared engine and invalidates every tree that shares
 it; "no further engine relink is permitted from here on (D8)". `exclusions.md`
 criterion 8 excludes any run whose BuildId is found to mismatch after start.
 
+> **SUPERSEDED 2026-08-03 — the statement above is left standing as the P3-era
+> fact it was.** The owner registered a D8 lift for exactly one relink round (P4
+> spec decision 6, CAL-seam revival). It was executed once: the engine BuildId
+> moved to `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a`, all three trees re-converged
+> on it, `benchmarks/pins.yaml` was re-pinned, and **D8 was re-instated
+> immediately afterwards** — no further engine relink is permitted for the
+> remainder of the campaign. `exclusions.md` criterion 8 is unaffected; it still
+> excludes any run whose BuildId mismatches the pin, which is now the new value.
+> Full record: `benchmarks/results/PROVENANCE.md` §11.
+
 ### 9.2 Cell B's closed-loop blocker will affect any P4 arm that tries to arm B
 
 This is not a P3-only condition. Under cell B's registered transport

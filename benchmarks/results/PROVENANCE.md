@@ -3214,9 +3214,22 @@ minutes *before* the artifact was built, and nothing else landed on
 therefore produced by an editor artifact that matched its pinned fork revision,
 and `extension_carla_fork.sha` = `ae166d80d` remains an accurate description of
 that artifact. The only source change the frozen artifact is missing is the
-in-core twin added today. No retroactive audit of P3 is required — but the defect
-will bite the next change to that fork, which is why it is filed here rather than
-left as a Task-9 footnote.
+in-core twin added today. No retroactive audit of P3 is required.
+
+> **Status of this paragraph, added 2026-08-03 after the blocker was cleared.**
+> The analysis above is unchanged and still holds — it is what bounds the blast
+> radius, and it is the reason nobody needs to re-open a P3 cell-A audit. But it
+> was written while the defect was still standing, and its closing sentence
+> ("the defect will bite the next change to that fork") described a live
+> condition. **That condition is resolved.** The artifact was rebuilt in fix
+> round 1 (commit `4e804b2`); the cause was neither engine state nor a stale
+> project-tree `Makefile.bin` but the shared engine's cached link actions, and
+> `-NoUBTMakefiles` cleared it in one invocation. `engine.build_id` never moved
+> off `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` during any of it, so **D8 was not
+> spent a second time.** What *does* survive as a standing hazard is the
+> shared/exclusive ownership of that link path — now the tier4 tree's problem
+> rather than the integration tree's — recorded in §11.6 and, for operators, in
+> `benchmarks/README.md` under "How to run". See §11.5 and §11.6.
 
 **CAL-seam collection was BLOCKED on this.** It no longer is -- the cause was
 not what this section first concluded, and §11.5 records what it actually was

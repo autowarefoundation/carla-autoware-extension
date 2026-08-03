@@ -4059,3 +4059,76 @@ evaluation, spatial window, M5 quality). The entry point for rendering a
 per-cell report is `python3 -m benchmarks.report <results_dir>`; `run.sh`
 runs it as its own last step, so a run directory that does not render is a
 loud failure rather than a silent one.
+
+### Editor-artifact ownership is shared and exclusive between the two UE trees (Task 9, 2026-08-03)
+
+**Only one of the two CARLA trees can refresh its editor Carla module at a time,
+and a build from the other tree fails silently by writing into the wrong one.**
+This cost most of P4 Task 9 to find; it will cost the next person the same unless
+they read this first.
+
+Both trees ship a project named `CarlaUnreal.uproject`
+(`~/src/carla-autoware-integration` for cells A/C, `~/src/carla-autoware-native`
+for the B family). The **shared** engine keeps ONE set of cached link actions for
+the editor's Carla module, as per-module scripts under
+
+```text
+~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor/Development/
+    Link-libUnrealEditor-Carla.so.link.sh
+```
+
+each carrying the **absolute** output path baked in. Whichever tree last made UBT
+_re-gather_ owns that path **for both trees**. Ownership does **not** follow the
+tree you invoke the build from, and passing a correct absolute `-project=` does
+not change it — the redirect happens below the flag, in cached actions the flag
+does not participate in.
+
+**Current owner: the integration tree** (set 2026-08-03, which is what cell A
+needs). So a `carla-unreal-editor` build run from the **tier4** tree currently
+refreshes the **integration** tree's module and leaves tier4's untouched.
+
+**Detection signal.** The failure is silent at the build — the build reports
+success and the artifact simply does not move. What catches it is the artifact
+gate for the tree you were trying to refresh:
+
+- `scripts/e2e/verify_editor_artifact.sh` refusing with `PREFLIGHT FAIL: ...
+libUnrealEditor-Carla.so (<mtime>) is OLDER than HEAD commit (<ct>)` — the
+  integration tree; or
+- `benchmarks/scripts/verify_tier4_artifact.sh` refusing `tier4-artifact-stale` —
+  the tier4 tree; or, generally,
+- a `libUnrealEditor-Carla.so` whose mtime does not move across a build that
+  reported success.
+
+A second, subtler tell: a **no-op rebuild relinks the module every single time**,
+because the output UBT checks on the non-owning side never gets any newer.
+
+**Remedy — re-gather from the tree that should own the path:**
+
+```bash
+$CARLA_UNREAL_ENGINE_PATH/Engine/Build/BatchFiles/Linux/Build.sh \
+  CarlaUnrealEditor Linux Development \
+  -project=<ABSOLUTE path to the desired tree's CarlaUnreal.uproject> \
+  -game -NoUBTMakefiles
+```
+
+`-NoUBTMakefiles` makes UBT re-gather instead of replaying the cached graph. It is
+a **one-time unstick, not a flag to keep passing**: afterwards the ordinary
+documented target (`cmake --build Build/Development --target carla-unreal-editor`
+for the integration tree, `cmake --build Build --target carla-unreal-editor` for
+tier4 — note the different build dirs) writes all of its outputs to the right
+place again.
+
+**Do not flip ownership speculatively — it re-breaks the other cell.** Flip it
+only when a source change in the non-owning tree actually needs to reach an
+artifact, and flip it back afterwards. Both trees' sources are pinned for P4
+(`pins.yaml`), so no flip should be needed for the rest of this campaign.
+
+**This is not a relink and does not touch D8.** `engine.build_id` was captured
+before and after every attempt in Task 9 and held
+`bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` throughout; re-gathering regenerates
+UBT's own action cache, it does not relink the engine. Verify the same way if you
+ever do it: census the BuildId across the engine and both trees' project and
+plugin `UnrealEditor.modules` before and after, and stop if it moves.
+
+Full derivation, the two wrong root causes it went through, and the
+before/after evidence: `benchmarks/results/PROVENANCE.md` §11.3, §11.5 and §11.6.
