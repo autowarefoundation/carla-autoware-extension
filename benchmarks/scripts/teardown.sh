@@ -289,7 +289,21 @@ fi
 
 # ---------------------------------------------------------------------------
 # 6/7. stack + simulator, per approach
+#
+# The M4 ablation arm's baseline client goes FIRST, before any approach's
+# simulator below, and for the same reason the tier4 case stops
+# autoware_demo.py before the editor: on that arm
+# benchmarks/scripts/raycast_baseline.py IS the world's tick authority and its
+# only client, and a CARLA client left ticking a server that has just died
+# hangs on actor destroy (CLAUDE.md's teardown gotcha). Written into launch.env
+# by both sweep launchers' ablation branch ONLY, so on every other arm the
+# variable is unset and `stop_pidfile` returns immediately on the missing file
+# -- a no-op, not a new failure mode. Placed here rather than as its own
+# numbered step because it belongs to exactly this one: on the ablation arm
+# this client is the stack.
 # ---------------------------------------------------------------------------
+stop_pidfile "${ABLATION_PID_FILE:-}" "raycast baseline client"
+
 case "${APPROACH:-}" in
   extension)
     # run_e2e.sh owns the editor and the Autoware launch through its own EXIT

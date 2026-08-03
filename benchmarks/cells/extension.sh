@@ -128,9 +128,88 @@ if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_RUNNER_SWEEP_ARGS:-}" ]; then
   esac
 fi
 
+# --------------------------------------------------------------------------
+# The M4 sweep's ABLATION arm (registered in cells.yaml `sweep_arms`): the
+# identical LiDAR rig with PUBLISHING DISABLED, so the sweep can decompose
+# `transport cost = total - baseline`. This branch boots the cell's CARLA side
+# exactly as the normal path does -- the same fork tree, the same extension
+# .so, the same `--ros2 --rmw=cyclonedds` server -- MINUS Autoware and MINUS
+# the ego-spawning runner, and then runs benchmarks/scripts/raycast_baseline.py
+# as the world's only client and only tick authority.
+#
+# Why not simply `WITH_AUTOWARE=0 bash scripts/e2e/run_e2e.sh`: that path still
+# ends in `python3 -m runner`, which spawns the ego with the fork's native ROS 2
+# publisher attributes on the LiDAR. The baseline would then pay the whole
+# transport cost it exists to subtract, and `total - baseline` would collapse
+# to ~0. The editor invocation below is run_e2e.sh's own, line for line, with
+# the runner and the Autoware bring-up dropped; every gate that invocation is
+# fronted by is re-run here (see the artifact gate and the ABI preflight in the
+# ablation block), because preflight.sh does NOT run the extension family's
+# editor-artifact gate itself -- it reaches it through
+# `cells/extension.sh -> run_e2e.sh:126` (preflight.sh:295), which this branch
+# bypasses. Without re-running it, the ablation arm would be the one path in
+# this campaign that can boot a stale editor .so.
+BENCH_ARM_IS_ABLATION=0
+[ "$BENCH_ARM" = "ablation" ] && BENCH_ARM_IS_ABLATION=1
+ABLATION_PID_FILE="$BENCH_RUN_DIR/raycast_baseline.pid"
+ABLATION_LOG="$BENCH_RUN_DIR/raycast_baseline.log"
+ABLATION_TICK_HZ=""
+# A CAP on the client's tick loop, not the scoring window (run.sh step 10 owns
+# that: 140 s on any non-static arm). It only bounds how long an orphaned
+# client -- teardown missed, launcher gone -- can keep ticking a server nobody
+# is watching.
+ABLATION_DURATION_S="${BENCH_ABLATION_DURATION_S:-600}"
+ABLATION_READY_S=120
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  # The client is the GT collector's interpreter -- the one whose `carla`
+  # module matches the server this cell boots, already resolved and
+  # import-checked above. Checked again by IMPORTING the module it will run:
+  # raycast_baseline pulls in runner.kit/runner.loop/runner.spawn (and so
+  # yaml), and a venv missing any of them must fail HERE, in plan, not after a
+  # 2-5 minute editor boot.
+  PYTHONPATH="$BENCH_REPO" "$GT_PYTHON" -c \
+    "import benchmarks.scripts.raycast_baseline" >/dev/null 2>&1 ||
+    fail "$GT_PYTHON cannot import benchmarks.scripts.raycast_baseline (the
+  ablation client). It needs this repo on PYTHONPATH plus PyYAML; set
+  BENCH_GT_PYTHON to an interpreter that has the fork's 0.10 client wheel AND
+  can import runner.kit."
+
+  # The stale-.so gate run_e2e.sh:126 fronts every live extension run with.
+  CARLA_ROOT="$BENCH_CARLA_TREE" \
+  CARLA_UNREAL_ENGINE_PATH="${CARLA_UNREAL_ENGINE_PATH:-$HOME/src/UnrealEngine}" \
+    bash "$BENCH_REPO/scripts/e2e/verify_editor_artifact.sh" ||
+    fail "the editor-artifact gate refused this run (named reason above)"
+  # ...and its cheap ABI preflight, for the same reason.
+  (cd "$BENCH_REPO" && python3 -m runner --extension-check --extension-so "$EXT_SO") ||
+    fail "the extension .so failed its ABI preflight (see above)"
+
+  # sweep_verdict.py scores paced and ablation at the SAME paced tick target
+  # (its `manifest.arm == "unpaced"` branch is the only one that substitutes
+  # tick_rate_ratio), so the client's fixed delta must be the cell's REGISTERED
+  # metrics.tick_hz -- read from cells.yaml here, never a literal, and a null
+  # binding refuses rather than picking a plausible number.
+  ABLATION_TICK_HZ="$(BENCH_CELL="$BENCH_CELL" PYTHONPATH="$BENCH_REPO" python3 - <<'PY'
+import os
+
+from benchmarks.scripts.cell_info import load_cells_doc, metrics_for
+
+cell = os.environ["BENCH_CELL"]
+tick_hz = metrics_for(load_cells_doc(), cell)["tick_hz"]
+if tick_hz is None:
+    raise SystemExit(
+        f"metrics.tick_hz is not registered (null) for cell {cell}: the ablation arm "
+        "cannot pick a tick target the campaign has not pre-registered"
+    )
+print(tick_hz)
+PY
+  )" || fail "could not resolve the registered tick target for cell $BENCH_CELL"
+fi
+
 # Spawn pose comes from the committed route file, so the cell starts where
 # the route was scored. run_e2e.sh takes it through RUNNER_EXTRA_ARGS
-# (--initial-pose x y z roll pitch yaw_deg, CARLA frame).
+# (--initial-pose x y z roll pitch yaw_deg, CARLA frame). The ablation client
+# takes the SAME string (it accepts --initial-pose/--spawn-index with the
+# runner's own spelling), so both arms start the rig at one pose.
 SPAWN_ARGS="$(BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" python3 - <<'PY'
 import os
 
@@ -148,6 +227,31 @@ else:
 PY
 )" || fail "could not derive the spawn pose from $BENCH_ROUTE_FILE"
 
+# The four harness switches the ablation arm flips, each for a reason run.sh
+# acts on directly:
+#   ARM_ENABLED=0      step 9 has no stack to arm -> "(nothing to arm for this
+#                      cell)", and the post-engage control_cmd probe is skipped.
+#   INJECTOR_ENABLED=0 there is no Autoware container; the step-8 `docker exec`
+#                      would fail and exclude the run gate:injector-failed.
+#   GT_ENABLED=0       a second CARLA client would add load to the very
+#                      measurement this arm isolates; it also switches step 15's
+#                      smoke off its gt.csv assertion (BENCH_GT_EXPECTED).
+#   GT_COUNT_LIDAR=0   publisher_counts.json must be ABSENT. sweep_verdict.py
+#                      reads an absent file as "not measurable" (ratio 1.0), and
+#                      a file-backed 0 as REAL zero throughput -- which would
+#                      fire the ceiling's publisher disjunct on a run that
+#                      never intended to publish.
+LAUNCH_GT_ENABLED=1
+LAUNCH_GT_COUNT_LIDAR=1
+LAUNCH_INJECTOR_ENABLED=1
+LAUNCH_ARM_ENABLED=1
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  LAUNCH_GT_ENABLED=0
+  LAUNCH_GT_COUNT_LIDAR=0
+  LAUNCH_INJECTOR_ENABLED=0
+  LAUNCH_ARM_ENABLED=0
+fi
+
 cat >"$BENCH_LAUNCH_ENV" <<EOF
 # Written by benchmarks/cells/extension.sh ($MODE) -- sourced by run.sh and
 # teardown.sh. Every value is resolved, never re-derived downstream.
@@ -164,15 +268,28 @@ AW_CONTAINER="$AW_CONTAINER"
 AW_EXEC="docker exec -e ROS_DOMAIN_ID=0 $AW_CONTAINER"
 AW_SETUP="source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0"
 AW_COMPOSE="$COMPOSE"
-GT_ENABLED="1"
+GT_ENABLED="$LAUNCH_GT_ENABLED"
 GT_CMD="env PYTHONPATH=$BENCH_REPO $GT_PYTHON -m benchmarks.scripts.collect_gt"
 GT_OUT_DIR="$BENCH_RUN_DIR"
-GT_COUNT_LIDAR="1"
-INJECTOR_ENABLED="1"
-ARM_ENABLED="1"
+GT_COUNT_LIDAR="$LAUNCH_GT_COUNT_LIDAR"
+INJECTOR_ENABLED="$LAUNCH_INJECTOR_ENABLED"
+ARM_ENABLED="$LAUNCH_ARM_ENABLED"
 EXTRA_CONTAINERS=""
 SPAWN_ARGS="$SPAWN_ARGS"
 EOF
+
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  # Declared for teardown.sh, which stops this client BEFORE the simulator:
+  # it is the world's tick authority (exactly as autoware_demo.py is on the
+  # tier4 cells), and a CARLA client left ticking a dead server hangs on actor
+  # destroy. Written by the plan step too, so a launcher that dies half-way
+  # through `up` still leaves teardown something to stop.
+  cat >>"$BENCH_LAUNCH_ENV" <<EOF
+ABLATION_PID_FILE="$ABLATION_PID_FILE"
+ABLATION_LOG="$ABLATION_LOG"
+ABLATION_TICK_HZ="$ABLATION_TICK_HZ"
+EOF
+fi
 
 if [ "$MODE" = "plan" ]; then exit 0; fi
 [ "$MODE" = "up" ] || fail "unknown mode $MODE (expected plan|up)"
@@ -181,6 +298,91 @@ if [ "$MODE" = "plan" ]; then exit 0; fi
 # up: boot the stack, then wait for OUR OWN readiness definition.
 # --------------------------------------------------------------------------
 mkdir -p "$BENCH_RUN_DIR"
+
+# --------------------------------------------------------------------------
+# ablation arm: CARLA only, then the publish-disabled baseline client.
+# --------------------------------------------------------------------------
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  # run_e2e.sh's own editor line, verbatim except for the map source
+  # (BENCH_MAP, so the cell decides) -- including `--ros2 --rmw=cyclonedds
+  # --ros2-extension`. Keeping the ROS 2 layer ON is deliberate and is what
+  # makes this a BASELINE rather than a different server: the arm ablates the
+  # sensor's EMISSION (no ros_* attributes, no enable_for_ros), not the
+  # server's transport layer, so `total - baseline` isolates publishing rather
+  # than also crediting the DDS participant's existence.
+  #
+  # TRAP (run_e2e.sh's own header): a SINGLE-dash `-ros2` silently DISABLES
+  # ROS2 -- it is an unrecognised flag UE just ignores. The double-dash form
+  # below is the verified-working one; never "fix" it to a single dash.
+  #
+  # ROS_DOMAIN_ID=0 is pinned ON THIS PROCESS for the same reason
+  # cells/tier4-native.sh pins it on the editor: this host's login shell
+  # exports 123 (~/.zshrc:126) and `nohup` inherits it.
+  export CYCLONEDDS_URI="file://$BENCH_REPO/docker/cyclonedds.xml"
+  nohup env ROS_DOMAIN_ID=0 \
+    "${CARLA_UNREAL_ENGINE_PATH:-$HOME/src/UnrealEngine}/Engine/Binaries/Linux/UnrealEditor" \
+    "$BENCH_CARLA_TREE/Unreal/CarlaUnreal/CarlaUnreal.uproject" "$BENCH_MAP" \
+    -game -RenderOffScreen -nosound \
+    --ros2 --rmw=cyclonedds "--ros2-extension=$EXT_SO" >"$LAUNCH_LOG" 2>&1 &
+  # CARLA_PID_FILE holds the EDITOR's own pid on this arm, where the normal
+  # path stores run_e2e.sh's (which owns the editor through its own EXIT
+  # trap). teardown.sh's extension case stops whatever that file names, so it
+  # stops the editor directly here -- exactly as the tier4-native launcher's
+  # own CARLA_PID_FILE already works. `env` execs in place, so `$!` is the
+  # editor, not a wrapper.
+  echo $! >"$CARLA_PID_FILE"
+
+  echo "waiting up to ${READY_TIMEOUT_S}s for CARLA RPC on $BENCH_RPC_PORT (log: $LAUNCH_LOG)"
+  deadline=$((SECONDS + READY_TIMEOUT_S))
+  while :; do
+    # Captured, never piped to grep -q: an early pipe close SIGPIPE-kills ss
+    # and pipefail then reports "not bound" for a port that IS bound (the same
+    # trap cells/tier4-native.sh documents).
+    ss_out="$(ss -ltn 2>/dev/null)" || true
+    [[ "$ss_out" =~ :${BENCH_RPC_PORT}[[:space:]] ]] && break
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      fail "CARLA RPC port $BENCH_RPC_PORT never bound within ${READY_TIMEOUT_S}s (see $LAUNCH_LOG)"
+    fi
+    if ! kill -0 "$(cat "$CARLA_PID_FILE")" 2>/dev/null; then
+      fail "the editor exited during bring-up (see $LAUNCH_LOG)"
+    fi
+    sleep 5
+  done
+  echo "OK: CARLA up on port $BENCH_RPC_PORT (no Autoware, no runner: ablation arm)"
+
+  # The only client. $SPAWN_ARGS is the route's spawn in the runner's own
+  # spelling and $BENCH_RUNNER_SWEEP_ARGS is the class mapping resolved above
+  # (--lidar-channels/--lidar-pps); raycast_baseline.py accepts both verbatim,
+  # so neither is re-derived here. Both are deliberately word-split: they are
+  # resolved multi-flag strings, not single arguments.
+  # shellcheck disable=SC2086
+  nohup env PYTHONPATH="$BENCH_REPO" "$GT_PYTHON" -m benchmarks.scripts.raycast_baseline \
+    --host localhost --port "$BENCH_RPC_PORT" --rig extension \
+    --class-id "${BENCH_CLASS_ID:-}" --tick-hz "$ABLATION_TICK_HZ" \
+    --duration-s "$ABLATION_DURATION_S" --out-dir "$BENCH_RUN_DIR" \
+    $SPAWN_ARGS ${BENCH_RUNNER_SWEEP_ARGS:-} >"$ABLATION_LOG" 2>&1 &
+  echo $! >"$ABLATION_PID_FILE"
+
+  # Readiness is the FILE, not the process: clock.csv is what this arm exists
+  # to produce (nothing publishes /clock, so the client is its only writer, and
+  # run.sh step 7's watchdog will start judging the run by it within 30 s). Two
+  # data rows also clears `fit_sim_wall_affine`'s ">= 2 paired samples", the
+  # step-15 smoke's precondition.
+  echo "waiting up to ${ABLATION_READY_S}s for the baseline client to tick (log: $ABLATION_LOG)"
+  deadline=$((SECONDS + ABLATION_READY_S))
+  until [ "$(wc -l <"$BENCH_RUN_DIR/clock.csv" 2>/dev/null || echo 0)" -ge 3 ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      fail "the raycast baseline client wrote no clock.csv rows within
+  ${ABLATION_READY_S}s (see $ABLATION_LOG)"
+    fi
+    if ! kill -0 "$(cat "$ABLATION_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+      fail "the raycast baseline client exited during bring-up (see $ABLATION_LOG)"
+    fi
+    sleep 2
+  done
+  echo "OK: publish-disabled baseline ticking at ${ABLATION_TICK_HZ} Hz"
+  exit 0
+fi
 
 # The Autoware container must exist before run_e2e.sh's launch_autoware.sh
 # step; `up -d` is idempotent when it is already running.

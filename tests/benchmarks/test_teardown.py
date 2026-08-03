@@ -1235,3 +1235,115 @@ def test_launch_autoware_sh_sidecar_write_is_best_effort(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert not Path(f"{pidfile}.cmd").exists() or Path(f"{pidfile}.cmd").read_text() == ""
+
+
+# --- P4 Task 7: the ablation arm's baseline client stops before the sim -----
+
+# Stand-in for the simulator (CARLA_PID_FILE): on SIGTERM it records whether
+# the ablation client's pid is STILL ALIVE at that instant, then exits. That
+# marker is the whole ordering observation -- it can only read "dead" if
+# teardown really stopped the client first.
+ORDER_PROBE_SRC = """
+import os, signal, sys, time
+
+other = int(os.environ["PROBE_OTHER_PID"])
+marker = os.environ["PROBE_MARKER"]
+
+
+def _on_term(signum, frame):
+    try:
+        os.kill(other, 0)
+        state = "alive"
+    except OSError:
+        state = "dead"
+    with open(marker, "w") as f:
+        f.write(state)
+    sys.exit(0)
+
+
+signal.signal(signal.SIGTERM, _on_term)
+while True:
+    time.sleep(0.05)
+"""
+
+
+def test_ablation_client_is_stopped_before_the_simulator(tmp_path):
+    """The M4 ablation arm's baseline client (raycast_baseline.py) is that
+    arm's world tick authority, so teardown must stop it BEFORE the simulator
+    -- a CARLA client left ticking a dead server hangs on actor destroy.
+
+    Real code path, real processes: the stand-in "simulator" reports, from its
+    own SIGTERM handler, whether the client was still alive when teardown got
+    to it. Commenting out teardown.sh's `stop_pidfile "${ABLATION_PID_FILE:-}"`
+    makes this read "alive" and fail -- a text scan of the file would not.
+    """
+    run_dir = tmp_path / "run"
+    marker = tmp_path / "order-marker.txt"
+    client = _start_reaped_stub(tmp_path, "raycast-baseline")
+    sim = subprocess.Popen(
+        [sys.executable, "-c", ORDER_PROBE_SRC],
+        env={**os.environ, "PROBE_OTHER_PID": str(client.pid), "PROBE_MARKER": str(marker)},
+    )
+    threading.Thread(target=sim.wait, daemon=True).start()
+    try:
+        client_pidfile = tmp_path / "raycast_baseline.pid"
+        client_pidfile.write_text(str(client.pid))
+        sim_pidfile = tmp_path / "carla.pid"
+        sim_pidfile.write_text(str(sim.pid))
+        # APPROACH=extension so the case branch below reaches CARLA_PID_FILE;
+        # AW_CONTAINER/AW_COMPOSE/CARLA_TREE stay empty so no docker call and
+        # no editor pgrep sweep is reachable from this test at all.
+        env = {
+            "APPROACH": "extension",
+            "AW_CONTAINER": "",
+            "AW_COMPOSE": "",
+            "CARLA_TREE": "",
+            "ABLATION_PID_FILE": str(client_pidfile),
+            "CARLA_PID_FILE": str(sim_pidfile),
+        }
+        _write_launch_env(run_dir, **env)
+
+        result = run_teardown(run_dir, {**os.environ, **env})
+
+        assert result.returncode == 0, result.stderr
+        assert marker.exists(), "the simulator stand-in was never signalled"
+        assert marker.read_text().strip() == "dead", (
+            "the ablation baseline client was still alive when the simulator was "
+            "stopped: a client left ticking a dead server hangs on actor destroy"
+        )
+        assert _wait_until(lambda: not _alive(client.pid))
+        assert not client_pidfile.exists()
+    finally:
+        for p in (client, sim):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+
+def test_teardown_without_an_ablation_pid_file_is_unchanged(tmp_path):
+    """Every non-ablation arm leaves ABLATION_PID_FILE unset, and the new stop
+    must then be a true no-op rather than a new failure mode: the simulator is
+    still stopped and teardown still exits 0."""
+    run_dir = tmp_path / "run"
+    sim = _start_reaped_stub(tmp_path, "carla")
+    try:
+        sim_pidfile = tmp_path / "carla.pid"
+        sim_pidfile.write_text(str(sim.pid))
+        env = {
+            "APPROACH": "extension",
+            "AW_CONTAINER": "",
+            "AW_COMPOSE": "",
+            "CARLA_TREE": "",
+            "CARLA_PID_FILE": str(sim_pidfile),
+        }
+        _write_launch_env(run_dir, **env)
+
+        result = run_teardown(run_dir, {**os.environ, **env})
+
+        assert result.returncode == 0, result.stderr
+        assert "raycast baseline client" not in result.stdout
+        assert _wait_until(lambda: not _alive(sim.pid))
+    finally:
+        if sim.poll() is None:
+            sim.kill()
+        sim.wait(timeout=5)
