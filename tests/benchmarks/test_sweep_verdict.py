@@ -676,16 +676,34 @@ def test_resolve_override_flag_always_wins_with_no_check(flag, key):
 # --- S5: mirror the expected-window-branch check (D10, Task 23's half) ----
 
 
-def test_expected_window_branch_calibration_approach_is_unfittable():
-    assert sweep_verdict._expected_window_branch("calibration") == "unfittable"
+def test_expected_window_branch_cal_rmw_is_unfittable():
+    assert sweep_verdict._expected_window_branch("calibration", "CAL-rmw") == "unfittable"
+
+
+def test_expected_window_branch_cal_seam_is_fittable():
+    """CORRECTED 2026-08-03 (P4 whole-branch review). CAL-seam shares
+    `approach: calibration` with CAL-rmw but NOT its shape: its reinstated
+    launch branch runs `scripts/e2e/run_e2e.sh`, which unconditionally boots
+    the editor `--ros2` and unconditionally ends in `python3 -m runner`, i.e.
+    the full cell-A publishing rig. That configuration was MEASURED emitting
+    `/clock` at 19.959 Hz, so clock.csv gets far more than the two rows
+    `fit_sim_wall_affine` needs and the run resolves FITTABLE.
+
+    Pinned as its own test rather than folded into the CAL-rmw one because the
+    two now differ, and a rule that answered `unfittable` for both would make
+    every CAL-seam run file a pre-explained "loud finding"."""
+    assert sweep_verdict._expected_window_branch("calibration", "CAL-seam") == "fittable"
 
 
 def test_expected_window_branch_every_other_approach_is_fittable():
     """Every registered non-calibration approach, not just "extension" --
-    the rule is about having (or not having) a simulation loop, and only
-    `approach: calibration` cells lack one."""
+    the rule is about having (or not having) a simulation loop, and among the
+    calibration cells only CAL-rmw now lacks one. The cell id is passed but
+    must not matter here: a non-calibration approach is fittable whatever the
+    cell is called, so the CAL-seam exception cannot leak outward."""
     for approach in ("extension", "tier4-native", "python-bridge"):
-        assert sweep_verdict._expected_window_branch(approach) == "fittable"
+        for cell in ("A", "B", "B-cyc", "E", "CAL-seam"):
+            assert sweep_verdict._expected_window_branch(approach, cell) == "fittable"
 
 
 def test_actual_window_branch_needs_at_least_two_clock_rows():

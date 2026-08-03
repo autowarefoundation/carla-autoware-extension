@@ -380,22 +380,59 @@ def _quality_ok(run_dir: Path, arm: str) -> tuple[bool, str | None]:
     )
 
 
-def _expected_window_branch(approach: str) -> str:
-    """The scoring-window branch a cell's `approach` is expected to take
-    (benchmarks/README.md, "Expected branch per cell, so a surprise is
-    loud"): calibration cells (`CAL-rmw`, `CAL-seam`) have no simulation
-    loop and are expected to take the UNFITTABLE branch; every other
-    approach is expected to take the FITTABLE branch.
+# The one calibration cell that DOES have a simulation loop. Named as a
+# constant rather than inlined so the exception is greppable and so the
+# corrected rule below reads as "calibration, except this cell" rather than as
+# a bare string comparison a later edit could quietly generalise.
+_CALIBRATION_CELL_WITH_A_SIM_LOOP = "CAL-seam"
 
-    Derived from `approach` (`cell_info.merge`'s `merged["approach"]`),
-    never from `has_sim_clock`/the `carla:` field -- `CAL-seam` is the
-    README-registered discriminating case: `carla: 0.10-fork`, so
-    `has_sim_clock` is true, yet it is still expected to take the
-    unfittable branch (open contradiction owed to Task 14; this rule is
-    correct either way because it tests approach, not the `carla:`
-    field an earlier, wrong version of this rule used).
+
+def _expected_window_branch(approach: str, cell: str) -> str:
+    """The scoring-window branch a cell is expected to take
+    (benchmarks/README.md, "Expected branch per cell, so a surprise is
+    loud"): `CAL-rmw` has no simulation loop and is expected to take the
+    UNFITTABLE branch; every other cell -- `CAL-seam` included since
+    2026-08-03 -- is expected to take the FITTABLE branch.
+
+    ORIGINAL RULE, kept because the reasoning it records is still the
+    reasoning, and because what superseded it is a measurement rather than a
+    better argument: "calibration cells (`CAL-rmw`, `CAL-seam`) have no
+    simulation loop and are expected to take the UNFITTABLE branch ... Derived
+    from `approach`, never from `has_sim_clock`/the `carla:` field --
+    `CAL-seam` is the README-registered discriminating case: `carla:
+    0.10-fork`, so `has_sim_clock` is true, yet it is still expected to take
+    the unfittable branch (open contradiction owed to Task 14; this rule is
+    correct either way because it tests approach, not the `carla:` field an
+    earlier, wrong version of this rule used)."
+
+    CORRECTED 2026-08-03 (P4 whole-branch review), BEFORE the first CAL-seam
+    collection. The premise "CAL-seam has no simulation loop" is false as the
+    cell is now launched: `cells/calibration.sh`'s reinstated CAL-seam branch
+    runs `scripts/e2e/run_e2e.sh`, which UNCONDITIONALLY boots the editor
+    `--ros2 --rmw=cyclonedds --ros2-extension=<so>` (`run_e2e.sh:288`) and
+    UNCONDITIONALLY ends in `python3 -m runner` (`:328`), spawning the ego and
+    top LiDAR and ticking the world -- the full cell-A publishing rig. That
+    exact configuration was MEASURED publishing `/clock` at 19.959 Hz (P4 Task
+    7's bring-up probe, through the matched Humble/cyclonedds instrument), so
+    `clock.csv` gets far more than the >= 2 rows `fit_sim_wall_affine` needs
+    and `_actual_window_branch` resolves FITTABLE. Left uncorrected, every
+    CAL-seam run would have filed a "loud finding" that was already explained
+    before it was collected, which devalues the signal for the runs that mean
+    it.
+
+    What the correction COSTS, stated because it is a real loss: the rule was
+    derivable from `approach` alone and now is not. `cell` is a second input
+    and CAL-seam is a named exception, so a future calibration cell inherits
+    CAL-rmw's expectation by default and has to be considered explicitly.
+    That is the honest shape -- "calibration" now covers two cells with
+    genuinely different rigs -- and it is still NOT the `has_sim_clock` /
+    `carla:` derivation the original rule rejected: the two happen to agree
+    for CAL-seam now, but they agree because the cell really ticks, not
+    because this rule was rebased onto that field.
     """
-    return "unfittable" if approach == "calibration" else "fittable"
+    if approach != "calibration":
+        return "fittable"
+    return "fittable" if cell == _CALIBRATION_CELL_WITH_A_SIM_LOOP else "unfittable"
 
 
 def _actual_window_branch(wall_ns: np.ndarray) -> str:
@@ -496,11 +533,11 @@ def verdict_for_run(
     explicitly (`main` resolves them per cell) rather than this function
     defaulting any of them, so an unregistered (`None`) binding cannot be
     silently papered over with a plausible-looking number.
-    `expected_window_branch` is `_expected_window_branch(approach)`
+    `expected_window_branch` is `_expected_window_branch(approach, cell)`
     (`main` resolves it once per cell from `cell_info.merge`'s
-    `merged["approach"]`); this function compares it against the run's
-    own actual branch (S5, mirroring Task 22's `duel_verdict.py` D10) and
-    annotates -- never raises -- on a mismatch.
+    `merged["approach"]` and the requested cell id); this function compares
+    it against the run's own actual branch (S5, mirroring Task 22's
+    `duel_verdict.py` D10) and annotates -- never raises -- on a mismatch.
     """
     run_dir = Path(run_dir)
     manifest = load_manifest(run_dir / "manifest.json")
@@ -735,9 +772,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     # S5: the cell's expected scoring-window branch, resolved once (it is
     # a cell property, same for every run scored this invocation) from
-    # `merged["approach"]` -- never from `has_sim_clock`/`carla:`, per
-    # `_expected_window_branch`'s own docstring.
-    expected_window_branch = _expected_window_branch(merged["approach"])
+    # `merged["approach"]` plus the cell id -- never from
+    # `has_sim_clock`/`carla:`, per `_expected_window_branch`'s own docstring.
+    # The cell id joined the inputs 2026-08-03, when CAL-seam stopped sharing
+    # CAL-rmw's expectation; `args.cell` rather than a manifest field, because
+    # this is the cell being SCORED, resolved before any run is opened.
+    expected_window_branch = _expected_window_branch(merged["approach"], args.cell)
 
     cell_dir = args.results_root / args.cell
     verdicts = []

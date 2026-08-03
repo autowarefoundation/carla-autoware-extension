@@ -356,6 +356,68 @@ fittable branch. A run that takes the branch its cell was not expected to
 take is a **loud finding to be reported, not a silent fallback** — it means
 the cell did not run the way it is registered to.
 
+**CORRECTED 2026-08-03 (P4 whole-branch review), BEFORE Task 10 collects:
+`CAL-seam` is expected to take the FITTABLE branch.** The paragraph above
+stays as written and keeps its rule; only CAL-seam's side of it moves, and it
+moves on evidence that arrived after the paragraph did. The correction is made
+here rather than left for a run to expose, because this pre-registration was
+known-wrong **in advance** — leaving it would have made Stage 2 file an
+already-explained "loud finding" on every single CAL-seam run, which is the
+opposite of what "so a surprise is loud" exists for.
+
+Why the paragraph's reasoning no longer reaches CAL-seam. It groups CAL-seam
+with CAL-rmw as a "transport/serialization instrument, not a driving cell",
+and for CAL-rmw that is exactly right: `cells/calibration.sh` boots
+`bench_pub` plus the observer, no simulator, so nothing publishes `/clock` and
+`clock.csv` really is header-only. CAL-seam's reinstated branch (Task 8) does
+something materially different — it runs `scripts/e2e/run_e2e.sh`, which
+**unconditionally** passes `--ros2 --rmw=cyclonedds --ros2-extension=<so>`
+(`run_e2e.sh:288`) and **unconditionally** ends in `python3 -m runner`
+(`:328`), spawning the ego and top LiDAR with native `ros_*` attributes and
+ticking the world. That is the full cell-A publishing rig, and it is precisely
+the configuration the 2026-08-03 probe measured emitting `/clock` at **19.959
+Hz** (see "SETTLED BY MEASUREMENT" below). So `clock.csv` gets far more than
+the two rows `fit_sim_wall_affine` needs, `_actual_window_branch` resolves
+**fittable**, and CAL-seam turns out to be a calibration cell that does have a
+simulation loop.
+
+`scripts/sweep_verdict.py`'s `_expected_window_branch` encoded the same
+now-wrong expectation and is corrected with this paragraph: `unfittable` for
+`approach: calibration` **except** `CAL-seam`. Note what that costs — the rule
+was derivable from `approach` alone, which was its stated virtue, and now
+takes the cell id and names an exception. The discriminating case it used to
+cite (CAL-seam having `carla: 0.10-fork` yet expecting unfittable) has simply
+gone away: for CAL-seam `has_sim_clock` and the expected branch now agree, and
+they agree because the cell really does tick — not because the rule was
+rebased onto the `carla:` field it deliberately avoided.
+
+**KNOWN TRAP, registered 2026-08-03 (P4 whole-branch review) — the one
+consequence of that rig that yields a plausible-but-wrong NUMBER rather than a
+loud failure. Read this before reading any CAL-seam report.** Because
+`has_sim_clock` is true, `run.sh` step 15 renders CAL-seam through
+`report.summarize_run`, which computes a `fit_sim_wall_affine` over
+`clock.csv` and feeds that fit to `one_hop_wall_ms` for **every** topic in
+`observer.csv` — including `/bench/seam_cloud` and `/bench/incore_cloud`. Both
+bench publishers stamp `header.stamp` with **wall** `now()`, not sim time. So
+the renderer maps a wall stamp through a sim→wall affine and prints the result
+as `one_hop_p50_ms`: a finite, plausible-looking millisecond figure that is not
+a latency. It does not raise, it does not warn, and nothing in the rendered
+table distinguishes it from a correctly-fitted row.
+
+**The paired delta survives it; the absolutes do not.** `C1(a)` is the
+difference between the two bench topics — both stamped the same way, both put
+through the same fit in the same run — so the mapping is common-mode and
+cancels out of the delta. What must never be quoted is either topic's
+`one_hop_p50_ms` / `one_hop_p99_ms` as an absolute one-hop latency, nor a
+comparison of one of them against a genuinely sim-stamped cell's number.
+`cal_report.py` — which takes the direct arrival-minus-header-stamp
+difference, the right arithmetic for wall-stamped publishers — is NOT what step
+15 routes CAL-seam through, and its own first line still scopes it to
+`carla: none` cells. Whoever reads the first CAL-seam collection is reading
+`report.py`'s output unless they deliberately do otherwise. Registered here
+rather than left to be noticed, because a wrong number that renders cleanly is
+not noticed.
+
 > **CAL-seam's supporting evidence changed 2026-08-03 (Task 8).** This
 > paragraph used to also cite `config/processes/CAL-seam.yaml` registering
 > "no ticking runner" as evidence CAL-seam has no simulation loop. That is no
@@ -378,7 +440,12 @@ the cell did not run the way it is registered to.
 > measured emitting at 19.959 Hz from exactly this configuration — see the
 > "SETTLED BY MEASUREMENT" paragraph appended to that callout. The two lanes
 > that wrote this paragraph and that measurement never saw each other's work,
-> which is why both statements shipped in one tree.
+> which is why both statements shipped in one tree. The second half goes with
+> it: the "unfittable branch expected" conclusion this paragraph deliberately
+> left UNCHANGED is now **changed**, by the "CORRECTED 2026-08-03" paragraph
+> above — and this paragraph's own instinct was sound, because what changed it
+> was not Task 8's launch path but the `/clock` measurement, exactly the
+> question it named as the one the rule actually depends on.
 
 **Who builds that check.** Nothing enforces the paragraph above today, and it
 is the half of this rule that makes the discriminator safe rather than merely
@@ -438,8 +505,9 @@ check lives there once rather than twice.
 > left standing verbatim; this paragraph supersedes it, and the two claims it
 > supersedes are named rather than quietly dropped.
 >
-> The measurement: an extension-fork editor booted `--ros2 --rmw=cyclonedds
---ros2-extension=<so>` with **no runner and no Autoware attached**, probed
+> The measurement: an extension-fork editor booted with `--ros2`,
+> `--rmw=cyclonedds` and a `--ros2-extension` path, with **no runner and no
+> Autoware attached**, probed
 > from the campaign's own matched Humble/cyclonedds instrument (the host's
 > Jazzy CLI cannot parse this fork's type hashes and is not a trustworthy
 > witness here), publishes `/clock` and it emits at **19.959 Hz** — two windows
@@ -1492,13 +1560,44 @@ table must state this alongside the CAL-seam numbers, not merely note the differ
 > gives the in-core twin the warmed path — the bias therefore runs **against** the seam being cheap,
 > so a seam that still measures cheap is a robust result rather than an artifact of the ordering.
 >
+> **DIRECTION ARGUMENT CORRECTED 2026-08-03 (P4 whole-branch review); the paragraph above stays
+> verbatim and the RULE below is UNCHANGED.** What is wrong in it is the words "makes the **seam**
+> pay any cold-cache / first-writer cost": on the cell as launched, the seam's write path is
+> already **warm** when the bench publish happens. CAL-seam boots through
+> `scripts/e2e/run_e2e.sh`, which unconditionally passes `--ros2`, `--rmw=cyclonedds` and a
+> `--ros2-extension` path, and unconditionally ends in `python3 -m runner` — so the ego's top LiDAR
+> is spawned with native `ros_*` attributes and roughly **921 KB of point cloud crosses the same
+> extension seam at 20 Hz, inside every measured frame**, in `SensorManager.PostPhysTick`, which
+> runs BEFORE `OnPostTick` drives either twin. The seam is not the frame's first writer; it is a
+> late writer on a path a large sensor burst has just walked. That was not known when the
+> ordering was chosen — the CAL-seam launch branch and the publish-order fix were written in
+> different lanes.
+>
+> Two consequences, and only one of them costs anything. The sensor burst is **common-mode** — it
+> precedes BOTH publishes, which the publish-order fix put adjacent in the frame — so the paired
+> delta `C1(a)` is unaffected and the instrument still measures what it was built to measure.
+> What does NOT survive is the **conservatism claim**: with the cold-cache asymmetry largely
+> absent, the residual order effect between two adjacent publishes is smaller than the paragraph
+> above assumes and its sign is **not established**, so "the bias runs against the seam being
+> cheap" may not be read as a guarantee that a cheap-looking seam is conservative. Seam-first
+> remains the right choice (a fixed order is unavoidable and this one is at worst neutral now),
+> but it is no longer self-justifying.
+>
+> The rule below is therefore doing MORE work than when it was written, not less — it used to have
+> a direction argument standing behind it and now stands on its own. That is the reason it is not
+> weakened here: a pre-registered rule whose supporting argument weakens is exactly the situation
+> pre-registration exists for.
+>
 > **PRE-REGISTERED READING RULE, recorded 2026-08-03 before any CAL-seam run is collected:**
 > **if the measured seam cost lands on the order of a cache-warming effect, `C1(a)` is reported as
 > an UPPER BOUND, not a point estimate.** It is written down now, ahead of the data, so it binds
 > whatever the data turns out to say — deciding how to read a number after seeing it is the
 > post-hoc move this campaign's no-peeking discipline exists to prevent. Reordering those two call
 > sites changes the measurement and invalidates this rule. Also recorded in the twin's TU comment
-> block, in the `Amendments made so far:` list below, and in `results/PROVENANCE.md` §11.9.
+> block, in the `Amendments made so far:` list below, and in `results/PROVENANCE.md` §11.9 — the
+> TU comment carries the uncorrected direction argument and lives in the fork tree
+> (`~/src/carla-autoware-integration`), outside this repository; correct it there on the next
+> fork-side commit, and read this entry as authoritative until then.
 >
 > **What Task 22 owes, restated:** the withdrawn instruction is reinstated in amended form — the
 > confound table must state the serializer difference (§11.8: same bytes, different code) and this
@@ -3575,6 +3674,25 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   was verified 2026-08-03 to be a difference of code and not of payload: both
   sides emit an identical 921 905 bytes, same type name, same RIHS01 hash).
 
+  **Direction argument corrected 2026-08-03 (P4 whole-branch review); the
+  paragraph above stays as filed and the RULE below is unchanged.** "Makes the
+  seam pay any cold-cache / first-writer cost" is not true of the cell as
+  launched: CAL-seam boots through `scripts/e2e/run_e2e.sh`, which
+  unconditionally passes `--ros2 --rmw=cyclonedds --ros2-extension=<so>` and
+  unconditionally ends in `python3 -m runner`, so ~921 KB of ego LiDAR cloud
+  crosses the SAME extension seam at 20 Hz in `SensorManager.PostPhysTick` —
+  before `OnPostTick` drives either twin — inside every measured frame. The
+  seam is a late writer on a freshly-walked path, not the frame's first writer.
+  The burst is common-mode (it precedes both publishes, which the publish-order
+  fix made adjacent), so the paired delta is unaffected; what is lost is the
+  CONSERVATISM claim, because the cold-cache asymmetry it rested on is largely
+  absent and the residual order effect's sign is not established. Seam-first
+  stays — a fixed order is unavoidable and this one is at worst neutral — but
+  "the bias runs against the seam being cheap" may no longer be quoted as a
+  guarantee. The rule below consequently stands on its own rather than on that
+  argument, which is why it is kept exactly as pre-registered instead of being
+  relaxed.
+
   **THE RULE: if the measured seam cost lands on the order of a cache-warming
   effect, `C1(a)` is reported as an UPPER BOUND, not a point estimate.**
 
@@ -4136,6 +4254,52 @@ A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
   of failing loudly. `config/margins.yaml`, `config/exclusions.md` and
   `benchmarks/analysis/**` byte-identical; no frozen file touched, and no
   metric, threshold, margin, aggregation rule or scoring window is edited.
+- **2026-08-03 (P4 whole-branch review) — what the CAL-seam instrument
+  actually runs is registered, ahead of Task 10's first collection.**
+  `cells/calibration.sh`'s CAL-seam branch boots `scripts/e2e/run_e2e.sh`,
+  which **unconditionally** passes `--ros2 --rmw=cyclonedds
+--ros2-extension=<so>` (`run_e2e.sh:288`) and **unconditionally** ends in
+  `python3 -m runner` (`:328`), spawning the ego and top LiDAR with native
+  `ros_*` attributes. CAL-seam therefore runs the full cell-A publishing rig,
+  and that fact was registered nowhere — each of its three consequences is
+  cheaper to register now than to discover from a GPU-hour run, and one of them
+  yields a plausible-but-wrong number rather than a loud failure.
+  **(1) The expected scoring-window branch for CAL-seam changes from
+  UNFITTABLE to FITTABLE.** `/clock` was measured emitting at 19.959 Hz from
+  exactly this configuration, so `clock.csv` gets far more than the ≥ 2 rows
+  `fit_sim_wall_affine` needs. The "Expected branch per cell" registration and
+  `sweep_verdict._expected_window_branch` both said unfittable; both are
+  corrected, with the superseded rule kept verbatim beside the correction.
+  Registering it now is what stops Stage 2 filing an already-explained "loud
+  finding" on every CAL-seam run and devaluing the signal for runs that mean
+  it. The rule now takes the cell id as well as the approach and names
+  CAL-seam as an exception — a real loss of derivability, recorded as such.
+  **(2) The `report.summarize_run` wall-stamp trap is registered as a known
+  trap.** `has_sim_clock` is true for CAL-seam, so `run.sh` step 15 renders it
+  through `report.summarize_run`, which applies `fit_sim_wall_affine` — a
+  sim→wall map — to every topic's `header_stamp_ns`, including the two bench
+  publishers', which stamp **wall** `now()`. The result is a finite,
+  plausible-looking `one_hop_p50_ms` that is not a latency, with no exception
+  and no marker in the table. The paired `C1(a)` delta survives (common-mode,
+  same stamps and same fit within a run); the ABSOLUTES must never be quoted,
+  nor compared against a sim-stamped cell's. Recorded here and in
+  `benchmarks/report.py` beside the fit itself. Nothing in `analysis/**` is
+  touched and the renderer is not special-cased — a silent per-cell branch in
+  a shared renderer would be a worse trap than the disclosed one.
+  **(3) The seam-first order bias keeps its pre-registered UPPER-BOUND rule
+  and loses its direction argument.** ~921 KB of ego LiDAR cloud crosses the
+  same extension seam at 20 Hz in `SensorManager.PostPhysTick`, before
+  `OnPostTick` drives either twin, in every measured frame — so the seam is a
+  late writer on a warm path, not the frame's first writer, and "seam-first
+  makes the seam pay the cold-cache cost, so the bias runs against the seam
+  being cheap" is not established. The burst is common-mode, so the delta is
+  unaffected. **The rule is unchanged and deliberately not weakened**: it now
+  stands on its own rather than on that argument, which is the situation
+  pre-registration exists for. `config/margins.yaml`, `config/exclusions.md`
+  and `benchmarks/analysis/**` byte-identical; no frozen file touched, and no
+  metric, threshold, margin, aggregation rule or scoring window is edited —
+  (1) corrects a branch EXPECTATION (a diagnostic annotation, never a score),
+  (2) and (3) add reading constraints and nothing else.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

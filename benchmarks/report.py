@@ -27,6 +27,28 @@ def summarize_run(run_dir: Path) -> dict:
         raise ValueError(f"invalid manifest {run_dir / 'manifest.json'}: {'; '.join(errs)}")
     clock_ns, clock_wall = read_clock_csv(run_dir / "clock.csv")
     fit = fit_sim_wall_affine(clock_ns, clock_wall)
+    # KNOWN TRAP for CAL-seam, registered 2026-08-03 (P4 whole-branch review,
+    # benchmarks/README.md "Expected branch per cell"). This fit is applied
+    # below to EVERY topic's `header_stamp_ns`, and it is a sim->wall map. The
+    # CAL-seam cell reaches this renderer -- `cells.yaml` gives it `carla:
+    # 0.10-fork`, so `has_sim_clock` is true and run.sh step 15 routes it here
+    # rather than to `cal_report.py` -- but its two bench publishers
+    # (`/bench/seam_cloud`, `/bench/incore_cloud`) stamp `header.stamp` with
+    # WALL `now()`. Mapping a wall stamp through a sim->wall affine yields a
+    # finite, plausible-looking `one_hop_p50_ms` that is NOT a latency, with no
+    # exception and nothing in the table to mark it. It is the campaign's one
+    # registered path that produces a wrong number instead of a loud failure,
+    # so it is written here as well as in the README: whoever reads a CAL-seam
+    # report is reading this function's output.
+    #
+    # `C1(a)` -- the paired seam-vs-in-core delta -- SURVIVES it: both topics
+    # are stamped the same way and go through the same fit in the same run, so
+    # the mapping is common-mode and cancels. Neither topic's absolute
+    # `one_hop_p50_ms`/`one_hop_p99_ms` may be quoted as a one-hop latency, and
+    # neither may be compared against a sim-stamped cell's number. Do not
+    # "fix" this by special-casing the cell here: `analysis/**` is frozen, the
+    # delta is what CAL-seam exists to produce, and a silent per-cell branch in
+    # the shared renderer would be a worse trap than the disclosed one.
     topics = {}
     for topic, cols in read_observer_csv(run_dir / "observer.csv").items():
         cad = inter_arrival_stats(cols["arrival_system_ns"])
