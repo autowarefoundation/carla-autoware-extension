@@ -3265,6 +3265,19 @@ authorized for a different purpose.
   with `incore_twin_status: committed-not-built-into-editor-artifact`, so the
   revision is not lost while the blocker stands.
 
+> **SUPERSEDED 2026-08-03 — do not cite this section for the current pin.** The
+> reasoning above still stands, and it is why the pin was never allowed to
+> describe a build that did not exist. But its two concrete statements are now
+> false. The blocker was cleared (§11.5), so `extension_carla_fork.sha` is **no
+> longer** "deliberately left at `ae166d80d…`"; and the `incore_twin_sha` /
+> `incore_twin_status` scaffolding was retired, so **neither key exists in
+> `pins.yaml` any more.** The pin advanced to `5981f5168…` once the artifact
+> genuinely contained the twin, and then to
+> **`783e29fbfc42176d826a46870f556c0b430c520b`** when the twin's call site was
+> moved to fix the frame-position defect (§11.7). A reader who stops at this
+> section will cite the wrong fork revision — `benchmarks/pins.yaml` is the
+> authority.
+
 Suite at this commit: **1084 passed, 1 skipped** (the skip is
 `test_observer_contract.py:105`, docker end-to-end, `BENCH_E2E=1`) — the
 pre-existing baseline, held exactly. `pre-commit run --all-files` clean.
@@ -3414,3 +3427,119 @@ could have been restored trivially by moving the fork branch pointer back to
 `ae166d80d` — the gate compares artifact mtime against `git show -s --format=%ct HEAD`
 — but that restores the gate by **removing the twin**, which is the same thing as
 dropping CAL-seam. There was no third option that kept both.
+
+### 11.7 MEASUREMENT DEFECT, found in review and fixed before any collection: the two CAL-seam twins published at opposite ends of the frame
+
+This is the defect that would have made C1(a) meaningless, and it was in the
+instrument from the moment the in-core twin was written until 2026-08-03. It was
+caught by review, not by a run, because no CAL-seam run has happened yet.
+
+**What was wrong.** The two halves of the pair were driven from opposite ends of
+the same engine frame:
+
+| twin | driven from | frame position |
+| --- | --- | --- |
+| `/bench/incore_cloud` | `ROS2::SetTimestamp` ← `UCarlaEpisode::TickTimers` | `FCarlaEngine::OnPreTick` |
+| `/bench/seam_cloud` | `ext_on_tick` ← `ROS2ExtensionLoader->Tick` | `FCarlaEngine::OnPostTick` |
+
+Between them, every frame: `WorldObserver.BroadcastTick`,
+`GetSensorManager().PostPhysTick(...)` — the entire per-frame sensor DDS
+publication burst, including cell A's ~921 KB LiDAR cloud — and
+`PublishROS2VehicleState`.
+
+**Why that is fatal rather than untidy.** The original comment in `ROS2.cpp`
+defended the placement on *cadence*, and on cadence it was right: both twins fire
+once per frame, and the fixed frame offset cancels cleanly in a one-hop
+`arrival − own stamp` latency. But cadence was the wrong property. What does
+**not** cancel is the differential queueing, transport-buffer and cache state
+created by a whole frame of bulk DDS writes sitting inside the paired delta. The
+quantity being isolated is a single indirect call across a C ABI — plausibly
+nanoseconds. The asymmetry wrapped around it was microseconds-to-milliseconds of
+~921 KB-class traffic. It could dominate the measurement outright, and C1(a)
+would then be reporting frame position while claiming to report seam cost.
+
+It also directly contradicted the instrument's own governing rule, stated at the
+top of `BenchIncoreCloudPublisher.cpp`: the two paths must differ **only** by the
+seam. And it was not in the residual-confound record — §11.1, the TU header and
+the fork commit message all recorded only the serializer difference. The confound
+that mattered more was the one nobody had written down.
+
+**The fix** (fork commit `783e29fbfc42176d826a46870f556c0b430c520b`). The drive
+moved out of `ROS2::SetTimestamp` and into `FCarlaEngine::OnPostTick`
+**immediately after** `ROS2ExtensionLoader->Tick(...)`, so the two publishes are
+microseconds and one indirect call apart. Construction stays in `ROS2::Enable` —
+that half was never the problem, and `Enable` is where the middleware and domain
+are latched.
+
+**Ordering is deliberate and is itself a measurement decision.** Two publishes on
+one thread cannot both go first, so a fixed order bias is unavoidable; what is
+avoidable is choosing the flattering direction. The **seam publishes first**, so
+it pays any cold-cache / first-writer cost and the in-core twin gets the warmed
+path. That biases the result **against** the seam being cheap, which is the
+harder-to-fool direction for a claim that the seam is cheap. Anyone who reorders
+those two lines is changing the measurement, and both the call site and the
+header say so.
+
+**Residual asymmetry, stated because it cannot be removed.** After this fix the
+two paths still differ by (a) the serializer implementation (§11.1), and (b) that
+fixed publish order. Both are now inside the instrument's documented confound set
+rather than undocumented.
+
+**A second, unrelated defect closed in the same commit: a silent-death path.**
+The in-core writer is registered in the *same* file-static `g_writers` registry
+the out-of-tree extension uses — a direct consequence of reusing
+`BlobCreatePublisher` to stay byte-identical to the seam path. `BlobTeardownAll()`
+swaps that registry out and deletes every writer in it, this one included, and
+nothing informs this publisher: `g_enabled` stays true, `Init()`'s idempotence
+guard refuses to recreate, and `BlobPublish` on the wiped handle returns `-1`
+forever. `/bench/incore_cloud` would go silently dead — indistinguishable from
+"the in-core path has no latency", which is the worst failure available to this
+instrument and the exact one its own comments call out.
+
+It cannot fire today: `TeardownExtensionEndpoints()` runs only from
+`~FCarlaEngine()`, at process teardown, when nothing ticks again. But
+`CarlaEngine.cpp` states that per-map-change endpoint teardown is "deliberately
+deferred to Tasks 12/13's endpoint lifecycle work" — someone is *expected* to
+move it, and the day they do, this dies at the first map change while looking
+healthy. Two mitigations, deliberately both rather than either: `OnTick()` now
+checks `BlobPublish`'s return and latches the instrument off with a loud one-shot
+error naming the cause, and a comment block at the top of the TU tells whoever
+moves the teardown to re-arm this writer. The comment is what survives when the
+code is edited by someone else.
+
+**Verification of the rebuild** (guardrails from the registered-relink ruling):
+
+- Engine BuildId **before and after**: `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` on
+  all 5 manifests, unchanged across both the fix rebuild and the post-commit
+  rebuild. **No relink; D8 remains intact and unspent for a second time.**
+- `scripts/e2e/verify_editor_artifact.sh` → exit 0: `.so` newer than HEAD
+  (`1785789045 >= 1785788873`), engine and Carla module BuildId agree.
+- `verify_tier4_artifact.sh` → exit 0, `tier4_stale_ack=none`,
+  `tier4_plugin_sha256` unchanged.
+- The rebuilt `libUnrealEditor-Carla.so` (13:30:45, 10 573 528 bytes) defines
+  `MakeExtensionHost` / `TeardownExtensionEndpoints` and references
+  `BenchIncoreCloudInit` / `BenchIncoreCloudOnTick`. The `OnTick` reference is
+  what proves the **moved** call site is compiled into the plugin module.
+
+### 11.8 The two twins put the SAME bytes on the wire — closed
+
+§11.1 recorded that the two twins use different serializer implementations
+(`rosidl_typesupport_fastrtps_cpp` on the extension side, the fork's
+`serialize_to_cdr` on the in-core side) and argued they emit the same wire
+format. Only the fork side had ever been measured. If they in fact emitted
+different-sized messages the twins would not be publishing the same thing and
+every CAL-seam number would be comparing unlike payloads, so the claim was
+closed by measuring both sides on the identical template message:
+
+| side | serializer | `row_step` | CDR bytes | overhead |
+| --- | --- | --- | --- | --- |
+| in-core (fork) | `carla::ros2::serialize_to_cdr` | 921 600 | **921 905** | 305 |
+| seam (extension) | `carla::autoware::cdr_serialize` (rosidl/fastrtps) | 921 600 | **921 905** | 305 |
+
+Identical byte counts, identical 305-byte overhead, and both report the same
+`dds_type_name` `sensor_msgs::msg::dds_::PointCloud2_` and the same RIHS01 hash
+`RIHS01_9198cabf7da3796ae6fe19c4cb3bdd3525492988c70522628af5daa124bae2b5`. The
+payload-identity leg of the pairing is therefore verified, not assumed. The
+serializer difference remains a residual confound in the sense that different
+*code* does the emitting, but it is now established that it produces an
+identically sized and identically typed message.

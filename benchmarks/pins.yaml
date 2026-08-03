@@ -269,7 +269,7 @@ autoware_045:
 # all report bc08ce19. **D8 IS RE-INSTATED as of this commit: no further
 # engine relink is permitted for the remainder of the campaign.**
 #
-# STALE-UBT-MAKEFILE TRAP -- found and CLEARED 2026-08-03, kept here
+# STALE UBT ACTION-CACHE TRAP -- found and CLEARED 2026-08-03, kept here
 # because it cost most of Task 9 and will cost the next person the same.
 # HISTORY: after the round-1..3 relink above, the extension tree's editor
 # artifact would not refresh. verify_editor_artifact.sh refused with
@@ -332,30 +332,37 @@ autoware_045:
 # relink occurred. The tier4 artifact was not disturbed either --
 # verify_tier4_artifact.sh reports the same tier4_plugin_sha256
 # (26f95dec...93c4e) before and after.
-# Both gates now PASS:
-#   verify_editor_artifact.sh -> OK, .so newer than HEAD (1785785185 >=
-#     1785781990); engine and Carla module BuildId agree (bc08ce19)
+# Both gates PASS. Transcript re-captured 2026-08-03 13:30 after the
+# frame-position fix below, so these numbers match the artifact and the fork
+# HEAD actually on disk -- re-verify with `stat -c %Y` and `git show -s
+# --format=%ct HEAD` and they will agree:
+#   verify_editor_artifact.sh -> OK, .so newer than HEAD (1785789045 >=
+#     1785788873); engine and Carla module BuildId agree (bc08ce19)
 #   verify_tier4_artifact.sh  -> OK, tier4_stale_ack=none
 engine:
   build_id: bc08ce19-f19c-46fe-808f-dbb2b0ddf41a # 2026-08-03 relink round; all 3 trees agree (5/5 manifests)
 extension_carla_fork:
   path: ~/src/carla-autoware-integration
   branch: feat/autoware-seminative-phase-b
-  # Advanced from ae166d80d to the in-core CAL-seam twin commit on
-  # 2026-08-03, and ONLY once the editor artifact genuinely contained it.
-  # This pin names the fork revision the LOADED editor artifact was built
-  # from, so while the stale-makefile trap above kept
-  # libUnrealEditor-Carla.so frozen at 2026-07-23 this deliberately stayed
-  # at ae166d80d -- advancing it then would have asserted a build that did
-  # not exist on this host. Verified before advancing, by symbol table
-  # rather than by mtime alone: the rebuilt
+  # Advanced 2026-08-03, and ONLY ever to a revision the editor artifact
+  # genuinely contains. This pin names the fork revision the LOADED editor
+  # artifact was built from, so while the action-cache trap above kept
+  # libUnrealEditor-Carla.so frozen at 2026-07-23 it deliberately stayed at
+  # ae166d80d -- advancing it then would have asserted a build that did not
+  # exist on this host. It moved to 5981f5168 (the in-core twin) once that
+  # was cleared, and to 783e29fbf when the twin's call site was moved to fix
+  # the frame-position defect (PROVENANCE 11.7).
+  # Verified before advancing, by symbol table rather than by mtime alone.
+  # The artifact on disk is
   #   Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so
-  # (2026-08-03 12:26:25) defines carla::ros2::MakeExtensionHost and
-  # TeardownExtensionEndpoints -- proving it is the integration fork's own
-  # module, not the tier4 one -- and carries undefined references to
-  # carla::ros2::BenchIncoreCloudInit / BenchIncoreCloudOnTick, which are
-  # the in-core twin, resolved at load against libcarla-ros2-native.so.
-  sha: 5981f5168a0d87ffacddc4635f73e1373e185ad6
+  # (2026-08-03 13:30:45, epoch 1785789045, 10573528 bytes). It defines
+  # carla::ros2::MakeExtensionHost and TeardownExtensionEndpoints -- proving
+  # it is the integration fork's own module, not the tier4 one -- and carries
+  # undefined references to carla::ros2::BenchIncoreCloudInit /
+  # BenchIncoreCloudOnTick, the in-core twin, resolved at load against
+  # libcarla-ros2-native.so. The OnTick reference in particular is what
+  # proves the moved call site is compiled into the plugin module.
+  sha: 783e29fbfc42176d826a46870f556c0b430c520b
 tier4_carla_fork:
   path: ~/src/carla-autoware-native
   branch: tier4/autoware-support

@@ -1468,6 +1468,8 @@ criterion 8 excludes any run whose BuildId is found to mismatch after start.
 > immediately afterwards** — no further engine relink is permitted for the
 > remainder of the campaign. `exclusions.md` criterion 8 is unaffected; it still
 > excludes any run whose BuildId mismatches the pin, which is now the new value.
+> Note the line-range citation above has also moved: the re-pin expanded that D8
+> comment block from `benchmarks/pins.yaml:247-259` to roughly `:247-341`.
 > Full record: `benchmarks/results/PROVENANCE.md` §11.
 
 ### 9.2 Cell B's closed-loop blocker will affect any P4 arm that tries to arm B
