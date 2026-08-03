@@ -218,7 +218,9 @@ def test_cal_seam_plan_refuses_a_non_2000_rpc_port(cal_seam_env):
 def test_cal_seam_plan_refuses_a_missing_extension_so(cal_seam_env):
     """A stale/never-built extension .so must not silently plan a launch
     that would fail much later, deeper into an editor boot."""
-    so_path = Path(cal_seam_env["BENCH_REPO"]) / "extension" / "build" / "libcarla-autoware-extension.so"
+    so_path = (
+        Path(cal_seam_env["BENCH_REPO"]) / "extension" / "build" / "libcarla-autoware-extension.so"
+    )
     so_path.unlink()
     result = run_plan(cal_seam_env)
     assert result.returncode != 0
