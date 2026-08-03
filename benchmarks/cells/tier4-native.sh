@@ -120,11 +120,30 @@ TIER4_DEMO="${BENCH_TIER4_DEMO:-$BENCH_REPO/benchmarks/cells/tier4_autoware.sh}"
 # measurement rather than an out-of-scope one. Relevant to the pre-registered
 # 32ch step-up branch (config/cells.yaml, sweep_classes): taking it needs no
 # config edit, but it does need these arguments supplied by hand.
+#
+# OWNED 2026-08-03 (Task 6, P4 spec 1e): the two paragraphs above are kept
+# as the strike-history record -- "NO owner"/"permanent" read historically,
+# not currently, now that the mapping below exists. The pre-registered
+# 32ch step-up branch this second paragraph names is
+# benchmarks/README.md's own "per cell, if no vlp16 ceiling disjunct
+# fires, the 32ch class executes mechanically; 128ch stays struck on
+# either branch".
+#
+# Class id -> sensor arguments, derived HERE (registered 2026-08-03, P4
+# spec 1e -- the residue of struck Task 26, now owned). Explicit env still
+# wins; an id with no mapping still refuses, because an unmapped class
+# would file a run under the WRONG workload label (a false measurement,
+# not an out-of-scope one). Rotation frequency stays at each family's
+# registered contract; a class pins channels + points_per_second only
+# (cells.yaml sweep_classes).
 if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_TIER4_SWEEP_ARGS:-}" ]; then
-  fail "--class $BENCH_CLASS_ID needs the tier4-side sensor arguments spelled
-  out: patch 0003's flags exist, but nothing maps a class id onto them yet.
-  Supply BENCH_TIER4_SWEEP_ARGS explicitly (e.g. --lidar-channels 128
-  --lidar-pps 4600000)."
+  case "$BENCH_CLASS_ID" in
+    vlp16) BENCH_TIER4_SWEEP_ARGS="--lidar-channels 16 --lidar-pps 288000" ;;
+    32ch)  BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000" ;;
+    *) fail "--class $BENCH_CLASS_ID has no registered sensor-argument
+    mapping (vlp16 and 32ch are registered; 128ch is struck on either
+    branch)" ;;
+  esac
 fi
 
 cat >"$BENCH_LAUNCH_ENV" <<EOF

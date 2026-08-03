@@ -104,10 +104,28 @@ GT_PYTHON="${BENCH_GT_PYTHON:-$HOME/carla-venv/bin/python3}"
 # Sweep classes are runner launch parameters and the runner does not accept
 # them yet (Task 12). Named, not silently ignored: a sweep run that quietly
 # used the default LiDAR would be filed as a 128ch measurement.
+#
+# OWNED 2026-08-03 (Task 6, P4 spec 1e): the paragraph above is kept as the
+# strike-history record -- "does not accept them yet" reads historically,
+# not currently, now that the mapping below exists (the extension side was
+# owed to Task 12 per that paragraph; tier4-native.sh's identical mapping
+# was owed to Task 26, struck 2026-07-30 -- both are this same task now).
+#
+# Class id -> sensor arguments, derived HERE (registered 2026-08-03, P4
+# spec 1e -- the residue of struck Task 26, now owned). Explicit env still
+# wins; an id with no mapping still refuses, because an unmapped class
+# would file a run under the WRONG workload label (a false measurement,
+# not an out-of-scope one). Rotation frequency stays at each family's
+# registered contract; a class pins channels + points_per_second only
+# (cells.yaml sweep_classes).
 if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_RUNNER_SWEEP_ARGS:-}" ]; then
-  fail "--class $BENCH_CLASS_ID needs the runner sweep parameters from Task 12
-  (extension runner sweep/camera/substep parameters), which are not written
-  yet. Supply BENCH_RUNNER_SWEEP_ARGS explicitly to override."
+  case "$BENCH_CLASS_ID" in
+    vlp16) BENCH_RUNNER_SWEEP_ARGS="--lidar-channels 16 --lidar-pps 288000" ;;
+    32ch)  BENCH_RUNNER_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000" ;;
+    *) fail "--class $BENCH_CLASS_ID has no registered sensor-argument
+    mapping (vlp16 and 32ch are registered; 128ch is struck on either
+    branch)" ;;
+  esac
 fi
 
 # Spawn pose comes from the committed route file, so the cell starts where
