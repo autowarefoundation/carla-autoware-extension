@@ -372,6 +372,13 @@ the cell did not run the way it is registered to.
 > reinstates the launch path, not this finding — but a reader should not cite
 > the now-corrected "no ticking runner" clause as independent support for it
 > any more.
+>
+> **Superseded 2026-08-03 (P4 whole-branch review), kept as written.** "It is
+> still open" was true when this was written and is not any more: `/clock` was
+> measured emitting at 19.959 Hz from exactly this configuration — see the
+> "SETTLED BY MEASUREMENT" paragraph appended to that callout. The two lanes
+> that wrote this paragraph and that measurement never saw each other's work,
+> which is why both statements shipped in one tree.
 
 **Who builds that check.** Nothing enforces the paragraph above today, and it
 is the half of this rule that makes the discriminator safe rather than merely
@@ -425,6 +432,48 @@ check lives there once rather than twice.
 > only answerable by watching a real run's `clock.csv`, which is Task 10's to
 > do on the first live CAL-seam collection. This entry stays open until that
 > observation is made and recorded.
+>
+> **SETTLED BY MEASUREMENT 2026-08-03 (P4 Task 7's bring-up probe; recorded
+> here by the P4 whole-branch review). `/clock` EMITS.** Everything above is
+> left standing verbatim; this paragraph supersedes it, and the two claims it
+> supersedes are named rather than quietly dropped.
+>
+> The measurement: an extension-fork editor booted `--ros2 --rmw=cyclonedds
+--ros2-extension=<so>` with **no runner and no Autoware attached**, probed
+> from the campaign's own matched Humble/cyclonedds instrument (the host's
+> Jazzy CLI cannot parse this fork's type hashes and is not a trustworthy
+> witness here), publishes `/clock` and it emits at **19.959 Hz** — two windows
+> of 21 and 41 samples, min 0.050 s / max 0.051 s — as soon as a client ticks
+> the world. Booted **without** `--ros2`, the same instrument sees no CARLA
+> topic at all. The probe and its numbers are recorded in
+> `benchmarks/scripts/raycast_baseline.py`'s module docstring and in both sweep
+> launchers' ablation blocks (`cells/extension.sh`, `cells/tier4-native.sh`),
+> where the same measurement is load-bearing for a different decision.
+>
+> **1. "It is still open" (the blockquote above this callout, and the update
+> immediately above) is superseded.** It is answered for the extension fork:
+> `has_sim_clock` is right and `cal_report.py`'s no-`/clock` premise is the
+> half that does not hold for CAL-seam. `cal_report.py`'s premise remains
+> correct for **CAL-rmw**, which runs no simulator at all — the premise was
+> over-scoped to the approach, not wrong about the cell it was written for.
+>
+> **2. "It cannot now be settled by measurement" (the 2026-07-30 head of this
+> callout) is REFUTED, and it is worth being precise about how.** That clause
+> was an ARGUMENT, not an observation: it inferred unmeasurability from the
+> cell's strike, i.e. from a scheduling decision. The refutation did not find a
+> flaw in the inference — it went and looked. A bring-up probe of the same
+> configuration was cheap, needed no CAL-seam run and no un-strike, and
+> answered the question outright. The general lesson is the one this campaign
+> keeps relearning: "nobody owes this any more" bounds who will look, never
+> what is true, and a question about committed code stays answerable by
+> booting it.
+>
+> **What is NOT settled by this.** The probe observed the extension fork's
+> editor, not a CAL-seam run: it says `/clock` flows from that boot, not that
+> CAL-seam's `clock.csv` will hold a well-formed series end to end, and it says
+> nothing about the stamp domain of the two bench publishers. See "Expected
+> branch per cell" above for the branch consequence, which follows from this
+> measurement and is registered ahead of Task 10 rather than discovered by it.
 
 **Recorded consequence for Task 16.** The `one_hop_wall_ms` margin is frozen
 from CAL-rmw, which takes the unfittable branch: an observer-windowed, unfitted
@@ -489,6 +538,18 @@ publishers evidenced against a live run — so neither its stamp domain nor its
 > both halves enabled (see the Cell matrix section) — not the pair's
 > existence. The stamp-domain / `/clock` question this paragraph defers is
 > still open; only Task 10's first live collection settles it.
+>
+> **Partly superseded 2026-08-03 (P4 whole-branch review); the sentence above
+> stays as written.** The `/clock` half is settled and did NOT need Task 10 to
+> settle it: a bring-up probe measured `/clock` emitting at 19.959 Hz from a
+> `--ros2` extension-fork editor with no runner attached — see the "SETTLED BY
+> MEASUREMENT" paragraph under "Scoring window" above. Only the **stamp-domain**
+> half is still owed to Task 10's first live collection, and it is the half
+> that matters for this metric's `cal_report` relation: the seam publishers'
+> stamp domain decides whether `one_hop_wall_ms` on CAL-seam is the direct
+> wall difference CAL-rmw's is. `has_sim_clock` being right about CAL-seam does
+> NOT make the bench publishers' stamps sim-domain — they stamp wall `now()` —
+> which is precisely the trap registered under "Expected branch per cell".
 
 A simulated cell's stamps are sim-domain, so the fit is required there. The duel
 term therefore carries the fit's error on top of the transport it measures, and

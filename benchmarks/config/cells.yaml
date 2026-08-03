@@ -1059,6 +1059,30 @@ cells:
 # amendment -- which is what "anticipated" means above -- but not a decision
 # with zero operator cost.
 #
+# THE MAPPING WAS WRITTEN. Closed 2026-08-03 (Task 6, P4 spec 1e); annotated
+# here 2026-08-03 by the P4 whole-branch review. The paragraph above is kept
+# verbatim as the record of what was true when it was written, and this note
+# is how a reader learns it no longer is -- because this file is the registry
+# a reader treats as authoritative, and it was the last place to find out.
+# What changed: both launchers gained a `case "$BENCH_CLASS_ID"` block
+# immediately BEFORE the refusal text the paragraph above describes
+# (cells/tier4-native.sh's BENCH_TIER4_SWEEP_ARGS derivation and
+# cells/extension.sh's BENCH_RUNNER_SWEEP_ARGS one -- byte-identical apart
+# from the variable name), deriving `--lidar-channels 16 --lidar-pps 288000`
+# for `vlp16` and `--lidar-channels 32 --lidar-pps 1200000` for `32ch` from
+# these entries' own `channels` / `points_per_second`. An explicit
+# BENCH_*_SWEEP_ARGS still wins over the derivation, and an UNREGISTERED class
+# id still refuses for the reason above -- `128ch` included, so it stays
+# unrunnable on both launchers as well as struck. Read "it has NO owner now
+# and the refusal stands until someone writes it" as the 2026-07-30 state:
+# struck Task 26's residue was reassigned to Task 6 and written. The
+# operator-cost sentence is therefore also superseded -- taking the `32ch`
+# step-up branch now needs neither a cells.yaml edit nor hand-supplied
+# environment. See benchmarks/README.md's "Closed 2026-08-03 (Task 6)" block
+# for the mapping table and tests/benchmarks/test_sweep_args.py for the pins.
+# This note records that the gap closed; it does not decide the branch, which
+# stays the data's to decide exactly as pre-registered above.
+#
 # `B-cyc` ADDED TO EVERY `applies_to` 2026-08-03 (P4 whole-branch review,
 # blocker B1). Registering B-cyc as a CELL (Task 4) did not register it as a
 # SWEEP TARGET, and the two are not the same thing: `cell_info.merge` raises
