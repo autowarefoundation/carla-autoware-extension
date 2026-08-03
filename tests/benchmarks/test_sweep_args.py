@@ -92,7 +92,7 @@ def _run_derivation(
         "set -euo pipefail\n"
         'fail() { echo "STUB-FAIL: $*" >&2; exit 2; }\n'
         f"{snippet}\n"
-        f'printf \'RESULT<<%s>>\\n\' "${{{sweep_var}:-}}"\n'
+        f"printf 'RESULT<<%s>>\\n' \"${{{sweep_var}:-}}\"\n"
     )
     env = dict(os.environ)
     if class_id is None:
