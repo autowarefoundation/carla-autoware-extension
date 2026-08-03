@@ -44,6 +44,22 @@ perfectly valid and merely not part of the primary duel's interleaved
 design (a cell-A bring-up/gate run is the case that motivated the
 field). Conflating the two counts would report good evidence as broken.
 
+Duel-admissible runs are further partitioned by WHICH duel they belong
+to (`RunManifest.duel_id`, Amendment 2026-08-03, Task 2): a cell
+directory can hold admissible runs filed under more than one duel over
+the campaign's life (e.g. this module's own primary (A, B) duel, and a
+later transport-sweep pairing over the same cell A), and without a
+pool rule a verdict over the NEW pairing would silently pull the OLD
+pairing's runs into its count. `build_verdict_table` derives the
+expected id as `f"{cell_a_id}+{cell_b_id}"` and passes it to
+`_walk_cell_runs`, which admits a run iff its `duel_id` matches that
+string, OR (only when the pairing is literally `(A, B)`) its `duel_id`
+is the legacy empty string every manifest predating this field carries
+-- so the already-filed (A, B) verdict keeps reproducing byte-for-byte.
+A run dropped by this filter is counted on the same `n_inadmissible`
+counter as a `duel_admissible=False` run (see `_walk_cell_runs`'s own
+docstring for the full rule).
+
 A cell with fewer than the pre-registered n >= 10 runs per side still
 gets a verdict (the underlying statistics are valid from n >= 3): the
 alternative, silently omitting the metric, invites someone to "just
@@ -349,7 +365,11 @@ class _RunRecord:
 
 
 def _walk_cell_runs(
-    cell_dir: Path, *, arm: str | None = None
+    cell_dir: Path,
+    *,
+    arm: str | None = None,
+    expected_duel_id: str | None = None,
+    legacy_ok: bool = False,
 ) -> tuple[list[_RunRecord], int, int, list[str]]:
     """Walk a cell directory's `run-*` trees EXACTLY ONCE, resolving each
     surviving run's scoring window exactly once regardless of how many
@@ -383,6 +403,28 @@ def _walk_cell_runs(
     outside the duel's interleaved design" are different facts and a
     reader acts differently on each.
 
+    `expected_duel_id` and `legacy_ok` (Amendment 2026-08-03, Task 2)
+    apply a SECOND, finer filter within the duel-admissible set: WHICH
+    duel's pool a run belongs to. A cell directory can hold admissible
+    runs from more than one duel filed over time (e.g. P3's (A, B) and a
+    later P4 pairing over the same cell A), and without this filter a
+    verdict over the NEW pairing would silently pull the OLD pairing's
+    runs into its count. The rule: a run pools in iff
+    `manifest.duel_id == expected_duel_id`, OR (`legacy_ok` is true AND
+    `manifest.duel_id == ""`) -- the legacy clause exists ONLY so the
+    already-filed P3 (A, B) verdict, whose manifests predate this field
+    and so carry "", keeps reproducing byte-for-byte without a single
+    filed manifest being rewritten. `expected_duel_id=None` (the default)
+    disables this filter entirely -- every duel-admissible run pools in,
+    exactly the pre-Task-2 behaviour -- for callers with no duel context
+    of their own (e.g. `cell_run_values`, a one-off convenience wrapper).
+    A run dropped by this filter is counted on the SAME `n_inadmissible`
+    counter as a `duel_admissible=False` run: both are "valid data
+    outside this duel's design," the same fact the counter already
+    exists to report, not a third kind this task would otherwise have to
+    invent and thread through `VerdictRow`, `render_table`, and
+    `ReconciliationRow`.
+
     A run whose manifest is missing
     or invalid is DROPPED and reported by name in `errors`. A run whose
     WINDOW fails to resolve (e.g. no odometry sample inside the spatial
@@ -415,6 +457,19 @@ def _walk_cell_runs(
             n_excluded += 1
             continue
         if not manifest.duel_admissible:
+            n_inadmissible += 1
+            continue
+        # Pool-partitioning filter (Amendment 2026-08-03, Task 2): a run
+        # can be duel-admissible AND still belong to a DIFFERENT duel's
+        # pool than the one this call is walking for -- see the pool rule
+        # in this function's own docstring above. `expected_duel_id=None`
+        # (the default) leaves this inactive, so every pre-Task-2 caller
+        # and every caller with no duel context of its own is unaffected.
+        if (
+            expected_duel_id is not None
+            and manifest.duel_id != expected_duel_id
+            and not (legacy_ok and manifest.duel_id == "")
+        ):
             n_inadmissible += 1
             continue
         window: _RunWindow | None
@@ -1170,6 +1225,13 @@ def build_verdict_table(
         extractor_b, reason_b = binder(metrics_b)
         bound[metric] = (extractor_a, reason_a, extractor_b, reason_b, spec)
 
+    # Computed ONCE, before the arm loop, like `bound` above: neither
+    # depends on `arm`, only on which two cells this call is a duel
+    # between (Amendment 2026-08-03, Task 2 -- see `_walk_cell_runs`'s
+    # own docstring for the pool rule these two feed).
+    expected_duel_id = f"{cell_a_id}+{cell_b_id}"
+    legacy_ok = (cell_a_id, cell_b_id) == ("A", "B")
+
     rows: list[VerdictRow] = []
     reconciliation_rows: list[ReconciliationRow] = []
     for arm in arms:
@@ -1179,10 +1241,10 @@ def build_verdict_table(
         # actually achieves README.md's "resolved once per run", unlike
         # calling cell_run_values (which re-walks) once per metric.
         records_a, excluded_a, inadmissible_a, walk_errors_a = _walk_cell_runs(
-            Path(cell_a_dir), arm=arm
+            Path(cell_a_dir), arm=arm, expected_duel_id=expected_duel_id, legacy_ok=legacy_ok
         )
         records_b, excluded_b, inadmissible_b, walk_errors_b = _walk_cell_runs(
-            Path(cell_b_dir), arm=arm
+            Path(cell_b_dir), arm=arm, expected_duel_id=expected_duel_id, legacy_ok=legacy_ok
         )
         if "achieved_rate_ratio" in margins:
             # The M2 reconciliation is achieved_rate_ratio's registered

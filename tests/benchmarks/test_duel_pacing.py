@@ -328,6 +328,44 @@ def test_check_args_skips_pacing_entirely(tmp_path, fake_repo):
     assert not pace_log.exists(), "--check-args run must write no pacing record"
 
 
+# --- Task 2 (Amendment 2026-08-03): duel.sh must stamp --duel-id on every --
+# --- run.sh invocation it orders, derived from its OWN two cell args -------
+
+
+def test_run_sh_invocation_carries_duel_id(tmp_path, fake_repo):
+    """Real-code-path pin for the duel_id pool rule's stamping half: unlike
+    the source text-scan a reader could satisfy by hardcoding a literal
+    string anywhere in duel.sh, this reads the ACTUAL argv each run.sh
+    invocation received (FAKE_RUN_SH logs `"$*"` verbatim), for BOTH
+    invocations in the pair -- so a bug that stamps only the first, or
+    that derives the id from the wrong cell order, shows up here. --check-
+    args keeps this instant, per test_check_args_skips_pacing_entirely
+    just above."""
+    loadavg_file = tmp_path / "loadavg"
+    loadavg_file.write_text("1.0 1.0 1.0 1/200 12345\n")
+    run_log = tmp_path / "fake-run.log"
+
+    result = _run_duel(
+        tmp_path,
+        fake_repo,
+        extra_args=("--check-args",),
+        proc_timeout=8,
+        FAKE_RUN_LOG=str(run_log),
+        DUEL_PACE_LOG=str(tmp_path / "pacing.log"),
+        DUEL_LOADAVG_SRC=str(loadavg_file),
+        DUEL_PACE_FLOOR_S="0",
+        DUEL_PACE_CEILING_S="0",
+        DUEL_PACE_POLL_S="1",
+        DUEL_PACE_TARGET_LOADAVG="6",
+    )
+    assert result.returncode == 0, result.stderr
+
+    lines = [ln for ln in run_log.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 2, f"expected 2 run.sh invocations, got {lines}"
+    for line in lines:
+        assert "--duel-id cellA+cellB" in line, line
+
+
 # --- fix-round F6: the 2-consecutive-failure abort path is unpinned with ---
 # --- pacing active, and it must still exit and pace correctly -------------
 

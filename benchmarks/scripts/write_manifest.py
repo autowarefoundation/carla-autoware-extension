@@ -186,6 +186,13 @@ def build_manifest(args: argparse.Namespace) -> RunManifest:
         # single explicit declaration; see RunManifest.duel_admissible for why
         # the default points this way.
         duel_admissible=bool(args.duel),
+        # Which duel's pool this run belongs to (Amendment 2026-08-03,
+        # Task 2). Same opt-in-only rationale as duel_admissible just
+        # above: this tool cannot know which pairing ordered the run, only
+        # the caller that did (scripts/duel.sh, which stamps
+        # `--duel-id "${CELL_A}+${CELL_B}"`); every other caller leaves it
+        # at its default "", matching RunManifest.duel_id's own default.
+        duel_id=args.duel_id,
     )
 
 
@@ -220,6 +227,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "Passed by scripts/duel.sh on every run it orders; omitted by every "
         "other invocation, so a bring-up or gate run cannot reach the "
         "equivalence verdict in benchmarks/scripts/duel_verdict.py",
+    )
+    p.add_argument(
+        "--duel-id",
+        default="",
+        help="WHICH duel's admission pool this run belongs to "
+        "(RunManifest.duel_id; Amendment 2026-08-03, Task 2), "
+        "conventionally f'{cell_a}+{cell_b}' in the order the two cells "
+        "were given to scripts/duel.sh, which is the only caller that "
+        "ever passes this. Defaults to '', the legacy/no-duel value every "
+        "manifest predating this field also reads as.",
     )
     p.add_argument(
         "--exclude",

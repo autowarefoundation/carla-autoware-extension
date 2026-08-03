@@ -3783,6 +3783,30 @@ same as the current.'`), after which `/vehicle/status/velocity_status` measured
     work is added for struck cells (E-opt stays struck). `config/margins.yaml` and
     `config/exclusions.md` byte-identical; criterion 3 is cited as it already
     stands, not amended.
+- **2026-08-03 (Task 2 of the P4 transport-sweep plan) — `duel_id` partitions
+  the primary duel's admission pool from later duels filed over the same
+  cells.** `RunManifest.duel_admissible` (Task 15b, above) only answers "is
+  this run duel data at all?"; it does not say WHICH duel, so a cell
+  directory holding admissible runs from more than one duel filed over the
+  campaign's life would let a verdict over a NEW pairing silently pull an
+  OLD pairing's runs into its count. `benchmarks/analysis/manifest.py` gains
+  `duel_id: str = ""` on `RunManifest`, stamped by `scripts/duel.sh` as
+  `--duel-id "${CELL_A}+${CELL_B}"` on every `run.sh --duel` invocation it
+  orders and threaded through `write_manifest.py --duel-id`.
+  `duel_verdict.py`'s `_walk_cell_runs` gains the pool rule: for a verdict
+  over `(cell_a, cell_b)`, the expected id is `f"{cell_a}+{cell_b}"`, and a
+  duel-admissible run pools in iff `manifest.duel_id == expected` OR
+  (`manifest.duel_id == ""` AND `(cell_a, cell_b) == ("A", "B")`) — the
+  legacy clause exists ONLY so the already-filed primary (A, B) verdict
+  keeps reproducing byte-for-byte without a single filed manifest being
+  rewritten. `benchmarks/analysis/**` is listed as **frozen, never
+  modified** among this document's global constraints; this field is the
+  one ruled exception, on the owner's own reading (recorded in the P4
+  transport-sweep plan's SDD ledger): **adding a metadata field with
+  default `""` changes no score, so every filed manifest keeps scoring
+  identically.** The freeze protects scoring semantics, not metadata, and
+  the legacy clause above is precisely what keeps the filed P3 (A, B)
+  verdict's score untouched.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

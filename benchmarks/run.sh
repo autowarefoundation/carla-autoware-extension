@@ -3,7 +3,7 @@
 #
 #   bash benchmarks/run.sh <cell> --arm static|closed-loop [--class <id>]
 #        [--unpaced] [--runs N] [--no-observer] [--rpc-port N] [--rmw NAME]
-#        [--shm on|off] [--dds-profile PATH|none] [--duel]
+#        [--shm on|off] [--dds-profile PATH|none] [--duel] [--duel-id STR]
 #        [--check-args] [--dry-run]
 #
 # Every measurement in P3 and P4 comes from here. Each invocation produces
@@ -59,6 +59,13 @@ RPC_PORT=2000
 # the default points this way (a forgotten flag must under-count loudly, not
 # contaminate silently).
 DUEL=0
+# WHICH duel's admission pool this run belongs to (Amendment 2026-08-03,
+# Task 2), threaded through to RunManifest.duel_id via write_manifest.py
+# --duel-id. Default "" matches RunManifest.duel_id's own default -- the
+# legacy/no-duel value. scripts/duel.sh is the only caller that ever
+# passes a non-empty value (`--duel-id "${CELL_A}+${CELL_B}"`); see
+# RunManifest.duel_id's own comment for the pool rule this feeds.
+DUEL_ID=""
 # --check-args: resolve the invocation and print it, then exit -- steps 1-2
 # only, so it touches NO host state at all (no preflight, no /dev/shm sweep, no
 # docker, no results/ write, nothing booted). It exists so the fail-closed
@@ -110,6 +117,7 @@ while [ $# -gt 0 ]; do
     --shm) SHM="$2"; shift 2 ;;
     --dds-profile) DDS_PROFILE="$2"; DDS_PROFILE_EXPLICIT=1; shift 2 ;;
     --duel) DUEL=1; shift ;;
+    --duel-id) DUEL_ID="$2"; shift 2 ;;
     --check-args) CHECK_ARGS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h | --help) usage ;;
@@ -410,6 +418,7 @@ do_run() {
     echo "rmw=$RMW"
     echo "shm=$SHM"
     echo "duel_admissible=$([ "$DUEL" = "1" ] && echo true || echo false)"
+    echo "duel_id=$DUEL_ID"
     echo "run_dir=$run_dir"
     exit 0
   fi
@@ -493,6 +502,13 @@ PY
   if [ "$DUEL" = "1" ]; then
     duel_args+=(--duel)
     duel_show=" --duel"
+  fi
+  # Same array-element / printed-string split as --duel just above, and the
+  # same reason: DUEL_ID defaults to "" (never a stray argument), and the
+  # printed form must only show the flag when it is actually non-empty.
+  if [ -n "$DUEL_ID" ]; then
+    duel_args+=(--duel-id "$DUEL_ID")
+    duel_show="$duel_show --duel-id $DUEL_ID"
   fi
   show "python3 -m benchmarks.scripts.write_manifest --run-dir $run_dir --cell $CELL" \
     "--arm $effective_arm --rmw $RMW --shm $SHM --dds-profile $DDS_PROFILE" \
