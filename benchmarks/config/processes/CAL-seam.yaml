@@ -13,6 +13,20 @@
 # "editor-game", tests/benchmarks/test_manifest.py), never a packaged
 # build.
 #
+# What the prior draft said, quoted rather than only characterized: its
+# process list was `carla-server` + `observer` only, and its `carla-server`
+# entry was immediately followed by "NEVER FILLED IN: the seam/in-core
+# publisher pair's fork-side twin does not exist, and now never will -- the
+# cell is struck ... NOTE: benchmarks/cells/calibration.sh currently REFUSES
+# to launch CAL-seam at all, naming Task 14 -- so this file cannot be reached
+# by a measurement run while the publisher-pair entry is missing." Both
+# halves of that sentence are now false (the twin exists -- Task 9's D8 lift;
+# the launcher no longer refuses -- this same Task 8) and neither is edited
+# in place anywhere it was written; this file is fully replaced rather than
+# patched because "NEVER FILLED IN" was itself the entry meant to record a
+# gap that no longer exists, not a historical assertion worth preserving
+# verbatim the way cells.yaml's and calibration.sh's strike paragraphs are.
+#
 # Dropped relative to A.yaml: `injector` (INJECTOR_ENABLED="0" in
 # cells/calibration.sh's CAL-seam branch -- CAL-seam is a
 # transport/serialization calibration, not a drive, so the clear-road

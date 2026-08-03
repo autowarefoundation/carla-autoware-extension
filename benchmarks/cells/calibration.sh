@@ -11,39 +11,47 @@
 # the observer (benchmarks/docker/bench-observer.Dockerfile builds both), so
 # publisher and recorder share one message set and one DDS build.
 #
-# CAL-seam WAS REFUSED: its in-core/out-of-core publisher pair was Task 14
-# ("CAL-seam publisher pair") and did not exist. There was nothing to launch
+# CAL-seam is REFUSED: its in-core/out-of-core publisher pair is Task 14
+# ("CAL-seam publisher pair") and does not exist. There is nothing to launch
 # and nothing to observe, and a run that produced an empty-but-valid results
-# directory would have been indistinguishable from a transport that delivered
+# directory would be indistinguishable from a transport that delivered
 # nothing.
 #
-# That refusal was PERMANENT for this campaign, in this file's own words --
-# but "permanent for this campaign" meant "for as long as the fork-side twin
-# does not exist", and it now does. Cell CAL-seam was STRUCK 2026-07-30 by the
-# owner's core-duel scope cut (cells.yaml `dropped:`; benchmarks/README.md's
-# 2026-07-30 amendment), taking Task 14's live half and Task 17 with it, so no
-# CAL-seam run was filed and C1(a) seam overhead stayed UNMEASURED. An owner
-# TIME-BUDGET decision, not a technical block: the extension-side half of the
-# publisher pair DID land (Task 14's code half) and only the fork-side twin
-# was ever missing. The refusal WAS kept exactly as it was -- a launcher that
-# quietly came up for a struck cell would have filed a run nothing was going
-# to score.
+# That refusal is now PERMANENT for this campaign. Cell CAL-seam was STRUCK
+# 2026-07-30 by the owner's core-duel scope cut (cells.yaml `dropped:`;
+# benchmarks/README.md's 2026-07-30 amendment), taking Task 14's live half and
+# Task 17 with it, so no CAL-seam run will be filed and C1(a) seam overhead is
+# UNMEASURED. An owner TIME-BUDGET decision, not a technical block: the
+# extension-side half of the publisher pair DID land (Task 14's code half) and
+# only the fork-side twin was ever missing. The refusal is kept exactly as it
+# is -- a launcher that quietly came up for a struck cell would file a run
+# nothing is going to score.
 #
 # REINSTATED 2026-08-03 by the owner (P4 transport-sweep plan, spec decision
 # 6), on the D8 lift that makes the fork-side twin publisher buildable (Task
 # 9: LibCarla/source/carla/ros2/ROS2.cpp, gated on
-# $CARLA_BENCH_INCORE_CLOUD=1). The strike/refusal history above stays
-# unedited -- it is still the true record of why the cell sat unlaunchable
-# for five weeks. CAL-seam now boots the extension fork editor WITHOUT
-# Autoware (cells/extension.sh's recipe, scripts/e2e/run_e2e.sh with
-# WITH_AUTOWARE=0), with both bench publishers enabled via
-# $CARLA_BENCH_SEAM_CLOUD=1 and $CARLA_BENCH_INCORE_CLOUD=1 exported into the
-# editor's own environment -- see the `CAL-seam` branch below, which reuses
-# the same launch.env / pidfile / teardown plumbing that family uses
-# (APPROACH="extension" selects teardown.sh's graceful CARLA_PID_FILE case)
-# and sets ARM_ENABLED="0": CAL-seam is a transport/serialization
-# calibration, not a drive, so nothing is armed and no ground truth is
-# collected (GT_ENABLED="0").
+# $CARLA_BENCH_INCORE_CLOUD=1). The paragraph above (":14-30") is UNEDITED --
+# present tense, "is now PERMANENT", "is kept exactly as it is" and all -- it
+# stays the true record of what the 2026-07-30 author asserted, and this
+# reinstatement does not get to revise it. Read from here rather than
+# corrected up there: "permanent" was true of the owner's 2026-07-30
+# decision, not a prediction this note falsifies -- the owner made a NEW
+# decision, on new evidence (the twin is now buildable), rather than the old
+# one turning out wrong. That decision's own grounding, worth stating because
+# the paragraph above does not draw the conclusion itself: the refusal's
+# proximate cause was always the missing fork-side twin (the paragraph names
+# it -- "only the fork-side twin was ever missing"), so its becoming
+# buildable is what gave the owner grounds to revisit a decision the
+# paragraph never claimed was irrevocable. CAL-seam now boots the extension
+# fork editor WITHOUT Autoware (cells/extension.sh's recipe,
+# scripts/e2e/run_e2e.sh with WITH_AUTOWARE=0), with both bench publishers
+# enabled via $CARLA_BENCH_SEAM_CLOUD=1 and $CARLA_BENCH_INCORE_CLOUD=1
+# exported into the editor's own environment -- see the `CAL-seam` branch
+# below, which reuses the same launch.env / pidfile / teardown plumbing that
+# family uses (APPROACH="extension" selects teardown.sh's graceful
+# CARLA_PID_FILE case) and sets ARM_ENABLED="0": CAL-seam is a
+# transport/serialization calibration, not a drive, so nothing is armed and
+# no ground truth is collected (GT_ENABLED="0").
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_ARM:?}"

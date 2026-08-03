@@ -490,8 +490,7 @@ publishers evidenced against a live run — so neither its stamp domain nor its
 > existence. The stamp-domain / `/clock` question this paragraph defers is
 > still open; only Task 10's first live collection settles it.
 
-A
-simulated cell's stamps are sim-domain, so the fit is required there. The duel
+A simulated cell's stamps are sim-domain, so the fit is required there. The duel
 term therefore carries the fit's error on top of the transport it measures, and
 a duel row must be read next to that run's `fit_residual_ns`
 (`report.summarize_run`).
@@ -3918,31 +3917,33 @@ A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
   `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
   frozen file touched.
 - **2026-08-03 (Task 8 of the P4 transport-sweep plan) — cell CAL-seam
-  reinstated, un-striking the 2026-07-30 core-duel scope cut.** `config/
-cells.yaml`'s CAL-seam entry loses its `dropped: owner-time-budget-
-2026-07-30` key (the strike comment stays, extended with this note) and
-  gains `tick_hz: 20.0` / `lidar_expected_hz: 10.0`; `mandatory: true` is
-  unchanged, so the record still shows a mandatory cell was struck and is now
-  un-struck, not that it was always optional. The reinstatement rides on the
-  D8 lift (Task 9) that makes the fork-side twin of `BenchCloudPublisher`
-  buildable -- CAL-seam's own paired instrument, gated by
-  `benchmarks/patches/extension/README.md`'s `$CARLA_BENCH_SEAM_CLOUD` /
-  `$CARLA_BENCH_INCORE_CLOUD` env vars -- so both halves of the pair now
-  exist. `config/observer_topics/CAL-seam.yaml` replaces its
-  deliberately-empty list with the two topics (`/bench/seam_cloud`,
-  `/bench/incore_cloud`); `config/processes/CAL-seam.yaml` is (re)written,
-  derived from `A.yaml` minus its Autoware-side entries.
-  `cells/calibration.sh`'s permanent-looking CAL-seam refusal is replaced
-  with a launch branch that boots the extension fork editor via
-  `scripts/e2e/run_e2e.sh` with `WITH_AUTOWARE=0` and both bench-publisher
-  env vars set, reusing the `extension` family's launch/teardown plumbing
-  (`ARM_ENABLED="0"`, no Autoware container) -- the refusal history in that
-  file's header stays, with this reinstatement appended. Completeness: C1(a)
-  seam overhead was UNMEASURED with no weaker evidence standing in for it;
-  this task makes the cell launchable again so a later task (Task 10) can
-  collect it -- it does not itself produce CAL-seam numbers. `config/
-margins.yaml`, `config/exclusions.md` and `benchmarks/analysis/**`
-  byte-identical; no frozen file touched.
+  reinstated, un-striking the 2026-07-30 core-duel scope cut.**
+  `config/cells.yaml`'s CAL-seam entry loses its
+  `dropped: owner-time-budget-2026-07-30` key (the strike comment stays,
+  extended with this note) and gains `tick_hz: 20.0` /
+  `lidar_expected_hz: 10.0`; `mandatory: true` is unchanged, so the record
+  still shows a mandatory cell was struck and is now un-struck, not that it
+  was always optional. The reinstatement rides on the D8 lift (Task 9) that
+  makes the fork-side twin of `BenchCloudPublisher` buildable -- CAL-seam's
+  own paired instrument, gated by `benchmarks/patches/extension/README.md`'s
+  `$CARLA_BENCH_SEAM_CLOUD` / `$CARLA_BENCH_INCORE_CLOUD` env vars -- so both
+  halves of the pair now exist. `config/observer_topics/CAL-seam.yaml`
+  replaces its deliberately-empty list with the two topics
+  (`/bench/seam_cloud`, `/bench/incore_cloud`);
+  `config/processes/CAL-seam.yaml` is (re)written, derived from `A.yaml`
+  minus its Autoware-side entries. `cells/calibration.sh`'s permanent-looking
+  CAL-seam refusal is replaced with a launch branch that boots the extension
+  fork editor via `scripts/e2e/run_e2e.sh` with `WITH_AUTOWARE=0` and both
+  bench-publisher env vars set, reusing the `extension` family's
+  launch/teardown plumbing (`ARM_ENABLED="0"`, no Autoware container) -- the
+  refusal history in that file's header is UNEDITED (verbatim, present
+  tense), with this reinstatement appended below it exactly the way this
+  entry is appended here rather than rewriting the 2026-07-30 entry above.
+  Completeness: C1(a) seam overhead was UNMEASURED with no weaker evidence
+  standing in for it; this task makes the cell launchable again so a later
+  task (Task 10) can collect it -- it does not itself produce CAL-seam
+  numbers. `config/margins.yaml`, `config/exclusions.md` and
+  `benchmarks/analysis/**` byte-identical; no frozen file touched.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

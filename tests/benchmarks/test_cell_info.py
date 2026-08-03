@@ -486,16 +486,29 @@ def test_cal_seam_reinstated_registers_its_launch_path(doc):
 CALIBRATION_SH = CONFIG_DIR.parent / "cells" / "calibration.sh"
 
 
-def test_cal_seam_branch_exports_both_bench_env_vars_and_boots_the_e2e_stack():
-    """A LITERAL PIN over calibration.sh's source text, NOT a subprocess
-    check: this suite has no CARLA to boot, and Task 8's brief is explicit
-    that verification is unit tests / `bash -n` / the full suite, not a live
-    launch attempt -- so unlike this file's other tests, which resolve real
-    YAML through cell_info, this one can only assert what the script's text
-    says it will do, not what it does when actually run. Guards against
-    silently regressing to the pre-2026-08-03 refusal, or dropping one of
-    the two publisher gates, while stopping short of a behavioural claim
-    this environment cannot verify."""
+def test_cal_seam_branch_exports_both_bench_env_vars_into_the_run_e2e_invocation():
+    """A LITERAL PIN, explicitly narrow and explicitly disclosed as such --
+    NOT a subprocess check. Everything this suite CAN verify behaviourally
+    now lives in tests/benchmarks/test_calibration_launch.py, which runs the
+    real `calibration.sh plan` as a subprocess (no CARLA needed: `plan` mode
+    writes launch.env and exits before ever touching run_e2e.sh) and asserts
+    on the real generated file -- that is where APPROACH, ARM_ENABLED,
+    GT_ENABLED, INJECTOR_ENABLED, RUN_MODE and SPAWN_ARGS are pinned as real
+    behaviour.
+
+    What is NOT reachable that way: the two `$CARLA_BENCH_*_CLOUD=1` exports
+    and `WITH_AUTOWARE=0` live in the `up`-mode subshell that execs
+    `run_e2e.sh`, which `plan` mode exits before reaching -- and actually
+    running it needs a live CARLA this environment does not have (Task 8's
+    brief is explicit: no CARLA, no live-launch attempt). So this one
+    assertion stays a text scan, and is deliberately SLICED NARROWLY to just
+    the exec-subshell's own body (`cd "$BENCH_REPO"` .. `echo $! >` its pid
+    file) rather than the whole CAL-seam branch: that body contains no
+    comments, so unlike a scan over the full branch (which a comment could
+    satisfy -- e.g. `WITH_AUTOWARE=0` appears in an explanatory comment a few
+    lines above this same subshell), every match here is a real assignment
+    on the command line `nohup bash scripts/e2e/run_e2e.sh` actually runs
+    with."""
     text = CALIBRATION_SH.read_text()
     seam_branch_start = text.index('"$BENCH_CELL" = "CAL-seam"')
     rmw_guard_start = text.index('"$BENCH_CELL" = "CAL-rmw"')
@@ -503,10 +516,15 @@ def test_cal_seam_branch_exports_both_bench_env_vars_and_boots_the_e2e_stack():
         "the CAL-seam branch must be handled before the CAL-rmw-only guard"
     )
     seam_branch = text[seam_branch_start:rmw_guard_start]
-    assert "CARLA_BENCH_SEAM_CLOUD=1" in seam_branch
-    assert "CARLA_BENCH_INCORE_CLOUD=1" in seam_branch
-    assert "run_e2e.sh" in seam_branch
-    assert "WITH_AUTOWARE=0" in seam_branch
-    assert 'ARM_ENABLED="0"' in seam_branch
-    # The old refusal text this branch replaces.
+    # The old refusal text this branch replaces -- a negative assertion, so
+    # it is not weakened by scanning the whole branch: nothing in the intact
+    # branch needs to contain this phrase, comment or code.
     assert "has not been written" not in seam_branch
+
+    exec_start = seam_branch.index('cd "$BENCH_REPO"')
+    exec_end = seam_branch.index('echo $! >"$CARLA_PID_FILE"', exec_start)
+    exec_body = seam_branch[exec_start:exec_end]
+    assert "CARLA_BENCH_SEAM_CLOUD=1" in exec_body
+    assert "CARLA_BENCH_INCORE_CLOUD=1" in exec_body
+    assert "WITH_AUTOWARE=0" in exec_body
+    assert "run_e2e.sh" in exec_body
