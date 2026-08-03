@@ -251,16 +251,123 @@ autoware_045:
 # deliberate engine build. This pin is the BuildId every preflight must
 # match against; a mismatch means that tree's editor modules are stale
 # and need their own carla-unreal-editor rebuild before it will boot.
-# This value settled after two follow-up rounds past Task 4's own
-# rebuild (extension rebuild bumped it again, tier4 rebuild held it
-# steady) -- see the Task 4 report's fix-report section. No further
-# engine relink is permitted from here on (D8).
+# The previous value 4210e602-78ec-46e1-8f2f-03fadbe036a3 settled after
+# two follow-up rounds past Task 4's own rebuild (extension rebuild
+# bumped it again, tier4 rebuild held it steady) -- see the Task 4
+# report's fix-report section. Every filed result and every evidence
+# document under benchmarks/results/ and benchmarks/evidence/ still
+# carries 4210e602: those record what produced them and are NOT updated.
+#
+# D8 LIFT, owner-authorized, executed EXACTLY ONCE on 2026-08-03.
+# Reason: CAL-seam revival (P4 spec decision 6) needs the fork's in-core
+# bench cloud publisher compiled in, and that cannot exist without one
+# carla-unreal-editor rebuild. Round log (P4 Task 9):
+#   round 1  extension tree carla-unreal-editor  -> 4210e602 => bc08ce19
+#   round 2  extension tree, post-commit rebuild -> held bc08ce19 steady
+#   round 3  tier4 tree carla-unreal-editor      -> held bc08ce19 steady
+# Converged: engine + both trees' project AND plugin manifests (5 of 5)
+# all report bc08ce19. **D8 IS RE-INSTATED as of this commit: no further
+# engine relink is permitted for the remainder of the campaign.**
+#
+# STALE UBT ACTION-CACHE TRAP -- found and CLEARED 2026-08-03, kept here
+# because it cost most of Task 9 and will cost the next person the same.
+# HISTORY: after the round-1..3 relink above, the extension tree's editor
+# artifact would not refresh. verify_editor_artifact.sh refused with
+#   PREFLIGHT FAIL: .../libUnrealEditor-Carla.so (1784854960) is OLDER
+#   than HEAD commit (1785781990).
+# and libUnrealEditor-Carla.so stayed frozen at 2026-07-23 18:02 through
+# THREE carla-unreal-editor builds. Before/after mtime snapshots showed
+# each build splitting its outputs 20 files into carla-autoware-integration
+# but libUnrealEditor-Carla.{so,debug,sym} and libUnrealEditor-CarlaUnreal.*
+# (6 files) into ~/src/carla-autoware-native. The first reading -- that the
+# shared engine's editor-module state was permanently bound to the tier4
+# tree, needing engine surgery to undo -- WAS WRONG, and is recorded here
+# with what refuted it.
+# ACTUAL CAUSE (measured; an earlier reading blaming the project-tree
+# Makefile.bin was ALSO wrong and is corrected here -- that file is still
+# dated 2026-07-21 and was never rewritten, which is what refuted it).
+# The shared engine keeps ONE set of cached link actions for the editor's
+# Carla module, as per-module shell scripts:
+#   ~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor/
+#     Development/Link-libUnrealEditor-Carla.so.link.sh
+# Each carries the ABSOLUTE output path baked in. Both trees ship a project
+# named CarlaUnreal.uproject, and whichever tree last made UBT re-gather
+# owns that path for BOTH trees. The tier4 tree last re-gathered
+# (2026-07-27/28), so every editor build -- including ones invoked from the
+# integration tree with a correct absolute -project= -- linked the module
+# to the TIER4 path. `-project=` was never the problem: Unreal/CMakeLists.txt
+# has always passed an absolute one (:341) and the failing build log shows it.
+# The tell nobody followed up on: a no-op rebuild relinked EVERY time,
+# because the output UBT checked on the integration side never got newer.
+# FIX (per-invocation, no engine state surgery, no relink): -NoUBTMakefiles
+# makes UBT re-gather instead of replaying the cached graph --
+#   $UE/Engine/Build/BatchFiles/Linux/Build.sh CarlaUnrealEditor Linux \
+#     Development -project=<ABSOLUTE integration CarlaUnreal.uproject> \
+#     -game -NoUBTMakefiles
+# Measured effect: the link scripts' tree references FLIPPED from
+# 12 carla-autoware-native / 1 carla-autoware-integration to 1 / 12, all 6
+# files landed in the integration tree, and the ordinary documented target
+# (cmake --build Build/Development --target carla-unreal-editor) then wrote
+# all 26 of its outputs there too. One-time unstick, not a flag to keep
+# passing.
+#
+# !! ALTERNATION HAZARD -- the binding is SHARED and EXCLUSIVE !!
+# Tested 2026-08-03 immediately after the fix: a tier4 `cmake --build Build
+# --target carla-unreal-editor` wrote the module into the INTEGRATION tree
+# (mtime 12:43:45) and left the tier4 artifact untouched at 11:48:59. So the
+# ownership does NOT follow the tree you build from -- it follows whichever
+# tree last re-gathered, and only ONE tree's editor Carla module can be
+# refreshable at a time.
+# Right now it is bound to the INTEGRATION tree, which is what cell A needs.
+# CONSEQUENCE FOR CELL B: the tier4 artifact is now frozen the same way cell
+# A's was. That is currently harmless -- verify_tier4_artifact.sh passes
+# because the tier4 artifacts are newer than every tier4 source and those
+# sources are not changing -- but ANY future tier4 source change will hit
+# this identical trap, and the fix is the same -NoUBTMakefiles invocation
+# with the tier4 .uproject. Flipping it back would re-break cell A, so do
+# not flip it speculatively; flip it only when a tier4 source change
+# actually needs to reach an artifact, and flip it back afterwards.
+# D8 WAS NOT SPENT AGAIN: the BuildId was captured before and after every
+# attempt and held bc08ce19 on all 5 manifests throughout, so no engine
+# relink occurred. The tier4 artifact was not disturbed either --
+# verify_tier4_artifact.sh reports the same tier4_plugin_sha256
+# (26f95dec...93c4e) before and after.
+# Both gates PASS. Transcript re-captured 2026-08-03 13:30 after the
+# publish-order pre-registration below, so these numbers match the artifact and
+# the fork
+# HEAD actually on disk -- re-verify with `stat -c %Y` and `git show -s
+# --format=%ct HEAD` and they will agree:
+#   verify_editor_artifact.sh -> OK, .so newer than HEAD (1785790050 >=
+#     1785789893); engine and Carla module BuildId agree (bc08ce19)
+#   verify_tier4_artifact.sh  -> OK, tier4_stale_ack=none
 engine:
-  build_id: 4210e602-78ec-46e1-8f2f-03fadbe036a3 # settled value, all 3 trees agree
+  build_id: bc08ce19-f19c-46fe-808f-dbb2b0ddf41a # 2026-08-03 relink round; all 3 trees agree (5/5 manifests)
 extension_carla_fork:
   path: ~/src/carla-autoware-integration
   branch: feat/autoware-seminative-phase-b
-  sha: ae166d80d022f838b78f4a2daab1ca2880a7c8aa
+  # Advanced 2026-08-03, and ONLY ever to a revision the editor artifact
+  # genuinely contains. This pin names the fork revision the LOADED editor
+  # artifact was built from, so while the action-cache trap above kept
+  # libUnrealEditor-Carla.so frozen at 2026-07-23 it deliberately stayed at
+  # ae166d80d -- advancing it then would have asserted a build that did not
+  # exist on this host. It moved to 5981f5168 (the in-core twin) once that
+  # was cleared, to 783e29fbf when the twin's call site was moved to fix the
+  # frame-position defect (PROVENANCE 11.7), and to 62ca380f9 when the
+  # publish-order confound and its upper-bound reading rule were pre-registered
+  # into the twin's comment block (PROVENANCE 11.9; comment-only, no behaviour
+  # change, but the artifact is rebuilt anyway so this pin keeps naming the
+  # revision the loaded artifact was actually built from).
+  # Verified before advancing, by symbol table rather than by mtime alone.
+  # The artifact on disk is
+  #   Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so
+  # (2026-08-03 13:47:30, epoch 1785790050, 10573528 bytes). It defines
+  # carla::ros2::MakeExtensionHost and TeardownExtensionEndpoints -- proving
+  # it is the integration fork's own module, not the tier4 one -- and carries
+  # undefined references to carla::ros2::BenchIncoreCloudInit /
+  # BenchIncoreCloudOnTick, the in-core twin, resolved at load against
+  # libcarla-ros2-native.so. The OnTick reference in particular is what
+  # proves the moved call site is compiled into the plugin module.
+  sha: 62ca380f92efff57cabab4da67ab5abdd9fc94cc
 tier4_carla_fork:
   path: ~/src/carla-autoware-native
   branch: tier4/autoware-support

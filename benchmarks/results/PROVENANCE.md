@@ -3078,3 +3078,536 @@ explicitly. Full statement, with the M5 gate's verbatim refusal: §8.2. Its
 NDT-rate collapse (8.35 Hz against 19.95–19.96 elsewhere, pose-estimator
 specific) is a **lead, NOT TESTED**, and must stay that way until something
 tests it.
+
+## 11. The registered relink round (P4 Task 9, 2026-08-03): engine BuildId moved, and why CAL-seam still cannot collect
+
+This section is APPENDED, not a rewrite. §10's statement that "Engine BuildId
+`4210e602-78ec-46e1-8f2f-03fadbe036a3` stays pinned, and RELINK REMAINS
+FORBIDDEN" was accurate when filed and is left exactly as written; what follows
+is the owner-authorized, singly-registered exception to it and its outcome.
+Every filed manifest, `launch.log` and evidence document keeps `4210e602` —
+those record what produced them.
+
+### 11.1 What was authorized, and what it bought
+
+D8 was lifted **once**, on 2026-08-03, for one reason: reviving cell **CAL-seam**
+(P4 spec decision 6). CAL-seam measures the cost of the C-ABI seam by publishing
+the same synthetic point cloud twice and pairing the two one-hop latencies —
+`/bench/seam_cloud` from the out-of-tree extension `.so` (committed since
+2026-07-30, `extension/src/publishers/BenchCloudPublisher.{h,cpp}`) against
+`/bench/incore_cloud` from inside the CARLA fork process. The in-core half did
+not exist. Creating it means new C++ in the fork, and new C++ in the fork means
+one `carla-unreal-editor` rebuild, which by P1 Verdict 3 relinks the shared
+engine for every tree that uses it.
+
+The in-core twin is now committed on the extension fork
+(`~/src/carla-autoware-integration`, branch `feat/autoware-seminative-phase-b`,
+commit `5981f5168a0d87ffacddc4635f73e1373e185ad6`, "feat(ros2): add env-gated
+bench in-core cloud publisher (CAL-seam)"). It is gated on
+`$CARLA_BENCH_INCORE_CLOUD=1`, so with the variable unset a production run is
+byte-identical to a build without it.
+
+**The measurement-validity constraint was honoured and checked, not asserted.**
+The twin calls `BlobCreatePublisher` / `BlobPublish` — the very functions the
+extension's `host_.publish` vtable slot lands in — rather than the fork's
+Fast-DDS `publishers/CarlaLidarPublisher` path. Had it used the latter, the
+paired delta would have measured "Fast-DDS versus CycloneDDS, plus the seam" and
+would have isolated nothing. Evidence: a `-M` dependency scan of the new
+translation unit pulls **0** `fastdds/` or `fastrtps/` headers and **0**
+`middleware/` or `publishers/Carla*` headers; the DDS it reaches is reached only
+through the pure-C-ABI declarations in `ExtensionBlobEndpoints.h`. The template
+message serializes through the fork's own `serialize_to_cdr` to **921 905 bytes**
+and round-trips, with the field table taken from the shared
+`kLidarFieldsExtended` rather than re-typed.
+
+One residual confound is recorded rather than hidden: the two twins do **not**
+share a serializer implementation and cannot — the extension side uses
+`rosidl_typesupport_fastrtps_cpp`, which needs ROS 2 packages `carla-server` is
+deliberately built without. Both are fastcdr emitting classic CDR v1
+little-endian with the 4-byte encapsulation header, so the wire bytes are the
+same format, but the emitting code differs and that difference sits inside the
+measured delta. Any report quoting this instrument must say so.
+
+### 11.2 The relink itself: converged in three rounds
+
+| round | tree built (`carla-unreal-editor`)    | engine BuildId after |
+| ----- | ------------------------------------- | -------------------- |
+| —     | (before)                              | `4210e602-78ec-46e1-8f2f-03fadbe036a3` |
+| 1     | extension `~/src/carla-autoware-integration` | `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` (bumped) |
+| 2     | extension, post-commit rebuild        | `bc08ce19…` (held steady) |
+| 3     | tier4 `~/src/carla-autoware-native`   | `bc08ce19…` (held steady) |
+
+Converged: **5 of 5** manifests — the engine's, and both trees' project *and*
+plugin `UnrealEditor.modules` — report `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a`.
+This reproduces the P1/Task-4 pattern exactly (an extension rebuild bumps it, a
+tier4 rebuild holds it steady). `benchmarks/pins.yaml`'s `engine.build_id` is
+re-pinned to the new value and **D8 is re-instated in the same commit: no
+further engine relink is permitted for the remainder of the campaign.**
+
+`TIER4_TREE=~/src/carla-autoware-native bash benchmarks/scripts/verify_tier4_artifact.sh`
+**PASSES** (exit 0): `tier4_git_sha=6315b856f8faf2118578322eb20a2b902a45a384`,
+`tier4_worktree=registered-patches`,
+`tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e`,
+`tier4_stale_ack=none`.
+
+### 11.3 LIVE DEFECT (RESOLVED in fix round 1, see §11.5): the extension tree's editor artifact would not rebuild
+
+`bash scripts/e2e/verify_editor_artifact.sh` **REFUSES** (exit 1):
+
+```text
+PREFLIGHT FAIL: /home/youtalk/src/carla-autoware-integration/Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so (1784854960) is OLDER than HEAD commit (1785781990).
+  -> rebuild target carla-unreal-editor before any live run.
+```
+
+**The remedy that check names does not work on this host, and that was measured,
+not assumed.** `libUnrealEditor-Carla.so` in the extension tree is frozen at
+2026-07-23 18:02. Three `carla-unreal-editor` builds were run from
+`~/src/carla-autoware-integration` (rounds 1, 2 and 4) with full before/after
+mtime snapshots of both trees' `Binaries` directories. All three wrote the same
+26 files, split the same way every time:
+
+- **20 files into `carla-autoware-integration`** — the monolithic game binary
+  `CarlaUnreal`, the runtime DDS dependencies, and both `UnrealEditor.modules`
+  manifests (which is why the BuildId converged);
+- **6 files into `carla-autoware-native`** — `libUnrealEditor-Carla.{so,debug,sym}`
+  and `libUnrealEditor-CarlaUnreal.{so,debug,sym}`.
+
+That is: the shared engine's `UnrealEditor` editor-module state is bound to the
+**tier4** tree. Under
+`~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor`, **12**
+files reference `carla-autoware-native` and **1** references
+`carla-autoware-integration`. Both projects are named `CarlaUnreal.uproject`,
+and the tier4 tree was the last one configured against this engine
+(2026-07-27/28) — which also explains why the extension artifact's mtime stops
+dead at 2026-07-23, the last date on which an extension-tree editor build
+actually landed in the extension tree.
+
+**The tier4 artifact is NOT contaminated, and that was checked rather than
+assumed.** The `.so` those extension-tree builds write into the tier4 tree
+carries **none** of the integration fork's extension-seam symbols
+(`carla::ros2::MakeExtensionHost`, `carla::ros2::TeardownExtensionEndpoints`),
+which the 2026-07-23 integration artifact does carry, and the tier4 source tree
+has no `LibCarla/source/carla/ros2/extension/` directory at all. The file
+written there is tier4-sourced.
+
+**Consequence for CAL-seam.** The in-core twin is present in
+`libcarla-ros2-native.so` (verified: `carla::ros2::BenchIncoreCloudInit()` and
+`BenchIncoreCloudOnTick()` exported `T`) and referenced from `libcarla-server.a`
+(verified: both `U`), and the freshly relinked game binary `CarlaUnreal` carries
+those undefined references too. But `scripts/e2e/run_e2e.sh` launches the
+**engine's `UnrealEditor`** against the integration `.uproject`, so the module a
+live cell-A run loads is `libUnrealEditor-Carla.so` — the 2026-07-23 one, whose
+`ROS2::Enable` and `ROS2::SetTimestamp` predate the twin. The twin would never be
+constructed, and **the in-core side of the CAL-seam pair would be silently
+empty** — a publisher that is simply absent, which downstream would read as "the
+in-core path has no latency". That is the worst available failure for this
+instrument, which is why this is filed as a blocker rather than worked around.
+
+**How far back this reaches: checked, and the answer is "not at all".** The
+obvious worry is that a frozen artifact means every extension-fork source change
+since the freeze is missing from what cell A actually ran, which would put the
+filed P3 cell-A results in doubt. It does not. There is **no fork commit between
+the artifact's build time (2026-07-23 18:02:40) and the in-core twin commit**:
+`ae166d80d` (the IMU sensor-frame fix) landed at 2026-07-23 17:55:28, about seven
+minutes *before* the artifact was built, and nothing else landed on
+`feat/autoware-seminative-phase-b` until 2026-08-03. Every filed cell-A result was
+therefore produced by an editor artifact that matched its pinned fork revision,
+and `extension_carla_fork.sha` = `ae166d80d` remains an accurate description of
+that artifact. The only source change the frozen artifact is missing is the
+in-core twin added today. No retroactive audit of P3 is required.
+
+> **Status of this paragraph, added 2026-08-03 after the blocker was cleared.**
+> The analysis above is unchanged and still holds — it is what bounds the blast
+> radius, and it is the reason nobody needs to re-open a P3 cell-A audit. But it
+> was written while the defect was still standing, and its closing sentence
+> ("the defect will bite the next change to that fork") described a live
+> condition. **That condition is resolved.** The artifact was rebuilt in fix
+> round 1 (commit `4e804b2`); the cause was neither engine state nor a stale
+> project-tree `Makefile.bin` but the shared engine's cached link actions, and
+> `-NoUBTMakefiles` cleared it in one invocation. `engine.build_id` never moved
+> off `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` during any of it, so **D8 was not
+> spent a second time.** What *does* survive as a standing hazard is the
+> shared/exclusive ownership of that link path — now the tier4 tree's problem
+> rather than the integration tree's — recorded in §11.6 and, for operators, in
+> `benchmarks/README.md` under "How to run". See §11.5 and §11.6.
+
+**CAL-seam collection was BLOCKED on this.** It no longer is -- the cause was
+not what this section first concluded, and §11.5 records what it actually was
+and how it was cleared. Everything above is left exactly as filed, including
+the wrong reading, because the diagnostics that refuted it are the useful part. Cell A is independently
+gated by `verify_editor_artifact.sh` (`run_e2e.sh:126`), which refuses on its
+own, so no run can slip past this by accident.
+
+**Why it was not repaired here.** Re-binding the shared engine's editor-module
+state to the integration tree — regenerating that project's UE project files, or
+clearing `Engine/Intermediate/Build/Linux/x64/UnrealEditor`'s Carla state — is a
+**second engine-level intervention** on an engine three trees share, and it would
+relink the engine again. The authorization obtained was for exactly **one**
+registered relink round, and that round is spent and re-instated. A repair needs
+its own registration; it is not something to slip in under a round that was
+authorized for a different purpose.
+
+### 11.4 What is pinned, and what deliberately is not
+
+`benchmarks/pins.yaml`:
+
+- `engine.build_id` → `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a`. This is **true and
+  verified across all 5 manifests**, and pinning it is what keeps
+  `preflight.sh`'s BuildId comparison honest for every tree — cell B included,
+  which is otherwise unaffected and whose artifact gate passes.
+- `extension_carla_fork.sha` → **deliberately left at
+  `ae166d80d022f838b78f4a2daab1ca2880a7c8aa`.** That pin names the fork revision
+  the loaded editor artifact was built from, and that artifact is the 2026-07-23
+  one, built from `ae166d80d`. Advancing it to the in-core-twin commit while
+  `libUnrealEditor-Carla.so` predates that commit would assert a build that does
+  not exist on this host.
+- `extension_carla_fork.incore_twin_sha` → `5981f5168a0d87ffacddc4635f73e1373e185ad6`,
+  with `incore_twin_status: committed-not-built-into-editor-artifact`, so the
+  revision is not lost while the blocker stands.
+
+> **SUPERSEDED 2026-08-03 — do not cite this section for the current pin.** The
+> reasoning above still stands, and it is why the pin was never allowed to
+> describe a build that did not exist. But its two concrete statements are now
+> false. The blocker was cleared (§11.5), so `extension_carla_fork.sha` is **no
+> longer** "deliberately left at `ae166d80d…`"; and the `incore_twin_sha` /
+> `incore_twin_status` scaffolding was retired, so **neither key exists in
+> `pins.yaml` any more.** The pin advanced to `5981f5168…` once the artifact
+> genuinely contained the twin, and then to
+> **`783e29fbfc42176d826a46870f556c0b430c520b`** when the twin's call site was
+> moved to fix the frame-position defect (§11.7). A reader who stops at this
+> section will cite the wrong fork revision — `benchmarks/pins.yaml` is the
+> authority.
+
+Suite at this commit: **1084 passed, 1 skipped** (the skip is
+`test_observer_contract.py:105`, docker end-to-end, `BENCH_E2E=1`) — the
+pre-existing baseline, held exactly. `pre-commit run --all-files` clean.
+
+### 11.5 Fix round 1 (2026-08-03): the blocker was a stale UBT makefile, not engine state — cleared without spending D8 again
+
+§11.3 filed a blocker and, with it, a root cause: that the shared engine's
+`UnrealEditor` editor-module state was *bound* to the tier4 tree, so only engine
+surgery could redirect it. **That root cause was wrong.** The blocker was real and
+the diagnostics behind it were sound — three builds, before/after mtime snapshots,
+the 20/6 output split, the symbol tests — but the conclusion drawn from them
+over-read the evidence. §11.3 is left exactly as filed, wrong reading included,
+because what refuted it is worth more than a tidy record.
+
+**What actually caused it.** A first attempt at this paragraph blamed the
+project tree's `Makefile.bin` (dated 2026-07-21). **That was also wrong**, and the
+thing that refuted it is that the file is *still* dated 2026-07-21 — the fix never
+rewrote it. The correction, verified:
+
+The shared engine keeps **one** set of cached link actions for the editor's Carla
+module, as per-module shell scripts under
+`~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor/Development/`
+(`Link-libUnrealEditor-Carla.so.link.sh` and siblings). Each carries the absolute
+output path baked in. Both trees ship a project named `CarlaUnreal.uproject`, and
+**whichever tree last made UBT re-gather owns that path for both trees.** The
+tier4 tree last re-gathered on 2026-07-27/28, so every editor build — including
+ones invoked from the integration tree with a correct absolute `-project=` — linked
+the module to the tier4 path.
+
+`-project=` was never the problem, and this is worth stating flatly because it was
+the first hypothesis on both sides: `Unreal/CMakeLists.txt:341` has always passed
+an absolute one, `Build/Development/CMakeCache.txt` resolves
+`CARLA_SOURCE_DIR=/home/youtalk/src/carla-autoware-integration`, and the failing
+build log shows
+`-project=/home/youtalk/src/carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject`
+verbatim. The redirect happened *below* the flag, in cached actions the flag does
+not participate in. The tell that pointed at a stale cache, which §11.3 noticed
+but did not follow up: a no-op rebuild relinked the module **every single time**,
+because the integration-side output UBT was checking never got any newer.
+
+**The fix, in one invocation, touching no engine state:**
+
+```bash
+$UE/Engine/Build/BatchFiles/Linux/Build.sh CarlaUnrealEditor Linux Development \
+  -project=/home/youtalk/src/carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject \
+  -game -NoUBTMakefiles
+```
+
+`-NoUBTMakefiles` makes UBT re-gather instead of replaying the cached graph. The
+measured effect is unambiguous: the link scripts' tree references **flipped from
+12 `carla-autoware-native` / 1 `carla-autoware-integration` to 1 / 12**, all **6**
+files landed in `carla-autoware-integration` and **0** in `carla-autoware-native`.
+The regenerated cache is itself correct, so this is a one-time unstick and not a
+flag anyone has to keep passing: the ordinary documented target,
+`cmake --build Build/Development --target carla-unreal-editor`, was re-run
+afterwards and wrote **all 26** of its outputs into the integration tree
+(previously 20/6).
+
+**D8 was not spent again.** `engine.build_id` was captured before and after every
+attempt and held `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` on all 5 manifests
+throughout — no engine relink occurred, so this stayed inside the re-instated D8
+rather than being a second registered intervention. The tier4 tree was not
+disturbed either: `verify_tier4_artifact.sh` reports the identical
+`tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e`
+before and after.
+
+**Both gates now PASS.**
+
+```text
+scripts/e2e/verify_editor_artifact.sh                     -> exit 0
+  OK: editor plugin .so is newer than HEAD (1785785185 >= 1785781990)
+  OK: engine and Carla module BuildId agree (bc08ce19-f19c-46fe-808f-dbb2b0ddf41a)
+
+TIER4_TREE=~/src/carla-autoware-native benchmarks/scripts/verify_tier4_artifact.sh -> exit 0
+  OK: tier4 plugin artifacts are newer than every source ...
+  tier4_stale_ack=none
+```
+
+**The twin is verifiably in the artifact a live run loads** — checked by symbol
+table, not by mtime. The rebuilt
+`Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so`
+(2026-08-03 12:26:25) *defines* `carla::ros2::MakeExtensionHost` and
+`carla::ros2::TeardownExtensionEndpoints`, which proves it is the integration
+fork's own module rather than the tier4 one, and carries undefined references to
+`carla::ros2::BenchIncoreCloudInit` / `BenchIncoreCloudOnTick` — the in-core twin,
+resolved at load against `libcarla-ros2-native.so`.
+
+**Consequently `extension_carla_fork.sha` now advances** from `ae166d80d` to
+`5981f5168a0d87ffacddc4635f73e1373e185ad6`, and the `incore_twin_sha` /
+`incore_twin_status` scaffolding §11.4 introduced is retired — it existed only to
+hold the revision while the artifact did not contain it. §11.4's reasoning for
+*not* advancing the pin while the artifact was frozen still stands as written and
+is why the pin was never allowed to describe a build that did not exist.
+
+**CAL-seam is UNBLOCKED for collection** as far as artifact readiness goes. What
+§11.1 says about the instrument itself is unchanged, including the residual
+serializer confound that sits inside the measured delta.
+
+### 11.6 ALTERNATION HAZARD: the editor-module binding is shared and exclusive — only one tree at a time can refresh its Carla module
+
+Tested immediately after the §11.5 fix, because P4 will alternate cells A and B
+and this decides whether it can.
+
+A tier4 `cmake --build Build --target carla-unreal-editor` was run. It wrote the
+Carla editor module into the **integration** tree (`libUnrealEditor-Carla.so`
+mtime → 2026-08-03 12:43:45) and left the **tier4** artifact untouched at
+11:48:59. The link scripts' tree references stayed at 1 native / 12 integration.
+
+So the ownership established in §11.5 is **not** per-invocation and does **not**
+follow the tree you build from. It follows whichever tree last made UBT
+re-gather, it is shared across both trees, and it is exclusive: **only one tree's
+editor Carla module can be refreshable at a time.** Before the fix that tree was
+tier4 (which is exactly why cell A's artifact sat frozen from 2026-07-23); it is
+now the integration tree.
+
+**Cell A is fine and is what the campaign needs right now.** The integration
+artifact is current, both gates pass, and its content was checked by symbol table
+rather than mtime: it defines `carla::ros2::MakeExtensionHost` and
+`TeardownExtensionEndpoints` (so it is the integration fork's own module, not the
+tier4 one) and carries undefined references to `BenchIncoreCloudInit` /
+`BenchIncoreCloudOnTick` (the twin) and to `BlobCreatePublisher` / `BlobPublish`
+(the CycloneDDS blob path the twin and the seam share). Size 10 573 512, identical
+to what the integration-tree build produced at 12:26:25.
+
+**Cell B now carries the same latent trap cell A had, and must be told about
+it.** The tier4 artifact is frozen at 11:48:59 and a tier4 editor rebuild will not
+refresh it. That is **currently harmless and not a defect in any filed result**:
+`verify_tier4_artifact.sh` passes because the tier4 artifacts are newer than every
+tier4 source, `tier4_plugin_sha256=26f95dec…93c4e` is unchanged across this entire
+task, and the tier4 sources are pinned and not changing. But **any** future tier4
+source change will hit this identical trap and will do so silently — the build
+will report success and the artifact will not move.
+
+The remedy is symmetric: one `-NoUBTMakefiles` invocation naming the tier4
+`.uproject` flips ownership back. **Do not flip it speculatively** — doing so
+re-breaks cell A. Flip it only when a tier4 source change actually needs to reach
+an artifact, and flip it back afterwards. Since both trees' sources are pinned for
+P4, neither flip should be needed again during this campaign.
+
+**Answering the question P4 planning actually needs: is cell A collectable?
+YES.** Both gates pass, the twin is verifiably in the artifact a live run loads,
+`engine.build_id` held `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` across every attempt
+so D8 was not spent again, and no second engine-level intervention was needed or
+performed. Dropping CAL-seam/C1(a) and running P4 as a transport duel only is
+therefore **not** forced. For completeness, had the repair failed, cell A's gate
+could have been restored trivially by moving the fork branch pointer back to
+`ae166d80d` — the gate compares artifact mtime against `git show -s --format=%ct HEAD`
+— but that restores the gate by **removing the twin**, which is the same thing as
+dropping CAL-seam. There was no third option that kept both.
+
+### 11.7 MEASUREMENT DEFECT, found in review and fixed before any collection: the two CAL-seam twins published at opposite ends of the frame
+
+This is the defect that would have made C1(a) meaningless, and it was in the
+instrument from the moment the in-core twin was written until 2026-08-03. It was
+caught by review, not by a run, because no CAL-seam run has happened yet.
+
+**What was wrong.** The two halves of the pair were driven from opposite ends of
+the same engine frame:
+
+| twin | driven from | frame position |
+| --- | --- | --- |
+| `/bench/incore_cloud` | `ROS2::SetTimestamp` ← `UCarlaEpisode::TickTimers` | `FCarlaEngine::OnPreTick` |
+| `/bench/seam_cloud` | `ext_on_tick` ← `ROS2ExtensionLoader->Tick` | `FCarlaEngine::OnPostTick` |
+
+Between them, every frame: `WorldObserver.BroadcastTick`,
+`GetSensorManager().PostPhysTick(...)` — the entire per-frame sensor DDS
+publication burst, including cell A's ~921 KB LiDAR cloud — and
+`PublishROS2VehicleState`.
+
+**Why that is fatal rather than untidy.** The original comment in `ROS2.cpp`
+defended the placement on *cadence*, and on cadence it was right: both twins fire
+once per frame, and the fixed frame offset cancels cleanly in a one-hop
+`arrival − own stamp` latency. But cadence was the wrong property. What does
+**not** cancel is the differential queueing, transport-buffer and cache state
+created by a whole frame of bulk DDS writes sitting inside the paired delta. The
+quantity being isolated is a single indirect call across a C ABI — plausibly
+nanoseconds. The asymmetry wrapped around it was microseconds-to-milliseconds of
+~921 KB-class traffic. It could dominate the measurement outright, and C1(a)
+would then be reporting frame position while claiming to report seam cost.
+
+It also directly contradicted the instrument's own governing rule, stated at the
+top of `BenchIncoreCloudPublisher.cpp`: the two paths must differ **only** by the
+seam. And it was not in the residual-confound record — §11.1, the TU header and
+the fork commit message all recorded only the serializer difference. The confound
+that mattered more was the one nobody had written down.
+
+**The fix** (fork commit `783e29fbfc42176d826a46870f556c0b430c520b`). The drive
+moved out of `ROS2::SetTimestamp` and into `FCarlaEngine::OnPostTick`
+**immediately after** `ROS2ExtensionLoader->Tick(...)`, so the two publishes are
+microseconds and one indirect call apart. Construction stays in `ROS2::Enable` —
+that half was never the problem, and `Enable` is where the middleware and domain
+are latched.
+
+**Ordering is deliberate and is itself a measurement decision.** Two publishes on
+one thread cannot both go first, so a fixed order bias is unavoidable; what is
+avoidable is choosing the flattering direction. The **seam publishes first**, so
+it pays any cold-cache / first-writer cost and the in-core twin gets the warmed
+path. That biases the result **against** the seam being cheap, which is the
+harder-to-fool direction for a claim that the seam is cheap. Anyone who reorders
+those two lines is changing the measurement, and both the call site and the
+header say so.
+
+**Residual asymmetry, stated because it cannot be removed.** After this fix the
+two paths still differ by (a) the serializer implementation (§11.1), and (b) that
+fixed publish order. Both are now inside the instrument's documented confound set
+rather than undocumented.
+
+**A second, unrelated defect closed in the same commit: a silent-death path.**
+The in-core writer is registered in the *same* file-static `g_writers` registry
+the out-of-tree extension uses — a direct consequence of reusing
+`BlobCreatePublisher` to stay byte-identical to the seam path. `BlobTeardownAll()`
+swaps that registry out and deletes every writer in it, this one included, and
+nothing informs this publisher: `g_enabled` stays true, `Init()`'s idempotence
+guard refuses to recreate, and `BlobPublish` on the wiped handle returns `-1`
+forever. `/bench/incore_cloud` would go silently dead — indistinguishable from
+"the in-core path has no latency", which is the worst failure available to this
+instrument and the exact one its own comments call out.
+
+It cannot fire today: `TeardownExtensionEndpoints()` runs only from
+`~FCarlaEngine()`, at process teardown, when nothing ticks again. But
+`CarlaEngine.cpp` states that per-map-change endpoint teardown is "deliberately
+deferred to Tasks 12/13's endpoint lifecycle work" — someone is *expected* to
+move it, and the day they do, this dies at the first map change while looking
+healthy. Two mitigations, deliberately both rather than either: `OnTick()` now
+checks `BlobPublish`'s return and latches the instrument off with a loud one-shot
+error naming the cause, and a comment block at the top of the TU tells whoever
+moves the teardown to re-arm this writer. The comment is what survives when the
+code is edited by someone else.
+
+**Verification of the rebuild** (guardrails from the registered-relink ruling):
+
+- Engine BuildId **before and after**: `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` on
+  all 5 manifests, unchanged across both the fix rebuild and the post-commit
+  rebuild. **No relink; D8 remains intact and unspent for a second time.**
+- `scripts/e2e/verify_editor_artifact.sh` → exit 0: `.so` newer than HEAD
+  (`1785789045 >= 1785788873`), engine and Carla module BuildId agree.
+- `verify_tier4_artifact.sh` → exit 0, `tier4_stale_ack=none`,
+  `tier4_plugin_sha256` unchanged.
+- The rebuilt `libUnrealEditor-Carla.so` (13:30:45, 10 573 528 bytes) defines
+  `MakeExtensionHost` / `TeardownExtensionEndpoints` and references
+  `BenchIncoreCloudInit` / `BenchIncoreCloudOnTick`. The `OnTick` reference is
+  what proves the **moved** call site is compiled into the plugin module.
+
+### 11.8 The two twins put the SAME bytes on the wire — closed
+
+§11.1 recorded that the two twins use different serializer implementations
+(`rosidl_typesupport_fastrtps_cpp` on the extension side, the fork's
+`serialize_to_cdr` on the in-core side) and argued they emit the same wire
+format. Only the fork side had ever been measured. If they in fact emitted
+different-sized messages the twins would not be publishing the same thing and
+every CAL-seam number would be comparing unlike payloads, so the claim was
+closed by measuring both sides on the identical template message:
+
+| side | serializer | `row_step` | CDR bytes | overhead |
+| --- | --- | --- | --- | --- |
+| in-core (fork) | `carla::ros2::serialize_to_cdr` | 921 600 | **921 905** | 305 |
+| seam (extension) | `carla::autoware::cdr_serialize` (rosidl/fastrtps) | 921 600 | **921 905** | 305 |
+
+Identical byte counts, identical 305-byte overhead, and both report the same
+`dds_type_name` `sensor_msgs::msg::dds_::PointCloud2_` and the same RIHS01 hash
+`RIHS01_9198cabf7da3796ae6fe19c4cb3bdd3525492988c70522628af5daa124bae2b5`. The
+payload-identity leg of the pairing is therefore verified, not assumed. The
+serializer difference remains a residual confound in the sense that different
+*code* does the emitting, but it is now established that it produces an
+identically sized and identically typed message.
+
+### 11.9 PRE-REGISTERED: the CAL-seam publish-order bias, and the upper-bound reading rule for C1(a)
+
+**Filed 2026-08-03, before Task 10 collects a single CAL-seam run.** That timing
+is the point of this section, not an incidental detail: a rule for reading a
+number is only meaningful if it is fixed before the number exists. Deciding after
+seeing the data is the post-hoc move this campaign's no-peeking discipline exists
+to prevent, and §11.7's fix created exactly the kind of residual that invites it.
+
+**The confound.** After §11.7 moved the in-core twin adjacent to the seam twin,
+the two publish from the same thread microseconds apart — and the **seam goes
+first**: `FCarlaEngine::OnPostTick` drives `ROS2ExtensionLoader->Tick()` (inside
+which `/bench/seam_cloud` publishes) before `BenchIncoreCloudOnTick()`.
+
+Two publishes on one thread cannot both go first, so a fixed order bias is not
+removable. What *is* a choice is which way it points, and it was made
+deliberately: seam-first means the **seam** pays any cold-cache / first-writer
+cost — cold instruction and data cache, the first touch of the CycloneDDS write
+path that frame, whatever queue state the first writer of a pair encounters — and
+the in-core twin runs on the warmed path. The bias therefore runs **against** the
+hypothesis this instrument exists to support. A seam that still measures cheap
+under this ordering is a robust result; a seam that measures cheap under the
+opposite ordering would not be.
+
+**This is now the largest residual confound**, ahead of the serializer difference
+recorded in §11.1 — which §11.8 reduced to a difference of *code* rather than of
+*payload* (both sides emit an identical 921 905 bytes, same overhead, same type
+name, same RIHS01 hash). The full residual set for the CAL-seam pair is now
+exactly two items: publish order, and serializer implementation. Everything else
+the instrument controls is symmetric by construction.
+
+**THE PRE-REGISTERED RULE**
+
+> **If the measured seam cost lands on the order of a cache-warming effect,
+> `C1(a)` is reported as an UPPER BOUND, not a point estimate.**
+
+It binds whatever the data says. It is not conditional on the result being
+inconvenient, and it may not be revisited after the runs are in — that would
+convert it back into the post-hoc judgement it exists to replace.
+
+**Where this is recorded**, deliberately in four places so neither a code reader
+nor the wrap author can miss it, and so it survives any one of them being edited:
+
+| home | why |
+| --- | --- |
+| `LibCarla/source/carla/ros2/extension/BenchIncoreCloudPublisher.cpp`, residual-confound block | the code reader, and whoever might reorder the call sites |
+| `benchmarks/README.md`, `## Known confounds` → CAL-seam entry | the C1(a) confound record the wrap author consults |
+| `benchmarks/README.md`, `## Pre-registration` → `Amendments made so far:` | the campaign's canonical pre-registration ledger — this is what makes it *pre*-registered rather than merely written down |
+| this section | the evidence record, next to §11.7 which created the confound and §11.8 which bounded the other one |
+
+**Reordering the two call sites changes the measurement and invalidates this
+rule.** Both the call site in `CarlaEngine.cpp` and the header say so.
+
+**One correction folded in while writing this**, because it changes the C1(a)
+confound set and would otherwise mislead: the `## Known confounds` CAL-seam entry
+describes a per-publish `BuildPointFields(...)` allocation that the fork side
+alone carries, via `CarlaPointCloudPublisher::WritePointCloud`. **That confound
+does not apply to the twin as actually built.** It assumed the spec's design, in
+which the in-core publisher was a `CarlaPointCloudPublisher` subclass; the
+implemented twin deliberately is not one, because that is the Fast-DDS path and
+routing through it would have made the paired delta measure "Fast-DDS vs
+CycloneDDS plus the seam". The twin builds `fields` once in `MakeCloudTemplate()`
+and `OnTick()` never touches it — symmetric with the extension side's `msg_`.
+Verified in source: no reference to `CarlaPointCloudPublisher`,
+`BuildPointFields` or `WritePointCloud` in the twin's TU outside a single
+unrelated comment, and zero `fields` touches in the `OnTick` body. The original
+analysis is kept, not deleted: it correctly describes the base class and would
+apply again to any subclass-based revival.
