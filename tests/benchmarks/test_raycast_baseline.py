@@ -346,6 +346,73 @@ def test_client_survives_the_real_observer_truncation_and_teardown_flush(tmp_pat
         assert list(csv.reader(f))[0] == ["clock_ns", "arrival_system_ns"]
 
 
+def test_client_repairs_a_truncation_that_lands_inside_the_check_write_window(tmp_path):
+    """THE TOCTOU WINDOW, closed 2026-08-03 (P4 whole-branch review).
+
+    `write()` stats, decides, then appends -- and `O_APPEND` resolves the
+    offset at WRITE time, not at decision time. So a truncation landing
+    between the stat and the write puts a data row at offset 0 with no header
+    above it, and the shrink detection on the NEXT row then appends the header
+    AFTER that orphan. `csv.DictReader` reads the orphan as the field NAMES and
+    KeyErrors on every row: `clock_watchdog.newest_arrival_ns` goes permanently
+    None, the run is excluded `stall:clock`, and `finalize_rtf` leaves rtf at
+    the -1 sentinel so `sweep_verdict` raises "no valid rtf samples". That is
+    the exact C1 symptom the self-defending writer was built to prevent,
+    reintroduced through a narrower door -- roughly 1e-4 per run, and it fails
+    as a LOST run rather than a wrong number.
+
+    The window is exercised for real rather than argued about: the truncation
+    is driven from inside `_emit`, i.e. after the size check has already been
+    made and before the row reaches the file, which is precisely the interval
+    that cannot be reached by ordering calls from outside.
+    """
+    path = tmp_path / "clock.csv"
+    observer = RealBenchObserverClockFile(path)
+
+    with raycast_baseline.ClockCsvWriter(path) as writer:
+        writer.write(1_000_000_000, 1_700_000_000_000_000_000)
+        writer.write(1_050_000_000, 1_700_000_000_050_000_000)
+
+        real_emit = writer._emit
+        fired = []
+
+        def emit_with_a_truncation_racing_it(text):
+            # Fire ONCE, and only for a data row: the observer's step-6
+            # truncation is one-shot, and this models it landing after
+            # write()'s stat and before its append.
+            if not fired and not text.startswith("clock_ns"):
+                fired.append(text)
+                observer.construct()
+                assert path.stat().st_size == 0
+            real_emit(text)
+
+        writer._emit = emit_with_a_truncation_racing_it
+        writer.write(1_100_000_000, 1_700_000_000_100_000_000)
+        writer._emit = real_emit
+        assert fired, "the truncation never fired; the test is not exercising the window"
+
+        # Mid-run, which is when the watchdog looks and when the old failure
+        # became unrecoverable.
+        assert clock_watchdog.newest_arrival_ns(path) == 1_700_000_000_100_000_000
+        assert not writer.stood_down
+
+        writer.write(1_150_000_000, 1_700_000_000_150_000_000)
+
+    observer.destructor()
+
+    with open(path, newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["clock_ns", "arrival_system_ns"], (
+        "a data row landed above the header: the TOCTOU repair did not run, and "
+        "every consumer of this file now reads it as the field names"
+    )
+    clock_ns, arrival_ns = read_clock_csv(path)
+    # The raced row is not lost, and it is not duplicated either.
+    assert list(clock_ns) == [1_100_000_000, 1_150_000_000]
+    assert arrival_ns[-1] == 1_700_000_000_150_000_000
+    assert clock_watchdog.newest_arrival_ns(path) == 1_700_000_000_150_000_000
+
+
 def test_client_stands_down_when_the_observer_is_also_writing(tmp_path):
     """The other answer to the /clock question: if anything IS publishing
     /clock the observer is an active, per-row-flushed writer to this file, and
@@ -375,6 +442,136 @@ def test_client_stands_down_when_the_observer_is_also_writing(tmp_path):
     # The observer's own series is intact and is what the run gets scored from.
     clock_ns, _ = read_clock_csv(path)
     assert list(clock_ns)[:5] == [2_000_000_000 + i * 50_000_000 for i in range(5)]
+
+
+# --- The ablation arm boots WITHOUT --ros2, on both launchers --------------
+#
+# This is the arm's CENTRAL MECHANISM, not an optimisation (see either
+# launcher's ablation block and raycast_baseline's module docstring for the
+# 2026-08-03 measurement that forced it: with `--ros2` the server advertises a
+# publisher for a rig carrying no `ros_*` attributes, so "publishing disabled"
+# was not true, and the same boot emits /clock at 19.959 Hz into the very
+# clock.csv this arm's client must own).
+#
+# Until 2026-08-03 NO TEST PINNED IT -- `grep -rn -- --ros2 tests/` and
+# `grep -rn ROS2_ARGS tests/` were both empty. The failure mode if the flag is
+# ever re-added is WORSE than the one the fix removed, and it is worth being
+# precise about why: the observer becomes an active, per-row-flushed clock.csv
+# writer, `ClockCsvWriter`'s stand-down guard correctly YIELDS to it, the run
+# therefore SCORES NORMALLY off the observer's series -- and `B` silently
+# re-absorbs the whole transport layer the arm exists to subtract. A BIASED
+# NUMBER that renders cleanly, not a lost run.
+#
+# So these are execution pins, not text scans (this suite's binding rule --
+# tests/benchmarks/test_teardown.py's module docstring, six prior violations).
+# Each extracts the launcher's REAL editor-launch statement and runs it as real
+# bash with `nohup` replaced by a recorder, so the assertion is made against
+# the argv the launcher actually builds. A re-added flag changes that argv and
+# fails these, whatever route it takes into the line.
+
+
+def _record_editor_argv(snippet: str, tmp_path: Path, extra_env: dict) -> list[str]:
+    """Runs an extracted editor-launch statement for real, with `nohup` stubbed
+    by a shell function that writes its own argv one-per-line. `nohup` is
+    backgrounded with `&` in both launchers, so the stub runs in a subshell and
+    has to report through a file; `wait` is appended so the recording is
+    complete before this returns. `$!` still resolves, so the PID-file line the
+    statement ends with keeps working."""
+    argv_out = tmp_path / "argv.txt"
+    script = (
+        "set -uo pipefail\n"
+        'nohup() { printf "%s\\n" "$@" > "$BENCH_TEST_ARGV_OUT"; }\n'
+        f"{snippet}\n"
+        "wait\n"
+    )
+    env = dict(os.environ)
+    env["BENCH_TEST_ARGV_OUT"] = str(argv_out)
+    env["LAUNCH_LOG"] = str(tmp_path / "launch.log")
+    env["CARLA_PID_FILE"] = str(tmp_path / "carla.pid")
+    env["BENCH_MAP"] = "Town10HD_Opt"
+    env.update(extra_env)
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f"editor-launch snippet failed: {proc.stderr}"
+    assert argv_out.is_file(), f"the nohup stub never ran: {proc.stdout!r} {proc.stderr!r}"
+    return argv_out.read_text().splitlines()
+
+
+def _extract_tier4_editor_launch() -> str:
+    """`ROS2_ARGS=(--ros2)` down to the PID-file line -- the whole conditional
+    plus the invocation it feeds, so the arm's branch is what executes."""
+    text = (REPO_ROOT / "benchmarks" / "cells" / "tier4-native.sh").read_text()
+    start = "ROS2_ARGS=(--ros2)\n"
+    assert text.count(start) == 1, "ROS2_ARGS assignment is no longer unique in tier4-native.sh"
+    end = 'echo $! >"$CARLA_PID_FILE"\n'
+    i = text.index(start)
+    j = text.index(end, i)
+    return text[i : j + len(end)]
+
+
+def _extract_extension_ablation_editor_launch() -> str:
+    """The ablation branch's own editor invocation, down to its PID-file line.
+    The start anchor is unique to that branch; the normal path launches
+    run_e2e.sh instead and is a different statement entirely."""
+    text = (REPO_ROOT / "benchmarks" / "cells" / "extension.sh").read_text()
+    start = "nohup env ROS_DOMAIN_ID=0 \\\n"
+    assert text.count(start) == 1, (
+        "the ablation editor invocation is no longer uniquely anchored in "
+        "extension.sh; this test would be extracting some other statement"
+    )
+    end = 'echo $! >"$CARLA_PID_FILE"\n'
+    i = text.index(start)
+    j = text.index(end, i)
+    return text[i : j + len(end)]
+
+
+@pytest.mark.parametrize("is_ablation,expect_ros2", [("1", False), ("0", True)])
+def test_tier4_launcher_passes_ros2_only_off_the_ablation_arm(tmp_path, is_ablation, expect_ros2):
+    """Both arms, because only the pair pins the conditional: the ablation arm
+    must NOT get `--ros2` and every other arm MUST. Asserting the absence alone
+    would also pass if `--ros2` were deleted outright, which would silently
+    change what cell B measures."""
+    argv = _record_editor_argv(
+        _extract_tier4_editor_launch(),
+        tmp_path,
+        {
+            "BENCH_ARM_IS_ABLATION": is_ablation,
+            "EDITOR": "/nonexistent/UnrealEditor",
+            "UPROJECT": "/nonexistent/CarlaUnreal.uproject",
+            "BENCH_RPC_PORT": "2000",
+        },
+    )
+    assert "-game" in argv, f"the extracted statement is not the editor launch: {argv}"
+    assert ("--ros2" in argv) is expect_ros2, argv
+
+
+def test_extension_ablation_launcher_passes_no_ros2_flag_at_all(tmp_path):
+    """The extension family's ablation arm drops the extension `.so` with the
+    ROS 2 layer -- it IS the native publisher layer, so it belongs on the
+    `total` side. All three flags are asserted absent by prefix, so a re-added
+    `--rmw=...` or `--ros2-extension=<path>` cannot slip past an exact-string
+    check."""
+    argv = _record_editor_argv(
+        _extract_extension_ablation_editor_launch(),
+        tmp_path,
+        {"BENCH_CARLA_TREE": "/nonexistent/carla-tree"},
+    )
+    assert "-game" in argv, f"the extracted statement is not the editor launch: {argv}"
+    offenders = [a for a in argv if a.startswith(("--ros2", "--rmw"))]
+    assert offenders == [], (
+        f"the extension ablation arm's editor line carries {offenders}. That arm "
+        "is the publish-disabled baseline: with a ROS 2 layer the server stands "
+        "publishers up regardless of the sensor's attributes, so `B` re-absorbs "
+        "the transport `T - B` exists to subtract -- and the run still SCORES, "
+        "off the observer's clock series, producing a biased number rather than "
+        "a loud failure."
+    )
 
 
 def test_tier4_sensor_tick_matches_the_launchers_rotation_hz():

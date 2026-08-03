@@ -105,6 +105,12 @@ the destructor. So `ClockCsvWriter`:
     the better one anyway, and it feeds finalize_rtf and the watchdog exactly
     as on every other arm. Yielding is always safe; interleaving two byte
     streams in one file never is.
+  * re-checks the size AFTER the row lands (added 2026-08-03) and REBUILDS the
+    file if it shrank underneath. The three rules above stat, decide, then
+    append, and `O_APPEND` resolves the offset at write time -- so a truncation
+    landing in that window puts a data row at offset 0 and the next row's
+    shrink rule would re-assert the header AFTER it, which reproduces the
+    headerless-file failure exactly. Reported as `clock_toctou_repairs`.
 
 DISCLOSED RIG DIFFERENCES, beyond the RPC hop above. Each is stated with the
 direction it biases `T - B`, because a reader can only use the number if the
@@ -314,16 +320,34 @@ class ClockCsvWriter:
         file. STAND DOWN permanently rather than interleave two byte streams:
         the only writer that can do this is the observer with a live `/clock`,
         whose series is strictly better than ours anyway.
+      * SIZE SHRANK *WHILE THE ROW WAS BEING WRITTEN* -- the fourth rule, added
+        2026-08-03, because the three above have a TOCTOU window between them.
+        `write()` stats, decides, then appends, and `O_APPEND` resolves the
+        offset at WRITE time rather than at decision time; a truncation landing
+        in that interval puts a data row at offset 0 with no header above it,
+        and the shrink rule then re-asserts the header AFTER that orphan. The
+        file's first line is then a data row, `csv.DictReader` takes it as the
+        field NAMES, and every consumer KeyErrors: the watchdog's
+        `newest_arrival_ns` is permanently None, the run is excluded
+        `stall:clock`, and rtf stays at the -1 sentinel so `sweep_verdict`
+        raises "no valid rtf samples". That is the exact failure the three
+        rules above exist to prevent, reached through a narrower door. So the
+        size is re-checked AFTER the row lands, and a file that shrank
+        underneath is rebuilt (header + row) rather than appended to. Rare
+        (~1e-4 per run) and it costs a LOST run, never a wrong number -- which
+        is why it is repaired rather than stood down for.
 
-    `rows`, `header_reasserts` and `stood_down`/`stand_down_reason` are
-    reported in `raycast_baseline.json` so a run's own file records which of
-    these happened instead of it having to be inferred later.
+    `rows`, `header_reasserts`, `toctou_repairs` and
+    `stood_down`/`stand_down_reason` are reported in `raycast_baseline.json` so
+    a run's own file records which of these happened instead of it having to be
+    inferred later.
     """
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
         self.rows = 0
         self.header_reasserts = 0
+        self.toctou_repairs = 0
         self.stood_down = False
         self.stand_down_reason = ""
         self._expected_size = 0
@@ -389,8 +413,30 @@ class ClockCsvWriter:
         elif size > self._expected_size:
             self._stand_down(f"file is {size} bytes, {self._expected_size} written by this client")
             return
-        self._emit(f"{int(clock_ns)},{int(arrival_system_ns)}\n")
+        row = f"{int(clock_ns)},{int(arrival_system_ns)}\n"
+        self._emit(row)
         self.rows += 1
+        # TOCTOU: the size check above and this append are not atomic, and
+        # `O_APPEND` resolves the offset when the write happens rather than when
+        # the decision was made. If the observer's one-shot truncation landed in
+        # between, `row` is now sitting at offset 0 with no header above it --
+        # and re-asserting the header on the NEXT call would put it AFTER a data
+        # row, which is worse than the headerless file the shrink rule exists to
+        # repair (csv.DictReader would read the orphan as the field names). Both
+        # orderings are covered: a truncation that lands after this stat is
+        # caught by the pre-write check on the next call, with our row already
+        # gone.
+        after = self._observed_size()
+        if after is not None and after < self._expected_size:
+            # Truncate away the orphan rather than append around it: the file is
+            # smaller than what this client alone wrote, so there is nothing of
+            # anyone else's in it to destroy. Rebuilding keeps the invariant the
+            # whole class defends -- the header is always the first line.
+            self._f.truncate(0)
+            self._expected_size = 0
+            self._emit(CLOCK_HEADER)
+            self._emit(row)
+            self.toctou_repairs += 1
 
     def close(self) -> None:
         if self._f is not None:
@@ -657,6 +703,12 @@ def main(argv: list[str] | None = None) -> int:
             # flowing after all and the observer's series -- not this one -- is
             # what the run was scored from.
             "clock_header_reasserts": clock.header_reasserts,
+            # Non-zero means a truncation landed inside write()'s check/append
+            # window and the file was rebuilt (see ClockCsvWriter's fourth
+            # rule). Expected to be 0 on essentially every run; a run that
+            # reports one is not damaged, but it is the ~1e-4 race actually
+            # occurring and is worth knowing when reading that run's clock.csv.
+            "clock_toctou_repairs": clock.toctou_repairs,
             "clock_stood_down": clock.stood_down,
             "clock_stand_down_reason": clock.stand_down_reason,
             "sensor_callbacks": sink.count,
