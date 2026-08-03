@@ -412,8 +412,8 @@ cancels out of the delta. What must never be quoted is either topic's
 comparison of one of them against a genuinely sim-stamped cell's number.
 `cal_report.py` — which takes the direct arrival-minus-header-stamp
 difference, the right arithmetic for wall-stamped publishers — is NOT what step
-15 routes CAL-seam through, and its own first line still scopes it to
-`carla: none` cells. Whoever reads the first CAL-seam collection is reading
+15 routes CAL-seam through, and its own SCOPE paragraph still names it the
+renderer for every `carla: none` cell, "which today means CAL-rmw". Whoever reads the first CAL-seam collection is reading
 `report.py`'s output unless they deliberately do otherwise. Registered here
 rather than left to be noticed, because a wrong number that renders cleanly is
 not noticed.
