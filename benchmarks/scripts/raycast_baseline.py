@@ -111,10 +111,31 @@ direction it biases `T - B`, because a reader can only use the number if the
 direction is known:
   * The baseline spawns the top LiDAR only. Cell A's measured rig is LiDAR +
     IMU, and cell B's demo additionally spawns IMU, GNSS, vehicle_status and a
-    traffic-light camera. Their publish cost therefore lands inside `T - B`.
-    It is a per-run CONSTANT, independent of the sweep class, so it shifts the
-    intercept of transport-vs-class and not its slope -- which is what the
-    sweep reads.
+    traffic-light camera.
+
+    MAGNITUDE CORRECTED 2026-08-03 (P4 whole-branch review); the correction
+    is recorded rather than the sentence silently swapped, because the
+    understatement was in the campaign's favour. This entry used to read
+    "Their publish cost therefore lands inside `T - B`". That is too small by
+    a lot: those sensors are not spawned in `B` AT ALL, so their ENTIRE cost
+    lands in `T - B` -- spawn, per-tick simulation, RENDER and publish, not
+    only the publish half. On cell B that set includes a traffic-light
+    CAMERA, whose render pass is not transport by any reading of the word. So
+    `T - B` OVER-estimates transport with respect to the un-spawned sensor
+    set, in the opposite direction to the RPC-hop caveat above, and this is
+    the larger of the two terms.
+    The rescue is unchanged and is what makes the number usable: this whole
+    gap is a per-run CONSTANT, independent of the sweep class, so it shifts
+    the INTERCEPT of transport-vs-class and not the SLOPE -- and the slope is
+    what the sweep reads. Quoting a single cell's `T - B` as "the transport
+    cost" is what the constant forbids; reading how `T - B` grows with the
+    class is what it permits.
+    Strictly, `T - B` is a lower bound on the native transport cost only if
+    `H >= (R_T - R_B) + Ohm`, where `H` is the client-stream RPC hop this
+    baseline pays, `R_T`/`R_B` are the two rigs' raycast costs and `Ohm` is
+    the un-spawned sensors' whole-lifecycle cost. That inequality is asserted
+    nowhere and measured nowhere. It is stated here so the bound is not
+    quoted as if it had been established.
   * Cell B's demo applies `max_substep_delta_time=0.001, max_substeps=10`
     (patch 0003's `DEFAULT_SUBSTEP_CONFIG`); this client leaves CARLA's own
     physics-substepping defaults in place. With one stationary vehicle the

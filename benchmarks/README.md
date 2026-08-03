@@ -4300,6 +4300,89 @@ A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
   metric, threshold, margin, aggregation rule or scoring window is edited —
   (1) corrects a branch EXPECTATION (a diagnostic annotation, never a score),
   (2) and (3) add reading constraints and nothing else.
+- **2026-08-03 (P4 Task 7, recorded here by the whole-branch review) — the M4
+  ABLATION arm's reading rules are PRE-REGISTERED, not merely written down.**
+  The arm itself (`benchmarks/scripts/raycast_baseline.py`, plus the ablation
+  branch in both sweep launchers) landed with its rules in that module's
+  docstring and nowhere else — `grep raycast_baseline benchmarks/README.md`
+  returned nothing until this entry. By this campaign's own argument, which it
+  made about its own `C1(a)` rule five entries above, documenting a rule is not
+  the same as **pre**-registering it: what makes a reading rule binding is that
+  it is filed here, ahead of the data, where it cannot be adjusted to suit a
+  number. Filed before Task 10 collects a single ablation run. **The rules.**
+  `transport cost = total − baseline` is a **LOWER BOUND** with respect to the
+  client-stream RPC hop — a CARLA sensor only produces data while a client is
+  subscribed, so the baseline must `sensor.listen(...)` to raycast at all, and
+  that hop is work the native in-process publisher never does, inflating `B`.
+  It is simultaneously an **OVER-ESTIMATE** with respect to the un-spawned
+  sensor set: cell A's measured rig is LiDAR + IMU and cell B's demo also
+  spawns IMU, GNSS, vehicle_status and a traffic-light camera, none of which
+  the baseline spawns, so their **entire** cost — spawn, per-tick simulation,
+  render and publish, not merely their publish cost — lands inside `T − B`, and
+  on cell B that includes a camera render pass which is not transport by any
+  reading. (The module docstring understated this as "their publish cost" until
+  2026-08-03; corrected there too, with the correction recorded rather than
+  swapped in, because the understatement ran in the campaign's favour.) The two
+  errors have OPPOSITE sign and neither is measured, so `T − B` is strictly a
+  lower bound only if `H ≥ (R_T − R_B) + Ω` — `H` the RPC hop, `R_T`/`R_B` the
+  two rigs' raycast costs, `Ω` the un-spawned sensors' whole-lifecycle cost —
+  and that inequality is asserted nowhere. **What rescues the number, and the
+  rule that follows from it:** the whole gap is a per-run CONSTANT, independent
+  of the sweep class, so it shifts the **intercept** of transport-vs-class and
+  not the **slope** — and the slope is what the sweep reads. Therefore a single
+  cell's `T − B` may NOT be quoted as "the transport cost"; how `T − B` grows
+  with the class MAY be. Also registered: dropping `--ros2` from the ablation
+  boot (the arm's central mechanism, forced by measurement — the flag made the
+  server advertise a publisher for a rig with no `ros_*` attributes) can only
+  make `B` smaller, so `T − B` grows toward the quantity of interest rather
+  than past it, because the old form was subtracting transport from transport.
+  No metric, threshold, margin, aggregation rule or scoring window changes;
+  `config/margins.yaml`, `config/exclusions.md` and `benchmarks/analysis/**`
+  byte-identical.
+- **2026-08-03 (P4 Task 3, recorded here by the whole-branch review) —
+  teardown stops the GT collector AFTER the observer, and P3's pools are NOT
+  re-scored.** `benchmarks/scripts/teardown.sh` moves the GT collector's stop
+  off position 1 (alongside the clock watchdog) to position 3, after the
+  observer. This is a **scoring-comparability** decision and belongs here, not
+  only in that file's header where it has lived so far: it changes how
+  `duel_verdict._reconcile_run` scores `publisher_drop_rate` on every P4 static
+  run relative to every P3 one, so a reader comparing a P4 static number with a
+  P3 static number is comparing two teardown orders. **What it fixes:** "Cell
+  A's bench-harness control (Task 15b) finding #1" below measured that stopping
+  the GT collector — which writes `publisher_counts.json` — before the observer
+  — which writes `clock.csv`, the series `window.static_window` tops out at —
+  ends the publisher series ~1.051 s before the window's real top on
+  `results/A/run-001`, fabricating `publisher_drop_rate = 0.0213` on a
+  publisher that dropped nothing (984 expected, 963 published; the predicted
+  21-tick deficit equals the observed 21). It is inherited by all ten P3 static
+  pairs, cell A and cell B alike; the closed-loop arm is immune, its window
+  closing on ego position ~80 s before the run ends. **The decision that needs
+  registering: the P3 pools are NOT re-scored.** Filed evidence stays
+  untouched and the artefact is already disclosed in the P3 record, so this fix
+  protects P4's pools only — which means P4 static `publisher_drop_rate` values
+  are not comparable with P3's and Task 22's write-up must not present them as
+  one series. The frozen alternative (clamping the window to
+  `min(clock_wall.max(), publisher_end)` in `analysis/window.py`) was
+  unavailable because `analysis/**` is frozen, which is why the registered fix
+  is a teardown reordering rather than a scoring change. No metric, threshold,
+  margin or scoring-window DEFINITION changes; `config/margins.yaml`,
+  `config/exclusions.md` and `benchmarks/analysis/**` byte-identical.
+- **2026-08-03 (P4 Task 6, recorded here by the whole-branch review for ledger
+  completeness) — the class→sensor-arguments mapping is TOOLING for an
+  already-pre-registered branch and registers nothing new.** Both sweep
+  launchers gained a `case "$BENCH_CLASS_ID"` block deriving
+  `--lidar-channels` / `--lidar-pps` for `vlp16` and `32ch` from
+  `sweep_classes`' own `channels` / `points_per_second`; an explicit
+  `BENCH_TIER4_SWEEP_ARGS` / `BENCH_RUNNER_SWEEP_ARGS` still wins and an
+  unregistered id still refuses, `128ch` included. The `32ch` step-up BRANCH
+  and its trigger were pre-registered on 2026-07-30 (the sweep-reduction entry
+  above); this task only removed the hand-supplied environment that taking the
+  branch used to cost, so it is deliberately NOT filed as a new
+  pre-registration. It is filed so a reader auditing this ledger against the
+  tree finds the change accounted for instead of missing. The stale "has NO
+  owner now and the refusal stands until someone writes it" claim it left
+  behind in `config/cells.yaml` is annotated there. Nothing pre-registered is
+  amended; no frozen file is touched.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
