@@ -328,6 +328,40 @@ def test_check_args_skips_pacing_entirely(tmp_path, fake_repo):
     assert not pace_log.exists(), "--check-args run must write no pacing record"
 
 
+# --- Task 4 (P4 transport-sweep plan): cell B-cyc's registered transport ---
+# --- resolves by DEFAULT, the real run.sh code path ------------------------
+#
+# Unlike the --check-args pin just above (which drives duel.sh against a
+# STAND-IN run.sh -- see the module docstring's "NOT faithful" note), this
+# one drives the REAL benchmarks/run.sh directly: it is pinning run.sh's OWN
+# per-cell transport correction, not duel.sh's pacing around it, so the
+# stand-in would test nothing. --check-args is still what makes it cheap and
+# hermetic to run here (run.sh's own comment: "the last point before
+# anything touches the host" -- no preflight, no docker, no results/ write).
+
+RUN_SH = REPO / "benchmarks" / "run.sh"
+
+
+def test_bcyc_default_transport_is_row11():
+    """Cell B-cyc's registered transport is cyclone/off/none (P4 spec Task 4,
+    config/cells.yaml's B-cyc entry). run.sh must resolve it by DEFAULT --
+    with no --rmw/--dds-profile passed -- so `duel.sh A B-cyc`, which passes
+    IDENTICAL flags to both cells, still gives each cell its own registered
+    transport, exactly as the tier4-native family correction already does
+    for cell B (run.sh's `$CELL = "B-cyc"` branch, immediately after that
+    family block)."""
+    proc = subprocess.run(
+        ["bash", str(RUN_SH), "B-cyc", "--arm", "static", "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "rmw=rmw_cyclonedds_cpp" in proc.stdout, proc.stdout
+    assert "shm=off" in proc.stdout, proc.stdout
+
+
 # --- Task 2 (Amendment 2026-08-03): duel.sh must stamp --duel-id on every --
 # --- run.sh invocation it orders, derived from its OWN two cell args -------
 

@@ -287,6 +287,66 @@ cells:
       # escalating it to a duel-level confound.
       ladder_branch: absolute
       abs_pose_gate_m: 0.5
+  - id: B-cyc
+    approach: tier4-native
+    carla: 0.10-tier4
+    map: Town10HD_Opt
+    mandatory: true
+    # REGISTERED 2026-08-03 by the P4 transport-sweep plan (Task 4). The SAME
+    # tier4-native stack as cell B -- same fork, same launcher
+    # (cells/tier4_autoware.sh), same map/bundle -- registered under a
+    # DIFFERENT DDS transport: rmw_cyclonedds_cpp, SHM off, NO profile. This
+    # is the measured ROW-11 configuration in
+    # benchmarks/patches/tier4-native/README.md's transport matrix ("###
+    # Transport matrix (live fork, .../pointcloud_raw_ex)"): rows 5 and 10
+    # (cyclone + the harness's `lo`-pinned `cyclonedds.xml` profile) see
+    # NOTHING from the fork -- no topic-list entry, no echo, no rate -- so
+    # that harness default is unusable here. Row 11 (cyclone, NO profile) is
+    # the ONLY non-fastrtps configuration in which the fork is readable at
+    # all, and its own registered caveats -- it binds the host's ROUTABLE NIC
+    # rather than loopback, and Cyclone's discovery graph is FLAKY for
+    # bare-DDS publishers (that README's own words: "Do not use them") -- are
+    # INHERITED here as confound rows for this cell's results; they are not
+    # fixed by this registration. Cell B's own registration
+    # (rmw_fastrtps_cpp / SHM off / udp_only.xml) is UNTOUCHED by this entry.
+    #
+    # END-TO-END PRECEDENT: results/B/run-033 ran exactly this transport
+    # triple (manifest.json: transport.rmw=rmw_cyclonedds_cpp,
+    # shm_enabled=false, dds_profile_sha256="") as a deliberate one-off
+    # deviation probe on cell B (BENCH_TIER4_TRANSPORT_DEVIATION) -- armed,
+    # drove the closed-loop arm end to end, and measured ndt_rate_ratio 1.000
+    # (n=1, quality.json). B-cyc turns that probe into its OWN registered
+    # cell so the row-11 configuration can be duelled against cell A on equal
+    # footing: run.sh resolves this transport by DEFAULT for cell B-cyc (the
+    # same shape of per-cell correction the tier4-native family block already
+    # applies for cell B), and cells/tier4_autoware.sh's registered-transport
+    # refusal fails loudly on anything else for this cell.
+    arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      # Mirrored from cell B verbatim: same launcher, same live discovery
+      # (Task 13, 2026-07-30 -- see cell B's own comment above for the full
+      # derivation). observer_topics/B.yaml already carries this row, and
+      # observer_topics/B-cyc.yaml is a copy of that file, so it inherits it
+      # unchanged.
+      control_published_time_topic: /control/command/control_cmd/debug/published_time
+      cpu_process_label: carla-server
+      # Mirrored from cell B field-for-field: same launcher
+      # (cells/tier4_autoware.sh), same TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ
+      # arguments -- DDS transport is the ONLY axis this cell varies from B,
+      # and none of these three rates is a property of the transport. See
+      # cell B's own comment above for the sourcing.
+      tick_hz: 20.0
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: 10.0
+      # Mirrored from cell B: same launcher resolves the same
+      # map_defaults.sh bundle (town10_pcd_regen, the ladder's rung-2
+      # bundle), so the same branch applies. See cell B's own comment above
+      # for the measurement this rests on.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: C
     approach: extension
     carla: 0.10-fork

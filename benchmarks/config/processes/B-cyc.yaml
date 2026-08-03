@@ -1,0 +1,47 @@
+# M3 process map for cell B-cyc (tier4-native approach, Town10HD_Opt, the
+# row-11 cyclonedds transport).
+#
+# REGISTERED 2026-08-03 (Task 4, P4 transport-sweep plan) as a byte-for-byte
+# COPY of cell B's own processes/B.yaml (below, unmodified except for this
+# header): the process placement M3 measures is a property of the fork tree
+# and the launcher, not of the DDS transport, so it is identical between B
+# and B-cyc. See config/cells.yaml's B-cyc entry for the transport
+# derivation.
+#
+# Grounded in benchmarks/patches/tier4-native/README.md's verified boot
+# smoke ("Boot smoke" section) and docker/compose.yaml. Like cell A,
+# this runs the shared engine's UnrealEditor in -game mode -- there is
+# no packaged Shipping binary in this campaign for either UE5 tree.
+processes:
+  # UnrealEditor -game, tier4-native fork tree (pins.yaml
+  # tier4_carla_fork.path = ~/src/carla-autoware-native). The README's
+  # verified invocation:
+  #   .../UnrealEditor ~/src/carla-autoware-native/Unreal/CarlaUnreal/
+  #     CarlaUnreal.uproject Town10HD_Opt -game --ros2 -carla-rpc-port=... \
+  #     -RenderOffScreen -nosound
+  # The tree-path segment disambiguates from the extension fork, which
+  # uses the identical uproject filename in a sibling tree (see A.yaml).
+  - label: carla-server
+    pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  # No separate host-side "runner": the tier4 fork's own
+  # autoware_carla_interface (pulled in by simulator_type:=carla) spawns
+  # the ego and drives the bridge loop as a ROS node INSIDE the
+  # "autoware" container -- its cost is captured by that entry below,
+  # not by a host process. (Contrast cell A, where the extension's
+  # ego-spawn tool is a separate host-side python3 -m runner process.)
+  #
+  # PARTIALLY re-grounded in Task 8. benchmarks/cells/tier4-native.sh
+  # writes INJECTOR_ENABLED=1 and AW_CONTAINER=autoware into launch.env,
+  # and run.sh's step 8 docker-execs dummy_perception into that
+  # container -- so both entries below are what the orchestrator will
+  # address. What is still NOT grounded is the container itself: the
+  # tier4 Autoware stack is launched by Task 13's script (the
+  # BENCH_TIER4_DEMO hook), which is handed BENCH_AW_CONTAINER=autoware
+  # but has not been written. If Task 13 lands with a different name,
+  # correct BOTH this file and the launcher's AW_CONTAINER together.
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  # See A.yaml's "observer" entry: RE-GROUNDED in Task 8 --
+  # benchmarks/run.sh step 6 creates `--name bench-observer` for every
+  # cell, this one included.
+  - { label: observer, container: bench-observer }

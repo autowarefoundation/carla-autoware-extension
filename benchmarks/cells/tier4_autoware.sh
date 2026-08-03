@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The AUTOWARE half of the tier4-native cells (B, B-hf, B45, D) -- the
+# The AUTOWARE half of the tier4-native cells (B, B-hf, B45, D, B-cyc) -- the
 # BENCH_TIER4_DEMO hook benchmarks/cells/tier4-native.sh refuses to launch
 # without. Written by Task 13; the CARLA half stays in tier4-native.sh, which
 # has already booted the fork's editor and waited for its RPC port by the time
@@ -217,26 +217,62 @@ MAP_HOST="$HOME/autoware_map/$(basename "$MAP_DIR")"
 # --- BEGIN registered-transport refusal (pinned by tests/benchmarks/test_vector_map_gate.py)
 #
 # BENCH_TIER4_TRANSPORT_DEVIATION is the ONE way past this, and it exists for
-# ONE thing: a deliberate, non-duel deviation probe that measures this family
+# ONE thing: a deliberate, non-duel deviation probe that measures a cell
 # under a different middleware on purpose. It takes a REASON string rather than
 # a boolean, it is never set by run.sh or by any cell, and an empty value does
 # NOT unlock it -- an exported-but-empty variable must not read as a registered
-# reason. Any run that uses it is a deviation from cell B's registered
+# reason. Any run that uses it is a deviation from this cell's registered
 # transport, its manifest's `transport` block will not match cells.yaml's
 # registration, and it can never be duel data. Task 9's matrix (rows 5 and 10)
 # is why the refusal exists at all: with the lo-pinned Cyclone profile the
 # fork's topics are invisible to this stack; row 11 (cyclone, NO profile) is
-# the only non-fastrtps cell in which the fork is readable at all, and that one
-# works only via the host's routable NIC with a flaky graph, which is why the
-# README says not to use it for measurement.
+# the only non-fastrtps configuration in which the fork is readable at all, and
+# that one works only via the host's routable NIC with a flaky graph, which is
+# why the README says not to use it for measurement.
+#
+# TWO registered pairs now exist, keyed on BENCH_CELL, and they are OPPOSITE
+# rows of the same matrix: cell B needs the fastrtps/udp_only pair (rows
+# 2/4/9) that avoids rows 5/10 entirely; cell B-cyc (registered 2026-08-03,
+# Task 4 of the P4 transport-sweep plan) is the DELIBERATE exception that
+# measures row 11 anyway -- the only cyclone configuration the fork is
+# readable under at all -- with row 11's own caveats (routable-NIC binding,
+# flaky discovery graph for bare-DDS publishers) inherited as confound rows
+# for that cell's results, not fixed by registering it. config/cells.yaml's
+# B-cyc entry and run.sh's `$CELL = "B-cyc"` branch carry the full
+# derivation and the results/B/run-033 precedent; this block is only the
+# backstop that keeps either cell from silently running the other's pair (or
+# rows 5/10, which read as this stack the same way row 11 does but see
+# nothing).
 TIER4_TRANSPORT_DEVIATION="${BENCH_TIER4_TRANSPORT_DEVIATION:-}"
+if [ "$BENCH_CELL" = "B-cyc" ]; then
+  REGISTERED_RMW=rmw_cyclonedds_cpp
+  REGISTERED_PROFILE_DESC="none (no profile)"
+else
+  REGISTERED_RMW=rmw_fastrtps_cpp
+  REGISTERED_PROFILE_DESC="$UDP_ONLY"
+fi
 if [ -n "$TIER4_TRANSPORT_DEVIATION" ]; then
   echo "*** DEVIATION from cell $BENCH_CELL's registered transport, on purpose:"
   echo "***   reason : $TIER4_TRANSPORT_DEVIATION"
-  echo "***   rmw    : ${BENCH_RMW:-unset} (registered: rmw_fastrtps_cpp)"
-  echo "***   profile: ${BENCH_DDS_PROFILE:-none} (registered: $UDP_ONLY)"
+  echo "***   rmw    : ${BENCH_RMW:-unset} (registered: $REGISTERED_RMW)"
+  echo "***   profile: ${BENCH_DDS_PROFILE:-none} (registered: $REGISTERED_PROFILE_DESC)"
   echo "*** This run is NOT a cell-$BENCH_CELL run in the normal sense and must"
   echo "*** never be read as one. duel_admissible stays false."
+elif [ "$BENCH_CELL" = "B-cyc" ]; then
+  [ "${BENCH_RMW:-}" = "rmw_cyclonedds_cpp" ] ||
+    fail "cell $BENCH_CELL must run --rmw rmw_cyclonedds_cpp (got
+  BENCH_RMW=${BENCH_RMW:-unset}). This cell's registration (config/cells.yaml,
+  the P4 transport-sweep plan's Task 4) is the row-11 configuration -- any
+  other middleware is either cell B's own pair or one of the rows Task 9
+  measured as invisible to this stack (5/10)."
+  case "${BENCH_DDS_PROFILE:-none}" in
+    none | "") ;;
+    *)
+      fail "cell $BENCH_CELL needs no dds profile (got
+  BENCH_DDS_PROFILE=${BENCH_DDS_PROFILE}); row 11 is cyclone with NO profile --
+  a profile here (e.g. the harness's own lo-pinned cyclonedds.xml) reproduces
+  rows 5/10, which see nothing from the fork." ;;
+  esac
 else
   [ "${BENCH_RMW:-}" = "rmw_fastrtps_cpp" ] ||
     fail "cell $BENCH_CELL must run --rmw rmw_fastrtps_cpp --shm off (got

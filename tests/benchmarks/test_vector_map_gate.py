@@ -450,12 +450,12 @@ def _refusal_block() -> str:
     return matches[0]
 
 
-def _run_refusal(tmp_path: Path, rmw: str, profile: str, deviation: str | None):
+def _run_refusal(tmp_path: Path, rmw: str, profile: str, deviation: str | None, cell: str = "B"):
     script = tmp_path / "refusal.sh"
     dev = f'BENCH_TIER4_TRANSPORT_DEVIATION="{deviation}"\n' if deviation is not None else ""
     script.write_text(
         "set -euo pipefail\n"
-        f'BENCH_CELL=B\nBENCH_RMW="{rmw}"\nBENCH_DDS_PROFILE="{profile}"\n'
+        f'BENCH_CELL={cell}\nBENCH_RMW="{rmw}"\nBENCH_DDS_PROFILE="{profile}"\n'
         f'UDP_ONLY="/repo/benchmarks/observer/config/udp_only.xml"\n'
         + dev
         + f'fail() {{ printf "%s\\n" "$*" >>"{tmp_path}/fail.log"; exit 2; }}\n'
@@ -506,6 +506,57 @@ def test_an_empty_deviation_reason_does_not_unlock_it(tmp_path: Path):
     proc = _run_refusal(tmp_path, "rmw_cyclonedds_cpp", "none", "")
     assert proc.returncode != 0
     assert (tmp_path / "fail.log").exists()
+
+
+# ---------------------------------------------------------------------------
+# 3b. cell B-cyc's OWN registered pair (Task 4, P4 transport-sweep plan):
+# cyclone + NO profile -- the opposite pair from cell B's, keyed on the same
+# BENCH_CELL the refusal already requires. cell B's own four tests above
+# pass no `cell=` kwarg (default "B"), so they keep pinning cell B's pair
+# completely unaffected by this arm.
+# ---------------------------------------------------------------------------
+
+
+def test_the_bcyc_registered_pair_passes_the_refusal(tmp_path: Path):
+    proc = _run_refusal(tmp_path, "rmw_cyclonedds_cpp", "none", None, cell="B-cyc")
+    assert proc.returncode == 0, proc.stderr
+    assert not (tmp_path / "fail.log").exists()
+
+
+def test_bcyc_a_wrong_middleware_still_fails_loudly(tmp_path: Path):
+    """cell B's registered pair (fastrtps/udp_only) must NOT also pass for
+    B-cyc -- the two cells' registrations are opposite pairs on purpose, and
+    a refusal keyed on BENCH_CELL that fell through to "anything goes" for an
+    unrecognised cell would silently accept it."""
+    proc = _run_refusal(tmp_path, "rmw_fastrtps_cpp", REGISTERED, None, cell="B-cyc")
+    assert proc.returncode != 0
+    assert "rmw_cyclonedds_cpp" in (tmp_path / "fail.log").read_text()
+
+
+def test_bcyc_a_wrong_profile_still_fails_loudly(tmp_path: Path):
+    """The right middleware with a profile set (row 5/10's `cyclonedds.xml`,
+    the harness's own `lo`-pinned default) is still wrong for B-cyc: the
+    registration is cyclone with NO profile, and rows 5/10 are the
+    "sees NOTHING from the fork" rows this refusal exists to keep an operator
+    from reproducing by accident."""
+    proc = _run_refusal(
+        tmp_path, "rmw_cyclonedds_cpp", "/repo/benchmarks/docker/cyclonedds.xml", None, cell="B-cyc"
+    )
+    assert proc.returncode != 0
+    assert (tmp_path / "fail.log").exists()
+
+
+def test_bcyc_deviation_opt_in_allows_it_and_says_so(tmp_path: Path):
+    """The converse of B's own deviation pin: a deliberate deviation from
+    B-cyc's registered pair is still reachable through the SAME opt-in, and
+    still reports B-cyc's own registered values (cyclone/none), not B's."""
+    proc = _run_refusal(
+        tmp_path, "rmw_fastrtps_cpp", "none", "task4 bcyc deviation probe", cell="B-cyc"
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert not (tmp_path / "fail.log").exists()
+    assert "DEVIATION" in proc.stdout, proc.stdout
+    assert "rmw_cyclonedds_cpp" in proc.stdout, proc.stdout
 
 
 # ---------------------------------------------------------------------------

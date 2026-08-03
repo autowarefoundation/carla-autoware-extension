@@ -3807,6 +3807,40 @@ same as the current.'`), after which `/vehicle/status/velocity_status` measured
   identically.** The freeze protects scoring semantics, not metadata, and
   the legacy clause above is precisely what keeps the filed P3 (A, B)
   verdict's score untouched.
+- **2026-08-03 (Task 4 of the P4 transport-sweep plan) — cell B-cyc
+  registered: the SAME tier4-native stack as cell B, under the row-11
+  cyclonedds transport instead of B's fastrtps/udp_only pair.** `config/
+cells.yaml` gains a `B-cyc` entry (`approach: tier4-native`, `mandatory:
+true`, `arms: [static, closed-loop]`) whose `metrics` block is IDENTICAL to
+  cell B's, field for field — B-cyc is the same fork tree, same launcher
+  (`cells/tier4_autoware.sh`), same bundle, differing only in DDS transport,
+  so every metric binding (topics, rates, process label, ladder branch) is
+  unaffected by which transport carries them. `config/observer_topics/
+B-cyc.yaml` and `config/processes/B-cyc.yaml` are byte-for-byte copies of
+  B's own files (header comments updated only), including B's already-present
+  `control_published_time_topic` / `published_time` observer row, inherited
+  unchanged — Task 5 must not re-add it. `run.sh` gains a per-cell transport
+  correction (`$CELL = "B-cyc"`, immediately after the existing tier4-native
+  family correction) that resolves `rmw_cyclonedds_cpp` / SHM off / no
+  profile by DEFAULT, the measured row-11 configuration
+  (`benchmarks/patches/tier4-native/README.md`'s transport matrix; rows
+  5/10, the harness's `lo`-pinned cyclone default, see NOTHING from the
+  fork), while an explicit `--rmw`/`--dds-profile` still wins, exactly as
+  for the existing family correction. `cells/tier4_autoware.sh`'s
+  registered-transport refusal block (pinned by
+  `tests/benchmarks/test_vector_map_gate.py`) now keys on `BENCH_CELL`
+  rather than assuming cell B unconditionally: B keeps its fastrtps/udp_only
+  requirement byte-identical, B-cyc requires cyclonedds/no-profile, and
+  `BENCH_TIER4_TRANSPORT_DEVIATION` still opts out of either pair for a
+  deliberate probe, unchanged in semantics. `results/B/run-033` — a
+  one-off cyclonedds deviation probe on cell B (`ndt_rate_ratio ≈ 1.000`,
+  n=1) — is the end-to-end precedent this registration turns into a regular,
+  duellable cell rather than a one-off; row 11's own caveats (routable-NIC
+  binding, flaky discovery graph for bare-DDS publishers) are inherited here
+  as confound rows for B-cyc's results, not fixed by registering it. Cell
+  B's own registration is untouched by this entry. `config/margins.yaml`,
+  `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
+  frozen file touched.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

@@ -257,6 +257,18 @@ def test_bridge_cells_register_the_rate_their_own_config_can_actually_emit(doc, 
     assert metrics["lidar_expected_hz"] == tick_hz / math.ceil(tick_hz / freq_hz)
 
 
+def test_bcyc_metrics_mirror_cell_b(doc):
+    """Cell B-cyc (Task 4, P4 transport-sweep plan) is the SAME tier4-native
+    stack as cell B -- same fork, same launcher (cells/tier4_autoware.sh),
+    same map/bundle -- registered under a DIFFERENT DDS transport (row-11
+    cyclone rather than B's fastrtps/udp_only). Transport is resolved by
+    run.sh's per-cell correction and enforced by cells/tier4_autoware.sh's
+    registered-transport refusal, neither of which lives in this metrics
+    block, so every metric BINDING here (topics, rates, process label,
+    ladder branch) must be identical to cell B's, field for field."""
+    assert cell_info.metrics_for(doc, "B-cyc") == cell_info.metrics_for(doc, "B")
+
+
 def test_the_two_bridge_cells_do_not_share_a_rate(doc):
     """E is PATCHED to 20 Hz on /pointcloud_raw_ex; E0 is the AS-SHIPPED image on
     /pointcloud_before_sync. Copying either cell's rate onto the other is the

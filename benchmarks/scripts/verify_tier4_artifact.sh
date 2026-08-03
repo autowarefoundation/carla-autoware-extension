@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Artifact-staleness gate and tree-identity recorder for the tier4-native cell
-# family -- cells B, B-hf, B45 and D (benchmarks/cells/tier4-native.sh:2).
+# family -- cells B, B-hf, B45, D and B-cyc (benchmarks/cells/tier4-native.sh:2).
+# B-cyc (registered 2026-08-03, Task 4 of the P4 transport-sweep plan) is the
+# same fork tree as B under a different DDS transport, so it is gated
+# identically -- the artifact staleness this script guards against is a
+# property of the tree, not of the transport.
 #
 #   TIER4_TREE=~/src/carla-autoware-native bash verify_tier4_artifact.sh
 #

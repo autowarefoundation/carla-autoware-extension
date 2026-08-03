@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Cell launcher: approach `tier4-native` (cells B, B-hf, B45, D).
+# Cell launcher: approach `tier4-native` (cells B, B-hf, B45, D, B-cyc -- the
+# last registered 2026-08-03, Task 4 of the P4 transport-sweep plan, as the
+# SAME family under a different DDS transport; nothing in this file's boot
+# sequence is transport-specific, so it needed no code change here, only the
+# registration in config/cells.yaml and the transport resolution in run.sh /
+# cells/tier4_autoware.sh).
 #
 #   bash benchmarks/cells/tier4-native.sh plan   # resolve + validate, no boot
 #   bash benchmarks/cells/tier4-native.sh up     # plan, then boot + wait ready

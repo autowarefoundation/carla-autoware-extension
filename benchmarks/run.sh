@@ -298,6 +298,27 @@ do_run() {
     DDS_PROFILE="$BENCH/observer/config/udp_only.xml"
     echo "      transport: -> $RMW, shm $SHM, $DDS_PROFILE (required for the $approach family)"
   fi
+
+  # Cell B-cyc's REGISTERED transport overrides the family requirement above:
+  # rmw_cyclonedds_cpp, SHM off, NO profile -- the measured row-11
+  # configuration (benchmarks/patches/tier4-native/README.md's transport
+  # matrix; rows 5/10: the harness's `lo`-pinned cyclone default sees NOTHING
+  # from the fork). Registered 2026-08-03 (P4 transport-sweep plan, Task 4);
+  # results/B/run-033 -- a deliberate one-off deviation probe on cell B -- is
+  # the end-to-end precedent this cell's own registration turns into a
+  # regular, duellable configuration (config/cells.yaml's B-cyc entry has the
+  # full derivation, including the caveats row 11 inherits rather than
+  # fixes). An EXPLICIT --rmw/--dds-profile still wins, same as the
+  # tier4-native block above, and cells/tier4_autoware.sh refuses anything
+  # but this pair for BENCH_CELL=B-cyc, so a deliberate wrong choice fails
+  # loudly instead of being measured.
+  if [ "$CELL" = "B-cyc" ] && [ "$RMW_EXPLICIT" = "0" ] &&
+    [ "$DDS_PROFILE_EXPLICIT" = "0" ]; then
+    RMW=rmw_cyclonedds_cpp
+    SHM=off
+    DDS_PROFILE=none
+    echo "      transport: -> $RMW, shm $SHM, none (registered for cell $CELL)"
+  fi
   [ -n "$CLASS_ID" ] && echo "      class=$CLASS_ID $(json_field "$cell_json" points_per_second) pts/s"
 
   window_arm="$ARM"
