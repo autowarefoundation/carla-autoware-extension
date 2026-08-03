@@ -1031,6 +1031,86 @@ def test_launch_autoware_sh_sidecar_settles_on_the_post_exec_cmdline(tmp_path, p
         proc.wait(timeout=5)
 
 
+# --- Task 3 (P4 spec 1f): GT collector stops AFTER the observer -----------
+
+
+def test_gt_collector_stops_after_the_observer():
+    """README finding ("The static arm's windowed M2 reconciliation charges
+    a teardown-ordering gap to the publisher", benchmarks/README.md :3793):
+    `window.static_window` sets the window's upper bound to
+    `clock_wall.max()` (the observer's LAST /clock sample, written by
+    bench_observer, which flushes only once teardown SIGINTs it -- run.sh
+    step 6's own comment: "teardown sends SIGINT, and only rclcpp's own
+    handler makes spin() return so the CSV buffers flush"). The OLD order
+    stopped the GT collector (writes publisher_counts.json) BEFORE that
+    SIGINT, so the publisher series ended ~1.051 s before the window's top
+    on `results/A/run-001`, fabricating `publisher_drop_rate = 0.0213` on a
+    publisher that dropped nothing (984 expected, 963 published, 21-tick
+    deficit; the predicted 21 equals the observed 21). Inherited by all ten
+    P3 static pairs, cell A and cell B alike. The frozen analysis/window.py
+    fix variant (clamp the window to `min(clock_wall.max(), publisher_end)`)
+    is not available (analysis/** is frozen); reversing the two teardown
+    stops is the registered smaller fix, and it does not re-break the flush
+    ordering run.sh step 6 already paid for: `stop_container` still SIGINTs
+    the observer and blocks (up to 15 s) until it exits before this test's
+    GT-collector anchors may run, so nothing here skips the wait the README
+    itself credits.
+
+    The clock watchdog still stops FIRST -- its stall detection reads
+    clock.csv growth (unaffected: growth already stopped once the run's own
+    scoring window closed, well before teardown runs) -- and the resource
+    sampler still stops LAST, so its own container cost is sampled right up
+    to its shutdown.
+
+    Anchor note: the originally-proposed pin compared
+    `text.index("SIGINT") < text.index("benchmarks.scripts.collect_gt")`,
+    but "SIGINT" is NOT unique in this file -- it also names the header's
+    rationale prose (:11), `stop_container`'s own "SIGINT container" log
+    line (:73), and the tier4-native case's ordering comments (:264, :267)
+    -- and its FIRST occurrence is the :11 header comment, which sits above
+    every stop call regardless of the real order below. That comparison
+    would pass identically whether or not this fix was ever made -- a pin
+    that passes for the wrong reason. Anchored instead on the literal,
+    single-occurrence STATEMENTS themselves, with `.count(...) == 1`
+    asserted for each so a future duplicate cannot silently defeat this pin.
+    Source order is execution order for this stretch of teardown.sh: it is
+    flat, unconditional bash (module load only sources launch.env/host_pids,
+    no loop or function indirection reorders these calls at runtime)."""
+    text = TEARDOWN.read_text()
+    watchdog_stop = 'stop_pid "${WATCHDOG_PID:-}" "clock watchdog"'
+    observer_stop = 'stop_container "$OBSERVER_CONTAINER"'
+    gt_pid_stop = 'stop_pid "${GT_PID:-}" "gt collector"'
+    gt_container_stop = "benchmarks.scripts.collect_gt"
+    sampler_stop = 'stop_pid "${SAMPLER_PID:-}" "resource sampler"'
+    for anchor in (watchdog_stop, observer_stop, gt_pid_stop, gt_container_stop, sampler_stop):
+        assert text.count(anchor) == 1, f"anchor no longer unique, pin is unsound: {anchor!r}"
+
+    assert text.index(watchdog_stop) < text.index(observer_stop), (
+        "the clock watchdog must still stop FIRST -- its stall detection "
+        "reads clock.csv growth, which only stops once the observer does"
+    )
+    # The property this task exists to establish: BOTH halves of "stop the
+    # GT collector" (the host-side stop_pid that is the real kill for cells
+    # A/B/B-cyc, where GT_OUT_DIR != "/out" so the pkill fallback below never
+    # fires; and the container-side pkill fallback that is the real kill for
+    # bridge cells, where GT_OUT_DIR == "/out") now sit AFTER the observer's
+    # SIGINT+flush wait, not before it.
+    assert text.index(observer_stop) < text.index(gt_pid_stop), (
+        "GT_PID must stop AFTER the observer -- moving it back before the "
+        "observer reintroduces the README's fabricated publisher_drop_rate"
+    )
+    assert text.index(observer_stop) < text.index(gt_container_stop), (
+        "the container-side collect_gt pkill fallback must also stop AFTER "
+        "the observer, for the same reason"
+    )
+    assert text.index(gt_pid_stop) < text.index(sampler_stop), (
+        "the resource sampler must still stop LAST"
+    )
+    assert text.index(gt_container_stop) < text.index(sampler_stop), (
+        "the resource sampler must still stop LAST"
+    )
+
+
 def test_launch_autoware_sh_sidecar_write_is_best_effort(tmp_path):
     """launch_autoware.sh's own best-effort pin, matching D2's requirement
     ("never allowed to fail the launch") the way
