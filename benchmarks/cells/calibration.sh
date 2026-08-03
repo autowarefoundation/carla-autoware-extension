@@ -26,6 +26,32 @@
 # only the fork-side twin was ever missing. The refusal is kept exactly as it
 # is -- a launcher that quietly came up for a struck cell would file a run
 # nothing is going to score.
+#
+# REINSTATED 2026-08-03 by the owner (P4 transport-sweep plan, spec decision
+# 6), on the D8 lift that makes the fork-side twin publisher buildable (Task
+# 9: LibCarla/source/carla/ros2/ROS2.cpp, gated on
+# $CARLA_BENCH_INCORE_CLOUD=1). The paragraph above (":14-30") is UNEDITED --
+# present tense, "is now PERMANENT", "is kept exactly as it is" and all -- it
+# stays the true record of what the 2026-07-30 author asserted, and this
+# reinstatement does not get to revise it. Read from here rather than
+# corrected up there: "permanent" was true of the owner's 2026-07-30
+# decision, not a prediction this note falsifies -- the owner made a NEW
+# decision, on new evidence (the twin is now buildable), rather than the old
+# one turning out wrong. That decision's own grounding, worth stating because
+# the paragraph above does not draw the conclusion itself: the refusal's
+# proximate cause was always the missing fork-side twin (the paragraph names
+# it -- "only the fork-side twin was ever missing"), so its becoming
+# buildable is what gave the owner grounds to revisit a decision the
+# paragraph never claimed was irrevocable. CAL-seam now boots the extension
+# fork editor WITHOUT Autoware (cells/extension.sh's recipe,
+# scripts/e2e/run_e2e.sh with WITH_AUTOWARE=0), with both bench publishers
+# enabled via $CARLA_BENCH_SEAM_CLOUD=1 and $CARLA_BENCH_INCORE_CLOUD=1
+# exported into the editor's own environment -- see the `CAL-seam` branch
+# below, which reuses the same launch.env / pidfile / teardown plumbing that
+# family uses (APPROACH="extension" selects teardown.sh's graceful
+# CARLA_PID_FILE case) and sets ARM_ENABLED="0": CAL-seam is a
+# transport/serialization calibration, not a drive, so nothing is armed and
+# no ground truth is collected (GT_ENABLED="0").
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_ARM:?}"
@@ -47,12 +73,155 @@ fail() { echo "LAUNCH FAIL (calibration/$BENCH_CELL): $*" >&2; exit 2; }
 # plan
 # --------------------------------------------------------------------------
 if [ "$BENCH_CELL" = "CAL-seam" ]; then
-  fail "CAL-seam's seam/in-core publisher pair is Task 14 (CAL-seam publisher
-  pair) and has not been written: no process to launch, and
-  config/observer_topics/CAL-seam.yaml is deliberately empty for the same
-  reason. The cell was STRUCK 2026-07-30 by the owner's core-duel scope cut,
-  which took Task 17 with it, so nothing will run it and C1(a) seam overhead
-  stays UNMEASURED."
+  : "${BENCH_MAP:?}" "${BENCH_RPC_PORT:?}" "${BENCH_ROUTE_FILE:?}" "${BENCH_CARLA_TREE:?}"
+
+  EXT_SO="$BENCH_REPO/extension/build/libcarla-autoware-extension.so"
+  CARLA_PID_FILE="$BENCH_RUN_DIR/run_e2e.pid"
+  READY_TIMEOUT_S=420 # booting an UnrealEditor, not a docker container -- CAL-rmw's 60s above does not apply here.
+
+  # Same disagreement cells/extension.sh refuses: run_e2e.sh hardcodes RPC
+  # port 2000 in both the editor invocation and its own port_bound() probe.
+  [ "$BENCH_RPC_PORT" = "2000" ] ||
+    fail "CAL-seam runs on RPC port 2000: scripts/e2e/run_e2e.sh hardcodes it
+    (editor invocation + port_bound()). Parameterise run_e2e.sh before using
+    --rpc-port $BENCH_RPC_PORT here."
+
+  [ -f "$EXT_SO" ] ||
+    fail "extension .so missing: $EXT_SO (build extension/ first)"
+  [ -d "$BENCH_CARLA_TREE" ] ||
+    fail "extension CARLA fork tree missing: $BENCH_CARLA_TREE (pins.yaml extension_carla_fork.path)"
+  [ -f "$BENCH_ROUTE_FILE" ] ||
+    fail "route file missing: $BENCH_ROUTE_FILE"
+
+  # The GT client is used here ONLY as a bring-up READINESS PROBE (CARLA
+  # reachable, ego spawned) -- GT_ENABLED="0" below, so it never collects
+  # ground truth. Same interpreter requirement as cells/extension.sh: it must
+  # be able to import the extension fork's own 0.10 client wheel.
+  GT_PYTHON="${BENCH_GT_PYTHON:-$HOME/carla-venv/bin/python3}"
+  [ -x "$GT_PYTHON" ] ||
+    fail "GT interpreter not executable: $GT_PYTHON (set BENCH_GT_PYTHON)"
+  "$GT_PYTHON" -c "import carla" >/dev/null 2>&1 ||
+    fail "GT interpreter $GT_PYTHON cannot import carla (set BENCH_GT_PYTHON to
+    an interpreter with the extension fork's 0.10 client wheel installed)"
+
+  # Spawn pose from the shared route file (cell A's Town10HD_Opt.yaml).
+  # CAL-seam measures transport, not driving, so pose accuracy is
+  # irrelevant -- only a ticking world with a spawned ego is needed to drive
+  # ext_on_tick (extension/src/ExtensionInit.cpp) and the fork's in-core twin
+  # (LibCarla/source/carla/ros2/ROS2.cpp).
+  SPAWN_ARGS="$(BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" python3 - <<'PY'
+import os
+
+import yaml
+
+route = yaml.safe_load(open(os.environ["BENCH_ROUTE_FILE"]))
+pose = route.get("spawn_pose")
+index = route.get("spawn_index")
+if index is not None:
+    print(f"--spawn-index {int(index)}")
+elif pose:
+    print(f"--initial-pose {pose['x']} {pose['y']} {pose['z']} 0 0 {pose['yaw_deg']}")
+else:
+    raise SystemExit("route file has neither spawn_index nor spawn_pose")
+PY
+  )" || fail "could not derive the spawn pose from $BENCH_ROUTE_FILE"
+
+  cat >"$BENCH_LAUNCH_ENV" <<EOF
+# Written by benchmarks/cells/calibration.sh ($MODE) -- CAL-seam branch.
+LAUNCH_CELL="$BENCH_CELL"
+# APPROACH is teardown.sh's case-select key (extension|tier4-native|
+# python-bridge), NOT cells.yaml's own \`approach: calibration\` -- that stays
+# the authoritative record everywhere else (the manifest writer and
+# preflight.sh both read cells.yaml directly, not this file). CAL-seam boots
+# and tears down through the IDENTICAL run_e2e.sh + CARLA_PID_FILE mechanism
+# the "extension" family uses, so selecting that teardown case here is the
+# correct reuse, not a misclassification.
+APPROACH="extension"
+LAUNCH_MAP="$BENCH_MAP"
+LAUNCH_ARM="$BENCH_ARM"
+RUN_MODE="editor-game"
+CARLA_TREE="$BENCH_CARLA_TREE"
+CARLA_RPC_PORT="$BENCH_RPC_PORT"
+CARLA_PID_FILE="$CARLA_PID_FILE"
+LAUNCH_LOG="$LAUNCH_LOG"
+AW_CONTAINER=""
+AW_EXEC=""
+AW_SETUP=""
+AW_COMPOSE=""
+# No Autoware, so no ground truth comparison and nothing to arm or inject
+# into -- CAL-seam is a transport/serialization calibration, not a drive.
+GT_ENABLED="0"
+GT_CMD=""
+GT_OUT_DIR=""
+GT_COUNT_LIDAR="0"
+INJECTOR_ENABLED="0"
+ARM_ENABLED="0"
+EXTRA_CONTAINERS=""
+SPAWN_ARGS="$SPAWN_ARGS"
+EOF
+
+  if [ "$MODE" = "plan" ]; then exit 0; fi
+  [ "$MODE" = "up" ] || fail "unknown mode $MODE (expected plan|up)"
+
+  mkdir -p "$BENCH_RUN_DIR"
+
+  # Both bench publishers live INSIDE the same UnrealEditor process
+  # run_e2e.sh execs -- the extension's C-ABI-seam publisher
+  # (extension/src/publishers/BenchCloudPublisher.{h,cpp}, gated on
+  # CARLA_BENCH_SEAM_CLOUD) and the fork's in-core twin
+  # (LibCarla/source/carla/ros2/ROS2.cpp, gated on CARLA_BENCH_INCORE_CLOUD)
+  # -- so both env vars must be present in run_e2e.sh's own environment, not
+  # just this shell's. WITH_AUTOWARE=0 is explicit rather than relied-on
+  # default: run_e2e.sh's own header documents that as "original CARLA+
+  # runner smoke behaviour (no Autoware), for extension-only publisher
+  # checks" -- exactly this cell's shape. ROS_DOMAIN_ID=0 is passed
+  # explicitly for the same reason cells/extension.sh does: a login shell
+  # exporting a nonzero domain must not silently split CARLA and the runner.
+  (
+    cd "$BENCH_REPO"
+    MAP="$BENCH_MAP" \
+    WITH_AUTOWARE=0 \
+    ROS_DOMAIN_ID=0 \
+    ROUTE_FILE="$BENCH_ROUTE_FILE" \
+    CARLA_ROOT="$BENCH_CARLA_TREE" \
+    CARLA_UNREAL_ENGINE_PATH="${CARLA_UNREAL_ENGINE_PATH:-$HOME/src/UnrealEngine}" \
+    CARLA_BENCH_SEAM_CLOUD=1 \
+    CARLA_BENCH_INCORE_CLOUD=1 \
+    RUNNER_EXTRA_ARGS="$SPAWN_ARGS" \
+      nohup bash scripts/e2e/run_e2e.sh >"$LAUNCH_LOG" 2>&1 &
+    echo $! >"$CARLA_PID_FILE"
+  )
+
+  # Same readiness definition as cells/extension.sh: a CARLA the GT client
+  # can reach, with the ego spawned -- used here purely as a bring-up probe
+  # (GT_ENABLED="0" above), not to collect ground truth.
+  echo "waiting up to ${READY_TIMEOUT_S}s for CARLA + ego (log: $LAUNCH_LOG)"
+  deadline=$((SECONDS + READY_TIMEOUT_S))
+  until PYTHONPATH="$BENCH_REPO" "$GT_PYTHON" - "$BENCH_RPC_PORT" >/dev/null 2>&1 <<'PY'
+import sys
+
+import carla
+
+from scripts.e2e.collect_gt import find_ego
+
+client = carla.Client("localhost", int(sys.argv[1]))
+client.set_timeout(5.0)
+world = client.get_world()
+world.wait_for_tick()
+find_ego(world, attempts=1, delay_s=0.0)
+sys.exit(0)
+PY
+  do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      fail "CARLA/ego not ready within ${READY_TIMEOUT_S}s (see $LAUNCH_LOG)"
+    fi
+    if ! kill -0 "$(cat "$CARLA_PID_FILE")" 2>/dev/null; then
+      fail "run_e2e.sh exited during bring-up (see $LAUNCH_LOG)"
+    fi
+    sleep 5
+  done
+  echo "OK: CARLA up on port $BENCH_RPC_PORT with both bench publishers enabled (/bench/seam_cloud, /bench/incore_cloud)"
+  exit 0
 fi
 [ "$BENCH_CELL" = "CAL-rmw" ] || fail "cell $BENCH_CELL is not a calibration cell"
 

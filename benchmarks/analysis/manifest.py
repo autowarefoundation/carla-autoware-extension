@@ -127,6 +127,41 @@ class RunManifest:
     # through the one path this field exists to close.
     duel_admissible: bool = False
 
+    # WHICH duel a `duel_admissible=True` run pools into (Amendment
+    # 2026-08-03, Task 2 of the P4 transport-sweep plan). `duel_admissible`
+    # answers "is this run duel data at all?"; this answers the separate
+    # question "which duel's admission pool does it belong to?" -- two
+    # fields for two questions, same rationale as `duel_admissible`'s own
+    # comment above. Without it, a verdict over a NEW pairing (e.g. P4's
+    # (A, B-cyc)) would silently pull the OLD pairing's admissible runs
+    # (P3's (A, B) pool, filed under the same cell-A directory) into its
+    # count -- mixing runs from a different transport arm and a different,
+    # non-interleaved partner cell into an equivalence verdict that never
+    # measured them together.
+    #
+    # Convention (enforced by scripts/duel.sh, which is the only caller
+    # that ever passes a non-empty value): `f"{cell_a}+{cell_b}"`, in the
+    # SAME left-to-right order the two cells were given to duel.sh, so
+    # both cells in a pair stamp the identical string and a verdict's own
+    # `f"{cell_a_id}+{cell_b_id}"` lookup (duel_verdict.py) matches it
+    # without normalising order.
+    #
+    # DEFAULT "" -- matching `duel_admissible`'s own fail-closed direction:
+    # this is also the value every manifest filed before this field
+    # existed reads as (load_manifest supplies the dataclass default when
+    # the key is absent from the JSON). The pool rule's own legacy clause
+    # (duel_verdict.py's `_walk_cell_runs`) treats "" as belonging to the
+    # (A, B) pool specifically -- and ONLY (A, B) -- so the already-filed
+    # P3 verdict keeps reproducing byte-for-byte without a single filed
+    # manifest being rewritten.
+    #
+    # Validated as a real str below, not merely present: the same
+    # rationale as `duel_admissible`'s bool check -- a hand-edited or
+    # externally-generated manifest must not be able to smuggle a
+    # non-string value past validate() and into the `==` pool-membership
+    # comparison _walk_cell_runs makes.
+    duel_id: str = ""
+
     def validate(self) -> list[str]:
         errs = []
         if self.cell not in known_cell_ids():
@@ -160,6 +195,13 @@ class RunManifest:
             errs.append(
                 f"duel_admissible must be a bool, got {type(self.duel_admissible).__name__} "
                 f"({self.duel_admissible!r})"
+            )
+        # A REAL str, not merely present -- same rationale as the bool check
+        # just above, for the field that says WHICH duel's pool this run
+        # belongs to.
+        if not isinstance(self.duel_id, str):
+            errs.append(
+                f"duel_id must be a str, got {type(self.duel_id).__name__} ({self.duel_id!r})"
             )
         return errs
 

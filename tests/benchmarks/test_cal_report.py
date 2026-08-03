@@ -7,12 +7,21 @@ benchmarks/results/CAL-rmw/run-* directories through summarize_run and froze
 benchmarks/config/margins.yaml's one_hop_wall_ms margin from those p50s. The
 tool is LIVE and these tests cover live code.
 
-What IS dead is the tool's SEAM use. Cell CAL-seam was STRUCK by the owner's
-core-duel scope cut (benchmarks/config/cells.yaml `dropped:`;
-benchmarks/README.md's 2026-07-30 amendment), so C1(a) seam overhead is
-UNMEASURED and the seam-topic fixtures below are NOT evidence that the seam was
-measured. They are kept because a later campaign reviving C1(a) inherits a
-verified tool. See cal_report.py's own module docstring.
+What WAS dead was the tool's SEAM use. Cell CAL-seam was STRUCK by the
+owner's core-duel scope cut (benchmarks/config/cells.yaml `dropped:`;
+benchmarks/README.md's 2026-07-30 amendment), so C1(a) seam overhead stayed
+UNMEASURED and the seam-topic fixtures below were NOT evidence that the seam
+had been measured. They were kept so a later campaign reviving C1(a) would
+inherit a verified tool.
+
+REINSTATED 2026-08-03 (Task 8, P4 transport-sweep plan): see
+benchmarks/scripts/cal_report.py's own module docstring for the un-strike.
+The seam-topic fixtures below (`/bench/seam_cloud`, `/bench/incore_cloud`)
+were written against the paired-measurement contract before a real run
+existed to exercise them; they remain exactly that -- known-value fixture
+coverage for `summarize_run`'s math, not a substitute for Task 10's live
+run, which is what will turn C1(a) from a verified-but-unrun tool into an
+actual measurement.
 
 A CAL run has NO clock.csv (nothing publishes /clock -- see
 benchmarks/scripts/cal_report.py's module docstring), so, unlike

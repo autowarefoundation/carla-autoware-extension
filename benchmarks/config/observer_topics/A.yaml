@@ -83,6 +83,14 @@
 # duel_verdict.build_verdict_table reports a metric unavailable when either
 # side is unbound.
 #
+# CLOSED 2026-08-03 (Task 5, P4 transport-sweep plan): cells.yaml's binding is
+# filled with the exact topic this file already carried above, so
+# `control_staleness_ms` is now computable for cell A. This file's own row
+# needed no change -- the gap was only ever the cells.yaml binding, which is
+# why Task 5 does not duplicate a line already present here. Live
+# confirmation through the FILLED binding is still owed to Task 11's
+# bring-up boot; see cells.yaml's cell-A comment for that check.
+#
 # One construction FINDING already applies to this cell as much as to B: the
 # injection topic /sensing/lidar/top/pointcloud_raw_ex has NO PublishedTime
 # companion and cannot have one, because CARLA publishes it while

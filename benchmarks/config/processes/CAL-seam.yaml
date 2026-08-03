@@ -1,33 +1,59 @@
 # M3 process map for cell CAL-seam (calibration approach, CARLA
 # 0.10-fork, Town10HD_Opt, static arm only; cells.yaml, mandatory).
 #
-# STRUCK 2026-07-30 by the owner's core-duel scope cut -- and that
-# `mandatory` above still stands on purpose: it is what records that a
-# MANDATORY cell was given up. No CAL-seam run will be filed, so the
-# gap left below is permanent and C1(a) seam overhead is UNMEASURED.
-# Owner TIME-BUDGET decision, not infeasibility; see cells.yaml
-# `dropped:` and benchmarks/README.md's 2026-07-30 amendment.
+# REPLACED 2026-08-03 (Task 8 of the P4 transport-sweep plan; this
+# supersedes an earlier draft written for a prior planning cycle's own
+# "Task 8", which struck this file at `carla-server` + `observer` only,
+# with no `runner` entry, because CAL-seam's launcher refused to boot
+# anything at all). CAL-seam is reinstated (P4 spec decision 6, on the D8
+# lift that makes the fork-side twin publisher buildable -- Task 9) and
+# now derives from processes/A.yaml the same way that file's own header
+# derives it: every UE5-tree cell in this evaluation runs the shared
+# engine's UnrealEditor in -game mode (manifest placement.run_mode =
+# "editor-game", tests/benchmarks/test_manifest.py), never a packaged
+# build.
 #
-# task-8-brief.md step 7: "CAL-seam = extension fork + seam/in-core
-# publishers (Task 14)". The CARLA-side half is grounded the same way
-# as cell A (same extension fork tree, same UnrealEditor -game
-# invocation) -- that part is safe to fill in now. The "seam/in-core
-# publishers" component is Task 14 ("CAL-seam publisher pair"), not yet
-# written: no script or binary name for it exists anywhere in this
-# repo yet, so a pattern for it cannot be grounded without guessing.
+# What the prior draft said, quoted rather than only characterized: its
+# process list was `carla-server` + `observer` only, and its `carla-server`
+# entry was immediately followed by "NEVER FILLED IN: the seam/in-core
+# publisher pair's fork-side twin does not exist, and now never will -- the
+# cell is struck ... NOTE: benchmarks/cells/calibration.sh currently REFUSES
+# to launch CAL-seam at all, naming Task 14 -- so this file cannot be reached
+# by a measurement run while the publisher-pair entry is missing." Both
+# halves of that sentence are now false (the twin exists -- Task 9's D8 lift;
+# the launcher no longer refuses -- this same Task 8) and neither is edited
+# in place anywhere it was written; this file is fully replaced rather than
+# patched because "NEVER FILLED IN" was itself the entry meant to record a
+# gap that no longer exists, not a historical assertion worth preserving
+# verbatim the way cells.yaml's and calibration.sh's strike paragraphs are.
+#
+# Dropped relative to A.yaml: `injector` (INJECTOR_ENABLED="0" in
+# cells/calibration.sh's CAL-seam branch -- CAL-seam is a
+# transport/serialization calibration, not a drive, so the clear-road
+# injector never runs) and `autoware` (AW_CONTAINER="" -- no Autoware
+# stack is brought up; `cells/calibration.sh`'s CAL-seam branch boots
+# scripts/e2e/run_e2e.sh with WITH_AUTOWARE=0). Kept: `runner`, because
+# run_e2e.sh's spawn+tick runner is what ticks the world CAL-seam's two
+# bench publishers publish from (ext_on_tick,
+# extension/src/ExtensionInit.cpp) regardless of WITH_AUTOWARE; and
+# `observer`, per this repo's convention that every launched cell's CPU
+# sampler tracks the observer that records it.
 processes:
+  # UnrealEditor -game, extension fork tree (pins.yaml
+  # extension_carla_fork.path = ~/src/carla-autoware-integration).
+  # run_e2e.sh's exact invocation is:
+  #   "$CARLA_UNREAL_ENGINE_PATH/.../UnrealEditor" \
+  #     "$CARLA_ROOT/Unreal/CarlaUnreal/CarlaUnreal.uproject" "$MAP" -game ...
+  # The tree-path segment disambiguates from the tier4-native fork
+  # (~/src/carla-autoware-native), which uses the identical uproject
+  # filename in a sibling tree (see B.yaml).
   - label: carla-server
     pattern: carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject
-  # NEVER FILLED IN: the seam/in-core publisher pair's fork-side twin
-  # does not exist, and now never will -- the cell is struck (header
-  # above). No "autoware" container either -- CAL-seam is a
-  # transport/serialization calibration, not a closed-loop drive, so
-  # there is no evidence an Autoware stack runs here at all.
-  # Left as a recorded gap rather than guessed at: a wrong pattern
-  # would silently read as "the publisher pair used no CPU" instead of
-  # flagging the gap, and there is no run left to grind that error out.
-  # RE-GROUNDED in Task 8 (run.sh step 6's `--name bench-observer`).
-  # NOTE: benchmarks/cells/calibration.sh currently REFUSES to launch
-  # CAL-seam at all, naming Task 14 -- so this file cannot be reached
-  # by a measurement run while the publisher-pair entry is missing.
+  # Host-side spawn+tick runner (repo-root runner/__main__.py), invoked
+  # by run_e2e.sh's final line as `python3 -m runner --host ...`,
+  # unconditionally regardless of WITH_AUTOWARE.
+  - { label: runner, pattern: python3 -m runner }
+  # bench_observer recorder (Task 5), started by benchmarks/run.sh step 6
+  # for every cell identically (OBSERVER_CONTAINER=bench-observer); stopped
+  # by the same name in benchmarks/scripts/teardown.sh.
   - { label: observer, container: bench-observer }

@@ -246,12 +246,19 @@ def _write_manifest(
     exclusion_reason="",
     run_index=1,
     duel_admissible=True,
+    duel_id="",
 ):
     # duel_admissible DEFAULTS TRUE here, opposite to RunManifest's own
     # fail-closed default: every fixture in this module exists to exercise the
     # DUEL path, so "a run" means a duel run throughout. The amendment's own
     # behaviour -- an inadmissible run cannot reach a verdict -- is pinned by
     # the tests that pass duel_admissible=False explicitly.
+    #
+    # duel_id DEFAULTS "" here, matching RunManifest's own default (unlike
+    # duel_admissible above): most fixtures in this module exercise ONE duel
+    # at a time and never need to distinguish pools, so "" (Task 2's legacy/
+    # unpartitioned state) is the right default; the pool-partitioning tests
+    # override it explicitly per run.
     RunManifest(
         cell=cell,
         approach=approach,
@@ -271,6 +278,7 @@ def _write_manifest(
         excluded=excluded,
         exclusion_reason=exclusion_reason,
         duel_admissible=duel_admissible,
+        duel_id=duel_id,
         placement={
             "run_mode": "editor-game",
             "container_image": "img@sha256:x",
@@ -335,6 +343,7 @@ def _make_run(
     pre_window_decimate=None,
     stationary_until_s=0.0,
     duel_admissible=True,
+    duel_id="",
 ):
     """Build one minimal, self-consistent run-<NNN>/ directory.
 
@@ -383,6 +392,7 @@ def _make_run(
         exclusion_reason=exclusion_reason,
         run_index=run_index,
         duel_admissible=duel_admissible,
+        duel_id=duel_id,
     )
 
     duration_ns = int(run_duration_s * 1e9)
@@ -1033,6 +1043,63 @@ def test_reconciliation_row_says_why_it_has_no_runs_when_all_were_gate_runs(tmp_
 
 
 # ---------------------------------------------------------------------------
+# duel_id admission-pool partitioning (Amendment 2026-08-03, Task 2, P4's
+# transport-sweep plan). `duel_admissible` says "this run is duel data";
+# `duel_id` says WHICH duel. Without it, `duel_verdict.py A B-cyc` would
+# silently pull cell A's P3 static pool (run-003..012) into the P4 duel --
+# mixing pre/post-harness-sha runs and non-interleaved partners. The pool
+# rule (`_walk_cell_runs`'s new `expected_duel_id`/`legacy_ok` kwargs):
+# a run pools in iff `duel_id == expected` or (`duel_id == ""` and
+# `legacy_ok`) -- the legacy clause exists ONLY so the filed P3 (A, B)
+# verdict keeps reproducing byte-for-byte without touching a single filed
+# manifest.
+# ---------------------------------------------------------------------------
+
+
+def test_pool_selects_by_duel_id(tmp_path):
+    """Three admissible static runs in cell A, identical except duel_id:
+    legacy (""), "A+B-cyc", "A+C". A verdict over (A, B-cyc) must pool
+    ONLY the "A+B-cyc" run; a verdict over (A, B) must pool ONLY the
+    legacy run (backward compatibility: the filed P3 pool has no duel_id
+    and must keep reproducing the filed A-vs-B verdict)."""
+    for i, duel_id in enumerate(("", "A+B-cyc", "A+C"), start=1):
+        _make_run(tmp_path, cell="A", name=f"run-{i:03d}", arm="static", duel_id=duel_id)
+    records, *_ = _walk_cell_runs(
+        tmp_path / "A", arm="static", expected_duel_id="A+B-cyc", legacy_ok=False
+    )
+    assert len(records) == 1
+    records, *_ = _walk_cell_runs(
+        tmp_path / "A", arm="static", expected_duel_id="A+B", legacy_ok=True
+    )
+    assert len(records) == 1
+
+
+def test_pool_rejects_by_duel_id_are_counted_as_inadmissible(tmp_path):
+    """A run that IS duel-admissible but pools into a DIFFERENT duel_id is
+    dropped by the SAME counter a `duel_admissible=False` run is -- two
+    counters already exist for "data is invalid" (excluded) vs. "data is
+    valid but outside this duel's design" (inadmissible), and a
+    wrong-pool run is squarely the second kind, not a third one this task
+    would otherwise have to invent (and thread through VerdictRow,
+    render_table, ReconciliationRow, ...)."""
+    _make_run(tmp_path, cell="A", name="run-001", arm="static", duel_id="A+C")
+    records, n_excluded, n_inadmissible, _ = _walk_cell_runs(
+        tmp_path / "A", arm="static", expected_duel_id="A+B-cyc", legacy_ok=False
+    )
+    assert (records, n_excluded, n_inadmissible) == ([], 0, 1)
+
+
+def test_pool_rule_is_inactive_when_expected_duel_id_is_not_given(tmp_path):
+    """Backward compatibility for callers that never learned about duels at
+    all, e.g. `cell_run_values` (a one-off-script/test convenience wrapper
+    that calls `_walk_cell_runs` with no duel context): the pool rule must
+    not activate merely because a manifest happens to carry a duel_id."""
+    _make_run(tmp_path, cell="A", name="run-001", arm="static", duel_id="A+C")
+    records, _, n_inadmissible, _ = _walk_cell_runs(tmp_path / "A", arm="static")
+    assert (len(records), n_inadmissible) == (1, 0)
+
+
+# ---------------------------------------------------------------------------
 # BEHAVIOURAL pins for the fail-closed default: these RUN the real scripts.
 #
 # CAMPAIGN RULE (2026-07-30, owner ruling, binding from here on): a substring
@@ -1118,6 +1185,47 @@ def test_duel_sh_really_produces_duel_admissible_invocations_end_to_end():
     assert "duel complete: A 1 ok / 0 failed, B 1 ok / 0 failed" in proc.stdout
 
 
+def test_run_sh_really_resolves_duel_id_empty_by_default():
+    """Same behavioural-pin discipline as `duel_admissible` above, for the
+    field that says WHICH duel (Amendment 2026-08-03, Task 2): a plain
+    invocation with no `--duel-id` must resolve to the legacy empty
+    string, the value `_walk_cell_runs`' pool rule requires for the filed
+    P3 (A, B) verdict to keep reproducing."""
+    assert _resolved("A", "--arm", "static")["duel_id"] == ""
+
+
+def test_run_sh_really_resolves_duel_id_when_passed():
+    """The other direction: a passed `--duel-id` must resolve verbatim,
+    not merely toggle a bool -- this is the value `duel.sh` stamps and
+    `write_manifest.py` files, so a resolver that truncates or defaults it
+    would silently misfile every P4 run into the wrong pool."""
+    assert _resolved("A", "--arm", "static", "--duel-id", "A+B-cyc")["duel_id"] == "A+B-cyc"
+
+
+def test_duel_sh_really_stamps_duel_id_end_to_end():
+    """`duel.sh A C` -> `run.sh` -> resolved `duel_id`, run for real.
+
+    Uses two cells already registered in cells.yaml (A, C) rather than a
+    P4-only pairing like A/B-cyc: that cell is registered by a LATER task
+    in this same lane (Task 4), and this task's own scope is the duel_id
+    plumbing, not any particular pairing. This is the chain a verdict's
+    pool depends on regardless of pairing: duel.sh must derive the id
+    from its OWN two cell arguments (not from a static string, and not
+    from `${CELL_A}+${CELL_B}` mis-ordered), so both cells resolve the
+    SAME id and it matches `f"{cell_a}+{cell_b}"` in that argument order.
+    """
+    proc = subprocess.run(
+        ["bash", str(_DUEL_SH), "A", "C", "--arm", "static", "--pairs", "1", "--check-args"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=_REPO_ROOT,
+    )
+    assert proc.returncode == 0, f"duel.sh failed: {proc.stderr}"
+    declared = [ln for ln in proc.stdout.splitlines() if ln.startswith("duel_id=")]
+    assert declared == ["duel_id=A+C", "duel_id=A+C"], declared
+
+
 def test_check_args_writes_nothing_under_results():
     """The premise that makes the three tests above safe to keep in the
     suite: --check-args must not create a run directory, or every test run
@@ -1146,6 +1254,24 @@ def test_run_sh_has_a_duel_flag_and_does_not_set_it_by_default():
     run_sh = _RUN_SH.read_text()
     assert "--duel) DUEL=1; shift ;;" in run_sh
     assert "\nDUEL=0\n" in run_sh
+
+
+def test_duel_sh_declares_duel_id_from_its_own_two_cell_args():
+    """SECONDARY SIGNAL, not the pin -- see
+    `test_duel_sh_really_stamps_duel_id_end_to_end` for the behavioural
+    version. Kept because it names the exact line a reader should look
+    for: duel.sh must build the id from ITS OWN `$CELL_A`/`$CELL_B`, not
+    forward a caller-supplied one."""
+    assert '--duel-id "${CELL_A}+${CELL_B}"' in _DUEL_SH.read_text()
+
+
+def test_run_sh_has_a_duel_id_flag_and_defaults_it_empty():
+    """SECONDARY SIGNAL, not the pin (see above). Names the two lines a
+    reader should look for: the flag's parse-loop entry, and the
+    pre-parse default it falls back to when the flag is never passed."""
+    run_sh = _RUN_SH.read_text()
+    assert '--duel-id) DUEL_ID="$2"; shift 2 ;;' in run_sh
+    assert '\nDUEL_ID=""\n' in run_sh
 
 
 # ---------------------------------------------------------------------------

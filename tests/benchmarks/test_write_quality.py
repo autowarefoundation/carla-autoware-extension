@@ -1151,8 +1151,19 @@ def test_committed_cells_yaml_ladder_slots_match_the_selected_branches():
     The CAL cells have no localization stack. Every cell in neither set must stay
     UNSET so the M5 gate keeps refusing it rather than gating on a guessed
     branch -- the property R3.3 added this test for.
+
+    Cell B-cyc joined `selected_absolute` on 2026-08-03 (Task 4, P4
+    transport-sweep plan) alongside B, B-hf and B45: it runs the identical
+    tier4-native launcher (cells/tier4_autoware.sh) against the identical
+    rung-2 bundle as cell B, differing only in DDS transport (row-11
+    cyclonedds rather than B's fastrtps/udp_only), and the docstring above is
+    explicit that the ladder branch is a property of the BUNDLE, not the
+    approach or the transport -- so B-cyc inherits B's `absolute` branch and
+    0.5 m gate for the same reason B itself is in this set, not by mirroring
+    a value nothing measured. config/cells.yaml's B-cyc entry mirrors B's
+    metrics block field for field, this assertion included.
     """
-    selected_absolute = {"A", "A-hf", "B", "B-hf", "B45", "C"}
+    selected_absolute = {"A", "A-hf", "B", "B-hf", "B45", "C", "B-cyc"}
     selected_relative = {"E", "E0"}
     doc = load_cells_doc()
     for cell in (c["id"] for c in doc["cells"]):

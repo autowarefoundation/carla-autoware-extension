@@ -235,3 +235,45 @@ def test_placement_engine_build_id_not_required_for_bridge(valid_kwargs):
     del p["engine_build_id"]
     m = RunManifest(**{**valid_kwargs, "approach": "python-bridge", "cell": "E", "placement": p})
     assert m.validate() == []
+
+
+def test_duel_id_defaults_empty(valid_kwargs):
+    """Legacy/no-duel default (Amendment 2026-08-03, Task 2): a run not
+    explicitly stamped into some duel's pool must read as belonging to
+    none -- the same fail-safe direction `duel_admissible` defaults to
+    false, so a forgotten `--duel-id` cannot be silently mistaken for
+    membership in a DIFFERENT duel's pool."""
+    assert RunManifest(**valid_kwargs).duel_id == ""
+
+
+def test_validate_rejects_a_non_str_duel_id(valid_kwargs):
+    """Same rationale as `duel_admissible`'s bool check just above: a
+    hand-edited or externally-generated manifest must not be able to
+    smuggle a non-string duel_id past validate() and into the `==`
+    pool-membership comparison `duel_verdict._walk_cell_runs` makes."""
+    m = RunManifest(**{**valid_kwargs, "duel_id": 12345})
+    errs = m.validate()
+    assert any("duel_id must be a str" in e for e in errs)
+
+
+def test_duel_id_survives_a_roundtrip(tmp_path, valid_kwargs):
+    m = RunManifest(**{**valid_kwargs, "duel_id": "A+B-cyc"})
+    m.save(tmp_path / "manifest.json")
+    assert load_manifest(tmp_path / "manifest.json").duel_id == "A+B-cyc"
+
+
+def test_a_manifest_written_before_duel_id_reads_as_the_legacy_empty_string(tmp_path):
+    """Every manifest filed under P3 (and every one filed before this field
+    existed at all) has no `duel_id` key in its JSON. It must load as ""
+    -- both true of them and the exact value the pool rule's legacy clause
+    (benchmarks/scripts/duel_verdict.py's `_walk_cell_runs`) requires so
+    the filed P3 (A, B) verdict keeps reproducing byte-for-byte."""
+    m = _valid()
+    path = tmp_path / "manifest.json"
+    m.save(path)
+    doc = json.loads(path.read_text())
+    del doc["duel_id"]
+    path.write_text(json.dumps(doc))
+    loaded = load_manifest(path)
+    assert loaded.duel_id == ""
+    assert loaded.validate() == []

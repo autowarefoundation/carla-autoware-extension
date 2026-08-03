@@ -266,3 +266,22 @@ def test_exclude_preserves_the_duel_declaration(tmp_path):
     assert write_manifest.main(["--run-dir", str(run_dir), "--exclude", "stall:clock"]) == 0
     after = load_manifest(run_dir / "manifest.json")
     assert (after.excluded, after.duel_admissible) == (True, True)
+
+
+def test_create_stamps_duel_id(tmp_path):
+    """duel_id partitions admission POOLS: duel_admissible says "this run
+    is duel data", duel_id says WHICH duel. Without it, `duel_verdict.py
+    A B-cyc` would pull cell A's P3 static pool (run-003..012) into the P4
+    duel -- mixing pre/post-harness-sha runs and non-interleaved partners
+    (spec 2026-08-03, section 1d)."""
+    run_dir = tmp_path / "A" / "run-001"
+    assert write_manifest.main([*_argv(run_dir), "--duel", "--duel-id", "A+B-cyc"]) == 0
+    m = load_manifest(run_dir / "manifest.json")
+    assert m.duel_id == "A+B-cyc"
+
+
+def test_create_defaults_duel_id_empty(tmp_path):
+    run_dir = tmp_path / "A" / "run-002"
+    assert write_manifest.main(_argv(run_dir)) == 0
+    m = load_manifest(run_dir / "manifest.json")
+    assert m.duel_id == ""

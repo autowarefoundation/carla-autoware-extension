@@ -280,7 +280,16 @@ one_run() {
   # PASSTHROUGH is empty (an unquoted empty array expansion would otherwise
   # be the only argument slot) and so a reader of the printed command sees
   # the declaration next to the cell it applies to.
-  if bash "$BENCH/run.sh" "$cell" --duel "${PASSTHROUGH[@]}"; then
+  #
+  # --duel-id is stamped from duel.sh's OWN two cell arguments (Amendment
+  # 2026-08-03, Task 2), never from a caller-supplied value: it is the
+  # pairing THIS invocation orders, in the order THIS invocation was
+  # given ($CELL_A, then $CELL_B), so both cells in the pair -- $cell
+  # here is one or the other -- stamp the identical id and a verdict's
+  # own f"{cell_a_id}+{cell_b_id}" lookup (duel_verdict.py) matches it
+  # without normalising order. See RunManifest.duel_id for the pool rule
+  # this feeds.
+  if bash "$BENCH/run.sh" "$cell" --duel --duel-id "${CELL_A}+${CELL_B}" "${PASSTHROUGH[@]}"; then
     COMPLETED[$cell]=$((COMPLETED[$cell] + 1))
     consecutive=0
   else

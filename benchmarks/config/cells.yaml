@@ -129,7 +129,25 @@ cells:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
-      control_published_time_topic: # Tasks 13/20, after live discovery
+      # REGISTERED 2026-08-03 (Task 5, P4 transport-sweep plan), before any P4
+      # collection run, closing the gap Tasks 13/20 left open: this cell's own
+      # observer_topics/A.yaml has carried the PublishedTime row since
+      # 2026-07-30 (Task 15b's live discovery on cell A's own stack, right
+      # after arming), but this binding stayed null, which left
+      # control_staleness_ms UNAVAILABLE for the whole P3 duel
+      # (docs/evaluation/p3-baseline.md Sec.1, and duel_verdict.build_verdict_
+      # table's "unavailable if either side is unbound" rule -- see A.yaml's
+      # own "STILL OWED" note this closes). SAME AUTOWARE GRAPH FAMILY AS
+      # CELL B: both approaches gate through vehicle_cmd_gate and the same
+      # PublishedTimePublisher implementation stamps the gated
+      # /control/command/control_cmd on both, so the topic name and type
+      # (autoware_internal_msgs/msg/PublishedTime) are identical to B's
+      # registration -- not a merge of the two cells, a property of the
+      # shared Autoware stack. NOT yet live-confirmed through THIS binding:
+      # that check is owed to Task 11's bring-up boot (`ros2 topic list |
+      # grep published_time` against a live cell-A run), which must observe
+      # this exact topic before any P4 duel run proceeds.
+      control_published_time_topic: /control/command/control_cmd/debug/published_time
       cpu_process_label: carla-server
       tick_hz: 20.0 # runner/loop.py DEFAULT_FIXED_DELTA = 0.05
       # runner/spawn.py _SENSOR_TICK = "0.05" on the top LiDAR, and the
@@ -285,6 +303,66 @@ cells:
       # Task 13 chose one. That choice is now made and it is A's bundle, which
       # is also what keeps README confound C4 a cross-map caveat instead of
       # escalating it to a duel-level confound.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
+  - id: B-cyc
+    approach: tier4-native
+    carla: 0.10-tier4
+    map: Town10HD_Opt
+    mandatory: true
+    # REGISTERED 2026-08-03 by the P4 transport-sweep plan (Task 4). The SAME
+    # tier4-native stack as cell B -- same fork, same launcher
+    # (cells/tier4_autoware.sh), same map/bundle -- registered under a
+    # DIFFERENT DDS transport: rmw_cyclonedds_cpp, SHM off, NO profile. This
+    # is the measured ROW-11 configuration in
+    # benchmarks/patches/tier4-native/README.md's transport matrix ("###
+    # Transport matrix (live fork, .../pointcloud_raw_ex)"): rows 5 and 10
+    # (cyclone + the harness's `lo`-pinned `cyclonedds.xml` profile) see
+    # NOTHING from the fork -- no topic-list entry, no echo, no rate -- so
+    # that harness default is unusable here. Row 11 (cyclone, NO profile) is
+    # the ONLY non-fastrtps configuration in which the fork is readable at
+    # all, and its own registered caveats -- it binds the host's ROUTABLE NIC
+    # rather than loopback, and Cyclone's discovery graph is FLAKY for
+    # bare-DDS publishers (that README's own words: "Do not use them") -- are
+    # INHERITED here as confound rows for this cell's results; they are not
+    # fixed by this registration. Cell B's own registration
+    # (rmw_fastrtps_cpp / SHM off / udp_only.xml) is UNTOUCHED by this entry.
+    #
+    # END-TO-END PRECEDENT: results/B/run-033 ran exactly this transport
+    # triple (manifest.json: transport.rmw=rmw_cyclonedds_cpp,
+    # shm_enabled=false, dds_profile_sha256="") as a deliberate one-off
+    # deviation probe on cell B (BENCH_TIER4_TRANSPORT_DEVIATION) -- armed,
+    # drove the closed-loop arm end to end, and measured ndt_rate_ratio 1.000
+    # (n=1, quality.json). B-cyc turns that probe into its OWN registered
+    # cell so the row-11 configuration can be duelled against cell A on equal
+    # footing: run.sh resolves this transport by DEFAULT for cell B-cyc (the
+    # same shape of per-cell correction the tier4-native family block already
+    # applies for cell B), and cells/tier4_autoware.sh's registered-transport
+    # refusal fails loudly on anything else for this cell.
+    arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      # Mirrored from cell B verbatim: same launcher, same live discovery
+      # (Task 13, 2026-07-30 -- see cell B's own comment above for the full
+      # derivation). observer_topics/B.yaml already carries this row, and
+      # observer_topics/B-cyc.yaml is a copy of that file, so it inherits it
+      # unchanged.
+      control_published_time_topic: /control/command/control_cmd/debug/published_time
+      cpu_process_label: carla-server
+      # Mirrored from cell B field-for-field: same launcher
+      # (cells/tier4_autoware.sh), same TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ
+      # arguments -- DDS transport is the ONLY axis this cell varies from B,
+      # and none of these three rates is a property of the transport. See
+      # cell B's own comment above for the sourcing.
+      tick_hz: 20.0
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: 10.0
+      # Mirrored from cell B: same launcher resolves the same
+      # map_defaults.sh bundle (town10_pcd_regen, the ladder's rung-2
+      # bundle), so the same branch applies. See cell B's own comment above
+      # for the measurement this rests on.
       ladder_branch: absolute
       abs_pose_gate_m: 0.5
   - id: C
@@ -735,23 +813,37 @@ cells:
     # their unit tests are all committed and green. They will simply never be
     # exercised by a measurement, and that is disclosed rather than tidied
     # away -- nothing here is deleted.
-    dropped: owner-time-budget-2026-07-30
+    #
+    # REINSTATED 2026-08-03 by the owner (P4 transport-sweep plan, spec
+    # decision 6), on the D8 lift that makes the fork-side twin publisher
+    # buildable (Task 9: LibCarla/source/carla/ros2/ROS2.cpp,
+    # $CARLA_BENCH_INCORE_CLOUD=1). The strike history above stays exactly as
+    # it is -- the record that a mandatory cell sat unlaunchable for five
+    # weeks does not become less true because it is no longer struck. `dropped:`
+    # is removed below; `mandatory: true` was never touched by either the
+    # strike or this reinstatement. cells/calibration.sh's CAL-seam branch and
+    # config/observer_topics/CAL-seam.yaml's two-topic list are Task 8 of that
+    # same plan.
     arms: [static]
     metrics:
-      # NOT REGISTERED: the seam/in-core publisher pair is Task 14 and names
-      # no topic yet; observer_topics/CAL-seam.yaml is deliberately empty for
-      # the same reason, and cells/calibration.sh refuses to launch the cell.
+      # STILL NOT REGISTERED: CAL-seam's own paired publishers are a
+      # transport/serialization instrument, not a localization or control
+      # stack -- there is no NDT and no gated command to bind these to, with
+      # or without a strike.
       lidar_topic:
       ndt_topic:
       control_topic:
       control_published_time_topic:
       cpu_process_label: carla-server
-      # NOT REGISTERED either: Task 14 owns what ticks this cell's world, if
-      # anything does -- it is a transport/serialization calibration, not a
-      # drive, and cells/calibration.sh refuses to launch it today. Registering
-      # the extension cells' 20.0 here would assert a tick nothing commits to.
-      tick_hz:
-      lidar_expected_hz: # Task 14
+      # REGISTERED 2026-08-03 (Task 8), on the reinstatement above: the e2e
+      # sync loop's tick rate (scripts/e2e/run_e2e.sh, what drives
+      # ext_on_tick -- extension/src/ExtensionInit.cpp) drives this cell's
+      # world now that cells/calibration.sh actually boots it.
+      tick_hz: 20.0
+      # REGISTERED 2026-08-03 (Task 8): both bench publishers' wall-clock-
+      # decimated rate (extension/src/publishers/BenchCloudPublisher.h and
+      # the fork's ROS2.cpp twin, both gated at 10 Hz).
+      lidar_expected_hz: 10.0
       ndt_expected_hz: # no localization stack in this cell
       ladder_branch: # no localization stack in this cell
       abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)

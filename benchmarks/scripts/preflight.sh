@@ -291,7 +291,9 @@ fi
 
 # ---------------------------------------------------------------------------
 # 7. tier4 plugin artifact + tree identity, tier4-native approach only (cells
-#    B, B-hf, B45, D). Cell A gets the equivalent through
+#    B, B-hf, B45, D, B-cyc -- the last registered 2026-08-03, Task 4 of the
+#    P4 transport-sweep plan, same tree as B under a different DDS transport).
+#    Cell A gets the equivalent through
 #    cells/extension.sh -> run_e2e.sh:126 -> verify_editor_artifact.sh; the B
 #    family reached nothing at all until Task 17b, so every B-family run
 #    committed before this section was ungated

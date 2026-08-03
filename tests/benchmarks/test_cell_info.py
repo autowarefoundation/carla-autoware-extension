@@ -143,12 +143,21 @@ def test_every_registered_cell_has_every_metric_binding(doc, cell):
 def test_metric_topics_are_topics_the_observer_actually_records(doc, cell):
     """A bound topic that bench_observer never subscribes to yields zero rows,
     which reads downstream as "this transport delivered nothing" rather than as
-    a configuration error -- the exact failure mode observer_topics/
-    CAL-seam.yaml's deliberately-empty list exists to avoid. `null` bindings
-    are skipped: they are the registered "not chosen yet" state."""
+    a configuration error -- the exact failure mode an unregistered topic
+    binding would produce. `null` bindings are skipped: they are the
+    registered "not chosen yet" state.
+
+    `control_published_time_topic` joined this tuple 2026-08-03 (Task 5's fix
+    round 1): `_observer_topics()` parses every `<topic>|<type>|<kind>` line
+    generically regardless of `kind`, so a `published_time` row is exactly as
+    checkable here as a `generic`/`pose`/`odometry` one, and the same
+    almost-right-line failure this test guards against for the other three
+    keys applies to this one -- a drift between cells.yaml's binding and the
+    topic actually subscribed in observer_topics/<cell>.yaml would otherwise
+    surface only as a silently empty published_time.csv, not a failing test."""
     metrics = cell_info.metrics_for(doc, cell)
     registered = _observer_topics(cell)
-    for key in ("lidar_topic", "ndt_topic", "control_topic"):
+    for key in ("lidar_topic", "ndt_topic", "control_topic", "control_published_time_topic"):
         if metrics[key] is not None:
             assert metrics[key] in registered, f"{cell}: {key} not in observer_topics"
 
@@ -257,6 +266,42 @@ def test_bridge_cells_register_the_rate_their_own_config_can_actually_emit(doc, 
     assert metrics["lidar_expected_hz"] == tick_hz / math.ceil(tick_hz / freq_hz)
 
 
+def test_bcyc_metrics_mirror_cell_b(doc):
+    """Cell B-cyc (Task 4, P4 transport-sweep plan) is the SAME tier4-native
+    stack as cell B -- same fork, same launcher (cells/tier4_autoware.sh),
+    same map/bundle -- registered under a DIFFERENT DDS transport (row-11
+    cyclone rather than B's fastrtps/udp_only). Transport is resolved by
+    run.sh's per-cell correction and enforced by cells/tier4_autoware.sh's
+    registered-transport refusal, neither of which lives in this metrics
+    block, so every metric BINDING here (topics, rates, process label,
+    ladder branch) must be identical to cell B's, field for field."""
+    assert cell_info.metrics_for(doc, "B-cyc") == cell_info.metrics_for(doc, "B")
+
+
+def test_cell_a_registers_the_control_published_time_topic(doc):
+    """REGISTERED 2026-08-03 (Task 5, P4 transport-sweep plan), closing the
+    gap Tasks 13/20 left open. observer_topics/A.yaml has carried this row
+    since 2026-07-30 (Task 15b's live discovery on cell A's own stack, commit
+    2453984); only cells.yaml's binding was missing, which left
+    control_staleness_ms UNAVAILABLE for the whole P3 duel
+    (docs/evaluation/p3-baseline.md Sec.1). Same value as cell B's -- the
+    same Autoware graph family (vehicle_cmd_gate's PublishedTimePublisher on
+    the gated /control/command/control_cmd) -- not because the two cells
+    were merged.
+
+    NOT redundant with test_metric_topics_are_topics_the_observer_actually_
+    records's ALL_CELL_IDS parametrization (this file, above): that test
+    checks MEMBERSHIP only -- that whatever cells.yaml binds is also a
+    topic observer_topics/<cell>.yaml subscribes to -- so a binding pointed
+    at the WRONG (but still observed) PublishedTime topic would pass it
+    silently. This test pins the exact expected VALUE, which membership
+    alone cannot catch."""
+    assert (
+        cell_info.metrics_for(doc, "A")["control_published_time_topic"]
+        == "/control/command/control_cmd/debug/published_time"
+    )
+
+
 def test_the_two_bridge_cells_do_not_share_a_rate(doc):
     """E is PATCHED to 20 Hz on /pointcloud_raw_ex; E0 is the AS-SHIPPED image on
     /pointcloud_before_sync. Copying either cell's rate onto the other is the
@@ -337,10 +382,17 @@ def test_metrics_for_rejects_an_unknown_cell(doc):
 # Struck by the owner's 2026-07-30 core-duel scope cut, on an owner
 # time-budget decision (benchmarks/README.md, `## Amendments made so far`).
 # NOT dropped for being infeasible, blocked or unmeasurable.
-DROPPED_CELL_IDS = frozenset({"CAL-seam", "B45", "E-opt", "A-hf", "B-hf", "D"})
-# The two that carried `mandatory: true` when they were struck -- the reason
-# that scope cut is a pre-registration AMENDMENT and not merely a note.
-DROPPED_MANDATORY_CELL_IDS = frozenset({"CAL-seam", "B45"})
+#
+# CAL-seam left this set 2026-08-03 (Task 8, P4 transport-sweep plan): the
+# owner reinstated it (P4 spec decision 6) on the D8 lift that makes the
+# fork-side twin publisher buildable (Task 9). Its `dropped:` key is gone
+# from cells.yaml; `mandatory: true` was never touched by either the strike
+# or the reinstatement.
+DROPPED_CELL_IDS = frozenset({"B45", "E-opt", "A-hf", "B-hf", "D"})
+# The one that still carries `mandatory: true` while struck -- the reason
+# that scope cut is a pre-registration AMENDMENT and not merely a note. Until
+# 2026-08-03 this set also held CAL-seam; see the reinstatement note above.
+DROPPED_MANDATORY_CELL_IDS = frozenset({"B45"})
 DROPPED_MARKER = "owner-time-budget-2026-07-30"
 
 
@@ -358,12 +410,13 @@ def test_every_struck_cell_names_the_owner_time_budget_decision(doc, cell):
 
 
 @pytest.mark.parametrize("cell", sorted(DROPPED_MANDATORY_CELL_IDS))
-def test_the_two_mandatory_strikes_keep_mandatory_true(doc, cell):
+def test_the_mandatory_strike_keeps_mandatory_true(doc, cell):
     """The strike must not erase what was given up. `mandatory: true` is the
     only thing in the tree that still records that a MANDATORY cell was cut --
-    C1(a) seam overhead for CAL-seam, the hard-fork-maintenance finding for
-    B45 -- as opposed to an owner-strikable one (D / E-opt / A-hf / B-hf,
-    which were `mandatory: false` before the cut and still are)."""
+    the hard-fork-maintenance finding for B45, the sole remaining member of
+    this set since CAL-seam's 2026-08-03 reinstatement -- as opposed to an
+    owner-strikable one (D / E-opt / A-hf / B-hf, which were `mandatory:
+    false` before the cut and still are)."""
     assert cell_info.cell_entry(doc, cell)["mandatory"] is True
 
 
@@ -379,7 +432,8 @@ def test_the_note_only_strikes_were_already_non_mandatory(doc, cell):
 @pytest.mark.parametrize("cell", sorted(set(ALL_CELL_IDS) - DROPPED_CELL_IDS))
 def test_every_kept_cell_carries_no_dropped_key(doc, cell):
     """Absence of the key is what "in scope" means, so it must be absent and
-    not `dropped: false` -- the A-vs-B duel plus C / E0 / E / CAL-rmw."""
+    not `dropped: false` -- the A-vs-B duel plus C / E0 / E / CAL-rmw /
+    CAL-seam (reinstated 2026-08-03, Task 8)."""
     assert "dropped" not in cell_info.cell_entry(doc, cell)
 
 
@@ -389,9 +443,88 @@ def test_a_struck_cell_still_resolves_through_cell_info(doc):
     on the already-filed runs, and so a reader can see the full matrix. The
     key rides along in the merged JSON (`cell_info.merge` copies it), where
     run.sh ignores it -- run.sh reads only approach / map / carla /
-    has_sim_clock / arms / sweep_arms."""
-    merged = cell_info.merge(doc, "CAL-seam")
+    has_sim_clock / arms / sweep_arms.
+
+    B45, not CAL-seam: CAL-seam was this exemplar until its 2026-08-03
+    reinstatement (see test_cal_seam_reinstated_registers_its_launch_path
+    below) un-struck it, leaving B45 as the sole struck-and-mandatory cell."""
+    merged = cell_info.merge(doc, "B45")
     assert merged["dropped"] == DROPPED_MARKER
     assert merged["mandatory"] is True
     assert merged["has_sim_clock"] is True  # unchanged by the strike
     assert "dropped" not in cell_info.merge(doc, "A")
+
+
+# ---------------------------------------------------------------------------
+# CAL-seam reinstated 2026-08-03 (Task 8, P4 transport-sweep plan): the
+# bindings a live run now depends on, pinned directly rather than inferred
+# from `dropped`'s absence above.
+# ---------------------------------------------------------------------------
+
+
+def test_cal_seam_reinstated_registers_its_launch_path(doc):
+    """The two publishers under test (extension's `/bench/seam_cloud`, the
+    fork's `/bench/incore_cloud` -- benchmarks/patches/extension/README.md)
+    must both be in observer_topics/CAL-seam.yaml, or bench_observer records
+    nothing and a comparison finds two empty CSVs instead of a delta.
+    `tick_hz` is the e2e sync loop's rate (what drives `ext_on_tick`,
+    extension/src/ExtensionInit.cpp); `lidar_expected_hz` is both
+    publishers' wall-clock-decimated rate (extension/src/publishers/
+    BenchCloudPublisher.h and the fork's ROS2.cpp twin). Neither is
+    inferable from the cell being a calibration cell -- CAL-rmw registers a
+    rate but no tick at all."""
+    assert set(_observer_topics("CAL-seam")) == {"/bench/seam_cloud", "/bench/incore_cloud"}
+    metrics = cell_info.metrics_for(doc, "CAL-seam")
+    assert metrics["tick_hz"] == 20.0
+    assert metrics["lidar_expected_hz"] == 10.0
+    assert metrics["ndt_expected_hz"] is None  # no localization stack in this cell
+    entry = cell_info.cell_entry(doc, "CAL-seam")
+    assert "dropped" not in entry
+    assert entry["mandatory"] is True
+
+
+CALIBRATION_SH = CONFIG_DIR.parent / "cells" / "calibration.sh"
+
+
+def test_cal_seam_branch_exports_both_bench_env_vars_into_the_run_e2e_invocation():
+    """A LITERAL PIN, explicitly narrow and explicitly disclosed as such --
+    NOT a subprocess check. Everything this suite CAN verify behaviourally
+    now lives in tests/benchmarks/test_calibration_launch.py, which runs the
+    real `calibration.sh plan` as a subprocess (no CARLA needed: `plan` mode
+    writes launch.env and exits before ever touching run_e2e.sh) and asserts
+    on the real generated file -- that is where APPROACH, ARM_ENABLED,
+    GT_ENABLED, INJECTOR_ENABLED, RUN_MODE and SPAWN_ARGS are pinned as real
+    behaviour.
+
+    What is NOT reachable that way: the two `$CARLA_BENCH_*_CLOUD=1` exports
+    and `WITH_AUTOWARE=0` live in the `up`-mode subshell that execs
+    `run_e2e.sh`, which `plan` mode exits before reaching -- and actually
+    running it needs a live CARLA this environment does not have (Task 8's
+    brief is explicit: no CARLA, no live-launch attempt). So this one
+    assertion stays a text scan, and is deliberately SLICED NARROWLY to just
+    the exec-subshell's own body (`cd "$BENCH_REPO"` .. `echo $! >` its pid
+    file) rather than the whole CAL-seam branch: that body contains no
+    comments, so unlike a scan over the full branch (which a comment could
+    satisfy -- e.g. `WITH_AUTOWARE=0` appears in an explanatory comment a few
+    lines above this same subshell), every match here is a real assignment
+    on the command line `nohup bash scripts/e2e/run_e2e.sh` actually runs
+    with."""
+    text = CALIBRATION_SH.read_text()
+    seam_branch_start = text.index('"$BENCH_CELL" = "CAL-seam"')
+    rmw_guard_start = text.index('"$BENCH_CELL" = "CAL-rmw"')
+    assert seam_branch_start < rmw_guard_start, (
+        "the CAL-seam branch must be handled before the CAL-rmw-only guard"
+    )
+    seam_branch = text[seam_branch_start:rmw_guard_start]
+    # The old refusal text this branch replaces -- a negative assertion, so
+    # it is not weakened by scanning the whole branch: nothing in the intact
+    # branch needs to contain this phrase, comment or code.
+    assert "has not been written" not in seam_branch
+
+    exec_start = seam_branch.index('cd "$BENCH_REPO"')
+    exec_end = seam_branch.index('echo $! >"$CARLA_PID_FILE"', exec_start)
+    exec_body = seam_branch[exec_start:exec_end]
+    assert "CARLA_BENCH_SEAM_CLOUD=1" in exec_body
+    assert "CARLA_BENCH_INCORE_CLOUD=1" in exec_body
+    assert "WITH_AUTOWARE=0" in exec_body
+    assert "run_e2e.sh" in exec_body
