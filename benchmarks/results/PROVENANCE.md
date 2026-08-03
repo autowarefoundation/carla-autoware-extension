@@ -3203,6 +3203,21 @@ empty** — a publisher that is simply absent, which downstream would read as "t
 in-core path has no latency". That is the worst available failure for this
 instrument, which is why this is filed as a blocker rather than worked around.
 
+**How far back this reaches: checked, and the answer is "not at all".** The
+obvious worry is that a frozen artifact means every extension-fork source change
+since the freeze is missing from what cell A actually ran, which would put the
+filed P3 cell-A results in doubt. It does not. There is **no fork commit between
+the artifact's build time (2026-07-23 18:02:40) and the in-core twin commit**:
+`ae166d80d` (the IMU sensor-frame fix) landed at 2026-07-23 17:55:28, about seven
+minutes *before* the artifact was built, and nothing else landed on
+`feat/autoware-seminative-phase-b` until 2026-08-03. Every filed cell-A result was
+therefore produced by an editor artifact that matched its pinned fork revision,
+and `extension_carla_fork.sha` = `ae166d80d` remains an accurate description of
+that artifact. The only source change the frozen artifact is missing is the
+in-core twin added today. No retroactive audit of P3 is required — but the defect
+will bite the next change to that fork, which is why it is filed here rather than
+left as a Task-9 footnote.
+
 **CAL-seam collection is BLOCKED.** No CAL-seam run may be started until the
 extension tree's editor artifact is genuinely rebuilt. Cell A is independently
 gated by `verify_editor_artifact.sh` (`run_e2e.sh:126`), which refuses on its
