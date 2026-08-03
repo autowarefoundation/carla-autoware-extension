@@ -333,11 +333,12 @@ autoware_045:
 # verify_tier4_artifact.sh reports the same tier4_plugin_sha256
 # (26f95dec...93c4e) before and after.
 # Both gates PASS. Transcript re-captured 2026-08-03 13:30 after the
-# frame-position fix below, so these numbers match the artifact and the fork
+# publish-order pre-registration below, so these numbers match the artifact and
+# the fork
 # HEAD actually on disk -- re-verify with `stat -c %Y` and `git show -s
 # --format=%ct HEAD` and they will agree:
-#   verify_editor_artifact.sh -> OK, .so newer than HEAD (1785789045 >=
-#     1785788873); engine and Carla module BuildId agree (bc08ce19)
+#   verify_editor_artifact.sh -> OK, .so newer than HEAD (1785790050 >=
+#     1785789893); engine and Carla module BuildId agree (bc08ce19)
 #   verify_tier4_artifact.sh  -> OK, tier4_stale_ack=none
 engine:
   build_id: bc08ce19-f19c-46fe-808f-dbb2b0ddf41a # 2026-08-03 relink round; all 3 trees agree (5/5 manifests)
@@ -350,19 +351,23 @@ extension_carla_fork:
   # libUnrealEditor-Carla.so frozen at 2026-07-23 it deliberately stayed at
   # ae166d80d -- advancing it then would have asserted a build that did not
   # exist on this host. It moved to 5981f5168 (the in-core twin) once that
-  # was cleared, and to 783e29fbf when the twin's call site was moved to fix
-  # the frame-position defect (PROVENANCE 11.7).
+  # was cleared, to 783e29fbf when the twin's call site was moved to fix the
+  # frame-position defect (PROVENANCE 11.7), and to 62ca380f9 when the
+  # publish-order confound and its upper-bound reading rule were pre-registered
+  # into the twin's comment block (PROVENANCE 11.9; comment-only, no behaviour
+  # change, but the artifact is rebuilt anyway so this pin keeps naming the
+  # revision the loaded artifact was actually built from).
   # Verified before advancing, by symbol table rather than by mtime alone.
   # The artifact on disk is
   #   Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so
-  # (2026-08-03 13:30:45, epoch 1785789045, 10573528 bytes). It defines
+  # (2026-08-03 13:47:30, epoch 1785790050, 10573528 bytes). It defines
   # carla::ros2::MakeExtensionHost and TeardownExtensionEndpoints -- proving
   # it is the integration fork's own module, not the tier4 one -- and carries
   # undefined references to carla::ros2::BenchIncoreCloudInit /
   # BenchIncoreCloudOnTick, the in-core twin, resolved at load against
   # libcarla-ros2-native.so. The OnTick reference in particular is what
   # proves the moved call site is compiled into the plugin module.
-  sha: 783e29fbfc42176d826a46870f556c0b430c520b
+  sha: 62ca380f92efff57cabab4da67ab5abdd9fc94cc
 tier4_carla_fork:
   path: ~/src/carla-autoware-native
   branch: tier4/autoware-support

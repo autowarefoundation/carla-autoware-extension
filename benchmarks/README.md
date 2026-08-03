@@ -1320,6 +1320,49 @@ an unexpected sign) cannot be attributed to the seam without accounting for it, 
 attributes the whole delta to the seam would be biased in the seam's favour. Task 22's confound
 table must state this alongside the CAL-seam numbers, not merely note the difference.
 
+> **UPDATED 2026-08-03 (P4 Task 9) — the cell is REVIVED, one confound above no longer applies,
+> and a new, larger one is pre-registered below.** The 2026-07-30 blockquote at the head of this
+> entry is left standing as the P3-era fact it was; what follows supersedes it.
+>
+> **1. CAL-seam is no longer struck.** The owner revived it (P4 spec decision 6) and the fork-side
+> in-core twin — the half `patches/extension/README.md` says "was never written and will not be" —
+> now exists and is built into the loaded editor artifact. `C1(a)` is therefore **measurable
+> again**, and the "no evidence at all" status is superseded for P4. (The `cells.yaml` un-strike
+> is registered separately; this entry records only the confound consequences.)
+>
+> **2. The per-publish allocation asymmetry described above DOES NOT APPLY to the twin as built.**
+> That analysis assumed the spec's design, in which the in-core publisher was a
+> `CarlaPointCloudPublisher` subclass and so inherited `WritePointCloud`'s per-publish
+> `BuildPointFields(...)` rebuild. **The implemented twin is not that.** It deliberately does not
+> go through `CarlaPointCloudPublisher` at all — that is the Fast-DDS path, and routing through it
+> would have made the paired delta measure "Fast-DDS vs CycloneDDS plus the seam" instead of the
+> seam. It builds `fields` exactly once in `MakeCloudTemplate()` and `OnTick()` never touches it,
+> which is symmetric with the extension side's `msg_`. Verified in source: the twin's TU contains
+> no reference to `CarlaPointCloudPublisher`, `BuildPointFields` or `WritePointCloud` outside one
+> comment, and its `OnTick` body touches `fields` zero times. The analysis above is kept because
+> it correctly describes the base class and would apply again to any subclass-based revival.
+>
+> **3. NEW, and now the LARGEST residual confound: publish order.** The two twins publish from the
+> same thread microseconds apart, and the **seam goes first**
+> (`FCarlaEngine::OnPostTick` drives `ROS2ExtensionLoader->Tick()` before `BenchIncoreCloudOnTick()`).
+> Two publishes on one thread cannot both go first, so a fixed order bias is unavoidable; seam-first
+> is chosen deliberately because it makes the **seam** pay any cold-cache / first-writer cost and
+> gives the in-core twin the warmed path — the bias therefore runs **against** the seam being cheap,
+> so a seam that still measures cheap is a robust result rather than an artifact of the ordering.
+>
+> **PRE-REGISTERED READING RULE, recorded 2026-08-03 before any CAL-seam run is collected:**
+> **if the measured seam cost lands on the order of a cache-warming effect, `C1(a)` is reported as
+> an UPPER BOUND, not a point estimate.** It is written down now, ahead of the data, so it binds
+> whatever the data turns out to say — deciding how to read a number after seeing it is the
+> post-hoc move this campaign's no-peeking discipline exists to prevent. Reordering those two call
+> sites changes the measurement and invalidates this rule. Also recorded in the twin's TU comment
+> block, in the `Amendments made so far:` list below, and in `results/PROVENANCE.md` §11.9.
+>
+> **What Task 22 owes, restated:** the withdrawn instruction is reinstated in amended form — the
+> confound table must state the serializer difference (§11.8: same bytes, different code) and this
+> publish-order bias alongside the CAL-seam numbers, and must apply the upper-bound rule above if
+> it triggers.
+
 ### DDS middleware and transport (Task 9): the B family runs a different one
 
 Every other cell family gets the harness's default middleware. The
@@ -3368,6 +3411,39 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   scope and are corrected with it. Nothing about the PUBLISHERS changes — they
   remain committed and never run.
 
+- **2026-08-03 (P4 Task 9) — pre-registered reading rule for `C1(a)`: the
+  CAL-seam publish-order bias, and when the result is an UPPER BOUND.** Cell
+  `CAL-seam` is revived (P4 spec decision 6) and the fork-side in-core twin now
+  exists, so `C1(a)` is measurable again — the 2026-07-30 "UNMEASURED, no
+  evidence at all" loss above is superseded for P4 and is left standing as the
+  P3-era fact it was. This entry registers **how the revived measurement may be
+  read**, and it is filed BEFORE Task 10 collects a single run so that it binds
+  whatever the data turns out to say. Deciding a reading rule after seeing the
+  number is the post-hoc move the no-peeking discipline exists to prevent, which
+  is why this is a pre-registration and not a write-up decision.
+
+  The two twins publish from one thread microseconds apart and the **seam goes
+  first** (`FCarlaEngine::OnPostTick` drives `ROS2ExtensionLoader->Tick()` before
+  `BenchIncoreCloudOnTick()`). Two publishes on one thread cannot both go first,
+  so a fixed order bias is unavoidable; seam-first is deliberate, because it
+  makes the seam pay any cold-cache / first-writer cost and gives the in-core
+  twin the warmed path — the bias runs **against** the seam being cheap, so a
+  seam that still measures cheap is robust rather than an artifact. This is now
+  the **largest** residual confound, ahead of the serializer difference (which
+  was verified 2026-08-03 to be a difference of code and not of payload: both
+  sides emit an identical 921 905 bytes, same type name, same RIHS01 hash).
+
+  **THE RULE: if the measured seam cost lands on the order of a cache-warming
+  effect, `C1(a)` is reported as an UPPER BOUND, not a point estimate.**
+
+  Recorded identically in the twin's TU comment block
+  (`LibCarla/source/carla/ros2/extension/BenchIncoreCloudPublisher.cpp`), in the
+  `## Known confounds` CAL-seam entry, and in `results/PROVENANCE.md` §11.9.
+  Reordering those two call sites changes the measurement and invalidates the
+  rule. **No metric definition, threshold, margin, aggregation rule or scoring
+  window is edited by this entry** — it adds a reading constraint on one claim
+  and nothing else; `config/margins.yaml` and `analysis/` are untouched.
+
 - **2026-07-30 — registered loss: no hard-fork-maintenance finding (`B45`).**
   This cell existed to measure what it costs to carry the tier4 CARLA fork
   against a **different** Autoware release (`pins.yaml` `autoware_045`,
@@ -4132,3 +4208,12 @@ plugin `UnrealEditor.modules` before and after, and stop if it moves.
 
 Full derivation, the two wrong root causes it went through, and the
 before/after evidence: `benchmarks/results/PROVENANCE.md` §11.3, §11.5 and §11.6.
+
+**Standing cost, so you budget it instead of rediscovering it: any commit to the
+CARLA fork needs a post-commit `carla-unreal-editor` rebuild before
+`verify_editor_artifact.sh` will pass.** The gate compares the artifact's mtime
+against `git show -s --format=%ct HEAD`, so committing after a build always moves
+HEAD past the artifact and the gate correctly refuses. Task 9 paid this cycle
+three times. Do **not** "fix" it by loosening the gate: that strictness is what
+caught the frozen artifact in the first place, and a gate that refuses a stale
+build is worth far more than the rebuild it costs.

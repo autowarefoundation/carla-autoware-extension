@@ -3543,3 +3543,71 @@ payload-identity leg of the pairing is therefore verified, not assumed. The
 serializer difference remains a residual confound in the sense that different
 *code* does the emitting, but it is now established that it produces an
 identically sized and identically typed message.
+
+### 11.9 PRE-REGISTERED: the CAL-seam publish-order bias, and the upper-bound reading rule for C1(a)
+
+**Filed 2026-08-03, before Task 10 collects a single CAL-seam run.** That timing
+is the point of this section, not an incidental detail: a rule for reading a
+number is only meaningful if it is fixed before the number exists. Deciding after
+seeing the data is the post-hoc move this campaign's no-peeking discipline exists
+to prevent, and §11.7's fix created exactly the kind of residual that invites it.
+
+**The confound.** After §11.7 moved the in-core twin adjacent to the seam twin,
+the two publish from the same thread microseconds apart — and the **seam goes
+first**: `FCarlaEngine::OnPostTick` drives `ROS2ExtensionLoader->Tick()` (inside
+which `/bench/seam_cloud` publishes) before `BenchIncoreCloudOnTick()`.
+
+Two publishes on one thread cannot both go first, so a fixed order bias is not
+removable. What *is* a choice is which way it points, and it was made
+deliberately: seam-first means the **seam** pays any cold-cache / first-writer
+cost — cold instruction and data cache, the first touch of the CycloneDDS write
+path that frame, whatever queue state the first writer of a pair encounters — and
+the in-core twin runs on the warmed path. The bias therefore runs **against** the
+hypothesis this instrument exists to support. A seam that still measures cheap
+under this ordering is a robust result; a seam that measures cheap under the
+opposite ordering would not be.
+
+**This is now the largest residual confound**, ahead of the serializer difference
+recorded in §11.1 — which §11.8 reduced to a difference of *code* rather than of
+*payload* (both sides emit an identical 921 905 bytes, same overhead, same type
+name, same RIHS01 hash). The full residual set for the CAL-seam pair is now
+exactly two items: publish order, and serializer implementation. Everything else
+the instrument controls is symmetric by construction.
+
+**THE PRE-REGISTERED RULE**
+
+> **If the measured seam cost lands on the order of a cache-warming effect,
+> `C1(a)` is reported as an UPPER BOUND, not a point estimate.**
+
+It binds whatever the data says. It is not conditional on the result being
+inconvenient, and it may not be revisited after the runs are in — that would
+convert it back into the post-hoc judgement it exists to replace.
+
+**Where this is recorded**, deliberately in four places so neither a code reader
+nor the wrap author can miss it, and so it survives any one of them being edited:
+
+| home | why |
+| --- | --- |
+| `LibCarla/source/carla/ros2/extension/BenchIncoreCloudPublisher.cpp`, residual-confound block | the code reader, and whoever might reorder the call sites |
+| `benchmarks/README.md`, `## Known confounds` → CAL-seam entry | the C1(a) confound record the wrap author consults |
+| `benchmarks/README.md`, `## Pre-registration` → `Amendments made so far:` | the campaign's canonical pre-registration ledger — this is what makes it *pre*-registered rather than merely written down |
+| this section | the evidence record, next to §11.7 which created the confound and §11.8 which bounded the other one |
+
+**Reordering the two call sites changes the measurement and invalidates this
+rule.** Both the call site in `CarlaEngine.cpp` and the header say so.
+
+**One correction folded in while writing this**, because it changes the C1(a)
+confound set and would otherwise mislead: the `## Known confounds` CAL-seam entry
+describes a per-publish `BuildPointFields(...)` allocation that the fork side
+alone carries, via `CarlaPointCloudPublisher::WritePointCloud`. **That confound
+does not apply to the twin as actually built.** It assumed the spec's design, in
+which the in-core publisher was a `CarlaPointCloudPublisher` subclass; the
+implemented twin deliberately is not one, because that is the Fast-DDS path and
+routing through it would have made the paired delta measure "Fast-DDS vs
+CycloneDDS plus the seam". The twin builds `fields` once in `MakeCloudTemplate()`
+and `OnTick()` never touches it — symmetric with the extension side's `msg_`.
+Verified in source: no reference to `CarlaPointCloudPublisher`,
+`BuildPointFields` or `WritePointCloud` in the twin's TU outside a single
+unrelated comment, and zero `fields` touches in the `OnTick` body. The original
+analysis is kept, not deleted: it correctly describes the base class and would
+apply again to any subclass-based revival.
