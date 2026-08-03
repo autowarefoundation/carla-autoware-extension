@@ -269,6 +269,24 @@ def test_bcyc_metrics_mirror_cell_b(doc):
     assert cell_info.metrics_for(doc, "B-cyc") == cell_info.metrics_for(doc, "B")
 
 
+def test_cell_a_registers_the_control_published_time_topic(doc):
+    """REGISTERED 2026-08-03 (Task 5, P4 transport-sweep plan), closing the
+    gap Tasks 13/20 left open (this file's ALL_CELL_IDS parametrizations
+    already require the binding to be a topic the observer records once
+    non-null; this pins the VALUE). observer_topics/A.yaml has carried this
+    row since 2026-07-30 (Task 15b's live discovery on cell A's own stack,
+    commit 2453984); only cells.yaml's binding was missing, which left
+    control_staleness_ms UNAVAILABLE for the whole P3 duel
+    (docs/evaluation/p3-baseline.md Sec.1). Same value as cell B's -- the
+    same Autoware graph family (vehicle_cmd_gate's PublishedTimePublisher on
+    the gated /control/command/control_cmd) -- not because the two cells
+    were merged."""
+    assert (
+        cell_info.metrics_for(doc, "A")["control_published_time_topic"]
+        == "/control/command/control_cmd/debug/published_time"
+    )
+
+
 def test_the_two_bridge_cells_do_not_share_a_rate(doc):
     """E is PATCHED to 20 Hz on /pointcloud_raw_ex; E0 is the AS-SHIPPED image on
     /pointcloud_before_sync. Copying either cell's rate onto the other is the

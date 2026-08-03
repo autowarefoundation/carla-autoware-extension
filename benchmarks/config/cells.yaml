@@ -129,7 +129,25 @@ cells:
       lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
       ndt_topic: /localization/pose_estimator/pose_with_covariance
       control_topic: /control/command/control_cmd
-      control_published_time_topic: # Tasks 13/20, after live discovery
+      # REGISTERED 2026-08-03 (Task 5, P4 transport-sweep plan), before any P4
+      # collection run, closing the gap Tasks 13/20 left open: this cell's own
+      # observer_topics/A.yaml has carried the PublishedTime row since
+      # 2026-07-30 (Task 15b's live discovery on cell A's own stack, right
+      # after arming), but this binding stayed null, which left
+      # control_staleness_ms UNAVAILABLE for the whole P3 duel
+      # (docs/evaluation/p3-baseline.md Sec.1, and duel_verdict.build_verdict_
+      # table's "unavailable if either side is unbound" rule -- see A.yaml's
+      # own "STILL OWED" note this closes). SAME AUTOWARE GRAPH FAMILY AS
+      # CELL B: both approaches gate through vehicle_cmd_gate and the same
+      # PublishedTimePublisher implementation stamps the gated
+      # /control/command/control_cmd on both, so the topic name and type
+      # (autoware_internal_msgs/msg/PublishedTime) are identical to B's
+      # registration -- not a merge of the two cells, a property of the
+      # shared Autoware stack. NOT yet live-confirmed through THIS binding:
+      # that check is owed to Task 11's bring-up boot (`ros2 topic list |
+      # grep published_time` against a live cell-A run), which must observe
+      # this exact topic before any P4 duel run proceeds.
+      control_published_time_topic: /control/command/control_cmd/debug/published_time
       cpu_process_label: carla-server
       tick_hz: 20.0 # runner/loop.py DEFAULT_FIXED_DELTA = 0.05
       # runner/spawn.py _SENSOR_TICK = "0.05" on the top LiDAR, and the

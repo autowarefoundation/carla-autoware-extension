@@ -3841,6 +3841,28 @@ B-cyc.yaml` and `config/processes/B-cyc.yaml` are byte-for-byte copies of
   B's own registration is untouched by this entry. `config/margins.yaml`,
   `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
   frozen file touched.
+- **2026-08-03 (Task 5 of the P4 transport-sweep plan) — cell A's
+  `control_published_time_topic` binding filled, making `control_staleness_ms`
+  computable for every P4 duel run.** `config/cells.yaml`'s cell-A binding
+  moves from null to `/control/command/control_cmd/debug/published_time` --
+  the SAME topic and type (`autoware_internal_msgs/msg/PublishedTime`) cell B
+  registers, because both approaches gate through `vehicle_cmd_gate` and the
+  same `PublishedTimePublisher` implementation stamps the gated
+  `/control/command/control_cmd` on either stack. `config/observer_topics/
+A.yaml` already carried this row (Task 15b, 2026-07-30, live discovery on
+  cell A's own stack) -- only the cells.yaml binding was missing, and this
+  task closes that gap without duplicating the observer line; its "STILL
+  OWED" note is amended to record the closure rather than rewritten. This is
+  the fifth and last of the primary duel's metrics: it was UNAVAILABLE for
+  the WHOLE P3 duel (`docs/evaluation/p3-baseline.md` Sec.1) because this one
+  binding was null, and `duel_verdict.build_verdict_table` reports a metric
+  unavailable when either side is unbound. NOT yet live-confirmed through the
+  filled binding -- that check is owed to Task 11's bring-up boot, which must
+  observe this exact topic on a live cell-A run before any P4 duel proceeds.
+  `config/observer_topics/B-cyc.yaml` is untouched (it already carries the
+  matching row, inherited from B.yaml by Task 4); `config/margins.yaml`,
+  `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
+  frozen file touched.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
