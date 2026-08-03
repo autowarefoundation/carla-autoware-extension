@@ -137,15 +137,20 @@ fi
 # benchmarks/scripts/raycast_baseline.py as the world's only client and only
 # tick authority.
 #
-# TWO CLAIMS IN THIS HEADER WERE SUPERSEDED (2026-08-03, corrected by the P4
+# THREE CLAIMS IN THIS HEADER WERE SUPERSEDED (2026-08-03, corrected by the P4
 # whole-branch review). They are the arm's PRE-FIX description; a later fix
-# updated the code and the inner comments and left this block standing. Kept
+# updated the code and the inner comments and left this block standing. Quoted
 # verbatim, because they record what the arm was designed to be and the
 # difference is the finding:
 #
 #   SUPERSEDED (1): "the same fork tree, the same extension .so, the same
 #   `--ros2 --rmw=cyclonedds` server".
 #   SUPERSEDED (2): "every gate that invocation is fronted by is re-run here".
+#   SUPERSEDED (3), from the "Why not simply" paragraph below, where the
+#   correction is applied in place rather than quoted a second time: the editor
+#   invocation here was "run_e2e.sh's own, line for line, with the runner and
+#   the Autoware bring-up dropped". It is no longer line for line -- the ROS 2
+#   flags are dropped too, which is what (1) is about.
 #
 # On (1): the editor line in the ablation block below carries NO `--ros2`, no
 # `--rmw` and no `--ros2-extension` -- see the MEASURED 2026-08-03 note there.
