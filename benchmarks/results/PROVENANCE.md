@@ -3150,7 +3150,7 @@ further engine relink is permitted for the remainder of the campaign.**
 `tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e`,
 `tier4_stale_ack=none`.
 
-### 11.3 LIVE DEFECT: the extension tree's editor artifact cannot be rebuilt on this host, so CAL-seam is BLOCKED
+### 11.3 LIVE DEFECT (RESOLVED in fix round 1, see §11.5): the extension tree's editor artifact would not rebuild
 
 `bash scripts/e2e/verify_editor_artifact.sh` **REFUSES** (exit 1):
 
@@ -3218,8 +3218,10 @@ in-core twin added today. No retroactive audit of P3 is required — but the def
 will bite the next change to that fork, which is why it is filed here rather than
 left as a Task-9 footnote.
 
-**CAL-seam collection is BLOCKED.** No CAL-seam run may be started until the
-extension tree's editor artifact is genuinely rebuilt. Cell A is independently
+**CAL-seam collection was BLOCKED on this.** It no longer is -- the cause was
+not what this section first concluded, and §11.5 records what it actually was
+and how it was cleared. Everything above is left exactly as filed, including
+the wrong reading, because the diagnostics that refuted it are the useful part. Cell A is independently
 gated by `verify_editor_artifact.sh` (`run_e2e.sh:126`), which refuses on its
 own, so no run can slip past this by accident.
 
@@ -3253,3 +3255,149 @@ authorized for a different purpose.
 Suite at this commit: **1084 passed, 1 skipped** (the skip is
 `test_observer_contract.py:105`, docker end-to-end, `BENCH_E2E=1`) — the
 pre-existing baseline, held exactly. `pre-commit run --all-files` clean.
+
+### 11.5 Fix round 1 (2026-08-03): the blocker was a stale UBT makefile, not engine state — cleared without spending D8 again
+
+§11.3 filed a blocker and, with it, a root cause: that the shared engine's
+`UnrealEditor` editor-module state was *bound* to the tier4 tree, so only engine
+surgery could redirect it. **That root cause was wrong.** The blocker was real and
+the diagnostics behind it were sound — three builds, before/after mtime snapshots,
+the 20/6 output split, the symbol tests — but the conclusion drawn from them
+over-read the evidence. §11.3 is left exactly as filed, wrong reading included,
+because what refuted it is worth more than a tidy record.
+
+**What actually caused it.** A first attempt at this paragraph blamed the
+project tree's `Makefile.bin` (dated 2026-07-21). **That was also wrong**, and the
+thing that refuted it is that the file is *still* dated 2026-07-21 — the fix never
+rewrote it. The correction, verified:
+
+The shared engine keeps **one** set of cached link actions for the editor's Carla
+module, as per-module shell scripts under
+`~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor/Development/`
+(`Link-libUnrealEditor-Carla.so.link.sh` and siblings). Each carries the absolute
+output path baked in. Both trees ship a project named `CarlaUnreal.uproject`, and
+**whichever tree last made UBT re-gather owns that path for both trees.** The
+tier4 tree last re-gathered on 2026-07-27/28, so every editor build — including
+ones invoked from the integration tree with a correct absolute `-project=` — linked
+the module to the tier4 path.
+
+`-project=` was never the problem, and this is worth stating flatly because it was
+the first hypothesis on both sides: `Unreal/CMakeLists.txt:341` has always passed
+an absolute one, `Build/Development/CMakeCache.txt` resolves
+`CARLA_SOURCE_DIR=/home/youtalk/src/carla-autoware-integration`, and the failing
+build log shows
+`-project=/home/youtalk/src/carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject`
+verbatim. The redirect happened *below* the flag, in cached actions the flag does
+not participate in. The tell that pointed at a stale cache, which §11.3 noticed
+but did not follow up: a no-op rebuild relinked the module **every single time**,
+because the integration-side output UBT was checking never got any newer.
+
+**The fix, in one invocation, touching no engine state:**
+
+```bash
+$UE/Engine/Build/BatchFiles/Linux/Build.sh CarlaUnrealEditor Linux Development \
+  -project=/home/youtalk/src/carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject \
+  -game -NoUBTMakefiles
+```
+
+`-NoUBTMakefiles` makes UBT re-gather instead of replaying the cached graph. The
+measured effect is unambiguous: the link scripts' tree references **flipped from
+12 `carla-autoware-native` / 1 `carla-autoware-integration` to 1 / 12**, all **6**
+files landed in `carla-autoware-integration` and **0** in `carla-autoware-native`.
+The regenerated cache is itself correct, so this is a one-time unstick and not a
+flag anyone has to keep passing: the ordinary documented target,
+`cmake --build Build/Development --target carla-unreal-editor`, was re-run
+afterwards and wrote **all 26** of its outputs into the integration tree
+(previously 20/6).
+
+**D8 was not spent again.** `engine.build_id` was captured before and after every
+attempt and held `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` on all 5 manifests
+throughout — no engine relink occurred, so this stayed inside the re-instated D8
+rather than being a second registered intervention. The tier4 tree was not
+disturbed either: `verify_tier4_artifact.sh` reports the identical
+`tier4_plugin_sha256=26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e`
+before and after.
+
+**Both gates now PASS.**
+
+```text
+scripts/e2e/verify_editor_artifact.sh                     -> exit 0
+  OK: editor plugin .so is newer than HEAD (1785785185 >= 1785781990)
+  OK: engine and Carla module BuildId agree (bc08ce19-f19c-46fe-808f-dbb2b0ddf41a)
+
+TIER4_TREE=~/src/carla-autoware-native benchmarks/scripts/verify_tier4_artifact.sh -> exit 0
+  OK: tier4 plugin artifacts are newer than every source ...
+  tier4_stale_ack=none
+```
+
+**The twin is verifiably in the artifact a live run loads** — checked by symbol
+table, not by mtime. The rebuilt
+`Unreal/CarlaUnreal/Plugins/Carla/Binaries/Linux/libUnrealEditor-Carla.so`
+(2026-08-03 12:26:25) *defines* `carla::ros2::MakeExtensionHost` and
+`carla::ros2::TeardownExtensionEndpoints`, which proves it is the integration
+fork's own module rather than the tier4 one, and carries undefined references to
+`carla::ros2::BenchIncoreCloudInit` / `BenchIncoreCloudOnTick` — the in-core twin,
+resolved at load against `libcarla-ros2-native.so`.
+
+**Consequently `extension_carla_fork.sha` now advances** from `ae166d80d` to
+`5981f5168a0d87ffacddc4635f73e1373e185ad6`, and the `incore_twin_sha` /
+`incore_twin_status` scaffolding §11.4 introduced is retired — it existed only to
+hold the revision while the artifact did not contain it. §11.4's reasoning for
+*not* advancing the pin while the artifact was frozen still stands as written and
+is why the pin was never allowed to describe a build that did not exist.
+
+**CAL-seam is UNBLOCKED for collection** as far as artifact readiness goes. What
+§11.1 says about the instrument itself is unchanged, including the residual
+serializer confound that sits inside the measured delta.
+
+### 11.6 ALTERNATION HAZARD: the editor-module binding is shared and exclusive — only one tree at a time can refresh its Carla module
+
+Tested immediately after the §11.5 fix, because P4 will alternate cells A and B
+and this decides whether it can.
+
+A tier4 `cmake --build Build --target carla-unreal-editor` was run. It wrote the
+Carla editor module into the **integration** tree (`libUnrealEditor-Carla.so`
+mtime → 2026-08-03 12:43:45) and left the **tier4** artifact untouched at
+11:48:59. The link scripts' tree references stayed at 1 native / 12 integration.
+
+So the ownership established in §11.5 is **not** per-invocation and does **not**
+follow the tree you build from. It follows whichever tree last made UBT
+re-gather, it is shared across both trees, and it is exclusive: **only one tree's
+editor Carla module can be refreshable at a time.** Before the fix that tree was
+tier4 (which is exactly why cell A's artifact sat frozen from 2026-07-23); it is
+now the integration tree.
+
+**Cell A is fine and is what the campaign needs right now.** The integration
+artifact is current, both gates pass, and its content was checked by symbol table
+rather than mtime: it defines `carla::ros2::MakeExtensionHost` and
+`TeardownExtensionEndpoints` (so it is the integration fork's own module, not the
+tier4 one) and carries undefined references to `BenchIncoreCloudInit` /
+`BenchIncoreCloudOnTick` (the twin) and to `BlobCreatePublisher` / `BlobPublish`
+(the CycloneDDS blob path the twin and the seam share). Size 10 573 512, identical
+to what the integration-tree build produced at 12:26:25.
+
+**Cell B now carries the same latent trap cell A had, and must be told about
+it.** The tier4 artifact is frozen at 11:48:59 and a tier4 editor rebuild will not
+refresh it. That is **currently harmless and not a defect in any filed result**:
+`verify_tier4_artifact.sh` passes because the tier4 artifacts are newer than every
+tier4 source, `tier4_plugin_sha256=26f95dec…93c4e` is unchanged across this entire
+task, and the tier4 sources are pinned and not changing. But **any** future tier4
+source change will hit this identical trap and will do so silently — the build
+will report success and the artifact will not move.
+
+The remedy is symmetric: one `-NoUBTMakefiles` invocation naming the tier4
+`.uproject` flips ownership back. **Do not flip it speculatively** — doing so
+re-breaks cell A. Flip it only when a tier4 source change actually needs to reach
+an artifact, and flip it back afterwards. Since both trees' sources are pinned for
+P4, neither flip should be needed again during this campaign.
+
+**Answering the question P4 planning actually needs: is cell A collectable?
+YES.** Both gates pass, the twin is verifiably in the artifact a live run loads,
+`engine.build_id` held `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` across every attempt
+so D8 was not spent again, and no second engine-level intervention was needed or
+performed. Dropping CAL-seam/C1(a) and running P4 as a transport duel only is
+therefore **not** forced. For completeness, had the repair failed, cell A's gate
+could have been restored trivially by moving the fork branch pointer back to
+`ae166d80d` — the gate compares artifact mtime against `git show -s --format=%ct HEAD`
+— but that restores the gate by **removing the twin**, which is the same thing as
+dropping CAL-seam. There was no third option that kept both.
