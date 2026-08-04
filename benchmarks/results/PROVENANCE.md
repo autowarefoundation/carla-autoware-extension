@@ -3636,3 +3636,273 @@ Verified in source: no reference to `CarlaPointCloudPublisher`,
 unrelated comment, and zero `fields` touches in the `OnTick` body. The original
 analysis is kept, not deleted: it correctly describes the base class and would
 apply again to any subclass-based revival.
+
+---
+
+## 12. The first CAL-seam collection (P4 Task 10, live 2026-08-03)
+
+**Cell CAL-seam has now been measured.** It was struck for five weeks
+(2026-07-30 – 2026-08-03, §11 and the sections it cites), reinstated by P4
+Tasks 8–9, and this is the first time it has ever produced filed runs:
+`results/CAL-seam/run-001…run-005`, five runs, static arm, **none excluded**.
+
+`C1(a)` seam overhead therefore stops being UNMEASURED. This section records
+what the collection established about the **instrument**; it deliberately
+states no seam-vs-in-core delta and no verdict — Task 16 reads the number, and
+writing it here would be the peeking the campaign's own discipline forbids.
+
+### 12.1 The identity gate, and the one place a `4210e602` reading is not drift
+
+The six-key census (`docs/evaluation/p3-baseline.md` §9.1, run verbatim) was
+taken before anything booted. Every filed manifest from the UE cells still
+reports `buildid=4210e602`, and that is **correct and expected**, not drift:
+`pins.yaml:255-259` states the rule — "Every filed result and every evidence
+document under `benchmarks/results/` and `benchmarks/evidence/` still carries
+`4210e602`: those record what produced them and are NOT updated." A census over
+*filed history* cannot answer a question about the *live* environment, so the
+gate was taken live as well, against the NEW pins:
+
+| key | live value | pinned | verdict |
+| --- | --- | --- | --- |
+| `extension_carla_fork.sha` | `62ca380f92efff57cabab4da67ab5abdd9fc94cc` | same | MATCH |
+| `tier4_carla_fork.sha` | `6315b856f` | same | MATCH |
+| `engine.build_id` | `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` on **11 of 11** `UnrealEditor.modules` (engine + both trees' `Unreal/CarlaUnreal/**`, `preflight.sh`'s own scope) | same | MATCH |
+| `dds_profile_sha256` (cyclone) | `1eeef31e…f2865` | P3 table | MATCH |
+| `dds_profile_sha256` (udp_only) | `9886f744…65098` | P3 table | MATCH |
+| `autoware_universe_devel.digest` | `sha256:5c22369a…e8ee` | same | MATCH |
+| `bench_observer_images` local digest | `sha256:b78ec01a…a5385` | same | MATCH |
+| `harness_git_sha` | `7a3651bd513cd9d3ad808205c5e922d66a24daa1`, **clean** | — | recorded |
+| `patches_git_sha` | `7000c7855bea62960f47d18774b2aca02f264777` | — | recorded |
+
+**Zero `4210e602` readings live.** No STOP.
+
+`patches_git_sha` is the one key that moved relative to P3 (`ccff4f9` →
+`7000c785`) and it is **explained rather than merely observed**: `7000c78` is
+Task 9's own commit, "feat(bench): the registered relink round — in-core bench
+publisher, new engine BuildId pinned", which touched `benchmarks/patches/`. It
+is derived from git, not an environment fact, and P4 runs are expected to carry
+a different value from P3's.
+
+**Provenance improvement over P3, worth stating because P3 had to disclose the
+opposite.** All five CAL-seam manifests carry **clean, unsuffixed**
+`harness_git_sha` and `patches_git_sha`. The P3 caveat — 20 manifests with
+`-dirty` on both keys, 12 of them behind the frozen `one_hop_wall_ms` margin
+(`docs/evaluation/p3-baseline.md` §9.1) — does **not** recur here. It was kept
+that way deliberately: no tracked file outside `benchmarks/results/` was edited
+between the identity gate and the fifth run, and this section itself was written
+only into `benchmarks/results/`, which `write_manifest.py:107-114` excludes from
+its dirty test.
+
+### 12.2 FINDING: CAL-seam manifests carry no `placement.engine_build_id`
+
+`preflight.sh`'s BuildId check (section 5) is gated on
+`APPROACH = extension | tier4-native` (`preflight.sh:144`), and
+`RunManifest.validate()` requires the key only for `UE_APPROACHES`
+(`analysis/manifest.py:17,186-187`). CAL-seam's registered approach is
+`calibration`, so **no BuildId reaches its manifest** — even though this cell
+boots the extension fork's `UnrealEditor` exactly like cell A does. In the
+six-key census CAL-seam rows therefore print `buildid=-`, indistinguishable at
+a glance from the genuinely container-only CAL-rmw rows.
+
+Consequence, stated precisely: `exclusions.md` criterion 8 ("Engine BuildId
+mismatch … discovered after run start") has **no manifest-side record** for this
+cell.
+
+**It is not unguarded in practice, and the guard's output is retained per run.**
+`cells/calibration.sh` boots `scripts/e2e/run_e2e.sh`, whose line 126 runs
+`scripts/e2e/verify_editor_artifact.sh` before the editor starts. Its output is
+captured into each filed run's own `launch.log`, identically in all five:
+
+```
+OK: editor plugin .so is newer than HEAD (1785790050 >= 1785789893)
+OK: engine and Carla module BuildId agree (bc08ce19-f19c-46fe-808f-dbb2b0ddf41a)
+```
+
+So every CAL-seam run *is* BuildId-gated at boot, by a stricter check than
+preflight's (it also compares the artifact's mtime against fork HEAD), and the
+evidence lives inside the run directory. **Recorded, not repaired**: changing
+`preflight.sh` or `manifest.py` mid-collection would move `harness_git_sha` and
+split this cell's five runs across two harness revisions, which costs more
+provenance than the gap costs. It is owed to whoever next touches preflight.
+
+### 12.3 FINDING: CAL-seam manifests record `run_mode: container-only` for an editor-game cell
+
+`run.sh:484-488` derives `RUN_MODE_HINT` from the **approach**, mapping
+`extension | tier4-native → editor-game`, `python-bridge → shipping-headless`,
+and everything else to `container-only`. `calibration` falls to that default —
+which is right for CAL-rmw and **wrong for CAL-seam**, which boots an
+`UnrealEditor` in `-game` mode. `config/processes/CAL-seam.yaml`'s own header
+asserts the opposite ("manifest `placement.run_mode` = `editor-game`"), so the
+file that describes this cell's processes and the manifest that records its
+placement now disagree.
+
+**No measurement consequence, verified rather than assumed.** Nothing under
+`benchmarks/**` reads `placement.run_mode`: it appears only in
+`PLACEMENT_KEYS` (`analysis/manifest.py:16`) as a presence check, and the
+`RUN_MODE` that `teardown.sh:363` branches on to stop a UE editor is a
+**different** variable, read from `launch.env`, which `calibration.sh:142`
+correctly sets to `editor-game`. Teardown behaved correctly on all five runs.
+The defect is confined to one provenance label. **Recorded, not repaired**, for
+the same reason as §12.2.
+
+### 12.4 The registered `report.py` trap, reproduced exactly as pre-registered
+
+`cell_info` reports `has_sim_clock: true` for CAL-seam (`carla: 0.10-fork`), so
+`run.sh` step 15 takes the FITTABLE-window branch and hands the run to
+`report.summarize_run`, which applies `analysis/clockfit.fit_sim_wall_affine` to
+the two bench publishers' **wall** header stamps. The result is in every filed
+run's `report.md`; `run-001`'s reads:
+
+| run | topic | hz | p95 ms | 1-hop p50 ms | 1-hop p99 ms | MB/s |
+|---|---|---|---|---|---|---|
+| run-001 | /bench/incore_cloud | 8.02 | 151.09 | -1790250414630.00 | -1790250414553.68 | 7.40 |
+| run-001 | /bench/seam_cloud | 8.05 | 151.11 | -1790250414630.24 | -1790250414553.39 | 7.43 |
+
+Those one-hop columns are the sim epoch subtracted from a wall epoch. **This is
+the registered trap, not a new defect**: it was written down before collection
+and the remedy was written down with it — the gate and the measurement are read
+from `scripts/cal_report.py`, which takes the direct wall difference and needs
+no fit (`cal_report.py`'s own docstring, lines 51-57). `run-001` reads
+0.72 ms / 0.45 ms p50 there. The `hz`, `p95 ms` and `MB/s` columns above are
+unaffected and correct. Nothing was special-cased to suppress the rendering:
+step 15 routes on `carla:` and CAL-seam is `0.10-fork`, so both tools are used,
+for different purposes, exactly as registered.
+
+### 12.5 FINDING: the registered `lidar_expected_hz: 10.0` is unachievable by construction
+
+**Both twins publish at ~8.0 Hz, not 10 Hz ± 2%, in all five runs.** This was
+not anticipated by the cell's registration and is recorded here in full,
+including the hypothesis it refuted.
+
+**REFUTED HYPOTHESIS — observer-side loss.** The first reading was that the
+publishers emit at 10 Hz and the observer drops ~20 % of a 921 KB message at
+10 Hz × 2 topics over Cyclone on `lo`. That would have made the shortfall an
+*instrument* property and a candidate `harness:` exclusion. **It is false.** The
+publisher writes `header.stamp` at publish time, so publisher-side and
+observer-side cadence can be compared directly on the same rows, and on
+`run-001` they are the same number to five significant figures:
+
+| topic | mean `header_stamp` Δ | mean `arrival_system` Δ |
+| --- | --- | --- |
+| `/bench/seam_cloud` | 124.27 ms | 124.27 ms |
+| `/bench/incore_cloud` | 124.76 ms | 124.76 ms |
+
+The observer lost essentially nothing. The shortfall is **publisher-side**.
+
+**MECHANISM, measured then confirmed in source.** The sim clock advances in
+exact 50.0 ms steps (all 1257 steps of `run-001`, no exceptions) — a 20 Hz world
+tick — arriving every 50.12 ms of wall time (p50; p95 50.43 ms, max 50.65 ms).
+The sim-clock delta **at publish** takes only two values, ever:
+
+```
+100.0 ms  x264      150.0 ms  x243        (run-001, /bench/seam_cloud)
+```
+
+i.e. each publish lands on the 2nd or the 3rd tick after the previous one, never
+the 1st and never the 4th. The seam publisher's decimation
+(`extension/src/publishers/BenchCloudPublisher.cpp:104-113`) is:
+
+```cpp
+const auto now = std::chrono::steady_clock::now();
+if (has_published_ && (now - last_pub_) < kPeriod) { return; }
+has_published_ = true;
+last_pub_ = now;
+```
+
+`kPeriod` is 100 ms and the test runs once per `ext_on_tick`. Two ticks span
+100.24 ms, clearing the 100 ms threshold by a margin of **0.24 ms** — smaller
+than the measured tick jitter, so the 2-vs-3-tick decision flips roughly half
+the time. Note also `last_pub_ = now` rather than `last_pub_ += kPeriod`: the
+phase is reset at each publish, so a slipped tick is never recovered. The
+achievable rates are therefore quantized to 20/2 = 9.98 Hz and 20/3 = 6.65 Hz,
+and the observed ~8.03 Hz is their ≈52/48 mixture. **10.0 Hz is not reachable
+on this cell at any tick phase**, so the binding registered in `cells.yaml`
+("both bench publishers' wall-clock-decimated rate … both gated at 10 Hz")
+describes the publishers' *nominal* gate, not an attainable rate.
+
+**Why this does not touch `C1(a)`.** The decimation is **common-mode**: both
+twins are driven by the same `ext_on_tick`, with the same `kPeriod` and the same
+reset rule, and their achieved rates track each other to within 0.6 % in every
+run. This is the same argument the LiDAR-burst confound already turns on
+(§11.9 and `README.md`'s CAL-seam entry): a disturbance that precedes or scales
+both publishes alike cancels out of the paired delta. What it costs is sample
+count — ~500 paired samples per topic per run instead of ~600 — which is ample.
+
+**Why it is NOT an exclusion.** No criterion in `config/exclusions.md` 1-10
+fits, and that file's closing sentence forbids inventing an eleventh. Walked
+explicitly: not a crash or a launcher refusal (1) — every run came up and exited
+0; not a bring-up gate (2) — CAL-seam arms nothing, injects nothing and has no
+gated control output; not a harness defect discovered and fixed (3) — nothing
+was fixed and the observer was demonstrably not broken, which is what that
+criterion is about; not a clock stall (4) — RTF 0.9975-0.9978 and the watchdog
+never fired; not the Nishi warm-up (5) — this is Town10; not host load (6) —
+every run's recorded preflight loadavg is far below 8; not a port collision (7);
+not a BuildId mismatch (8) — §12.1; no harness recorder crashed (9); not an
+unpaced run (10). **The five runs are filed non-excluded**, which is also what
+the harness itself concluded at step 14 ("none") on every one.
+
+**Why it is NOT a retry.** The mechanism is deterministic in kind, and the five
+runs reproduce it within 0.17 Hz of each other. Re-running reproduces it.
+
+**It produces no silent wrong number.** `lidar_expected_hz` reaches an analysis
+only through `duel_verdict.py::_bind_achieved_rate_ratio` and
+`sweep_verdict.py`, and **both** bind it jointly with `metrics["lidar_topic"]`,
+which is `null` for CAL-seam. `achieved_rate_ratio` is therefore UNAVAILABLE for
+this cell by construction and reports itself as such. The mis-registered 10.0 is
+a documentation-level expectation with no consumer — which is precisely the
+condition under which recording it beats editing a pre-registration file
+mid-collection.
+
+**Owed downstream, not taken here:** `cells.yaml`'s CAL-seam
+`lidar_expected_hz` binding and `README.md`'s CAL-seam confound entry should
+state the attainable rate and this quantization. Both are outside Task 10's file
+scope (which is `results/` plus this document), and `cells.yaml` is a
+pre-registration artifact whose amendment belongs in the `Amendments made so
+far:` ledger.
+
+### 12.6 The payload-identity leg, now confirmed on the wire
+
+§11.8 closed the "same bytes" question at the **serializer**, by serializing one
+template message through each side. The collection confirms it **in flight**:
+across all five runs and every one of the ~5 000 recorded messages, `size_bytes`
+is **921 908** on `/bench/seam_cloud` and **921 908** on `/bench/incore_cloud`,
+with no other value appearing on either topic in any run. (The observer's
+`size_bytes` and §11.8's 921 905 CDR figure are different measurements of the
+same message and differ by the encapsulation/alignment the observer counts; what
+matters here is that the two topics agree exactly with each other, in every
+run.)
+
+### 12.7 Deviation: `bootstrap_carla_msgs.sh` is inapplicable to CAL-seam
+
+The campaign's inter-run hygiene rule pairs `docker compose -f
+docker/compose.yaml down` with `bash scripts/bootstrap_carla_msgs.sh`. The
+first was run between every pair of runs and after the last. The second was
+**not**, and could not be: `cells/calibration.sh` boots `run_e2e.sh` with
+`WITH_AUTOWARE=0`, so no `autoware` container is ever created, and
+`bootstrap_carla_msgs.sh`'s first act is to refuse when that container is not
+running —
+
+```
+PREFLIGHT FAIL: container 'autoware' is not running (docker compose up -d)
+```
+
+Its purpose — rebuilding `carla_msgs` inside a **recreated** container, because
+`~/carla_msgs_ws` lives outside every compose mount — has no referent for a cell
+that never has one. Recorded as a deviation rather than silently skipped. What
+the hygiene rule is actually for (DDS ghost nodes, stale containers, a held port
+2000) was verified directly between every pair of runs instead: no stray
+container, no `UnrealEditor` by process **name**, and port 2000 free. Each
+run's own preflight additionally reports `shm_user_cleared=0
+shm_root_cleared=0 shm_root_remaining=0` — no stale DDS shared memory
+accumulated across the five runs at all.
+
+### 12.8 Measurement condition, disclosed
+
+The host is a live desktop session, not a dedicated bench: with no run in
+flight the 1-min loadavg floor is ~2, from the browser, terminal and agent
+processes (verified by `ps` — no leftover CARLA, observer or sampler process
+was ever found between runs). Each run waited for a 1-min loadavg below 2
+before booting, and each manifest records the loadavg its own preflight read.
+This is the same class of disclosure as §8.4 and bounds nothing about the
+paired delta, which is taken within a single run.
+
