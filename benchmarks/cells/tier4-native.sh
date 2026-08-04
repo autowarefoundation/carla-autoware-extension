@@ -235,9 +235,19 @@ ABLATION_SPAWN_ARGS=""
 # TRANSCRIBED from benchmarks/evidence/p4-task11-bringup/b-cyc-lidar-mount.log
 # (which prints the line in this exact spelling), so it gets the same treatment
 # TIER4_LIDAR_ATTRIBUTES' `sensor_tick` gets -- pinned by a unit test against
-# that filed capture rather than trusted. Family-wide, not B-cyc-only: B and
-# B-cyc are the same fork tree, the same launcher and the same rig, and only
-# the DDS transport differs.
+# that filed capture rather than trusted.
+#
+# SCOPE, justified by APPROACH rather than by a cell list (corrected
+# 2026-08-04, Task 14 review M6 -- the first draft named only B and B-cyc and a
+# reader checking that enumeration would find it incomplete). This constant
+# applies to every cell this launcher serves, i.e. every `approach:
+# tier4-native` cell: B, B-cyc, D, B-hf and B45. One fork tree, one launcher,
+# one rig, and a pose measured RELATIVE TO THE EGO ACTOR, which no per-cell
+# knob moves -- B-cyc differs from B only in DDS transport, and D/B-hf/B45 only
+# in tick rate, message set and world. Naming the approach cannot go stale the
+# next time a cell is registered; enumerating cells would. D, B-hf and B45 are
+# all `dropped: owner-time-budget-2026-07-30`, so the inheritance is dormant
+# today -- but it is CORRECT, not merely harmless, if any of them is un-dropped.
 #
 # BENCH_ABLATION_MOUNT overrides it, so a re-measurement needs no code change.
 # A malformed override is not caught here: it reaches the client's own

@@ -753,6 +753,53 @@ def test_tier4_ablation_client_is_launched_with_the_measured_mount(tmp_path, ove
     assert argv[i + 1 : i + 7] == expected, argv
 
 
+def test_resolve_mount_prefers_an_explicit_mount_and_names_its_source():
+    """`--mount` wins for either rig, and the source is REPORTED, not implied.
+
+    The source string is what puts the pose's provenance into the run's own
+    `raycast_baseline.log`, so a filed log says where its mount came from
+    instead of leaving a reader to infer it from six numbers."""
+    loc, rot, source = raycast_baseline.resolve_mount(
+        raycast_baseline.TIER4_RIG, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    )
+    assert (loc, rot) == ((1.0, 2.0, 3.0), (4.0, 5.0, 6.0))
+    assert source == "--mount"
+
+
+def test_resolve_mount_warns_loudly_when_the_tier4_rig_falls_back_to_the_estimate(capsys):
+    """M5: a hand `--rig tier4` with no `--mount` gets a pose known to be wrong
+    by ~1.4 m in x, and used to get it SILENTLY -- `main()` printed the mount it
+    used but never where it came from. This repo's convention is that scripts
+    fail loudly with named checks; this is the named check for that seam."""
+    loc, rot, source = raycast_baseline.resolve_mount(raycast_baseline.TIER4_RIG, None)
+    assert source == "default_mount()"
+    assert (loc, rot) == raycast_baseline.default_mount()
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "--mount" in err
+    assert "1.4 m" in err, f"the warning must name the magnitude it warns about: {err!r}"
+
+
+def test_resolve_mount_is_silent_for_the_extension_rig(capsys):
+    """No warning there, and the asymmetry is the point: `default_mount()`
+    composes the committed kit, which IS the extension family's real mount.
+    Warning on an exact value would train a reader to ignore the warning that
+    matters."""
+    loc, rot, source = raycast_baseline.resolve_mount(raycast_baseline.EXTENSION_RIG, None)
+    assert source == "default_mount()"
+    assert (loc, rot) == raycast_baseline.default_mount()
+    assert capsys.readouterr().err == ""
+
+
+def test_the_warned_magnitude_is_the_measured_base_link_anchor():
+    """The 1.4 m the warning quotes is not a magic number: it is the gap between
+    what `default_mount()` returns and what Task 11 measured, i.e. the tier4
+    rig's `base_link` anchor offset. Pinned so the warning text and the
+    launcher's constant cannot drift apart silently."""
+    (kit_x, _, _), _ = raycast_baseline.default_mount()
+    measured_x = float(_measured_tier4_mount().split()[0])
+    assert kit_x - measured_x == pytest.approx(1.397071, abs=1e-6)
+
+
 def test_clock_writer_does_not_duplicate_a_header_that_already_exists(tmp_path):
     """The observer may win the race and create the file first."""
     path = tmp_path / "clock.csv"

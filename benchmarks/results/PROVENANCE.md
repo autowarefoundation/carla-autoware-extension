@@ -6214,3 +6214,154 @@ scorer while its data is being collected is exactly what "registration is not
 revised after data exists" forbids. Task 15 must either segregate its 32ch runs
 or teach the scorer a class filter **before** it collects, and it should know
 that a manifest field is the only durable fix.
+
+## 23. CORRECTIONS to §22, appended 2026-08-04 (P4 Task 14, review fix round 1)
+
+Six record-accuracy findings. **§22 is not rewritten**, no filed `.log` is
+edited, and nothing under `benchmarks/results/*/run-*` is touched. Each entry
+states what §22 or an evidence file claimed, what is actually true, and what
+was changed.
+
+Both ceiling booleans are UNCHANGED and were independently re-derived in
+review: cells A and B-cyc, nine rows each, all `reached False`, empty reasons.
+The review additionally established something §22.7 asserted only implicitly —
+that "no disjunct fired" is a REAL evaluation rather than an unevaluable one
+masquerading as it. `benchmarks/analysis/ceiling.py:84` *raises* when both
+`rtf` and `tick_rate_ratio` are `None`, so all eighteen rows were scored
+against a real per-sample series; on the twelve measured rows nothing was
+defaulted (`publisher_counts.json` and `quality.json` present on all twelve,
+and `publisher_rate = 1.000` is a genuine `max(0, 1 - published/expected)`
+measurement, not a fallback). The two structurally non-evaluable disjuncts on
+the six ablation rows are registered design and are visible in every ablation
+row's own notes column. **Both cells still step up to `32ch`.**
+
+### 23.1 (I1) An evidence file contradicted its own headline no-peeking claim
+
+`benchmarks/evidence/p4-task14-vlp16-sweep/PROVENANCE.md` opened by asserting
+the directory "contains no ceiling verdict, **no cross-cell reading**, and no
+`sweep_verdict.py` output" — and then, sixty lines further down, stated one:
+the `sensor_callbacks`/`ticks` ratio of the two rigs, with counts, for both
+cells. §22.5 carries the same statement.
+
+**The fact is correct and stays.** The ratio is fully determined by each rig's
+REGISTERED `sensor_tick` (0.05 s for the extension rig, 0.1 s for the tier4
+rig) against a common 0.05 s step; it is a configuration consequence, not a
+performance measurement, and it is what rules out a dropped-callback defect on
+six ablation runs. Removing it would delete a real integrity check to protect a
+sentence.
+
+**The headline was wrong, and the headline is what was fixed.** That file's
+opening claim is now scoped explicitly — "no cross-cell reading of a
+performance magnitude" — with the one admitted cross-cell statement named in
+the same breath, along with the reason it is admitted. This matters because
+that headline is what Task 16 will quote when arguing the no-peeking discipline
+held, and as written it was falsifiable by reading the same file to the end.
+
+### 23.2 (I2) `integrity_pass.py` claimed something it does not do, and its log carries both cells' measured counts
+
+The pass's docstring claimed it "can be run and read WITHOUT touching the
+sweep's measured magnitudes." **False, in one column.** An `observer rows`
+count IS `observed_count`, one of the three terms `cadence.reconcile_drops`
+consumes — a measured magnitude, not a presence check. `integrity-pass.log`
+consequently holds both cells' measured-arm row counts in one committed
+artifact, forty lines apart.
+
+**Correctly characterized:** this is not a *stated* cross-cell reading — no
+delta is computed and no prose anywhere in the directory compares the two — but
+it is precisely the material the rule withholds, and it falls short of the
+standard this same task applied one file over, where `sweep_verdict.py`'s
+tables were deliberately NOT filed *because* "they carry per-run magnitudes
+nothing is licensed to compare across cells before Task 16." The counts are
+also unnormalized for run duration, so any impression a reader forms from them
+is premature as well as unlicensed. What the integrity claim actually needs
+from that column is presence and non-emptiness, which a boolean carries just as
+well; the raw counts are not load-bearing for it.
+
+**The filed log was NOT rewritten** — it is a certified verbatim capture, and
+editing it after the fact is the exact violation the campaign's evidence rules
+exist to prevent. The docstring is corrected in place and now states the
+shortfall rather than denying it. **Task 15 will either split this output per
+cell or reduce measured-arm rows to booleans**; that instruction is carried
+into Task 15's dispatch and is not something a reader of §22 should assume was
+already done.
+
+### 23.3 (M3) §22.6 misdescribed why the pacing never topped up
+
+§22.6 says "the loadavg was already under target each time, so no top-up was
+spent." **The operative claims are exact and unchanged** — the settle was
+applied 17 times, every one took exactly the 120 s floor, and the 300 s ceiling
+was never reached. **The explanatory clause is wrong**, and this task's own
+filed console refutes it.
+
+`sweep_driver.sh` prints the loadavg BEFORE the floor sleep and re-reads it
+after. The pre-floor readings span **1.99 … 11.05**, with `sweep-console.log:236`
+and `:571` recording **8.99** and **9.17** against a target of 6; the same runs
+read **2.02** and **1.57** by the time the poll ran, and the highest post-floor
+reading anywhere is 2.05. So the host was NOT "never loaded" — it was carrying a
+post-teardown spike at the start of several settles.
+
+**Restated:** the 120 s floor was by itself sufficient to drain every post-run
+load spike below the target, on all seventeen applications, so the loadavg poll
+never had to add a single second. That is a stronger result than the sentence it
+replaces, and it is the one the console supports.
+
+### 23.4 (M4) The driver script carries a framing §22.6 refutes, and the evidence directory did not say so
+
+`sweep_driver.sh:60-64` comments that the `bootstrap_carla_msgs.sh` refusal "is
+the normal state on the ablation arm … and after a tier4-native run" — an
+arm/cell property. §22.6 refutes exactly that: it refused on **all eighteen**
+hygiene blocks, measured runs included, because the rule pairs a `docker
+compose down` with a bootstrap requiring the container that `down` just
+removed.
+
+The script is a certified verbatim producer and **must not be edited** to
+retrofit the correction; it stays as it ran. What was missing is that the
+evidence directory's own `PROVENANCE.md` — the file a reader reaching that
+comment gets to first — never mentioned the deviation. A pointer to §22.6 was
+added there.
+
+### 23.5 (M5) `default_mount()` handed out the 1.4 m-wrong estimate silently
+
+§22.3's DISCHARGED block deliberately keeps `default_mount()` reachable for a
+hand `--rig tier4` invocation with no `--mount`, and says so. But `main()`
+printed the mount it used without printing where that pose came from, so such
+an invocation got a pose known to be wrong by 1.397071 m in x with **no signal
+at all** — in a repo whose stated convention is that scripts fail loudly with
+named preflight checks.
+
+`raycast_baseline.resolve_mount(rig, mount)` now owns that seam: it returns the
+pose plus its SOURCE, and warns on stderr when `--rig tier4` falls back to the
+estimate, naming the magnitude. It is deliberately silent for `--rig
+extension`, where `default_mount()` composes the committed kit and is exact —
+warning on a correct value would train a reader to ignore the warning that
+matters. Four unit tests pin it, including one asserting that the magnitude the
+warning quotes IS the gap between `default_mount()` and the Task 11
+measurement, so the warning text and the launcher's constant cannot drift apart.
+
+**No effect on any of this task's data**: `cells/tier4-native.sh` always passes
+the measured `--mount`, so the warning cannot fire on a harness-launched run,
+and all eighteen filed runs predate the change. Two forward-looking
+consequences, stated so a later reader is not surprised: from now on the
+`raycast_baseline.log` mount line carries a trailing `(from --mount)` /
+`(from default_mount())`, and `raycast_baseline.json` gains a `mount_source`
+key. **Task 14's six filed ablation summaries do not carry that key** — their
+provenance rests on the values themselves plus §22.3 — so any consumer must use
+`.get()`.
+
+### 23.6 (M6) The launcher justified a family-wide constant by naming two of five cells
+
+`cells/tier4-native.sh` justified `TIER4_ABLATION_MOUNT`'s scope with "B and
+B-cyc are the same fork tree, the same launcher and the same rig." That
+launcher also serves **D**, **B-hf** and **B45** — all `approach:
+tier4-native`, all `carla: 0.10-tier4` — which silently inherit the mount.
+
+**The inference does hold for them** (same rig, and a pose measured relative to
+the EGO ACTOR, which no per-cell knob moves: B-cyc differs from B only in DDS
+transport, and D/B-hf/B45 only in tick rate, message set and world), and all
+three are `dropped: owner-time-budget-2026-07-30`, so there is no live cost
+today. The defect was in the record, not the behaviour: a reader who checks a
+two-cell enumeration against `cells.yaml` finds it incomplete and has no way to
+tell whether the omission was an oversight or a deliberate exclusion. The
+comment now justifies the scope by **approach** and names all five cells,
+noting that an approach-based justification cannot go stale the next time a
+cell is registered.

@@ -3,12 +3,31 @@
 
     PYTHONPATH=. python3 benchmarks/evidence/p4-task14-vlp16-sweep/integrity_pass.py
 
-Reads only PASS/FAIL-shaped and PROVENANCE-shaped fields -- arm, exclusion
-label, transport, duel flags, file presence, row counts, and the ablation
-client's own recorded mount -- so it can be run and read WITHOUT touching the
-sweep's measured magnitudes. Deliberately NOT a verdict: the ceiling reading is
-`sweep_verdict.py`'s, invoked once per cell under the registered no-peeking
-exception, and nothing here duplicates it.
+Reads arm, exclusion label, transport, duel flags, host/engine placement, file
+presence, row counts, and the ablation client's own recorded mount.
+Deliberately NOT a verdict: the ceiling reading is `sweep_verdict.py`'s,
+invoked once per cell under the registered no-peeking exception, and nothing
+here duplicates it.
+
+CORRECTION 2026-08-04 (Task 14 review, I2). This docstring used to claim the
+pass "can be run and read WITHOUT touching the sweep's measured magnitudes."
+**That is false, and the false part is the `observer rows` column**: an observer
+row count IS `observed_count`, one of the three terms `cadence.reconcile_drops`
+consumes, so it is a measured magnitude and not a presence check. The filed
+`integrity-pass.log` therefore carries both cells' measured-arm counts in one
+committed artifact, forty lines apart. No delta is computed and no prose in
+this directory compares them -- but that is exactly the material the no-peeking
+rule withholds, and it falls short of the standard applied one file over, where
+`sweep_verdict.py`'s tables were deliberately NOT filed for carrying per-run
+magnitudes. The counts are additionally unnormalized for run duration, so any
+impression a reader forms from them is premature as well as unlicensed.
+
+What the integrity claim actually needs from that column is **presence and
+non-emptiness**, which a boolean carries just as well. It stays a raw count
+HERE only because this file is the certified producer of an already-filed log
+and changing its output would falsify that certification. Task 15 either splits
+the output per cell or reduces measured-arm rows to booleans; see
+`benchmarks/results/PROVENANCE.md` §23.2.
 
 Every figure this prints is one a claim in benchmarks/results/PROVENANCE.md
 sec 22 rests on, so the claims are checkable by re-running this file rather

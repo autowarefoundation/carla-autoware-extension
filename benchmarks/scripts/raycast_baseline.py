@@ -309,10 +309,47 @@ def default_mount() -> tuple[tuple[float, float, float], tuple[float, float, flo
         while the rotation is EXACTLY this kit's, to the last digit.
       * a direct `--rig tier4` invocation with no `--mount` still gets the
         estimate, so it stays reachable by hand. The launcher is the only
-        production caller, and it always passes the measured pose.
+        production caller, and it always passes the measured pose. That
+        fallback is no longer SILENT -- see `resolve_mount` (M5).
     """
     kit = load_kit()
     return carla_attach_location(kit, TOP_LIDAR_FRAME), carla_attach_rotation(kit, TOP_LIDAR_FRAME)
+
+
+def resolve_mount(
+    rig: str, mount: list[float] | None
+) -> tuple[tuple[float, float, float], tuple[float, float, float], str]:
+    """(location_m, rotation_deg, source) for this run's LiDAR mount.
+
+    Added 2026-08-04 (Task 14, review round 1, M5). `main()` already printed the
+    mount it used, but never where that pose CAME FROM -- so a hand
+    `--rig tier4` invocation with no `--mount` silently got `default_mount()`'s
+    estimate, which §14.5 measured as wrong by 1.397071 m in x (the tier4 rig's
+    `base_link` anchor). The run completes and scores either way, which is
+    precisely the failure mode this repo's "fail loudly with named preflight
+    checks" convention exists to prevent, so the fallback now says so on stderr
+    and the source is returned for the run's own log.
+
+    Deliberately SILENT for `--rig extension`: there `default_mount()` composes
+    the committed kit, which IS that family's real mount, and warning on an
+    exact value would train a reader to ignore the warning that matters.
+
+    No effect on any measured path: `cells/tier4-native.sh` always passes the
+    measured `--mount`, so this warning cannot fire on a harness-launched run.
+    """
+    if mount:
+        return tuple(mount[:3]), tuple(mount[3:]), "--mount"
+    if rig == TIER4_RIG:
+        print(
+            "raycast_baseline: WARNING rig=tier4 with no --mount; falling back "
+            "to default_mount()'s estimate, which is KNOWN WRONG by ~1.4 m in x "
+            "for this rig (its base_link anchor; PROVENANCE 14.5). "
+            "cells/tier4-native.sh always passes the measured --mount, so a "
+            "hand invocation must too.",
+            file=sys.stderr,
+        )
+    location, rotation = default_mount()
+    return location, rotation, "default_mount()"
 
 
 class ClockCsvWriter:
@@ -584,17 +621,14 @@ def main(argv: list[str] | None = None) -> int:
     import carla
 
     attrs = rig_attributes(args.rig, args.channels, args.pps)
-    if args.mount:
-        location = tuple(args.mount[:3])
-        rotation = tuple(args.mount[3:])
-    else:
-        location, rotation = default_mount()
+    location, rotation, mount_source = resolve_mount(args.rig, args.mount)
 
     fixed_delta = 1.0 / args.tick_hz
     print(f"raycast_baseline: rig={args.rig} class={args.class_id or '-'} attrs={attrs}")
     print(
         f"raycast_baseline: tick {args.tick_hz} Hz (fixed_delta {fixed_delta:.6f} s), "
-        f"duration cap {args.duration_s} s, mount {location} {rotation}"
+        f"duration cap {args.duration_s} s, mount {location} {rotation} "
+        f"(from {mount_source})"
     )
 
     stop = {"stop": False}
@@ -708,6 +742,11 @@ def main(argv: list[str] | None = None) -> int:
             "lidar_blueprint": TOP_LIDAR_BLUEPRINT,
             "mount_location_m": list(location),
             "mount_rotation_deg": list(rotation),
+            # WHERE the pose came from, added 2026-08-04 (M5). Task 14's six
+            # filed ablation runs predate this key and do not carry it; their
+            # provenance is established instead by the values themselves plus
+            # PROVENANCE §22.3. Readers must use `.get()`.
+            "mount_source": mount_source,
             "tick_hz": args.tick_hz,
             "fixed_delta_s": fixed_delta,
             "duration_cap_s": args.duration_s,

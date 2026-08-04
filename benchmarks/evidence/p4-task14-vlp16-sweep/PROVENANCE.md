@@ -3,26 +3,44 @@
 Captured 2026-08-04 (sweep wall window 2026-08-04T02:12:14−07:00 …
 2026-08-04T03:49:16−07:00). Supports `benchmarks/results/PROVENANCE.md` §22.
 
-**This directory contains no ceiling verdict, no cross-cell reading, and no
-`sweep_verdict.py` output.** The ceiling gate is a per-cell boolean, read once
-per cell under the registered no-peeking exception and recorded in §22; its
-tables were written to `/tmp` and are deliberately not filed here, because they
-carry per-run magnitudes that nothing in this campaign is licensed to compare
-across cells before Task 16.
+**This directory contains no ceiling verdict, no `sweep_verdict.py` output, and
+no cross-cell reading of a performance magnitude.** The ceiling gate is a
+per-cell boolean, read once per cell under the registered no-peeking exception
+and recorded in §22; its tables were written to `/tmp` and are deliberately not
+filed here, because they carry per-run magnitudes nothing in this campaign is
+licensed to compare across cells before Task 16.
+
+**That claim is SCOPED, and the scope is stated here rather than left for a
+reader to find sixty lines down** (corrected 2026-08-04, Task 14 review I1/I2 —
+the first draft said "no cross-cell reading" flatly, which this file's own
+§"Two rig facts" contradicted). Two admissions:
+
+- One cross-cell statement DOES appear below: the two rigs'
+  `sensor_callbacks`/`ticks` ratio. It is admitted deliberately because it is
+  **configuration-determined** — fixed entirely by each rig's registered
+  `sensor_tick` against a common 0.05 s step — and because it rules out a
+  dropped-callback defect. It is not a performance comparison, and no Δ is
+  computed from it.
+- `integrity-pass.log` **does** carry both cells' observer row counts, which
+  ARE measured magnitudes, and that falls short of the standard applied one
+  file over to the `sweep_verdict.py` tables. No Δ is computed and no prose
+  here compares them, but the material is present. Disclosed in full at §23.2
+  of `benchmarks/results/PROVENANCE.md`, which also records what Task 15 does
+  about it.
 
 ## What the runs are
 
 One driver invocation, no resume, no make-up runs. Eighteen `run.sh`
 invocations, three per cell per arm:
 
-| cell  | arm        | runs                                |
-| ----- | ---------- | ----------------------------------- |
-| A     | `paced`    | `results/A/run-036 … run-038`       |
-| A     | `unpaced`  | `results/A/run-039 … run-041`       |
-| A     | `ablation` | `results/A/run-042 … run-044`       |
-| B-cyc | `paced`    | `results/B-cyc/run-022 … run-024`   |
-| B-cyc | `unpaced`  | `results/B-cyc/run-025 … run-027`   |
-| B-cyc | `ablation` | `results/B-cyc/run-028 … run-030`   |
+| cell  | arm        | runs                              |
+| ----- | ---------- | --------------------------------- |
+| A     | `paced`    | `results/A/run-036 … run-038`     |
+| A     | `unpaced`  | `results/A/run-039 … run-041`     |
+| A     | `ablation` | `results/A/run-042 … run-044`     |
+| B-cyc | `paced`    | `results/B-cyc/run-022 … run-024` |
+| B-cyc | `unpaced`  | `results/B-cyc/run-025 … run-027` |
+| B-cyc | `ablation` | `results/B-cyc/run-028 … run-030` |
 
 All eighteen carry `excluded: false`, `duel_admissible: false` and an empty
 `duel_id` — sweep data is never duel data. **Zero exclusions**, so no exclusion
@@ -30,13 +48,25 @@ reason needed quoting.
 
 ## Files
 
-| file                            | what it is                                                                                                                                                             |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `step1-form-verification.log`   | The twelve Step-1 invocations, verbatim: `--check-args` then `--dry-run` for {A, B-cyc} × {paced, unpaced, ablation}. Each block is followed by its own `exit=` line.     |
-| `sweep_driver.sh`               | The exact driver that produced the eighteen runs — ordering, inter-run hygiene and the settle wait. It makes no measurement decision; `run.sh` owns all of those.         |
-| `sweep-console.log`             | The driver's whole console, unedited, including each run's fifteen numbered steps, the hygiene blocks and the bootstrap refusals.                                        |
-| `integrity_pass.py`             | The read-only pass that produced `integrity-pass.log`. Reads only pass/fail-shaped and provenance-shaped fields; computes no verdict.                                    |
-| `integrity-pass.log`            | Its output: per-run arm, exclusion label, transport, duel flags, engine BuildId, governor, loadavg, file presence, row counts, and the ablation client's recorded rig.    |
+| file                          | what it is                                                                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `step1-form-verification.log` | The twelve Step-1 invocations, verbatim: `--check-args` then `--dry-run` for {A, B-cyc} × {paced, unpaced, ablation}. Each block is followed by its own `exit=` line.                   |
+| `sweep_driver.sh`             | The exact driver that produced the eighteen runs — ordering, inter-run hygiene and the settle wait. It makes no measurement decision; `run.sh` owns all of those.                       |
+| `sweep-console.log`           | The driver's whole console, unedited, including each run's fifteen numbered steps, the hygiene blocks and the bootstrap refusals.                                                       |
+| `integrity_pass.py`           | The read-only pass that produced `integrity-pass.log`. Computes no verdict. Its `observer rows` column IS a measured magnitude, not a presence check — see its own docstring and §23.2. |
+| `integrity-pass.log`          | Its output: per-run arm, exclusion label, transport, duel flags, engine BuildId, governor, loadavg, file presence, row counts, and the ablation client's recorded rig.                  |
+
+**`sweep_driver.sh:60-64` carries a framing this collection REFUTED, and the
+script must not be edited to fix it.** Its comment says the
+`bootstrap_carla_msgs.sh` refusal "is the normal state on the ablation arm …
+and after a tier4-native run" — i.e. that it is an arm/cell property. It is
+not: the bootstrap refused on **all eighteen** hygiene blocks, measured runs
+included, because the hygiene rule pairs a `docker compose down` with a
+bootstrap that requires the very container the `down` just removed. The script
+is a certified verbatim producer, so it stays as it ran; the correction is
+`benchmarks/results/PROVENANCE.md` §22.6, and this pointer exists because a
+reader reaching that comment through this directory would otherwise never meet
+the refutation. (Noted 2026-08-04, Task 14 review M4.)
 
 `sweep-console.log`, `step1-form-verification.log` and `integrity-pass.log` are
 **verbatim captures** and are covered by the `benchmarks/evidence/**` exclude on
