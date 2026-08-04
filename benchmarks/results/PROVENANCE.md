@@ -6755,3 +6755,331 @@ argument and refuses to render two cells into one file, producing
 this task's evidence directory carries a row count or two cells' per-run
 instrument facts. Task 14's filed log is **not** rewritten — it is a certified
 verbatim capture, and §23.2 already records what it contains.
+
+## 27. CORRECTIONS to §26, appended 2026-08-04 (P4 Task 15, review fix round 1)
+
+Nothing in §26 is rewritten and no filed console log is edited. One Critical
+and two Important findings from review round 1, plus one campaign-wide read
+that follows from the Critical one. Six runs are marked excluded through
+`write_manifest.py`'s registered rewrite mode and stay in
+`benchmarks/results/` with all their data; six replacements were collected
+live. Cell A is untouched and stands in full, and so do cell B-cyc's three
+ablation runs.
+
+**A NOTE ON THE ONE ADMISSION THIS SECTION MAKES.** The evidence that refutes
+§26.3's guarantee is a per-run measured quantity — the observer's median
+serialized `size_bytes` on the registered lidar topic — and it is quoted below
+for both cells, which no §26 subsection does. That is deliberate and it is
+narrow. Payload size is a WORKLOAD property: how many points the sensor was
+configured to emit. It is not latency, not rate, not RTF, and not a term any
+`duel_verdict.py` metric consumes; no Δ is computed from it here and none may
+be. It is the measured counterpart of the `channels 32 / points_per_second
+1200000` read-back §26 already admits across cells on exactly this ground. The
+alternative was a correction that cannot state its own evidence, which is not
+a correction. The no-peeking rule stands unchanged for every performance
+magnitude, and the two per-cell verdict tables were again read separately, in
+separate invocations, and again not filed.
+
+### 27.1 RETRACTED: "the rig booted and the workload label cannot drift apart"
+
+§26.3 states, verbatim:
+
+> All eighteen new runs carry `class_id: "32ch"` in their manifests. The
+> launchers' derivation and the manifest label come from one resolution, so the
+> rig booted and the workload label cannot drift apart; each ablation run's own
+> `raycast_baseline.json` independently reports `channels 32` /
+> `points_per_second 1200000`.
+
+The first clause is true — all eighteen manifests do carry the label. The last
+clause is true — all six ablation runs do record the 32ch rig. **The middle
+claim is false**, and it is false for precisely the one code path on which the
+two do drift apart. It was asserted from code structure and never measured.
+
+THE CODE PATH. `benchmarks/cells/tier4-native.sh` derived the class's sensor
+arguments into `BENCH_TIER4_SWEEP_ARGS` as a plain, UNEXPORTED shell
+assignment. The launcher has two consumers of that value, in different
+processes:
+
+- the **ablation** arm expands it in the same process, in its
+  `raycast_baseline` invocation — so those runs genuinely ran 32ch, and their
+  own summaries say so;
+- the **measured** arms spawn `bash "$TIER4_DEMO"` through an explicit
+  prefix-assignment whitelist that did not carry it, and
+  `benchmarks/cells/tier4_autoware.sh:345` expands
+  `${BENCH_TIER4_SWEEP_ARGS:-}` in that CHILD. The child got an empty string,
+  and the patched demo fell back to its own defaults,
+  `--lidar-channels 16 --lidar-pps 288000`
+  (`benchmarks/patches/tier4-native/0003-autoware-demo-params.patch:258,261`)
+  — which IS the vlp16 class.
+
+So six B-cyc runs requested at `--class 32ch` measured a vlp16 rig under a
+manifest stamped `class_id: "32ch"`. Cell A is unaffected:
+`benchmarks/cells/extension.sh:477` expands its variable in the PARENT, into
+`RUNNER_EXTRA_ARGS`.
+
+THE MEASUREMENT THAT REFUTES IT, taken from the filed run directories rather
+than from the code. Median `size_bytes` on
+`/sensing/lidar/top/pointcloud_raw_ex`, each cell's own vlp16 measured run
+against its own first 32ch measured run:
+
+| cell  | vlp16 (Task 14)     | 32ch as filed (§26)   | ratio       | registered class ratio |
+| ----- | ------------------- | --------------------- | ----------- | ---------------------- |
+| A     | `run-036` 245 144 B | `run-045` 1 020 888 B | **×4.164**  | 4.167 — matches        |
+| B-cyc | `run-022` 238 904 B | `run-031` 238 840 B   | **×0.9997** | 4.167 — does not       |
+
+Cell A stepped by the class ratio. Cell B-cyc did not step at all.
+
+WHY EVERY LABEL-LEVEL CHECK PASSED, AND HAD TO. §26.3's corroboration is the
+ablation summary, which is the one arm the defect spares. And the two rigs'
+DEFAULTS differ in a way that decides visibility: the extension runner's own
+default is the 128-channel rig, so a silent fallback on cell A would have been
+loud in any size or rate reading, whereas the tier4 demo's default IS vlp16 —
+the very class the sweep had measured the day before. On B-cyc the failure was
+therefore invisible to every check that reads a label, and only a per-run
+MEASURED quantity could see it.
+
+THE FIX, and why it is an `export` rather than a whitelist entry. `65fbe09`
+exports the variable at its derivation site. The whitelist at
+`tier4-native.sh:485-500` is a deliberate, documented cell-contract surface,
+and the ablation arm already consumes the variable in-process; a thirteenth
+entry would leave two consumers reading two resolutions of one class id, which
+is the shape of the defect and not its fix. An operator-supplied
+`BENCH_TIER4_SWEEP_ARGS` skips the derivation entirely and needs no export: it
+arrives in the launcher's environment, already exported by definition.
+
+THE PIN, and the mutation that proves it is one.
+`tests/benchmarks/test_sweep_args.py` gains two SUBPROCESS-level tests: one
+against a plain `bash -c` child, one through the REAL extracted spawn
+statement with `TIER4_DEMO` pointed at an echoing stub, so the whitelist
+itself is under test. Every pre-existing test in that file ran the derivation
+block and read the variable back IN THE SAME PROCESS, which is exactly the
+half that worked — which is why twenty-two green tests coexisted with six
+mislabelled runs. Verified by mutation: with the `export` deleted the two new
+tests fail and the other 1309 pass unchanged.
+
+NO OTHER VARIABLE HAS THIS SHAPE. Every name `cells/tier4_autoware.sh` needs
+from its environment was checked against what `cells/tier4-native.sh` assigns
+and against the spawn whitelist. Fourteen are whitelisted explicitly.
+`BENCH_TIER4_SWEEP_ARGS` was the only one derived in the parent and consumed
+in the child without crossing. `BENCH_TIER4_TRANSPORT_DEVIATION` is the only
+other non-whitelisted name the child reads, and it is NOT the same shape: it
+is never derived in the parent — it is an operator-supplied deviation opt-out
+that arrives in the launcher's own environment, hence already exported — so it
+crosses correctly. `MAP_DEFAULT_DIR` is set inside the child itself, by
+sourcing `scripts/e2e/map_defaults.sh`.
+
+### 27.2 The six runs are EXCLUDED under criterion 3, and deliberately NOT relabelled
+
+`results/B-cyc/run-031 … run-036` carry `excluded: true` with reason
+`harness:65fbe09` (commit `4e195f6`), applied only through
+`benchmarks/scripts/write_manifest.py --exclude`. `exclusions.md` criterion 3,
+verbatim:
+
+> 3. Harness defect discovered and fixed (the run was measured with a
+>    broken observer/injector) — reason `harness:<commit>`.
+
+The diff is two fields per manifest and nothing else. The runs remain in
+`benchmarks/results/` with all their data, as criterion 3's closing paragraph
+requires.
+
+**They are NOT relabelled to `vlp16`.** They did measure a vlp16 rig, so
+relabelling would look like salvage — but it would retroactively move Task
+14's already-recorded vlp16 booleans by adding six runs to a pool whose
+verdict is filed (§22.7, §23), which is a worse violation than the one being
+corrected. They are excluded and stay out of every pool. Their observer
+payload is now evidence about the defect, not data about the 32ch class.
+
+B-cyc's three ABLATION runs (`run-037 … run-039`) are untouched and stand:
+that arm consumes the sweep args in the same process, genuinely ran 32ch, and
+its own `raycast_baseline.json` records `channels 32` /
+`points_per_second 1200000` on all three, with `mount_source: --mount` 3/3.
+Cell A's nine stand in full and were not re-run.
+
+### 27.3 The re-collection (live, 2026-08-04)
+
+Six replacements on cell B-cyc: paced `run-040 … run-042`, unpaced
+`run-043 … run-045`, all at `--class 32ch`, driven by
+`benchmarks/evidence/p4-task15-32ch-sweep/sweep_driver_fix1.sh`.
+`sweep_driver.sh` is untouched and was not re-run — it is the certified
+verbatim producer of the original eighteen.
+
+Session preamble: `ROS_DOMAIN_ID=0`, 24 cores, `cpu_governor=powersave`
+(recorded, not changed), 1-min loadavg **0.71** at start, RTX 5090 with
+Xorg/gnome-shell/terminal only and no other GPU compute consumer, no CARLA
+process running.
+
+Step 1 first, as registered — `--check-args` then `--dry-run` for both
+measured forms, **all four exit 0**, verbatim in
+`step1-form-verification-fix1.log`. Each resolves `class_id=32ch`, the right
+arm, `rmw_cyclonedds_cpp` / shm off / **no profile** (B-cyc's row-11
+override), `engine_build_id=bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` (D8 intact,
+no relink), and `--class-id 32ch` reaching `write_manifest`. Only the two
+measured forms were verified: the ablation runs stand, so verifying a form
+this round never invokes would be verifying nothing.
+
+**THE FIX WAS PROVED AT THE RIG BEFORE FIVE MORE RUNS WERE PAID FOR.** That is
+why the driver has two phases. After `run-040` alone, its own observer's
+median `size_bytes` on the registered topic was **996 728 B** against this
+cell's own vlp16 measured baseline of **238 984 B** — **×4.1707**, against the
+registered class ratio 1 200 000 / 288 000 = 4.1667. The six excluded runs
+read ×0.9987 … ×1.0005 on the same measurement. A label check could not have
+told those two states apart; that is the whole finding, and it is why the
+gate on continuing was a measured quantity.
+
+All six, from their own filed observers: **×4.1679 … ×4.1730**. All six carry
+`class_id 32ch`, `excluded false`, `duel_admissible false`, an empty
+`duel_id`, `cpu_governor powersave`, `engine_build_id bc08ce19-…`,
+`harness_git_sha 4e195f6` with no `-dirty` suffix, and `quality.json`
+`gate_pass: true` with empty `reasons`. Six `run.sh` invocations, **all
+EXIT 0**, zero exclusions, zero make-up runs.
+
+Hygiene and pacing: six blocks, six `docker compose down exit=0`, six
+`bootstrap_carla_msgs.sh` refusals — the established ordering deviation
+(§22.6, §23.4, §26.6), on every block. Five pacing applications, **every one
+exactly the 120 s floor** with the poll adding zero seconds; pre-floor
+1.74 … 7.38, post-floor 0.44 … 1.13, and every run's own preflight loadavg
+between 0.45 and 1.13 — criterion 6's threshold of 8 never approached. No
+`control_cmd is timed out`, no `behavior_planning` SIGABRT, no route-plan
+failure, no reseed.
+
+### 27.4 The per-cell 32ch ceiling boolean, re-read after the re-collection
+
+Read once per cell, from that cell's own table, for the single question "did
+any ceiling disjunct fire" — the registered no-peeking exception, unchanged.
+
+Cell **B-cyc**: the table now holds **15 rows** — the six excluded ones
+rendering as `EXCLUDED harness:65fbe09`, plus **9 scored**: the three standing
+ablation runs (`run-037 … run-039`) and the six new measured runs
+(`run-040 … run-045`). Drop counters: **21** out of arm (unchanged from §26.7)
+and **9** out of class, which is Task 14's vlp16 data correctly held out.
+Every one of the nine scored rows reads `reached False` with an empty
+`reasons` column; the three ablation rows carry the two designed absences and
+neither becomes a disjunct; no row carries a `window_branch_note`.
+**Ceiling disjunct fired: NO.**
+
+Cell **A**: re-run to confirm this round moved nothing there. **9 rows**, all
+`reached False` with empty reasons, drop counters **35** / **9** — every
+figure identical to §26.7. Verified beyond eyeballing: the table is
+**byte-identical** to the same command's output from a throwaway worktree at
+`b6fbc80`, md5 `25d97b8e07e9149e575cc8cdc42c9866` on both.
+**Ceiling disjunct fired: NO.**
+
+No `n = 5` extension applies: the pre-registered extension is for a cell whose
+disjunct FIRED, and neither did, at either class. **`128ch` stays struck on
+either branch**; none collected, none proposed, and both launchers still
+refuse it by name. §26.8's wording stands unchanged: **"ceiling not located up
+to the 32ch class"**. Each boolean was read from its own table and decides its
+own cell; nothing here follows from comparing them.
+
+The vlp16 pools were re-checked the same way, and the §26.3 pattern repeats
+exactly. Cell A's vlp16 table is byte-identical to `b6fbc80`'s. Cell B-cyc's
+differs on **one line only** — the class-drop counter moving 9 → 15, which is
+the six new 32ch runs being held out of the vlp16 pool — while its nine scored
+rows are byte-identical (rows-only md5 `e026f32716c3f2a10e106473d727f412`
+before and after). Task 14's filed booleans are untouched, and the counter
+that moved is again the positive evidence that the partition holds.
+
+### 27.5 I1 — the instruments could not have failed on the defect they stood over
+
+`benchmarks/evidence/p4-task15-32ch-sweep/integrity_pass.py`, as filed with
+§26, could not have caught C1, on two independent counts:
+
+1. it read the spawned rig back only from `raycast_baseline.json`, which
+   exists solely on the ablation arm — the one arm the defect spares. For the
+   twelve MEASURED runs it printed `manifest.class_id` and called that a class
+   check. That is a LABEL, written by the same invocation whose rig was in
+   doubt: a label cannot contradict itself.
+2. `main` returned 0 unconditionally, so even the ablation side's own
+   `MISMATCH` line would have filed as a passing artifact.
+
+Demonstrated rather than argued, on a throwaway results tree of symlinks with
+`excluded: false` restored on the six runs (nothing under
+`benchmarks/results/` was touched): the pass **as filed at `b6fbc80`** prints
+`class_id 32ch` for all six and exits **0**. The fixed pass, on the same data,
+reports six per-run rig mismatches plus one refusal and exits **1**.
+
+WHAT THE FIX ADDS. A MEASURED rig fact for the measured arms, derived from
+data already filed: median serialized `size_bytes` of the registered
+`lidar_topic` per run, over the SAME CELL's median across its non-excluded
+vlp16 measured runs, against the registered point ratio from `cells.yaml`
+`sweep_classes`. Three ways to fail, all loud, none silent — no in-cell vlp16
+baseline (a refusal: "cannot check" must never read as "checked"), a measured
+run with no lidar rows, or a ratio outside ±5 %. Zero confirmable measured
+runs is itself a refusal: a check that ran over nothing has not passed. The
+ablation side's class read-back and its `--mount` read-back are now ENFORCED
+rather than printed, and `main` exits non-zero on any of them. **An instrument
+that cannot fail is not an instrument.**
+
+Tolerance justified rather than picked: payload is a fixed header plus points
+× point_step, so the byte ratio lands slightly BELOW the point ratio. Cell A
+measures ×4.1645 … ×4.1705 against a registered 4.1667 — at most 0.09 % off —
+while the failure it exists to catch reads ×1.00, which is 76 % away.
+
+The baseline selector imports `sweep_verdict._class_admits` rather than
+re-implementing a rule: Task 14's eighteen sweep-arm manifests predate
+`RunManifest.class_id` entirely and carry no such key, and that function's
+legacy clause — `""` admits to vlp16 and to nothing else — is what keeps them
+poolable without a filed manifest being rewritten.
+
+Both per-cell logs were REGENERATED by the fixed pass, in place, following
+§21's precedent (Task 13's `integrity-pass.log` was regenerated when its own
+`integrity_pass.py` was corrected); the pre-fix output stays recoverable at
+`b6fbc80`. Task 14's filed log is still not rewritten — it is another task's
+certified capture. Both regenerated logs **exit 0** on the current tree, and
+both reproduce byte-exactly after `pre-commit run --all-files`. The §23.2
+split is unchanged: one cell per invocation, one log per cell, and the new
+column is a workload property rather than a performance magnitude.
+
+### 27.6 I2 — the durable form of this check is a per-run MEASURED quantity
+
+§26.3's retracted sentence is the second time this campaign has recorded a
+claim whose FORM was unearned while its substance was assumed. §26.3 itself
+already recorded one — the whole-file md5 expectation — and got the durable
+form right there: "scored-content digest plus the counter value, not the
+whole-file digest". The same move applies here, and it is the lesson worth
+keeping:
+
+**A class claim about a run is only as good as a quantity measured IN that
+run. A derivation argument — "the launcher resolves it once, therefore both
+consumers see it" — is not evidence, however carefully the code is read.** The
+durable form of "this run measured class X" is the per-run payload check now
+in `integrity_pass.py`, not any statement about how a launcher resolves its
+arguments.
+
+### 27.7 What this says about Task 14: correct BY COINCIDENCE
+
+The defect predates Task 15. It was present for Task 14's vlp16 collection
+too, and on cell B-cyc's six measured vlp16 runs the demo also received no
+sweep arguments and also fell back to `--lidar-channels 16 --lidar-pps 288000`
+— which for that collection was the RIGHT rig, because the fallback happens to
+equal the vlp16 class exactly.
+
+**Task 14's B-cyc measured data stands and is not re-run.** The rig it
+measured is the rig its manifests claim, and that is checkable in the same
+per-run way: those runs' median payload is the baseline every ratio in §27.3
+and §27.5 is taken against, and it is self-consistent across all six
+(238 808 … 239 160 B). What did NOT exist was the guarantee. The runs were
+right by coincidence, not by construction, and had Task 14 been the collection
+at 32ch the same silence would have produced the same mislabelling. Recorded
+so that no future reader infers from "Task 14 was fine" that the mechanism was
+sound.
+
+### 27.8 Deferred, and named rather than silently dropped
+
+Two minor findings from the same review round are out of scope for this round
+and are recorded so they are not lost: the `QUALITY GATE FAIL: … pose.csv`
+console-string documentation, and `sweep_driver.sh`'s hardcoded `REPO=`
+(line 32). Neither affects a filed measurement, and neither is a reason to
+touch a certified verbatim producer.
+
+One further defect was found and fixed while establishing a clean baseline for
+this round, and is recorded here because it means §26's "`pre-commit run
+--all-files` clean" was not true as filed: at `b6fbc80` the hooks failed on
+this task's own evidence directory — shellcheck SC2016 (info) against
+`sweep_driver.sh:104`'s deliberate literal prose, and prettier re-padding
+`p4-task15-32ch-sweep/PROVENANCE.md`'s file table. `da1f6df` excludes
+`benchmarks/evidence/` from shellcheck on exactly the grounds the ruff hooks
+already exclude it — a lint-driven edit, even a `# shellcheck disable=` line,
+would make a certified producer no longer the file that produced the recorded
+figure — and lets prettier format the .md, which is authored narrative and
+deliberately not excluded. No measurement is affected.

@@ -3,6 +3,19 @@
 Captured 2026-08-04 (sweep wall window 2026-08-04T06:21:54−07:00 …
 2026-08-04T07:58:47−07:00). Supports `benchmarks/results/PROVENANCE.md` §26.
 
+> **CORRECTED 2026-08-04 by review fix round 1 — read §27 of
+> `benchmarks/results/PROVENANCE.md` alongside everything below.** Nothing in
+> this file is deleted or rewritten; the corrections are appended as "What fix
+> round 1 changed" at the end. In short: `BENCH_TIER4_SWEEP_ARGS` was derived
+> UNEXPORTED in `cells/tier4-native.sh`, so it never crossed into the spawned
+> tier4 demo, and cell B-cyc's six MEASURED runs booted the demo's default
+> vlp16 rig under a `class_id: "32ch"` label. `results/B-cyc/run-031 …
+run-036` are now **excluded** `harness:65fbe09`, and `run-040 … run-045` are
+> their re-collected replacements. Every sentence below — including
+> "**Zero exclusions**" and the eighteen-run table — describes the collection
+> AS IT WAS FILED, and is kept for that reason. Cell A and B-cyc's three
+> ablation runs are unaffected and stand.
+
 **This directory contains no ceiling verdict, no `sweep_verdict.py` output, and
 no cross-cell reading of a performance magnitude.** The ceiling gate is a
 per-cell boolean, read once per cell under the registered no-peeking exception
@@ -119,3 +132,65 @@ sourced optionally at `scripts/e2e/launch_autoware.sh:202`, nothing under
 `benchmarks/` consumes it, and all twelve measured runs armed, drove and
 produced `quality_ok: true` with full observer and publisher-count data. The
 `down` half — what the rule exists for — succeeded on all eighteen.
+
+## What fix round 1 changed (2026-08-04)
+
+Appended, not merged into the text above. The full record is
+`benchmarks/results/PROVENANCE.md` §27; this section says only what is in
+THIS directory.
+
+**The defect.** `cells/tier4-native.sh` derived `BENCH_TIER4_SWEEP_ARGS` as a
+plain, unexported shell assignment. The ablation arm expands it in the same
+process and was correct; the measured arms spawn `bash "$TIER4_DEMO"` through
+a prefix-assignment whitelist that did not carry it, so
+`cells/tier4_autoware.sh` expanded it to empty in the child and the patched
+demo fell back to `--lidar-channels 16 --lidar-pps 288000` — the vlp16 class.
+Six B-cyc measured runs were filed at `class_id: "32ch"` on a vlp16 rig. Fixed
+by `65fbe09` (export at the derivation site), excluded by `4e195f6`
+(`harness:65fbe09`), re-collected by `af65a27`.
+
+**This directory's two claims that need reading with that in mind.** The
+eighteen-run table and "**Zero exclusions**" were true of the collection as
+filed and are now superseded for cell B-cyc's measured arms only. The two "rig
+facts the ablation summaries record" are UNAFFECTED and still hold exactly:
+that arm's `channels 32` / `points_per_second 1200000` read-back was never
+touched by the defect, which is precisely why it corroborated a claim that was
+false elsewhere.
+
+**New files.**
+
+| file                               | what it is                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `step1_fix1.sh`                    | Step-1 form verification for the two forms this round re-collects (B-cyc `paced`, `paced --unpaced`), `--check-args` then `--dry-run`.                                                                  |
+| `step1-form-verification-fix1.log` | Its verbatim output: four invocations, all `exit=0`, each resolving `class_id=32ch`.                                                                                                                    |
+| `sweep_driver_fix1.sh`             | The exact driver for the six replacement runs. Two phases on purpose: `proof` collects ONE run so the fix can be checked at the rig before five more are paid for, then `rest` does the remaining five. |
+| `sweep-console-fix1-proof.log`     | The `proof` phase's whole console, unedited — `run-040`.                                                                                                                                                |
+| `sweep-console-fix1-rest.log`      | The `rest` phase's whole console, unedited — `run-041 … run-045`.                                                                                                                                       |
+
+`sweep_driver.sh` and `sweep-console.log` are UNCHANGED and were not re-run:
+they are the certified verbatim producer and capture of the original eighteen.
+
+**`integrity_pass.py` was fixed and both of its logs regenerated in place.**
+As filed it could not have failed on this defect: it read the spawned rig back
+only from `raycast_baseline.json`, which only the ablation arm writes, and for
+the measured runs it printed `manifest.class_id` — a label — while `main`
+returned 0 unconditionally. It now derives a MEASURED rig fact for the
+measured arms (median lidar `size_bytes` against the same cell's vlp16
+baseline and the registered class ratio), enforces the ablation-side
+read-backs instead of printing them, and exits non-zero on any mismatch. Both
+logs exit 0 on the current tree. Regenerating them in place follows §21's
+precedent, where Task 13's own `integrity-pass.log` was regenerated when its
+own `integrity_pass.py` was corrected; the pre-fix output stays recoverable at
+`b6fbc80`. The §23.2 split is unchanged — one cell per invocation, one log per
+cell — and the new column is a workload property (how many points the sensor
+emits), not a performance magnitude.
+
+**The rig proof, which is what licensed the other five runs.** After `run-040`
+alone: median `size_bytes` on `/sensing/lidar/top/pointcloud_raw_ex` = 996 728 B
+against this cell's own vlp16 measured baseline of 238 984 B — ×4.1707,
+against the registered class ratio 1 200 000 / 288 000 = 4.1667. The six
+excluded runs read ×0.9987 … ×1.0005 on the same measurement, which is why no
+label-level check could ever have separated them.
+
+All five new captures and both regenerated logs were sha256'd before and after
+`pre-commit run --all-files` and are unchanged, as the originals were.
