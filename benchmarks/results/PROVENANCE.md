@@ -4126,3 +4126,358 @@ residuals in §13.2. Nobody may quote §12.4's pair as the result.
   unaffected, because what justifies the direct difference is that both
   publishers stamp **wall** time — not the absence of a sim clock.
 
+## 14. P4 Task 11 bring-up (live, 2026-08-03): cell A's PublishedTime registration, and cell B-cyc's first closed-loop run
+
+Two runs, both **non-duel** (`duel_admissible: false`), neither scored. Step 1
+was a cell-A bring-up whose only job was to confirm Task 5's
+`control_published_time_topic` registration on a live stack. Step 2 was the
+first run cell B-cyc has ever had, and it stood at the phase's decision point:
+a pre-declared branch, agreed with the owner before any data existed, said that
+if B-cyc failed to arm then P3 §5.1's latched-delivery defect is **not**
+Fast-DDS-specific and collection stops.
+
+**The branch outcome, stated first: B-cyc ARMED ON THE FIRST TRY AND DROVE TO
+ITS GOAL. The pre-declared failure branch did NOT fire. Collection continues.**
+
+Neither run is compared against the other anywhere in this section. Everything
+below is a per-run gate fact. The one place two cells appear in the same
+paragraph — §14.2's instrument argument — compares whether the **observer
+recorded any rows at all**, which is a statement about the instrument, not
+about either cell's numbers.
+
+### 14.1 Session preamble, taken before each run rather than once
+
+| reading                    | run 1 (cell A)                        | run 2 (cell B-cyc)                    |
+| -------------------------- | ------------------------------------- | ------------------------------------- |
+| wall clock                 | 2026-08-03T18:10:11-07:00             | 2026-08-03T18:16:28-07:00             |
+| loadavg 1 min (gate: < 2)  | **0.35**                              | **0.66**                              |
+| `scaling_governor`         | `powersave` (recorded, NOT changed)   | `powersave` (recorded, NOT changed)   |
+| CARLA already running?     | no                                    | no                                    |
+| other GPU consumer?        | none (Xorg / gnome-shell / browser / terminal only) | none (same four)        |
+| preflight `loadavg`        | 1.84                                  | 0.76                                  |
+| `engine_build_id`          | `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` | `bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` |
+
+`engine.build_id` held across both runs, so **D8 was not spent** and no engine
+relink was performed or needed. Nothing was committed in either CARLA tree.
+
+The `pgrep` check was run bracket-escaped (`pgrep -af '[U]nrealEditor|[C]arlaUE4'`)
+so it could not self-match its own command line — the trap this repo's notes
+name. Inter-run hygiene (`docker compose down`, then
+`scripts/bootstrap_carla_msgs.sh`) ran before **both** runs.
+
+**Recorded, because the rule does not fit the second cell cleanly:**
+`bootstrap_carla_msgs.sh` builds `carla_msgs` into the **compose-managed**
+`autoware` container, and `cells/tier4_autoware.sh:391` `docker rm -f`s that
+container and re-creates it from its own pinned digest. So the bootstrap that
+ran before run 2 was destroyed by run 2's own launcher, by construction. It is
+not a gap: no tier4-native code path consumes `carla_msgs`. Stated rather than
+left as a silent no-op.
+
+**The §11.6 alternation hazard did NOT bite, and the prediction there was
+right.** Editor-artifact ownership sat with the integration tree throughout;
+`verify_tier4_artifact.sh` nevertheless **passed** for cell B-cyc
+(`OK: tier4 plugin artifacts are newer than every source ...`), exactly as
+§11.6 predicted it would while the tier4 sources stay pinned. **No
+`-NoUBTMakefiles` flip was performed**, speculatively or otherwise, and the
+hypothesis that this task would have to flip ownership is **REFUTED for a run
+that changes no tier4 source**. `tier4_plugin_sha256` is unchanged at
+`26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e`.
+
+### 14.2 Step 1 — the registration is CONFIRMED BY NAME AND TYPE, but the static arm CANNOT confirm emission, and it did not
+
+`benchmarks/results/A/run-015`, `--arm static`, no `--duel`. Ran to completion:
+`gate_pass: true`, `reasons: []`, `ndt_rate_ratio` 0.999999985, `pose_err_max_m`
+0.09202, step-14 exclusions **none**, `manifest.validate()` → `[]`. Transport
+`rmw_cyclonedds_cpp` / SHM off / `dds_profile_sha256`
+`1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865`.
+
+**The brief's literal check, run verbatim inside the container while the stack
+was up, and its complete output:**
+
+```text
+$ docker exec autoware bash -lc 'source /opt/ros/humble/setup.bash && \
+    source /opt/autoware/setup.bash && \
+    ros2 topic list | grep published_time'
+/control/command/control_cmd/debug/published_time
+/localization/util/downsample/pointcloud/debug/published_time
+/localization/util/measurement_range/pointcloud/debug/published_time
+/localization/util/voxel_grid_downsample/pointcloud/debug/published_time
+/sensing/lidar/top/mirror_cropped/pointcloud_ex/debug/published_time
+/sensing/lidar/top/pointcloud_before_sync/debug/published_time
+/sensing/lidar/top/self_cropped/pointcloud_ex/debug/published_time
+```
+
+`/control/command/control_cmd/debug/published_time` **appears**, so the
+pre-declared STOP ("if not: the registration is wrong") did **not** fire.
+
+**But that appearance is vacuous, and treating it as confirmation would have
+been this campaign's fourth claim outrunning its measurement.** The same stack,
+one command later:
+
+```text
+$ ros2 topic info -v /control/command/control_cmd/debug/published_time
+Type: autoware_internal_msgs/msg/PublishedTime
+Publisher count: 0
+Subscription count: 1
+  Node name: bench_observer          <- OUR OWN observer, the only endpoint
+  Endpoint type: SUBSCRIPTION
+$ ros2 topic info /control/command/control_cmd
+Type: autoware_control_msgs/msg/Control
+Publisher count: 1
+Subscription count: 9
+```
+
+**`ros2 topic list` lists a topic with ANY endpoint, publisher or subscriber.**
+The registered topic is listed here *because `bench_observer` subscribes to it*
+— which it does precisely because Task 5's registration is in `cells.yaml`. The
+check is therefore self-fulfilling under any arm: it would have printed that
+line even with no Autoware publisher anywhere on the host, which is exactly the
+state it was in. This is the campaign's standing
+"publisher count is not emission" trap in a sharper form: here even the
+publisher count is zero and the *listing* still succeeds.
+
+**REFUTED HYPOTHESIS 1** — "the topic appearing in `ros2 topic list` confirms
+the registration is live." Refuted by the `topic info -v` above: 0 publishers,
+1 subscription, and that subscription is ours.
+
+**What the run's own observer output shows: `published_time.csv` is 36 bytes —
+the header and nothing else. ZERO PublishedTime rows.** The observer also
+recorded **zero** `/control/command/control_cmd` messages (1363 rows each for
+the LiDAR, NDT pose and kinematic state; no control row at all), which is the
+static arm behaving exactly as registered — no route, no engage, the gate
+suppressing everything.
+
+**The census, because one run is not a pattern.** Every filed cell-A run,
+checked from the filed artefacts:
+
+| runs                  | arm         | observer subscribes the topic? | PublishedTime rows | `control_cmd` rows |
+| --------------------- | ----------- | ------------------------------ | ------------------ | ------------------ |
+| `run-001`             | static      | no                             | 0                  | 0                  |
+| `run-002`             | closed-loop | **no**                         | 0                  | **2987**           |
+| `run-003` … `run-015` | static (13) | yes                            | **0**, all 13      | 0, all 13          |
+
+```bash
+python3 - <<'PY'
+import csv, json, pathlib
+for d in sorted(pathlib.Path("benchmarks/results/A").glob("run-*")):
+    m = json.loads((d / "manifest.json").read_text())
+    subs = "debug/published_time|" in (d / "observer_topics.yaml").read_text()
+    pt = sum(1 for _ in csv.DictReader(open(d / "published_time.csv")))
+    cc = sum(1 for r in csv.DictReader(open(d / "observer.csv"))
+             if r["topic"] == "/control/command/control_cmd")
+    print(f"{d.name} arm={m['arm']:<11} subscribed={subs!s:<5} pt_rows={pt:<4} control_cmd_rows={cc}")
+PY
+```
+
+**So cell A has NEVER recorded a PublishedTime row, and the reason is
+structural rather than defective: the two necessary conditions have never
+co-occurred.** The only cell-A run that ever exercised the control chain
+(`run-002`, closed-loop, 2987 control messages) predates the observer row; every
+run that carries the observer row has been a static arm, and a static arm
+publishes no control command to stamp.
+
+**REFUTED HYPOTHESIS 2** — "the empty `published_time.csv` is the recorded
+almost-right-observer-line trap, where a positionally-parsed line yields a
+silently empty metric." Refuted by direct evidence from this same task: the
+identical line format
+(`<topic>|autoware_internal_msgs/msg/PublishedTime|published_time`, the
+`published_time` kind, no argument) recorded **2929 well-formed rows, all for
+the registered topic name, zero malformed stamp fields** on the other run in
+this task (§14.3). The observer's PublishedTime path is sound; it had nothing to
+record on A. This is an instrument statement only — no metric of either cell is
+compared here.
+
+**What is CONFIRMED, precisely:** the registered topic *name* and its *type*.
+`autoware_internal_msgs/msg/PublishedTime` was read off the live wire and
+matches `cells.yaml` field-for-field, independently re-confirming Task 13's
+refutation of the plan's `autoware_internal_debug_msgs` assumption.
+
+**What is NOT confirmed, and is NOT confirmable by a static run:** that
+`control_staleness_ms` (M1b) is computable for cell A. It keys
+`published_time.csv` by `metrics.control_published_time_topic`, and on the
+static arm that file is empty because no publisher exists. **On present
+evidence `control_staleness_ms` is UNAVAILABLE for cell A on the STATIC arm.**
+
+**This is recorded, NOT corrected.** Task 5's registration is not revised —
+there is nothing wrong with it, and this campaign does not revise registrations
+after data exists. The consequence for a static duel is the owner's to weigh,
+and it is flagged rather than engineered around.
+
+**A registered observation that did not reproduce, recorded rather than
+smoothed over.** `observer_topics/A.yaml` records a Task 15b probe finding that
+*before* arming only SIX PublishedTime topics existed and the control one was
+**not** among them. This run saw **seven**, control included, on a stack that
+was never route-armed. That is not a contradiction of the finding — it is a
+change in what causes the listing. A.yaml's probe 1 ran before this cell's
+observer subscribed to the topic; ours ran after. The finding's substance (the
+publishing chain does not exist until the ego is route-armed) is if anything
+strengthened: the publisher count on our seventh topic was **0**.
+
+### 14.3 Step 2 — cell B-cyc's four pass criteria, each with its evidence
+
+`benchmarks/results/B-cyc/run-001`, `--arm closed-loop`, no `--duel`. Cell
+B-cyc's first run ever. `harness_git_sha`
+`876b5004733107e742eadbef2e0421f610dcf24c`, `patches_git_sha`
+`7000c7855bea62960f47d18774b2aca02f264777`, `tier4_git_sha`
+`6315b856f8faf2118578322eb20a2b902a45a384`, worktree `registered-patches`,
+`tier4_stale_ack: none`.
+
+| # | criterion                                              | verdict  | evidence                                                                                                                                                                |
+| - | ------------------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | arm succeeds on the `/autoware/engage` path            | **PASS** | `change_to_autonomous: SUCCEEDED`; `/autoware/engage: published engage=true x5`; post-engage `mode=2 autonomous=True is_autoware_control_enabled=True`; `ARMED: localized, route set to (74.869, 66.891), autonomous engaged` |
+| 2 | `/control/command/control_cmd` flows                   | **PASS** | step-9 gate `OK: /control/command/control_cmd is flowing`; observer counted **2929** control messages (19.13 Hz in `report.md`), plus 3072 kinematic-state, 1535 NDT-pose, 1535 LiDAR |
+| 3 | manifest validates; transport = cyclone / SHM off / empty profile | **PASS** | `load_manifest(...).validate()` → `[]`; `transport = {rmw: rmw_cyclonedds_cpp, shm_enabled: false, dds_profile_sha256: ""}` — the registered row-11 triple, resolved by default and not by a flag |
+| 4 | teardown reports a stopped tree                        | **PASS** | `2 pid file(s) checked, 55 process(es) in the recorded trees, **0 survivor(s)**`; both recorded trees reported `tree gone`; `teardown: done` |
+
+**It also drove.** `quality.json`: `gate_pass: true`, `reasons: []`,
+`goal_closest_approach_m` **0.10622**, `goal_terminal_distance_m` 0.19811,
+`ndt_rate_ratio` 0.999999985, `pose_err_max_m` 0.14276, `lateral_dev_p95_m`
+0.19890. Step-14 exclusions: **none**. No exclusion is claimed for this run
+under any `exclusions.md` criterion.
+
+**No retry, no reseed, no disarm.** The arm succeeded on its first attempt.
+None of the standing live remedies (NDT parked drift, post-reseed EKF race,
+latched engage) had to be applied to either run in this task.
+
+`published_time.csv` carries **2929 rows, every one keyed to
+`/control/command/control_cmd/debug/published_time`, none with a non-numeric
+stamp field** — 1:1 with the 2929 control messages. Cell B-cyc's
+`control_staleness_ms` input is therefore populated.
+
+### 14.4 Step 3 — the PRE-DECLARED branch, and which way it went
+
+The branch was registered before any data existed: **if B-cyc failed to arm,
+the P3 §5.1 latched-delivery defect is not Fast-DDS-specific, collection stops,
+the transport phase downgrades to static-only, and the sweep's B-cyc column
+downgrades to A-only.**
+
+**B-cyc armed and drove. The failure branch did not fire.** On this evidence the
+defect that made cell B **0-for-15** on the closed-loop arm under
+`rmw_fastrtps_cpp` + `udp_only.xml` is **transport-dependent**: the same fork,
+the same launcher, the same map bundle and the same arm sequence closed the loop
+first-try once only the middleware changed.
+
+**And the defect's OWN INSTRUMENT reports it absent — stronger evidence than
+the arm outcome, because it is the same probe on both sides.** Both runs file a
+`vector-map-delivery.json`, and P3 §5.1's `run-031` carve-out rests on that
+cell's copy of it. Same probe, same topic, byte-identical payload:
+
+| field                           | `B/run-031` (Fast-DDS + `udp_only.xml`) | `B-cyc/run-001` (cyclone, row 11) |
+| ------------------------------- | --------------------------------------- | --------------------------------- |
+| `topic`                         | `/map/vector_map`                       | `/map/vector_map`                 |
+| `data_bytes`                    | 1 305 281                               | **1 305 281** (identical)         |
+| `captured` / `matching_settled` | true / true                             | true / true                       |
+| `subscriber_count`              | 16                                      | 17                                |
+| `pre_republish_delivered`       | **false**                               | **true**                          |
+| monitor `map_topic_status`      | `NotReceived`, level 2, `last_message_time 0.00 [s]` | `OK`, level 0, `last_message_time 15.96 [s]` |
+| re-publish attempts             | **3**, waiting 60.048 / 60.022 / 60.027 s, every one `verified: false` | **1**, `verify_wait_s` **0.027**, `verified: true` |
+| `exit_code`                     | **5** (`EXIT_NOT_VERIFIED`, fatal at the time) | **0**                      |
+
+Under the registered Fast-DDS transport the endpoint never received the latched
+map across **three minutes** of re-publishing. Under cyclone it was **already
+delivered before any re-publish was attempted**, and verification closed in
+**27 ms**. The per-topic re-publish workaround that §9.2 records as not scaling
+was not needed at all.
+
+**Scope that claim exactly: it measures the MAP leg only.** §5.1's defect is
+per-topic and nondeterministic, and its seven `gate:arm-failed` runs name three
+different missing inputs — map 2, route 4, `operation_mode` 1. The route and
+`operation_mode` legs have no equivalent artefact; the only evidence for those
+is that the arm succeeded, which is weaker and is not upgraded here.
+
+**The attribution boundary from §5.1 applies to this run unchanged, and this
+section does not widen it.** This is **n = 1** on the cyclone side, and
+`B/run-033` was the other one — two arming runs is not a rate any more than two
+failing bring-ups were one. Nothing here shows *why*, nothing here shows
+Fast-DDS is at fault rather than the interaction of the fork's SHM-only
+locators, the `udp_only.xml` workaround they force, and this host's loopback,
+and nothing here re-opens branch (c). B-cyc's own registered row-11 caveats —
+it binds the host's routable NIC rather than loopback, and Cyclone's discovery
+graph is flaky for bare-DDS publishers — are **inherited confounds on this
+result**, not resolved by it. Neither caveat manifested in this run: the arm
+needed no retry, so no flaky-graph exclusion-class event occurred and none is
+claimed.
+
+### 14.5 The tier4 `--mount` plan of record is DISCHARGED — measured, not estimated
+
+`raycast_baseline.default_mount()`'s docstring records the plan: on cell B's
+first measured run, read the spawned LiDAR actor's transform through the CARLA
+API and record it, so the tier4 rig's `--rig tier4` ablation stops carrying an
+estimate. Step 2 was that run, and it was read live at simulation **frame 1990**
+while the ego was driving, by a **read-only second client** that only called
+`get_actors()` and read transforms — it never ticked and never called
+`apply_settings`, so it could not perturb the sync-mode run.
+
+**The attach chain, as measured** (`ego -> base_link -> sensor_kit -> lidar`,
+matching what `collect_gt.is_descendant_of` was built for):
+
+```text
+id=25 vehicle.lincoln.mkz     role_name=ego
+  id=26 util.actor.empty                       <- base_link
+    id=27 util.actor.empty                     <- sensor_kit
+      id=28 sensor.lidar.ray_cast  role_name=front
+             ros_name=velodyne_top
+             ros_topic_name=/sensing/lidar/top/pointcloud_raw_ex
+```
+
+**The value, in the shape `--mount` expects, and relative to the EGO ACTOR:**
+
+```text
+--mount -0.497071 0.000002 2.000000 0.859670 -0.053676 -88.156119
+        |------ location_m ------| |----- rotation_deg (roll pitch yaw) -----|
+```
+
+**The frame is load-bearing and was verified rather than assumed.**
+`raycast_baseline.py:621-638` spawns its **own** ego and attaches the LiDAR with
+`attach_to=ego` — a direct attach to the vehicle actor — so the pose it wants is
+relative to the ego actor, which is what is recorded above. It was computed as
+`inverse(ego_world_matrix) @ lidar_world_matrix` and decomposed in CARLA's own
+convention; the decomposition round-trips with a maximum residual of
+**5.6e-08**, so it is not an angle-convention guess.
+
+**What it says about the estimate it replaces, and this is the useful part:**
+
+| component        | `default_mount()` estimate | measured (tier4)      | delta          |
+| ---------------- | -------------------------- | --------------------- | -------------- |
+| location x (m)   | 0.900000                   | **-0.497071**         | **-1.397071**  |
+| location y (m)   | 0.000000                   | 0.000002              | +0.000002      |
+| location z (m)   | 2.000000                   | 2.000000              | 0.000000       |
+| roll / pitch / yaw (deg) | 0.859670 / -0.053676 / -88.156119 | 0.859670 / -0.053676 / -88.156119 | **identical** |
+
+The rotation is **exactly** the committed kit's, and the entire positional
+discrepancy is a single number in x: **-1.397071 m**, which is the tier4 rig's
+`base_link` anchor offset that this very run's launcher printed and checked —
+`OK: base_link anchor -1.39706787 m matches .../autoware_demo.py`. The
+arithmetic closes to 10 nm: `0.9 - 1.39706787 = -0.49706787`. So the tier4
+family mounts the **same** sensor-kit pose as the extension family, displaced by
+the extra `base_link` actor that the GT anchor already exists for. The
+docstring's own caution — "both stacks model the same AWSIM kit, so it is
+centimetre-scale" is an argument, not evidence — is now settled with evidence,
+and the argument was **wrong in the direction that mattered**: the gap is 1.4 m
+along the vehicle's x axis, not centimetres.
+
+**`raycast_baseline.py` was NOT modified. Task 14 owns the wiring**, and this
+section is the input to it.
+
+### 14.6 Two more observations, recorded and deliberately not acted on
+
+**`TIER4_LIDAR_ATTRIBUTES` and the live blueprint AGREE.** All six transcribed
+values were read back off the live actor and match exactly: `channels` 16,
+`range` 100.0, `upper_fov` 10.0, `lower_fov` -20.0, `points_per_second` 288000,
+`sensor_tick` 0.1. There is no disagreement with
+`patches/tier4-native/0003-autoware-demo-params.patch` to report. One attribute
+the transcription does **not** carry is `rotation_frequency`, whose live value
+is **60.0** while `sensor_tick` is driven from `--lidar-rotation-hz` (10 Hz →
+0.1 s). That is an absence in the transcription, not a conflict, and it is left
+exactly as it is.
+
+**A CARLA client behaviour that will cost the next person a run if it is not
+written down.** A freshly-connected client's `world.get_actors()` returned an
+**empty list** — `total actors: 0` — against a live world with 31 actors,
+because in sync mode a new client receives no episode snapshot until a tick
+arrives. `world.wait_for_tick()` (passive; it waits for the tick the run's own
+20 Hz driver produces, it does not tick) fixed it immediately: `actors before
+tick: 0` → `actors after tick: 31`. Any later tool that attaches a second
+read-only client mid-run needs that call, and its absence looks exactly like "no
+ego was spawned".
+
