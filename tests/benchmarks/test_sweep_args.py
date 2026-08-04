@@ -36,6 +36,41 @@ there is no "behaviour" beyond the literal text for a static case-arm
 constant or for a string's absence, so reading the extracted block (for the
 former) or the whole file (for the latter, an explicit Step-1 requirement)
 is the direct, honest pin -- not a substitute for one.
+
+WHY EVERY TEST ABOVE WAS BLIND TO THE DEFECT THAT COST SIX RUNS (P4 Task 15
+review finding C1, fixed 2026-08-04). All of them run the derivation block
+and then read the variable back IN THE SAME PROCESS. That is the whole of
+what cells/extension.sh needs -- it expands `${BENCH_RUNNER_SWEEP_ARGS:-}`
+into `RUNNER_EXTRA_ARGS` in the PARENT (extension.sh:477) -- but it is only
+half of what cells/tier4-native.sh needs. There the MEASURED arms spawn
+`bash "$TIER4_DEMO"` through an explicit prefix-assignment whitelist, and
+`cells/tier4_autoware.sh` expands `${BENCH_TIER4_SWEEP_ARGS:-}` in that
+CHILD. The derivation was a plain, unexported shell assignment and the
+whitelist did not carry it, so the child expanded it to empty and the
+patched demo fell back to its own defaults --
+`--lidar-channels 16 --lidar-pps 288000`
+(patches/tier4-native/0003-autoware-demo-params.patch), which IS the vlp16
+class. Task 15's six B-cyc measured runs at `--class 32ch` therefore booted
+a vlp16 rig and were filed under a manifest stamped `class_id: "32ch"`.
+
+It was invisible to every LABEL check for a reason worth keeping: the
+extension runner's own default is the 128-channel rig, so a silent fallback
+on cell A would have been loud in any size or rate reading, whereas the
+tier4 demo's default IS vlp16 -- the very class the sweep had just measured.
+Only a per-run MEASURED quantity could have caught it, and the proof that
+finally did is the observer's median lidar `size_bytes` on
+`/sensing/lidar/top/pointcloud_raw_ex`: cell A stepped 245 144 B -> 1 020 888 B
+(x4.164, against the class ratio 1 200 000 / 288 000 = 4.167), cell B-cyc
+238 904 B -> 238 840 B (x0.9997, i.e. not at all).
+
+So the two tests at the bottom of this file are SUBPROCESS-level: they run
+the real derivation block and then read the value back out of a CHILD
+PROCESS, which is the only place the defect was ever observable. Verified by
+mutation on the fix commit -- deleting the `export` from tier4-native.sh
+makes both of them fail and leaves every other test in this file green.
+They are deliberately NOT parametrized over both launchers: cell A's
+consumer is in-parent by design, so demanding an export there would pin a
+property the extension family does not have and does not need.
 """
 
 from __future__ import annotations
@@ -43,6 +78,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -256,3 +292,127 @@ def test_launcher_still_parses_as_valid_bash(script):
         ["bash", "-n", str(script)], capture_output=True, text=True, timeout=10, check=False
     )
     assert result.returncode == 0, result.stderr
+
+
+# --- C1: the derived value must SURVIVE INTO A CHILD PROCESS ---------------
+#
+# See the module docstring's "why every test above was blind" section. These
+# two are the pins for the tier4-native measured arm, and each one FAILS if
+# the `export` is removed from the derivation block.
+
+# The spawn statement at the bottom of tier4-native.sh: an explicit
+# prefix-assignment whitelist followed by `bash "$TIER4_DEMO"`. The whitelist
+# is a deliberate, documented cell-contract surface and the C1 fix does NOT
+# widen it -- so this regex must keep matching the real statement, and the
+# test below runs it rather than a copy of it.
+_SPAWN_BLOCK_RE = re.compile(
+    r'(^BENCH_REPO="\$BENCH_REPO" \\\n.*?\n  bash "\$TIER4_DEMO"\n)',
+    re.DOTALL | re.MULTILINE,
+)
+
+# Everything the extracted spawn statement dereferences, other than the sweep
+# args themselves. Dummy values: this test observes WHICH variables cross the
+# process boundary, never what they contain.
+_SPAWN_BLOCK_STUB_ENV = {
+    "BENCH_REPO": "/nonexistent/repo",
+    "BENCH_CELL": "B-cyc",
+    "BENCH_MAP": "Town10HD_Opt",
+    "BENCH_ARM": "paced",
+    "BENCH_RPC_PORT": "2000",
+    "BENCH_ROUTE_FILE": "/nonexistent/route.yaml",
+    "BENCH_CARLA_TREE": "/nonexistent/tree",
+    "BENCH_AUTOWARE_IMAGE": "example@sha256:0",
+    "AW_CONTAINER": "autoware",
+    "BENCH_RUN_DIR": "/nonexistent/run",
+    "GT_PYTHON": "/nonexistent/python3",
+    "TIER4_DEMO_PID_FILE": "/nonexistent/tier4_demo.pid",
+}
+
+
+def _extract_spawn_block(script: Path) -> str:
+    text = script.read_text()
+    m = _SPAWN_BLOCK_RE.search(text)
+    assert m, f"tier4 demo spawn statement not found in {script}"
+    return m.group(1)
+
+
+def test_tier4_derived_sweep_args_reach_a_plain_child_process():
+    """The narrow property, stated without any launcher machinery: after the
+    REAL derivation block runs, a child process must see the derived value.
+
+    A plain `bash -c` child inherits exactly the exported environment and
+    nothing else, so this observes the export itself rather than any
+    particular consumer's spelling of it. Unexported, the child prints an
+    empty value -- which is precisely what
+    `cells/tier4_autoware.sh`'s `${BENCH_TIER4_SWEEP_ARGS:-}` expanded to on
+    Task 15's six B-cyc measured runs.
+    """
+    snippet = _extract_derivation_block(TIER4_SH)
+    script = (
+        "set -euo pipefail\n"
+        'fail() { echo "STUB-FAIL: $*" >&2; exit 2; }\n'
+        f"{snippet}\n"
+        # A REAL second process, not a subshell: a subshell would see the
+        # value whether it was exported or not, and would pass either way.
+        'bash -c \'printf "CHILD<<%s>>\\n" "${BENCH_TIER4_SWEEP_ARGS:-}"\'\n'
+    )
+    env = dict(os.environ)
+    env["BENCH_CLASS_ID"] = "32ch"
+    env.pop("BENCH_TIER4_SWEEP_ARGS", None)
+    result = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, env=env, timeout=10, check=False
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    m = re.search(r"CHILD<<(.*?)>>", result.stdout, re.DOTALL)
+    assert m, f"child never printed its CHILD<<...>> marker: {result.stdout!r}"
+    assert m.group(1) == CH32_FLAGS, (
+        "the derived sweep args did not cross the process boundary -- "
+        "BENCH_TIER4_SWEEP_ARGS is not exported at its derivation site, so "
+        "the spawned tier4 demo falls back to its patched vlp16 defaults "
+        "while the manifest still stamps the requested class (finding C1)"
+    )
+
+
+def test_tier4_spawned_demo_sees_the_derived_sweep_args():
+    """The same property through the REAL spawn statement, whitelist included.
+
+    `TIER4_DEMO` is pointed at a stub that echoes what it received, so this
+    runs the launcher's own prefix-assignment list -- the surface finding C1
+    ruled must NOT be widened -- and observes the value arriving in the
+    process that actually expands it (`cells/tier4_autoware.sh:345`).
+    Extracting the real statement means a future edit to that whitelist is
+    covered here too, rather than by this file's memory of it.
+    """
+    snippet = _extract_derivation_block(TIER4_SH)
+    spawn = _extract_spawn_block(TIER4_SH)
+    with tempfile.TemporaryDirectory() as tmp:
+        demo = Path(tmp) / "tier4_demo_stub.sh"
+        demo.write_text(
+            '#!/usr/bin/env bash\nprintf "DEMO<<%s>>\\n" "${BENCH_TIER4_SWEEP_ARGS:-}"\n'
+        )
+        assigns = "\n".join(f'{k}="{v}"' for k, v in _SPAWN_BLOCK_STUB_ENV.items())
+        script = (
+            "set -euo pipefail\n"
+            'fail() { echo "STUB-FAIL: $*" >&2; exit 2; }\n'
+            f"{snippet}\n"
+            f"{assigns}\n"
+            f'TIER4_DEMO="{demo}"\n'
+            f"{spawn}\n"
+        )
+        env = dict(os.environ)
+        env["BENCH_CLASS_ID"] = "32ch"
+        env.pop("BENCH_TIER4_SWEEP_ARGS", None)
+        env.pop("BENCH_RMW", None)
+        env.pop("BENCH_DDS_PROFILE", None)
+        result = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, env=env, timeout=10, check=False
+        )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    m = re.search(r"DEMO<<(.*?)>>", result.stdout, re.DOTALL)
+    assert m, f"the spawned demo never printed its DEMO<<...>> marker: {result.stdout!r}"
+    assert m.group(1) == CH32_FLAGS, (
+        "the spawned tier4 demo received no sweep arguments: the derivation "
+        "resolved them in the parent and they never crossed into the child "
+        "(finding C1). The fix is `export` at the derivation site, NOT a new "
+        "entry in this spawn statement's whitelist."
+    )

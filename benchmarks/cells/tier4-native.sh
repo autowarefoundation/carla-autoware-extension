@@ -198,6 +198,50 @@ if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_TIER4_SWEEP_ARGS:-}" ]; then
     mapping (vlp16 and 32ch are registered; 128ch is struck on either
     branch)" ;;
   esac
+  # EXPORTED, and this is load-bearing rather than tidiness. THIS LAUNCHER
+  # HAS TWO CONSUMERS OF THE VALUE, IN DIFFERENT PROCESSES:
+  #
+  #   - the ABLATION arm expands it in THIS process, in the
+  #     `raycast_baseline` invocation below, so a plain assignment reaches it;
+  #   - the MEASURED arms spawn `bash "$TIER4_DEMO"` at the bottom of this
+  #     file through an explicit prefix-assignment whitelist, and
+  #     cells/tier4_autoware.sh expands `${BENCH_TIER4_SWEEP_ARGS:-}` in that
+  #     CHILD.
+  #
+  # WHAT BROKE WHEN IT WAS NOT EXPORTED (P4 Task 15 review finding C1, fixed
+  # 2026-08-04). This was a plain, unexported assignment and the whitelist
+  # does not carry it, so on every MEASURED tier4-native run the child
+  # expanded it to empty and the patched demo fell back to its own defaults,
+  # `--lidar-channels 16 --lidar-pps 288000`
+  # (patches/tier4-native/0003-autoware-demo-params.patch) -- which IS the
+  # vlp16 class. Six B-cyc runs requested at `--class 32ch` therefore booted
+  # a vlp16 rig and were filed under a manifest stamped `class_id: "32ch"`
+  # (results/B-cyc/run-031..036, now excluded `harness:<this commit>`;
+  # PROVENANCE sec 27). The three ablation runs of the same batch were
+  # unaffected, because of the in-process consumer above -- which is exactly
+  # why the ablation-side `raycast_baseline.json` rig read-back passed while
+  # the measured arms were wrong.
+  #
+  # WHY EXPORT AND NOT A THIRTEENTH WHITELIST ENTRY. That whitelist is a
+  # deliberate, documented cell-contract surface -- it states exactly what
+  # crosses into the demo -- and widening it would leave the two consumers
+  # reading two different resolutions of the same class id, which is the
+  # shape of the defect rather than its fix. `export` makes both consumers
+  # read ONE resolution, at the one place it is derived.
+  #
+  # An operator-supplied BENCH_TIER4_SWEEP_ARGS skips this block entirely
+  # and needs no export: it arrives in this launcher's ENVIRONMENT (run.sh
+  # spawns the launcher as a child), so it is exported already, by
+  # definition, and is inherited by the demo unchanged.
+  #
+  # PINNED at the process boundary, not in-process:
+  # tests/benchmarks/test_sweep_args.py's
+  # `test_tier4_derived_sweep_args_reach_a_plain_child_process` and
+  # `test_tier4_spawned_demo_sees_the_derived_sweep_args`. Every earlier test
+  # in that file read the variable back in the SAME shell, which is why they
+  # were all green while six runs were being mislabelled. Delete this
+  # `export` and both of those go red; nothing else in the suite moves.
+  export BENCH_TIER4_SWEEP_ARGS
 fi
 
 # --------------------------------------------------------------------------
