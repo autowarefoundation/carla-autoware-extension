@@ -1,0 +1,3 @@
+raycast_baseline: rig=extension class=32ch attrs={'channels': '32', 'rotation_frequency': '10', 'range': '120.0', 'points_per_second': '1200000', 'sensor_tick': '0.05'}
+raycast_baseline: tick 20.0 Hz (fixed_delta 0.050000 s), duration cap 600.0 s, mount (0.9, 0.0, 2.0) (0.8596703279023998, -0.05367618110798624, -88.1561187736481) (from default_mount())
+raycast_baseline: 2911 ticks, 2914 sensor callbacks, 2911 clock rows -> /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-052/raycast_baseline.json

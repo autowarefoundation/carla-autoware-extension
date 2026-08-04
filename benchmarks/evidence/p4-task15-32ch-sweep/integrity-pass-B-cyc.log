@@ -1,0 +1,68 @@
+# P4 Task 15 -- 32ch sweep integrity pass, cell B-cyc
+
+Facts only: arm, class label, exclusion label, transport, duel flags,
+instrument PRESENCE (not size), and the ablation client's self-recorded
+rig. No verdicts, no magnitudes, one cell.
+
+## cell B-cyc: 9 sweep-arm run(s) at class `32ch`
+
+| run | arm | class_id | excluded | reason | rmw | shm_enabled | dds_profile_sha256 | duel_adm | duel_id |
+|---|---|---|---|---|---|---|---|---|---|
+| run-031 | paced | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-032 | paced | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-033 | paced | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-034 | unpaced | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-035 | unpaced | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-036 | unpaced | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-037 | ablation | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-038 | ablation | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-039 | ablation | 32ch | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+
+| run | arm | engine_build_id | cpu_governor | loadavg | run_mode |
+|---|---|---|---|---|---|
+| run-031 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.44 | editor-game |
+| run-032 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.99 | editor-game |
+| run-033 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.65 | editor-game |
+| run-034 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.04 | editor-game |
+| run-035 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.49 | editor-game |
+| run-036 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.11 | editor-game |
+| run-037 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 2.72 | editor-game |
+| run-038 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.53 | editor-game |
+| run-039 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.51 | editor-game |
+
+- arm `paced`: n=3 run-031 run-032 run-033
+- arm `unpaced`: n=3 run-034 run-035 run-036
+- arm `ablation`: n=3 run-037 run-038 run-039
+
+| run | arm | observer rows? | resources rows? | clock rows? | publisher_counts | quality.json |
+|---|---|---|---|---|---|---|
+| run-031 | paced | True | True | True | True | True |
+| run-032 | paced | True | True | True | True | True |
+| run-033 | paced | True | True | True | True | True |
+| run-034 | unpaced | True | True | True | True | True |
+| run-035 | unpaced | True | True | True | True | True |
+| run-036 | unpaced | True | True | True | True | True |
+| run-037 | ablation | empty | True | True | False | False |
+| run-038 | ablation | empty | True | True | False | False |
+| run-039 | ablation | empty | True | True | False | False |
+
+### cell B-cyc ablation client, as the client itself recorded it
+
+| run | rig | class_id | channels | pps | mount_location_m | mount_rotation_deg | mount_source |
+|---|---|---|---|---|---|---|---|
+| run-037 | tier4 | 32ch | 32 | 1200000 | [-0.497071, 2e-06, 2.0] | [0.85967, -0.053676, -88.156119] | --mount |
+| run-038 | tier4 | 32ch | 32 | 1200000 | [-0.497071, 2e-06, 2.0] | [0.85967, -0.053676, -88.156119] | --mount |
+| run-039 | tier4 | 32ch | 32 | 1200000 | [-0.497071, 2e-06, 2.0] | [0.85967, -0.053676, -88.156119] | --mount |
+
+| run | clock_rows_written? | hdr_reasserts | toctou | stood_down | by_signal |
+|---|---|---|---|---|---|
+| run-037 | True | 1 | 0 | False | True |
+| run-038 | True | 1 | 0 | False | True |
+| run-039 | True | 1 | 0 | False | True |
+
+-> the Task 11 measured `--mount` reached the client: 3/3 run(s)
+
+## exclusions
+
+None. No run of cell B-cyc at class `32ch` carries `excluded: true`.
+

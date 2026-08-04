@@ -6536,3 +6536,222 @@ row count and the two skip lines (`N run(s) skipped: arm not in this cell's
 sweep_arms.` and `N run(s) skipped: class not in this point's pool …`) are what
 carry the distinction, and both are printed in the artifact for exactly this
 reason.
+
+---
+
+## 26. P4 Task 15: the 32ch step-up sweep collected on cells A and B-cyc (live, 2026-08-04)
+
+Nothing above is rewritten. This section is appended, and no filed
+`manifest.json` from any earlier task is modified — the class-pool rule's
+legacy clause (§24.3) exists precisely so none has to be, and this collection
+is the first live test of that guarantee.
+
+The step-up itself is **not a judgement call**: `config/cells.yaml`'s
+`sweep_classes` block pre-registers both branches of the M4 ceiling search
+before any P3 run, and §22.7/§22.8 recorded that neither cell's vlp16 disjunct
+fired. That falsifies the registered claim and triggers `32ch` for both cells,
+with no owner consultation. `128ch` stays struck on either branch.
+
+### 26.1 Session preamble
+
+`ROS_DOMAIN_ID=0`. 1-min loadavg **0.41** at 2026-08-04T06:14:05−07:00, 24
+cores, `cpu_governor=powersave` — **recorded, not changed**. `nvidia-smi`: RTX
+5090, 1116 MiB of 32607 MiB in use by Xorg/gnome-shell/browser/terminal only,
+i.e. no other GPU compute consumer. `pgrep -af 'UnrealEditor|CarlaUE4'`
+returned exactly one line, which was the shell running that very `pgrep` —
+the documented self-match, not a live CARLA.
+
+Suite before collection: **1290 passed, 1 failed, 1 skipped**. The failure was
+`test_teardown.py::test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline`,
+one of the two registered load-sensitive flakes. It was **not accepted on
+authority**: its recorded failure mode is a race in the test's own subprocess
+setup producing an empty `/proc/<pid>/cmdline` read, and the assertion that
+fired was `assert 'os.execv' in ''` under the test's own message "stub setup is
+broken -- this should be the PRE-exec argv" — an empty string, i.e. exactly
+that mode. Re-run in isolation: **1 passed in 5.17 s**. Effective baseline
+1291 passed / 1 skipped.
+
+### 26.2 Step 1: form verification, all six cell×form combinations
+
+Twelve invocations — `--check-args` then `--dry-run` for {A, B-cyc} × {paced,
+`paced --unpaced`, ablation}, every one at `--class 32ch`. **All twelve exited
+0**; verbatim in
+`benchmarks/evidence/p4-task15-32ch-sweep/step1-form-verification.log`.
+
+The six `--check-args` resolutions each print `class_id=32ch` — the field
+Task C2 added — alongside `arm=paced` / `arm=unpaced` / `arm=ablation`,
+`approach=extension` (A) / `tier4-native` (B-cyc), `duel_admissible=false` and
+an empty `duel_id`. All twelve resolve `class=32ch 1200000 pts/s`, and each
+`--dry-run` shows `--class-id 32ch` forwarded to `write_manifest`. Next
+indices resolved to `A/run-045` and `B-cyc/run-031`.
+
+Transport resolved as registered: cell A on `rmw_cyclonedds_cpp`, shm off,
+`docker/cyclonedds.xml`; cell B-cyc on `rmw_cyclonedds_cpp`, shm off, **no
+profile** — its row-11 override, which the log shows applying *after* the
+tier4-native family default, both echoed.
+
+`engine_build_id=bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` on all six dry runs — D8
+intact, no relink. Both artifact gates ran and passed ("editor plugin .so is
+newer than HEAD", "engine and Carla module BuildId agree", "tier4 plugin
+artifacts are newer than every source", "tier4 tree identity recorded").
+
+### 26.3 The `class_id` prerequisite, verified live — and one registered expectation falsified by design
+
+All eighteen new runs carry `class_id: "32ch"` in their manifests. The
+launchers' derivation and the manifest label come from one resolution, so the
+rig booted and the workload label cannot drift apart; each ablation run's own
+`raycast_baseline.json` independently reports `channels 32` /
+`points_per_second 1200000`.
+
+The dispatch also required that `sweep_verdict.py <cell> --class vlp16` return
+Task 14's nine rows per cell **with the recorded md5s unchanged**
+(`bde6ccb1…` for A, `51c37fd7…` for B-cyc). **The whole-file md5s DID change,
+and they had to.** Recorded here rather than quietly corrected.
+
+`render_verdicts` appends a class-drop counter line whenever any run is dropped
+by the pool rule — §24.3's own specification, "counted and surfaced … on their
+own line". Before this collection no 32ch run existed, so the line was absent
+and the recorded md5 is the md5 of a table *without* it. The moment the first
+32ch run landed the line appeared, so whole-file md5 identity was never
+satisfiable once collection began; the expectation was written before anyone
+had observed the interaction.
+
+What the expectation was protecting holds **exactly**, verified by `diff`
+against the pre-collection capture on both cells:
+
+- the delta is **two added lines** (a blank, plus the counter now reading
+  `9 run(s) skipped: class not in this point's pool`), with **zero lines
+  modified and zero removed**;
+- the nine scored vlp16 rows per cell are byte-identical, all `reached False`
+  with an empty `reasons` column;
+- the out-of-arm skip counts are unchanged at **35** (A) and **21** (B-cyc);
+- stripping the counter line and trailing blanks reproduces the recorded
+  digests **exactly** — `bde6ccb1bcfbd0c369e78d4406be91fa` and
+  `51c37fd71d2389faaca0c4b33e7c09b4`. The recorded md5 *is* the md5 of the
+  scored content, and the scored content did not move.
+
+So the class partition is confirmed in both directions on live data: Task 14's
+vlp16 pool is intact and unrewritten, and the counter that made its md5 move is
+the positive evidence that the nine 32ch runs were kept out of it. The durable
+form of this check is the scored-content digest plus the counter value, not the
+whole-file digest.
+
+### 26.4 The `--mount` launcher constant took, with no operator action
+
+First collection to depend on `TIER4_ABLATION_MOUNT` rather than a hand-passed
+flag. Checked from the run directories, not the launcher: all three B-cyc
+ablation runs record `mount_location_m [-0.497071, 2e-06, 2.0]` and
+`mount_rotation_deg [0.85967, -0.053676, -88.156119]` — the §14.5 measurement,
+**3/3**, with `mount_source: --mount`. Cell A's three record `[0.9, 0.0, 2.0]`
+with `mount_source: default_mount()`, correct and exact for the extension kit.
+The poses differ by **1.397071 m in x**, the tier4 rig's `base_link` anchor —
+the error the constant exists to prevent.
+
+### 26.5 The collection
+
+One driver invocation, no resume, no make-up runs; wall window
+2026-08-04T06:21:54−07:00 … T07:58:47−07:00. Eighteen `run.sh` invocations,
+**all exit 0**:
+
+| cell  | arm        | runs                              |
+| ----- | ---------- | --------------------------------- |
+| A     | `paced`    | `results/A/run-045 … run-047`     |
+| A     | `unpaced`  | `results/A/run-048 … run-050`     |
+| A     | `ablation` | `results/A/run-051 … run-053`     |
+| B-cyc | `paced`    | `results/B-cyc/run-031 … run-033` |
+| B-cyc | `unpaced`  | `results/B-cyc/run-034 … run-036` |
+| B-cyc | `ablation` | `results/B-cyc/run-037 … run-039` |
+
+All eighteen: `class_id 32ch`, `excluded false`, `duel_admissible false`, empty
+`duel_id`, `engine_build_id bc08ce19-…`, `cpu_governor powersave`. The twelve
+measured runs carry observer, resources and clock rows plus
+`publisher_counts.json` and `quality.json`; the six ablation runs carry a
+header-only `observer.csv` and neither of those two files — the designed
+absences, unchanged from vlp16.
+
+### 26.6 Inter-run hygiene and pacing at the heavier class
+
+Eighteen hygiene blocks, eighteen `docker compose down exit=0`, and eighteen
+`bootstrap_carla_msgs.sh` refusals (`PREFLIGHT FAIL: container 'autoware' is
+not running`, exit 1) — the ordering deviation §22.6/§23.4 established, on
+every block rather than on some, and this task's driver comment states it that
+way rather than inheriting the refuted framing.
+
+Seventeen pacing applications, **every one exactly the 120 s floor**; the
+loadavg poll added zero seconds and the 300 s ceiling was never approached.
+This extends §23.3's restatement to a 4× heavier class, and strengthens it:
+pre-floor readings span **1.99 … 18.17** (Task 14's span topped out at 11.05),
+and post-floor never exceeds **2.72**. Five pre-floor readings were at or above
+`exclusions.md` criterion 6's threshold of 8, so the floor is load-bearing
+rather than decorative — every run's own preflight loadavg landed between
+**0.31 and 2.72**, and criterion 6 never came close to firing.
+
+### 26.7 The per-cell 32ch ceiling booleans (the registered gate-fact exception)
+
+Read once per cell, from that cell's own verdict table, for the single question
+"did any ceiling disjunct fire":
+
+```bash
+PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py A     --class 32ch
+PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py B-cyc --class 32ch
+```
+
+| cell  | rows scored | `reached: True` rows | reasons | **ceiling disjunct fired** |
+| ----- | ----------- | -------------------- | ------- | -------------------------- |
+| A     | 9           | **0**                | none    | **NO**                     |
+| B-cyc | 9           | **0**                | none    | **NO**                     |
+
+Read from the rendered table and its two skip lines, **not from `rc`** — §25.3
+records that `sweep_verdict.main` returns 0 when every run is class-dropped, so
+exit status alone cannot tell "passed" from "nothing scored". Here the tables
+are positively non-empty and scope-correct: each scored **9 rows, which are
+exactly this task's nine runs for that cell**, while the skip lines report the
+unchanged out-of-arm counts (35 / 21) and **9 class-dropped runs per cell** —
+Task 14's vlp16 data, correctly held out of the 32ch pool.
+
+Every one of the eighteen rows reports `reached False` with an empty reasons
+column. On the twelve measured rows nothing is defaulted (`quality_ok True`,
+empty notes). On the six ablation rows the notes column carries "publisher rate
+not measurable (no `publisher_counts.json`)" and "quality not applicable
+(ablation arm, no closed loop)" — the two designed absences, neither of which
+becomes a disjunct. No row carries a `window_branch_note`, so no run's scoring
+window took a branch its cell was not expected to take.
+
+"Did not fire" is a **real evaluation, not an unevaluable disjunct**:
+`benchmarks/analysis/ceiling.py:84` raises when both `rtf` and
+`tick_rate_ratio` are `None`, so an unscoreable row cannot render as a passing
+one. All eighteen rendered, so all eighteen were scored against a real
+per-sample throughput series.
+
+**No n = 5 extension was executed.** The pre-registered extension applies to a
+cell whose disjunct FIRED; neither did, on either class. Both cells stand at
+n = 3 per arm at `32ch`.
+
+### 26.8 What this decides, mechanically
+
+Nothing fired at `vlp16` and nothing fired at `32ch`, on either cell. Per the
+`cells.yaml` registration, **`128ch` stays struck on either branch** — "once
+the criterion fires at a lower class nothing needs it, and if it does not fire
+at `vlp16` the informative next probe is the adjacent class, not the extreme
+one." No 128ch data was collected and none is proposed; both launchers still
+refuse the class outright for want of a sensor-argument mapping, so the strike
+is enforced in code and not merely documented.
+
+The wrap's wording is therefore **"ceiling not located up to the 32ch class"**.
+That is a statement about where the search stopped, *not* a new step-up and not
+a licence for one. Nothing here follows from comparing the cells; each boolean
+was read from its own table and decides its own cell.
+
+### 26.9 The §23.2 correction, discharged
+
+§23.2 instructed this task to "either split this output per cell or reduce
+measured-arm rows to booleans" after Task 14's `integrity-pass.log` filed both
+cells' `observer rows` counts — `observed_count`, a measured magnitude — in one
+artifact. **Both were done**, because they close different halves of the hole:
+the row columns are now booleans (`True` / `empty` / `absent`, keeping a
+missing instrument distinct from an idle one), and the pass takes a cell
+argument and refuses to render two cells into one file, producing
+`integrity-pass-A.log` and `integrity-pass-B-cyc.log`. No committed artifact in
+this task's evidence directory carries a row count or two cells' per-run
+instrument facts. Task 14's filed log is **not** rewritten — it is a certified
+verbatim capture, and §23.2 already records what it contains.
