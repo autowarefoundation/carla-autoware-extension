@@ -48,14 +48,14 @@ data. **Zero exclusions**, so no exclusion reason needed quoting. All eighteen
 
 ## Files
 
-| file                            | what it is                                                                                                                                                                       |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `step1-form-verification.log`   | The twelve Step-1 invocations, verbatim: `--check-args` then `--dry-run` for {A, B-cyc} × {paced, unpaced, ablation}, all at `--class 32ch`. Each block is followed by its own `exit=` line. |
-| `sweep_driver.sh`               | The exact driver that produced the eighteen runs — ordering, inter-run hygiene and the settle wait. It makes no measurement decision; `run.sh` owns all of those.                |
-| `sweep-console.log`             | The driver's whole console, unedited, including each run's fifteen numbered steps, the hygiene blocks and the bootstrap refusals.                                                |
-| `integrity_pass.py`             | The read-only pass that produced the two logs below. Computes no verdict, prints no row count, and refuses to render two cells into one artifact — see its docstring and §23.2.  |
-| `integrity-pass-A.log`          | Cell A's output: per-run arm, class label, exclusion label, transport, duel flags, engine BuildId, governor, loadavg, instrument presence, and the ablation client's recorded rig. |
-| `integrity-pass-B-cyc.log`      | The same for cell B-cyc, in its own file.                                                                                                                                       |
+| file                          | what it is                                                                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `step1-form-verification.log` | The twelve Step-1 invocations, verbatim: `--check-args` then `--dry-run` for {A, B-cyc} × {paced, unpaced, ablation}, all at `--class 32ch`. Each block is followed by its own `exit=` line. |
+| `sweep_driver.sh`             | The exact driver that produced the eighteen runs — ordering, inter-run hygiene and the settle wait. It makes no measurement decision; `run.sh` owns all of those.                            |
+| `sweep-console.log`           | The driver's whole console, unedited, including each run's fifteen numbered steps, the hygiene blocks and the bootstrap refusals.                                                            |
+| `integrity_pass.py`           | The read-only pass that produced the two logs below. Computes no verdict, prints no row count, and refuses to render two cells into one artifact — see its docstring and §23.2.              |
+| `integrity-pass-A.log`        | Cell A's output: per-run arm, class label, exclusion label, transport, duel flags, engine BuildId, governor, loadavg, instrument presence, and the ablation client's recorded rig.           |
+| `integrity-pass-B-cyc.log`    | The same for cell B-cyc, in its own file.                                                                                                                                                    |
 
 `sweep-console.log`, `step1-form-verification.log` and the two
 `integrity-pass-*.log` files are **verbatim captures** and are covered by the

@@ -154,6 +154,30 @@ repos:
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
+        # benchmarks/evidence/** is excluded for EXACTLY the reason the ruff
+        # hooks below exclude it, and the reason the mutating hooks above
+        # exclude its scripts: each directory's PROVENANCE.md certifies
+        # specific scripts as the exact code that produced specific filed
+        # figures ("the exact driver that produced the eighteen runs"), so a
+        # lint-driven edit -- even adding a `# shellcheck disable=` line --
+        # means the script in the tree is no longer the script that produced
+        # the recorded figure.
+        #
+        # MEASURED 2026-08-04 (P4 Task 15 review, fix round 1): at b6fbc80,
+        # BEFORE any change in that round, `pre-commit run --all-files`
+        # already failed here, on
+        # benchmarks/evidence/p4-task15-32ch-sweep/sweep_driver.sh:104 --
+        # SC2016 (info) against a `down`-in-backticks message inside single
+        # quotes, i.e. deliberate literal prose in an echo, not a defect. So
+        # this exclude records a pre-existing condition rather than creating
+        # a new allowance, exactly as the ruff exclude below does.
+        #
+        # The cost, stated plainly: shell under benchmarks/evidence/ is no
+        # longer shellchecked. Anything meant to be maintained as code
+        # belongs under benchmarks/scripts/ or scripts/, which stay covered.
+        # If an evidence probe script is ever promoted to maintained code,
+        # MOVE it there and leave the evidence copy untouched.
+        exclude: ^benchmarks/evidence/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.22
