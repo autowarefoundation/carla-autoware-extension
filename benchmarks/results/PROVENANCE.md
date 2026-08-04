@@ -4992,7 +4992,6 @@ was rewritten by both `trailing-whitespace` and `mixed-line-ending`. Nothing
 under the real `benchmarks/evidence/` or `benchmarks/results/` was created,
 deleted, or edited by this verification.
 
-
 ## 18. P4 Task 12: the A-vs-B-cyc STATIC duel collected (live, 2026-08-03/04)
 
 Twenty runs, ten interleaved pairs, `benchmarks/results/A/run-016` … `run-025`
@@ -5249,3 +5248,233 @@ all ten B-cyc runs and both verify scripts passed on every run, with no flip
 performed. This extends §14.1's two-run observation to twenty and confirms the
 prediction that ownership flips only on a source change, not on alternating
 runs.
+
+## 19. CORRECTIONS to §18, appended 2026-08-04 (P4 Task 12, review fix round 1)
+
+§18 stands as written; this section corrects it. Ten findings, four of which
+change what a Task 16 reader should believe. **The pool itself is unaffected**:
+all twenty runs remain admissible, `duel_id "A+B-cyc"` on every one, none
+excluded, and no run directory was touched by this round. Nothing here is a
+cross-cell reading of any measured metric.
+
+### 19.1 (I1) §18.2's "four checkable facts, all in [the two logs]" over-claims its own evidence
+
+§18.2 says the interruption was classified "on four checkable facts, **all in**
+`duel-static-console-part1.log` and `duel-pacing.log`". That is wrong about the
+third fact. The simultaneous death of an unrelated passive watcher process
+appears in **neither** file, and no transcript of it was filed — it was an
+agent-harness notification observed by the operator, not a captured artifact.
+`benchmarks/evidence/p4-task12-static-duel/PROVENANCE.md` correctly claimed only
+**three** properties, so the two records in the same commit contradicted each
+other; the evidence-directory record is the one that was right.
+
+**Corrected statement: three checkable facts, plus one operator observation not
+captured in the filed logs.** The three checkable facts are §18.2's items 1, 2
+and 4 — the absent `DUEL FAIL` line, the absent `… FAILED` line, and the
+between-runs death corroborated by the missing `before_pair=8` pacing record.
+The watcher-process death is retained as a genuine and load-bearing observation,
+but **relabelled as an operator observation** rather than a checkable one, and a
+reader who wants to re-derive the classification should use the three that are
+in the artifacts. They are jointly sufficient: items 1 and 2 exclude a
+`duel.sh` self-abort, and item 4 excludes a run-in-flight failure.
+
+No transcript is filed to close the gap because none exists in byte-exact form;
+fabricating one after the fact would be worse than the gap. The
+evidence-directory `PROVENANCE.md` is amended in the same commit to say the same
+thing, so the two records now agree.
+
+### 19.2 (I2) "silently dropped" inverts the tool's documented behaviour
+
+§18.3 and the commit body both say a `"B-cyc+A"` stamp would have caused those
+three pairs to be **silently dropped** from the pool. That is the opposite of
+what the code does, verified at the lines:
+
+- `duel_verdict.py:1232` builds `expected_duel_id = f"{cell_a_id}+{cell_b_id}"`
+  by plain concatenation with **no order normalisation**, and `:1233` gates
+  `legacy_ok` on `(cell_a_id, cell_b_id) == ("A", "B")` — so for an A-vs-B-cyc
+  call `legacy_ok` is False and a `"B-cyc+A"` run matches nothing.
+- A non-matching run does not vanish: `:469-473` increments `n_inadmissible`
+  before `continue`.
+- That count is surfaced: `:221-224` emits `"3 run(s) not duel-admissible in A"`
+  (deliberately worded apart from exclusions), and `:225-227` adds
+  `"UNDER-N: a has 7 run(s) (< 10)"`.
+- `benchmarks/analysis/manifest.py:114-119` states the design intent in as many
+  words: the fail-closed default makes a forgotten flag "show up as a **LOUD**,
+  already-implemented UNDER-N / insufficient-data verdict row with the drop
+  count in its notes."
+
+**Corrected statement:** the three pairs would have been **counted out and
+flagged**, taking each side's pool to n = 7 and the row to UNDER-N with the drop
+count in its notes — loud, not silent. **The decision recorded in §18.3 is
+unaffected and remains correct**: n = 7 fails the brief's n ≥ 10 either way, so
+declining to swap the arguments was still the right call. Only the stated reason
+was wrong.
+
+### 19.3 (I3) §18.5's M1b consequence is bounded and knowable, and was understated
+
+§18.5 records that two B-cyc runs supply no PublishedTime rows without saying
+what that costs. Two facts complete it:
+
+- `duel_verdict.py:127` sets `MIN_RUNS = 10`, so a B side of 8 draws an explicit
+  `UNDER-N: b has 8 run(s) (< 10)` note on the M1b row.
+- **The row's disposition does not change**, because M1b is *already*
+  `insufficient-data` from cell A's registered 0-of-10 (§18.5, §§14-16). An
+  8-of-10 B side cannot rescue a row whose other side is empty by registration.
+
+So the 8/10 matters **only** for a within-B-cyc reading of control staleness,
+not for the A-vs-B-cyc M1b verdict, which was already decided by cell A's
+registration before this collection began. Stated so a Task 16 reader does not
+have to re-derive it or mistake it for a new risk to the duel.
+
+### 19.4 (I4) §18.5's "cause not established" is superseded: the mechanism IS established
+
+§18.5 declined to offer a mechanism for `B-cyc/run-002` and `run-003` recording
+no control traffic. The filed artifacts do settle it, and this section records
+what they show. Everything below was re-derived from the committed logs.
+
+**The static arm has no control loop.** Nothing engages, so
+`/control/command/control_cmd` is not produced by a controller at all. It is
+emitted only while `vehicle_cmd_gate` is in its emergency-publishing state,
+which `mrm_handler` drives by cycling EMERGENCY_STOP operate/cancel. That single
+mechanism explains all three observed regimes.
+
+`MRM State changed` counts, runs 001-011: 451, **2**, **2**, 190, 182, 176, 179,
+184, 168, 183, 28.
+
+| regime | runs | in-window behaviour | `control_cmd` rows | rate |
+| --- | --- | --- | --- | --- |
+| limit cycle | 004-010 | 65-69 operate/cancel pairs in-window | 121-142 | ~1.8-2.1 Hz |
+| latched | 011 | **1** operate in-window, 68 gate `Emergency!` | 1340 | 19.72 Hz |
+| single cycle, out of window | 002, 003 | cycle ran **exactly once**, before the window opened | **0** | — |
+
+In 002 and 003 the sequence `NORMAL -> MRM_OPERATING` → `EMERGENCY_STOP is
+operated` → `vehicle_cmd_gate: Emergency!` → `MRM_OPERATING -> NORMAL` →
+`EMERGENCY_STOP is canceled` ran once and only once, and `mrm_handler` then
+emitted **nothing at all** until SIGINT. That cycle landed at **−7.40 s**
+(run-002) and **−7.30 s** (run-003) relative to the observer window opening.
+**The count is 0 because the cycle fell outside the scoring window, not because
+the rate was low.**
+
+**The signature, from a normalised set-difference over all ten
+`tier4-autoware.log`s.** Exactly one line is present in both 002 and 003 and in
+none of 004-011:
+
+```text
+[control.autoware_operation_mode_transition_manager]: Subscribed control_cmd is timed out.   (29x each)
+```
+
+Every line present in all of 004-011 but neither of 002/003 is downstream of
+control traffic that already exists — a rate-check WARN, the WARN-level
+topic-rate-drop diagnostic, and `control_validator: waiting for
+/planning/trajectory`. Correspondingly,
+`topic_state_monitor_control_command_control_cmd` in 002/003 reported the harder
+`topic is timeout. Set ERROR` **28× / 27×** and **never** the WARN form, while
+004-010 are 24-28 WARN with 0-3 ERROR. (Re-derived here by two independent
+methods; a count of 29 for this monitor would be the neighbouring
+`operation_mode_transition_manager` figure, which is 29× in both runs.)
+
+So the diagnostic stayed pinned at ERROR for the whole window while
+`mrm_handler` sat in NORMAL and never re-operated. **The break is in the
+feedback path into `mrm_handler` — its availability / hazard-status input — not
+in the gate and not in the observer.** Two controls confirm the negative half:
+`observer_topics.yaml` is byte-identical across all ten B-cyc runs (one distinct
+sha256), and localization traffic in 002/003 is indistinguishable from the other
+eight (kinematic_state 1372/1373 against a 1371-1374 spread, pose 685/686
+against 685-686, pointcloud 685/686 against 678-686, window 68.55/68.61 s
+against 68.55-68.65 s). Both runs also logged `no mrm operation available:
+operate emergency_stop` around the single cycle (3× / 5×), and run-003
+additionally `waiting for operation_mode_availability msg...` and `waiting for
+mrm emergency stop to become available...` — readiness messages consistent with
+a bring-up discovery race.
+
+**What is NOT established, and why it cannot be from these artifacts.** The
+attractive hypothesis is the cell's own registered row-11 caveat: B-cyc runs
+bare CycloneDDS with `dds_profile_sha256: ""`, whose registered caveats are
+routable-NIC binding and **flaky discovery for bare-DDS publishers**. A missed
+intra-stack subscription at bring-up is exactly that failure class; the campaign
+has a filed precedent of the same shape in
+`benchmarks/evidence/b-vector-map-delivery/` (`/map/vector_map` undelivered to
+already-running subscribers, 2 of 6), and 2 of 10 fits. **It cannot be confirmed
+here**, because `/system/operation_mode/availability` and the diagnostic-graph
+output are **not in the registered observer set** — that set is five topics
+(pointcloud, NDT pose, kinematic_state, `control_cmd`, `published_time`) and is
+frozen.
+
+What would settle it: capture those two topics in a diagnostic run outside the
+frozen observer set, and check whether the availability topic keeps arriving
+while `mrm_handler` sits in NORMAL. The two branches are
+consequential and differ in who owns the defect — **if it keeps arriving**, this
+is an Autoware-side state bug and cell-independent; **if it stops**, the
+transport arm under test is itself intermittently costing B-cyc its M1b sample,
+which the wrap must report as a property of the arm rather than noise.
+
+**That diagnostic was deliberately NOT run here** — no extra GPU time was
+authorised for it, and Task 13's closed-loop runs exercise `mrm_handler` far
+harder and will supply the same information for free. Task 13 is the pointer.
+
+**The non-exclusion stands and is not reopened.** Re-walked against the frozen
+criteria: criterion 2's `gate:control_cmd-silent` is engage-predicated —
+`run.sh:836` gates `CONTROL_SILENT=1` on
+`[ "$window_arm" != "static" ] && [ "${ARM_ENABLED:-0}" = "1" ]`, unreachable in
+the static arm; criterion 5 is map-scoped to Nishi-Shinjuku and these are
+`Town10HD_Opt`; criteria 4 and 10 need a stall or a capped window, and both runs
+carry the standard ~68.5 s window with no `clock_stall.marker`. Establishing the
+cause does not make a run excludable — the criteria are the criteria.
+
+### 19.5 (M5) §18.2's death window is unsupported and self-contradictory
+
+§18.2 says "approximately 04:17-04:19Z". `B-cyc/run-008`'s last Autoware
+timestamp is **04:15:02.227Z**, and with all thirteen preceding waits at
+`topup_s=0` the `before_pair=8` write would have landed ~04:17:1x. **Corrected
+window: ~04:15:1x - ~04:17:2x.** A death at 04:19 would have produced the
+`before_pair=8` line and so would contradict §18.2's own fact 4.
+
+### 19.6 (M6) §18.3(a) attributes a comment to the wrong file
+
+§18.3(a) credits the per-invocation pair-numbering property to "`duel-pacing.log`'s
+own comment". That file has **no comments** — 35 `ts=` lines and nothing else.
+The comment is at **`benchmarks/scripts/duel.sh:233-237`**.
+
+### 19.7 (M7) §18.3(a) has the sign of the first-slot effect backwards
+
+§18.3(a) frames slot 1 as paying the cold-cache penalty, making the 6/4 split
+read as charged **against** cell A. The filed preflight loadavg says the
+opposite: **slot 1 mean 1.281, slot 2 mean 1.711**, with slot 2 the higher-load
+position in **8 of 10** pairs. Slot 1 is the *favourable* position, so holding
+it six times gives cell A the better slot one pair more often than an
+uninterrupted invocation would have.
+
+The direction is corrected for the record; the magnitude remains immaterial, and
+this is a measurement-condition covariate (host load at run start, the same
+quantity §18.1 already tabulates), not a reading of either cell's measured
+metrics.
+
+### 19.8 (M8) §18.5 flattens a bimodal split into a range
+
+§18.5 says the other eight runs "recorded 121-1341 rows", which reads as one
+spread. It is two regimes: **seven of the eight are 121-142 rows (~2 Hz)** and
+**`run-011` alone is 1341 (~19.7 Hz)** — a different mechanism, not the top of a
+range. Since the section's purpose is M1b supply, the split is material, and
+§19.4's table gives it with the mechanism that produces all three regimes.
+
+### 19.9 (M9) §18.2 mislabels one of the two prior `before_pair=8` entries
+
+§18.2 (and the task report) call the two pre-existing `before_pair=8` records
+"P3's 2026-07-31 cell-**B** entries". They are `before_cell=B` (22:07:28Z) and
+`before_cell=**A**` (22:12:00Z). The load-bearing point — that **neither belongs
+to this task**, so their presence does not weaken §18.2's fact 4 — is unchanged
+and correct.
+
+### 19.10 (M10) the commit body carries a superseded lower bound
+
+Commit `20b1474`'s message body states "all ten B-cyc `ndt_rate_ratio` values
+are >= 0.998951". **That is false at the seventh decimal**: `run-007` and
+`run-011` are both `0.9989506671719838`, which is below 0.998951. The error came
+from reading `integrity-pass.log`'s 6-decimal `min=0.998951` as an exact bound
+rather than a rounded display.
+
+**The exact minimum over the ten-run pool is `0.9989506671719838`.** §18.4's
+per-run table was and remains exact, and the load-bearing claim — **all ten
+≥ 0.9**, satisfying the claim table's first disjunct — is correct and unchanged.
+The commit message cannot be amended after the fact, so the superseded bound is
+recorded here as superseded.

@@ -17,12 +17,12 @@ those directories, not a new measurement.
 
 ## What is here
 
-| File | What it is |
-| --- | --- |
-| `duel-static-console-part1.log` | Full console of invocation 1, `bash benchmarks/scripts/duel.sh A B-cyc --arm static --pairs 10`. Covers pairs 1-7 complete (14 runs). Ends mid-`sleep`, inside the 120 s pacing floor before pair 8, with no further output — the kill. |
-| `duel-static-console-part2-resume.log` | Full console of invocation 2, `bash benchmarks/scripts/duel.sh A B-cyc --arm static --pairs 3`, the shortfall make-up. Runs to `duel complete: A 3 ok / 0 failed, B-cyc 3 ok / 0 failed`. |
-| `integrity-pass.log` | Output of `integrity_pass.py` over all twenty runs (brief Step 2 + Step 3). |
-| `integrity_pass.py` | The exact script that produced `integrity-pass.log`. Read-only over `benchmarks/results/`. |
+| File                                   | What it is                                                                                                                                                                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `duel-static-console-part1.log`        | Full console of invocation 1, `bash benchmarks/scripts/duel.sh A B-cyc --arm static --pairs 10`. Covers pairs 1-7 complete (14 runs). Ends mid-`sleep`, inside the 120 s pacing floor before pair 8, with no further output — the kill. |
+| `duel-static-console-part2-resume.log` | Full console of invocation 2, `bash benchmarks/scripts/duel.sh A B-cyc --arm static --pairs 3`, the shortfall make-up. Runs to `duel complete: A 3 ok / 0 failed, B-cyc 3 ok / 0 failed`.                                               |
+| `integrity-pass.log`                   | Output of `integrity_pass.py` over all twenty runs (brief Step 2 + Step 3).                                                                                                                                                             |
+| `integrity_pass.py`                    | The exact script that produced `integrity-pass.log`. Read-only over `benchmarks/results/`.                                                                                                                                              |
 
 ## Capture method, and why not `tee`
 
@@ -62,3 +62,26 @@ orchestration-layer event rather than a duel abort or a stack defect:
 `integrity_pass.py` is deliberately silent about cell A's `ndt_rate_ratio`
 (brief Step 3 is a within-B-cyc reading only); it prints cell A rows for the
 integrity columns alone.
+
+## Correction appended 2026-08-04 (review fix round 1)
+
+This directory's "What `part1.log` proves about the kill, specifically" section
+above lists **three** properties, and that count was and is correct. The
+campaign record's `benchmarks/results/PROVENANCE.md` §18.2 disagreed with it,
+claiming **four** checkable facts "all in" these files — the fourth being the
+simultaneous death of an unrelated passive watcher process. That fourth item is
+**not in these files and not in any filed artifact**: it was an agent-harness
+notification observed by the operator at the time.
+
+`PROVENANCE.md` §19.1 corrects the campaign record to "three checkable facts,
+plus one operator observation not captured in the filed logs", so the two
+records now agree, with this directory's count being the one that was right.
+
+No transcript of the watcher-process death is filed, because none exists in
+byte-exact form and manufacturing one after the fact would defeat the purpose of
+this directory. The three properties listed above are jointly sufficient to
+classify the interruption: the first two exclude a `duel.sh` self-abort, and the
+third excludes a run-in-flight failure.
+
+The four captured files are unchanged by this correction and still hash to the
+digests recorded above.
