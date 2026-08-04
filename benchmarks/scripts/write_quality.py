@@ -142,8 +142,11 @@ def _read_or_refuse(reader, path: Path, what: str):
         # TypeError covers a manifest whose JSON no longer matches
         # `RunManifest`'s fields -- `load_manifest` splats the document into the
         # dataclass, so a renamed or missing key surfaces there and nowhere
-        # else. Same three exception types `sweep_verdict._peek_arm` treats as
-        # "this manifest cannot be read".
+        # else. Same three exception types `sweep_verdict._peek_manifest`
+        # treats as "this manifest cannot be read" (that helper was named
+        # `_peek_arm` until 2026-08-04, when the sweep class filter gave it a
+        # second field to read off the one load; the exception SET it catches
+        # is unchanged, which is the part this sentence rests on).
         raise GateRefused(f"{what} ({path}) does not match its contract: {exc}") from exc
 
 

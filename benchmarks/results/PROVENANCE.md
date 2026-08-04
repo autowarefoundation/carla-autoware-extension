@@ -6455,3 +6455,84 @@ Re-run after the change, both cells, both classes
 All eighteen vlp16 rows still read `reached False` with an empty `reasons`
 column, which is Task 14's filed record. The out-of-arm skip counts are
 unchanged as well (35 on A, 21 on B-cyc).
+
+---
+
+## 25. CORRECTIONS to §24, appended 2026-08-04 (P4 Task C2, review fix round 1)
+
+§24 stands as filed; nothing in it is retracted and no scoring behaviour it
+describes changed. This section records what the review found in addition, and
+what was hardened as a result. Still offline: no run collected, no filed
+`manifest.json` rewritten, nothing under `benchmarks/results/*/run-*` touched.
+
+### 25.1 (I1) The legacy `""` clause was documented as history but enforced as a forward rule, and two live paths could still mint unlabelled sweep runs
+
+`sweep_verdict._class_admits("", "vlp16")` is a statement about the PAST — every
+sweep-arm run filed before `RunManifest.class_id` existed is a vlp16 run, which
+§24.2 verifies three ways. It was **not** guarded against becoming a way to mint
+NEW unlabelled sweep runs, and one path was live:
+
+`run.sh`'s arm gate opened the sweep arms on `--unpaced` **or** a non-empty
+class, so `bash benchmarks/run.sh A --arm static --unpaced` — no `--class` at
+all — was accepted. Verified before the fix: `--check-args` printed
+`arm=unpaced` with `class_id=` empty, rc=0. With `BENCH_CLASS_ID` empty the
+launchers' `case "$BENCH_CLASS_ID"` derivation never fires, so the runner takes
+its own defaults — `--lidar-channels` unset is "today's 128"
+(`runner/__main__.py`), i.e. the registered **128ch** workload — and the run
+would have filed `class_id=""` and been **scored as a vlp16 point**. The second
+path is a regression in the forwarding (see §25.2), after which every future
+32ch run would file `""` and pool into vlp16 beside Task 14's real vlp16 runs.
+
+**Fixed in `run.sh`, not in the pool rule** — `_class_admits` is specified
+correctly and is unchanged. A named preflight refusal at step 1 (before
+preflight sweeps `/dev/shm`, before anything boots, before the manifest exists):
+if the effective arm is in `cells.yaml`'s `sweep_arms` and `CLASS_ID` is empty,
+`run.sh` dies naming the reason. It is checked against `sweep_arms` itself
+rather than against `--unpaced`, so it holds for every route to a sweep arm, not
+only the one flag that opened it today. This is what makes the class-pool
+guarantee permanent rather than merely historically true.
+
+**No registered form loses anything**, verified before implementing: all three
+registered sweep forms carry `--class` (`--arm paced --class <id>`, the same
+plus `--unpaced`, `--arm ablation --class <id>`), as do all twelve invocations
+in `evidence/p4-task14-vlp16-sweep/step1-form-verification.log` and all six
+lines of that directory's `sweep_driver.sh`. All twelve forms (3 forms × 2 cells
+× {vlp16, 32ch}) were re-resolved after the guard: rc=0, correct `class_id`.
+Duel arms (`static`, `closed-loop`) still resolve class-free, as they must.
+
+### 25.2 (I2) The forwarding pin covered the array's construction but not its use
+
+§24 shipped correct code, but the test extracting run.sh's `class_args` block
+pinned only the block that BUILDS the array. Removing
+`"${class_args[@]+"${class_args[@]}"}"` from the `write_manifest` invocation
+left the suite green — measured independently here: **382 tests across every
+module that touches `run.sh`, 0 failures**. The same mutation applied to
+`duel_args` at the same call site is equally unpinned, so this is a gap
+inherited from Task 2's pattern rather than something Task C2 introduced.
+
+Closed for **both** arrays at once: a second extraction now spans `run.sh` from
+`local duel_args=()` through `die "manifest refused; nothing measured"` — array
+construction, call site and everything between — and executes it as real bash
+with `python3` replaced by a recorder, so what is asserted is the ACTUAL
+argument vector `write_manifest` would receive. Confirmed by mutation: dropping
+`class_args` from the call site fails 2 tests, dropping `duel_args` fails 2, and
+removing the §25.1 guard fails the refusal test.
+
+`benchmarks/analysis/**` did **not** move in this round; the freeze diff
+recorded in §24.3 is final for this task.
+
+### 25.3 (M5) Known property: `rc=0` alone does not distinguish "passed" from "nothing scored"
+
+Recorded for the next task's gate reading, **not** changed here. `sweep_verdict.main`
+returns 0 when every run in a cell was dropped by the class filter — exactly as
+it already did when every run was dropped by the pre-existing arm filter — so
+"this point genuinely passed with zero rows" and "every run belonged to another
+class" are indistinguishable by exit code. This is the module's pre-existing
+shape and not a regression; changing the exit status would be a scoping decision
+beyond this task.
+
+**A gate reading must therefore consult the rendered table, not just `rc`**: the
+row count and the two skip lines (`N run(s) skipped: arm not in this cell's
+sweep_arms.` and `N run(s) skipped: class not in this point's pool …`) are what
+carry the distinction, and both are printed in the artifact for exactly this
+reason.

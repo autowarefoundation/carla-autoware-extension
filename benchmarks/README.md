@@ -4148,6 +4148,17 @@ same as the current.'`), after which `/vehicle/status/velocity_status` measured
   identically.** The freeze protects scoring semantics, not metadata, and
   the legacy clause above is precisely what keeps the filed P3 (A, B)
   verdict's score untouched.
+  **IT IS NO LONGER THE ONE RULED EXCEPTION.** Annotated 2026-08-04 by Task
+  C2's fix round, which added a SECOND field (`class_id`) to the same
+  dataclass under this same reading, so the sentence above reads
+  historically rather than currently. The paragraph is kept verbatim as the
+  record of what was true when it was written, and this note is how a reader
+  learns it no longer is — the same convention `config/cells.yaml`'s "THE
+  MAPPING WAS WRITTEN" annotation follows, and for the same reason: this
+  ledger is what a reader treats as authoritative on how many exceptions the
+  freeze has, so it must not be the last place to find out. The count is
+  resolved by the 2026-08-04 (Task C2) entry at the end of this list, which
+  states it as the second; nothing else about this entry changes.
 - **2026-08-03 (Task 4 of the P4 transport-sweep plan) — cell B-cyc
   registered: the SAME tier4-native stack as cell B, under the row-11
   cyclonedds transport instead of B's fastrtps/udp_only pair.** `config/

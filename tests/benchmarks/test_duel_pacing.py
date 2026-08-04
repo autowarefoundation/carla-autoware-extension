@@ -489,6 +489,210 @@ def test_run_sh_echoed_command_line_shows_the_class_id_flag():
     assert _resolve_class_args("vlp16")[1] == " --class-id vlp16"
 
 
+# --- Task C2 fix round 1 (finding I2): the array-BUILDING pin above does ----
+# --- not pin that the array is PASSED, so pin the assembled argv -----------
+#
+# The three tests above extract only the block that BUILDS `class_args`
+# (`local class_args=() … fi`). Removing `"${class_args[@]+"${class_args[@]}"}"`
+# from the `write_manifest` invocation leaves every one of them green --
+# measured: 382 tests across every suite module that touches run.sh, 0
+# failures. The control mutation shows `duel_args` at the same call site is
+# EQUALLY unpinned, so this is a gap inherited from Task 2's pattern, not a
+# new one; this block closes it for both arrays at once.
+#
+# The span extracted here runs from `local duel_args=()` all the way through
+# `die "manifest refused; nothing measured"`, so it contains the array
+# construction AND the call site AND everything between. It is executed as
+# real bash with `python3` replaced by a shell function that records its argv
+# (functions are visible inside the `(cd "$REPO" && …)` subshell, and the
+# recorder writes to a file so the block's own `>/dev/null` cannot swallow
+# it). What is asserted is therefore the ACTUAL argument vector
+# `write_manifest` would receive -- the only thing that decides what lands in
+# the manifest.
+
+_MANIFEST_CALL_BLOCK = re.compile(
+    r'(  local duel_args=\(\) duel_show=""\n.*?\n    die "manifest refused; nothing measured"\n)',
+    re.DOTALL,
+)
+
+
+def _extract_manifest_call_block() -> str:
+    """The REAL span of run.sh that builds the optional-argument arrays and
+    invokes `write_manifest`, by regex. Fails LOUDLY rather than silently
+    passing if the span's anchors move (verified for the `class_args` block's
+    own extractor, which this mirrors)."""
+    m = _MANIFEST_CALL_BLOCK.search(RUN_SH.read_text())
+    assert m, "write_manifest call block not found in run.sh"
+    return m.group(1)
+
+
+def _write_manifest_argv(tmp_path, *, duel="0", duel_id="", class_id="") -> list[str]:
+    """Run the extracted span for real and return the argv `write_manifest`
+    was actually called with. Every variable the span reads is stubbed to a
+    recognisable placeholder; only DUEL / DUEL_ID / CLASS_ID vary."""
+    repo = tmp_path / "repo"
+    repo.mkdir(exist_ok=True)
+    log = tmp_path / "argv.log"
+    script = (
+        "set -euo pipefail\n"
+        'die() { echo "DIE: $*" >&2; exit 3; }\n'
+        "show() { :; }\n"
+        'python3() { for a in "$@"; do printf \'ARGV<<%s>>\\n\' "$a"; done >>"$PROBE_LOG"; }\n'
+        f"PROBE_LOG={shlex.quote(str(log))}\n"
+        f"REPO={shlex.quote(str(repo))}\n"
+        "CELL=A\n"
+        "run_dir=/results/A/run-007\n"
+        "work_dir=/results/A/run-007\n"
+        "next_idx=7\n"
+        "effective_arm=paced\n"
+        "RMW=rmw_cyclonedds_cpp\n"
+        "SHM=off\n"
+        "DDS_PROFILE=none\n"
+        "carla_kind=0.10-fork\n"
+        "autoware_image=img@sha256:aa\n"
+        "placement_json={}\n"
+        "DRY_RUN=0\n"
+        f"DUEL={shlex.quote(duel)}\n"
+        f"DUEL_ID={shlex.quote(duel_id)}\n"
+        f"CLASS_ID={shlex.quote(class_id)}\n"
+        "probe() {\n"
+        f"{_extract_manifest_call_block()}"
+        "}\n"
+        "probe\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    return re.findall(r"ARGV<<(.*?)>>", log.read_text())
+
+
+def _flag_value(argv: list[str], flag: str) -> str | None:
+    """The argument following `flag`, or None when the flag is absent. Reads
+    the PAIR, so a forwarding that passes the flag without its value (or with
+    the wrong one) is not mistaken for a correct one."""
+    return argv[argv.index(flag) + 1] if flag in argv else None
+
+
+def test_write_manifest_argv_actually_carries_the_class_id(tmp_path):
+    """THE pin for finding I2, class half: the assembled argv must contain
+    `--class-id 32ch`. Fails when the class_args array is dropped from the
+    write_manifest call site -- which every source-extraction test above
+    passes straight over."""
+    argv = _write_manifest_argv(tmp_path, class_id="32ch")
+    assert _flag_value(argv, "--class-id") == "32ch", argv
+
+
+def test_write_manifest_argv_actually_carries_the_duel_declaration(tmp_path):
+    """The same pin for `duel_args` (Task 2's arrays, equally unpinned until
+    now): both the bare `--duel` flag and the `--duel-id` pair must survive
+    into the real argv. Closing I2 for one array and not the other would
+    leave the identical defect one field over."""
+    argv = _write_manifest_argv(tmp_path, duel="1", duel_id="A+B-cyc")
+    assert "--duel" in argv, argv
+    assert _flag_value(argv, "--duel-id") == "A+B-cyc", argv
+
+
+def test_write_manifest_argv_carries_both_arrays_at_once(tmp_path):
+    """Both arrays are appended at the same call site, so a mutation that
+    drops the LAST one only (the shape the shipped code happens to have) is
+    caught here even if each array's own single-field test were satisfied by
+    a different code path."""
+    argv = _write_manifest_argv(tmp_path, duel="1", duel_id="A+B-cyc", class_id="vlp16")
+    assert _flag_value(argv, "--duel-id") == "A+B-cyc", argv
+    assert _flag_value(argv, "--class-id") == "vlp16", argv
+
+
+def test_write_manifest_argv_has_no_stray_empty_argument(tmp_path):
+    """The property the `"${arr[@]+"${arr[@]}"}"` expansion exists for: with
+    no duel and no class, NEITHER flag appears and -- the part a presence
+    check would miss -- no empty-string argument is passed either. An empty
+    argv element would shift write_manifest's own parsing."""
+    argv = _write_manifest_argv(tmp_path)
+    assert "--class-id" not in argv, argv
+    assert "--duel" not in argv and "--duel-id" not in argv, argv
+    assert "" not in argv, argv
+    # The invocation itself is intact, so an empty argv is not what made the
+    # three assertions above pass.
+    assert argv[:2] == ["-m", "benchmarks.scripts.write_manifest"], argv
+
+
+# --- Task C2 fix round 1 (finding I1): a sweep arm may not be filed with ----
+# --- no class, or it pools into vlp16 while booting the 128ch rig ----------
+#
+# `_class_admits("", "vlp16")` is a statement about the PAST -- every filed
+# sweep-arm run predating `RunManifest.class_id` is vlp16, verified -- and it
+# must not become a way to mint NEW unlabelled sweep runs. Before this guard,
+# run.sh's `allowed` gate opened the sweep arms on `--unpaced` OR a non-empty
+# class, so `run.sh A --arm static --unpaced` was accepted with no class at
+# all (verified: rc=0, `arm=unpaced`, `class_id=` empty) -- and with
+# BENCH_CLASS_ID empty the launchers derive no sensor args, so the runner
+# takes its default 128 channels (runner/__main__.py) and the run would have
+# been scored as a vlp16 point.
+
+
+def _check_args(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(RUN_SH), *args, "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+
+
+def test_run_sh_refuses_a_sweep_arm_with_no_class():
+    """The refusal itself, on the exact invocation that was accepted before:
+    `--unpaced` promotes the arm to `unpaced`, a registered sweep arm, so it
+    must now die rather than resolve. Loud and named, per the harness's
+    preflight idiom -- and at step 1, before preflight touches the host."""
+    proc = _check_args("A", "--arm", "static", "--unpaced")
+    assert proc.returncode == 2, (proc.stdout, proc.stderr)
+    assert "is a sweep arm" in proc.stderr, proc.stderr
+    assert "requires --class" in proc.stderr, proc.stderr
+    # The reason, not just the refusal: an operator must learn WHY without
+    # reading run.sh.
+    assert "128-channel" in proc.stderr, proc.stderr
+
+
+def test_run_sh_refuses_every_sweep_arm_with_no_class():
+    """Checked against `sweep_arms` itself rather than against `--unpaced`,
+    so it holds for every path that can reach a sweep arm -- not only for the
+    one flag that opened the gate today. `--arm ablation` with no class is
+    refused too (by the arm gate before this guard, which is fine: the point
+    is that no route to a sweep arm survives without a class)."""
+    for extra in (("--arm", "ablation"), ("--arm", "paced")):
+        proc = _check_args("A", *extra)
+        assert proc.returncode == 2, (extra, proc.stdout, proc.stderr)
+
+
+@pytest.mark.parametrize("cell", ["A", "B-cyc"])
+@pytest.mark.parametrize("class_id", ["vlp16", "32ch"])
+@pytest.mark.parametrize(
+    "form", [("--arm", "paced"), ("--arm", "paced", "--unpaced"), ("--arm", "ablation")]
+)
+def test_every_registered_sweep_form_still_resolves(cell, class_id, form):
+    """The other side of the guard: all three registered sweep forms, on both
+    sweep cells, for both live classes, must still resolve. These are the
+    forms `evidence/p4-task14-vlp16-sweep/sweep_driver.sh` ran and that
+    directory's `step1-form-verification.log` recorded twelve invocations of
+    -- every one of them carrying `--class`, which is why the guard costs
+    nothing -- plus their 32ch equivalents, which the next task collects."""
+    proc = _check_args(cell, *form, "--class", class_id)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert f"class_id={class_id}" in proc.stdout, proc.stdout
+
+
+@pytest.mark.parametrize("arm", ["static", "closed-loop"])
+def test_duel_arms_still_resolve_without_a_class(arm):
+    """The guard must be scoped to SWEEP arms only: a duel/bring-up/gate run
+    legitimately carries no class, files `class_id=""`, and is dropped by
+    sweep_verdict's arm filter long before the class filter sees it."""
+    proc = _check_args("A", "--arm", arm)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert "class_id=\n" in proc.stdout + "\n", proc.stdout
+
+
 # --- Task 2 (Amendment 2026-08-03): duel.sh must stamp --duel-id on every --
 # --- run.sh invocation it orders, derived from its OWN two cell args -------
 

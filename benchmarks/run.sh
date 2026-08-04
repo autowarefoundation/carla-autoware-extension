@@ -339,6 +339,49 @@ do_run() {
     *) die "arm '$effective_arm' is not registered for cell $CELL (allowed: $allowed)" ;;
   esac
 
+  # A SWEEP ARM MUST CARRY A CLASS (Amendment 2026-08-04, Task C2). Named
+  # preflight refusal, at step 1 -- before preflight sweeps /dev/shm, before
+  # anything boots, and before the manifest exists to be filed.
+  #
+  # This is what makes the class-pool guarantee PERMANENT rather than merely
+  # historically true. `sweep_verdict._class_admits` reads an empty class_id
+  # as the legacy vlp16 pool, which is correct for every run filed BEFORE the
+  # field existed (all eighteen of Task 14's are vlp16, verified) -- but that
+  # clause is a statement about the past, and it must never become a way to
+  # mint NEW unlabelled sweep runs that silently pool into vlp16.
+  #
+  # The live hole it closes, verified: the `allowed` gate just above opens the
+  # sweep arms on `--unpaced` OR a non-empty class, so `run.sh A --arm static
+  # --unpaced` was accepted with no --class at all. With BENCH_CLASS_ID empty
+  # the launchers' `case "$BENCH_CLASS_ID"` derivation never fires
+  # (cells/extension.sh, cells/tier4-native.sh), so the runner takes its own
+  # defaults -- `--lidar-channels` unset is "today's 128"
+  # (runner/__main__.py), i.e. the registered 128ch workload -- and the run
+  # would file class_id="" and be scored as a vlp16 point. A 128ch rig
+  # counted as a vlp16 measurement is exactly the silent workload-mixing this
+  # amendment exists to close, so it is refused rather than warned about
+  # (contrast the `dropped:` cell WARN above: dropping is scope and
+  # un-dropping is legitimate, while an unlabelled sweep run is a FALSE
+  # measurement -- the same distinction cells/tier4-native.sh's own unmapped
+  # class-id refusal already draws).
+  #
+  # Checked against `sweep_arms` itself, not against `--unpaced`, so it holds
+  # for every path that can reach a sweep arm rather than only for the one
+  # that opened it today. No registered form loses anything: all three
+  # registered sweep forms carry --class (`--arm paced --class <id>`, the
+  # same plus `--unpaced`, `--arm ablation --class <id>`), as do all twelve
+  # invocations in evidence/p4-task14-vlp16-sweep/step1-form-verification.log
+  # and all six lines of that directory's sweep_driver.sh.
+  case " $sweep_arms " in
+    *" $effective_arm "*)
+      [ -n "$CLASS_ID" ] || die "arm '$effective_arm' is a sweep arm (cells.yaml
+  sweep_arms: $sweep_arms) and requires --class <id>. Refusing: with no class the
+  cell launcher derives no sensor arguments, so this run would boot the DEFAULT
+  128-channel rig while filing manifest class_id=\"\" -- which sweep_verdict.py's
+  legacy pool rule reads as vlp16, scoring a 128ch workload as a vlp16 point."
+      ;;
+  esac
+
   # Config files this cell needs. Checked BEFORE the run directory exists, so
   # a missing topic list or process map costs nothing.
   local observer_topics processes route_file tl_groups launcher
