@@ -28,8 +28,8 @@ deleted, reclassified, re-scored and hand-edited no filed run.
 `benchmarks/analysis/**`, `scripts/expected_topics.yaml` and
 `scripts/spike_stack.json` are untouched **by Task 16**.
 
-**At branch level two of those three are false, deliberately and on the
-record**, and a reader arriving here as the P4 evidence inventory must not
+**At branch level all three of those sentences are false, deliberately and on
+the record**, and a reader arriving here as the P4 evidence inventory must not
 carry away the opposite: `benchmarks/analysis/manifest.py` was amended twice
 under the pre-registration's own amendment rule (`duel_id` in Task 2, `class_id`
 in Task C2), and six B-cyc `32ch` manifests were reclassified to
@@ -487,7 +487,7 @@ transport, on a byte-identical payload. Every run that carries
 | `B-cyc/run-012`…`021` | `rmw_cyclonedds_cpp`, no profile    | 1 305 281    | **true**, 10/10           | 1 each   | 0.006 … 0.008            | 0                           |
 
 Under CycloneDDS the latched map was **already delivered before any re-publish
-was attempted, on 11 of 11 runs**, and verification closed in **6–27 ms**. Under
+was attempted, on 12 of 12 runs**, and verification closed in **6–27 ms**. Under
 Fast-DDS on `run-031` the endpoint never received it across **three minutes** of
 re-publishing. The per-topic re-publish workaround PROVENANCE §9.2 records as
 not scaling was not needed once.
@@ -504,7 +504,7 @@ recorded rather than smoothed over:
   nondeterministic"), and it means the Fast-DDS side of this comparison is n = 2,
   not a rate.
 - **The map leg is not the whole blocker.** `run-032` got its map — in **7 ms**,
-  which is exactly the median of the eleven Cyclone `verify_wait_s` readings
+  which is exactly the median of the twelve Cyclone `verify_wait_s` readings
   (0.006 … 0.027, median 0.007) — and still did not arm. That 7 ms is the
   sharpest form of this correction: on the one Fast-DDS run that delivered, the
   map leg was not merely adequate but indistinguishable from the transport this
@@ -515,7 +515,7 @@ recorded rather than smoothed over:
   twenty filed runs rather than on this probe alone.
 
 **So: the P3 §5.1 latched-delivery defect is transport-dependent on the map
-leg**, with the Fast-DDS side measured at n = 2 and the Cyclone side at n = 11.
+leg**, with the Fast-DDS side measured at n = 2 and the Cyclone side at n = 12.
 Nothing here shows _why_, and nothing here shows Fast-DDS is at fault rather
 than the interaction of the fork's SHM-only locators, the `udp_only.xml`
 workaround they force, and this host's loopback. §14.4's attribution boundary
@@ -1013,14 +1013,18 @@ capped window and both runs carry the standard ~68.5 s window with no
 ### 8.4 Deferred, and named rather than silently dropped
 
 **Forty** findings from the P4 review rounds — 39 minors and one out-of-scope
-observation — are parked in the branch's own ledger for the final whole-branch
-review's triage (`.superpowers/sdd/2026-08-03-p4-transport-sweep-plan/deferred-minors.md`;
-one entry per line-leading `Task N:`). They are not enumerated here: none of
-them affects a filed measurement or a number in this document. The final
-whole-branch review has since triaged them — what it elected to fix is in this
-branch's final fix commits, and the remainder carry to P5. The two named in §27.8 (the
-`QUALITY GATE FAIL: … pose.csv` console-string documentation, and
-`sweep_driver.sh`'s hardcoded `REPO=`) are representative of the class.
+observation, one entry per line-leading `Task N:` marker logged as each round's
+findings were triaged — are parked in the branch's own ledger for the final
+whole-branch review's triage. **That ledger is a process artifact held outside
+this repository**: it is a working note of the campaign's own review practice,
+versioned separately from — and not reachable by cloning — this repository, so
+its path is not cited here. They are not enumerated here: none of them affects
+a filed measurement or a number in this document. The final whole-branch review
+has since triaged them — what it elected to fix is in this branch's final fix
+commits, and the remainder carry to P5. The two named in §27.8 (the `QUALITY
+GATE FAIL: … pose.csv` console-string documentation, and `sweep_driver.sh`'s
+hardcoded `REPO=`) are representative of the class, and are the only two of the
+forty this repository itself documents.
 
 ## 9. P4 ↔ P3 identity caveats
 
