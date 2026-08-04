@@ -4481,3 +4481,236 @@ tick: 0` → `actors after tick: 31`. Any later tool that attaches a second
 read-only client mid-run needs that call, and its absence looks exactly like "no
 ego was spawned".
 
+## 15. CORRECTIONS to §14, appended 2026-08-03 (P4 Task 11, review fix round 1)
+
+**§14 above is left exactly as written and is not revised in place**; this
+section supersedes it point by point. Read §14 **with** this section. Nothing
+under `benchmarks/results/A/run-015` or `benchmarks/results/B-cyc/run-001` was
+touched — the data is unchanged and only the reading of it is corrected.
+
+**The Step-3 branch verdict is unaffected and was re-derived, not assumed.**
+B-cyc armed and drove; the pre-declared failure branch did not fire; collection
+continues. What follows corrects one **causal explanation** that this
+campaign's own filed data falsifies, one **absolute** that the run's own
+`arm.log` contradicts, and four smaller things.
+
+### 15.1 FALSIFIED: "a static arm publishes no control command to stamp" — the fact is cell-A-specific and ASYMMETRIC, and that matters for Task 12
+
+§14.2 explains cell A's empty `published_time.csv` with "a static arm publishes
+no control command to stamp". **That explanation is wrong.** Widening the census
+to cell B falsifies it outright:
+
+| cell | static runs | PublishedTime rows          | `/control/command/control_cmd` rows |
+| ---- | ----------- | --------------------------- | ----------------------------------- |
+| A    | **14**      | **0 in all 14** (min 0, max 0) | **0 in all 14**                  |
+| B    | **17**      | min **15**, max **591**, **zero-row count 0** | min 17, max 611   |
+
+(Cell A files 15 runs; the 15th, `run-002`, is closed-loop and recorded 2987
+control messages, but its `observer_topics.yaml` predates the PublishedTime row.
+Cell B's 17 static runs are `run-013` … `run-027`, `run-029`, `run-030`.)
+
+```bash
+python3 - <<'PY'
+import csv, json, pathlib
+for cell in ("A", "B"):
+    rows = []
+    for d in sorted(pathlib.Path(f"benchmarks/results/{cell}").glob("run-*")):
+        mp = d / "manifest.json"
+        if not mp.exists() or json.loads(mp.read_text())["arm"] != "static":
+            continue
+        pt = sum(1 for _ in csv.DictReader(open(d / "published_time.csv")))
+        cc = sum(1 for r in csv.DictReader(open(d / "observer.csv"))
+                 if r["topic"] == "/control/command/control_cmd")
+        rows.append((d.name, pt, cc))
+    pts = [r[1] for r in rows]
+    print(f"{cell}: n={len(rows)} pt min={min(pts)} max={max(pts)} zero={sum(1 for p in pts if p == 0)}")
+PY
+```
+
+**A static arm demonstrably DOES publish control commands to stamp — on cell B,
+17 times out of 17.** The arm mode is not the mechanism.
+
+**The arm mode is byte-identically the same on both cells**, which is what rules
+it out: every `arm.log` in both cells ends with the same
+`LOCALIZED: /localization/kinematic_state sustained 5 Hz over 5 s (static arm; no route set, not engaged)`
+string (checked on all 31 static `arm.log`s), and both take the same
+`--wait-localized-only` path. Yet the arm probe records
+`control_cmd_hz~0.00 n=0` in **all 14** cell-A static runs and a non-zero rate in
+12 of 17 cell-B ones (e.g. `B/run-029`: `control_cmd_hz~1.00 n=3`).
+
+**A precision the single-run quote hides, and it matters for how this is
+cited:** the arm probe is a ~3 s snapshot, and **5 of the 17** cell-B static runs
+(`run-017`, `run-019`, `run-020`, `run-022`, `run-025`) do read
+`control_cmd_hz~0.00 n=0` in it — while still filing 50–86 PublishedTime rows
+over the run window. **The probe is not the emission criterion; the observer
+census is.** A reader must not invert this and conclude from a `n=0` probe line
+that a cell-B run emitted nothing.
+
+**And §14.2's own transcript already contains the disproof of the "no
+publisher" reading:** it records `/control/command/control_cmd` with
+**`Publisher count: 1`** on cell A. So cell A's gated control publisher **exists
+and advertises**; it simply emits nothing while unengaged, whereas the tier4
+stack's gate emits at roughly 1 Hz in the same unengaged state.
+
+**THE CAUSE IS NOT ESTABLISHED, and is not asserted here.** The two cells differ
+in more than one uncontrolled way at once: the container image (cell A runs the
+floating tag `ghcr.io/autowarefoundation/autoware:universe-devel`; cells B and
+B-cyc run the pinned digest `@sha256:5c22369a…ae8ee`) **and** the launcher and
+entire Autoware launch configuration (`cells/extension.sh` vs
+`cells/tier4-native.sh` → `cells/tier4_autoware.sh`). **No probe was run to
+separate them.** Naming the image as the cause would be exactly the kind of
+claim outrunning its measurement that this campaign has already caught four
+times. What is measured is the *effect*, 14/14 against 17/17; the *mechanism* is
+**UNTESTED**.
+
+**The consequence for Task 12, which is the reason this correction is not
+cosmetic.** §14.2's explanation implies the M1b gap is a property of the static
+arm and therefore symmetric across both cells — an expected wash. The data says
+the opposite: it is **cell-A-specific and asymmetric**. On a static duel, **cell
+B (and B-cyc) BIND `control_staleness_ms` and cell A does NOT** — which is
+precisely the "either side unbound" condition §14.2 itself names as making
+`duel_verdict.build_verdict_table` report the metric unavailable and drop the
+whole M1b row. §14.2's stated concern is **understated by its own explanation**.
+
+**This is not a peek, and is flagged as such so a later reader does not mistake
+it for one.** Everything compared above is *whether the observer recorded any
+rows at all* — the instrument-level class §14.2 already registers as permitted
+("a statement about the instrument, not about either cell's numbers"). **No
+registered metric value is compared, no Δ is computed, and no duel verdict is
+implied.** Row counts of `published_time.csv` and of the control topic are
+emission facts, not scored quantities.
+
+**Antecedent corrected.** §14.2 says "on the static arm that file is empty
+**because no publisher exists**", four paragraphs after quoting
+`Publisher count: 1` for `/control/command/control_cmd`. The narrow reading is
+what was meant and is what holds: **no publisher exists on the PublishedTime
+topic** (`/control/command/control_cmd/debug/published_time`, measured
+`Publisher count: 0`). The *Control* topic's publisher exists on cell A and is
+advertised; it is not emitting. Both statements are true and they are about
+different topics.
+
+### 15.2 CORRECTED: "the arm needed no retry" is contradicted by the run's own `arm.log` — one retry occurred, and it was NOT a discovery-graph miss
+
+§14.3 and §14.4 both say the arm needed no retry, and §14.4 makes it
+load-bearing: *"Neither caveat manifested in this run: the arm needed no retry,
+so no flaky-graph exclusion-class event occurred and none is claimed."*
+**`benchmarks/results/B-cyc/run-001/arm.log:5` contradicts the absolute:**
+
+```text
+5  [WARN] … change_to_autonomous: not yet ok (The target mode is not available.
+       Please check the diagnostics.); retrying
+6  [INFO] … change_to_autonomous: SUCCEEDED …            (+2.002 s)
+```
+
+**One retry occurred.** The sentence is withdrawn as written.
+
+**What survives, and it is established by code rather than by assertion — the
+harness itself distinguishes the two cases in the log text it emits.**
+`benchmarks/injector/arm_and_goal.py:601-602`:
+
+```python
+reason = resp.status.message if resp is not None else "no response (spin timed out)"
+self.get_logger().warning(f"{service_name}: not yet ok ({reason}); retrying")
+```
+
+A lost/undiscovered service produces the literal reason **`no response (spin
+timed out)`**; a *server-authored* refusal produces `resp.status.message`.
+B-cyc's WARN carries `The target mode is not available. Please check the
+diagnostics.` — **the server's own message. So the service was discovered,
+called, and ANSWERED**; only the answer was a semantic refusal. The
+discovery-failure branch did not fire, and neither did `_service_ready`'s
+distinct `service never became available` error (`:591`). **That is a
+discriminator in the instrument, not an inference from plausibility.**
+
+Three corroborations, each from the same filed log:
+
+- `arm.log:3` `[pre-engage]` independently records
+  `is_autonomous_mode_available=False` **at the moment of the call** — the exact
+  state the server's refusal names.
+- `arm.log:2-3` record `control_cmd_hz~0.67 n=2` **before** engage: the graph was
+  already carrying control traffic, so it was not silent.
+- The 2.002 s gap matches `SERVICE_RETRY_PERIOD_S = 2.0` (`:175`). This is the
+  harness's own **designed, bounded** retry loop, not an operator intervention.
+
+**Base rate, because one run cannot establish a signature.** The identical WARN
+appears in **17 filed `arm.log`s across cells A, B, C, E and B-cyc**, under
+**both** middlewares — cell B's `rmw_fastrtps_cpp` runs and cells A/C/E's
+`rmw_cyclonedds_cpp` runs alike — and 7 cell-C runs plus `A/run-002` and
+`B/run-033` went on to arm after it. **It is not a row-11 / Cyclone signature.**
+B-cyc's single WARN is the *lowest* count among all runs that eventually armed.
+
+**ADJUDICATION: the registered row-11 flaky-Cyclone-discovery caveat did NOT
+manifest.** The event was an operation-mode-availability settle, absorbed by a
+designed in-harness service retry. **No operator retry, re-arm, reseed, disarm or
+exclusion was needed or performed**, and no exclusion-class event is claimed —
+which is what §14.4 should have said instead of an absolute. The Step-3 branch
+verdict is unaffected.
+
+### 15.3 CORRECTED (M3): the mount arithmetic closes to a few micrometres, not to 10 nm
+
+§14.5 says "the arithmetic closes to 10 nm". It does not. `default_mount()`
+executes to `location = (0.9, 0.0, 2.0)`; the registered tier4 anchor is
+`-1.39706787` (`benchmarks/analysis/gt_anchor.py:81`, echoed in the run's own
+`gt.log`: `gt base_link anchor: -1.39706787 m (body frame) for approach 'tier4-native'`).
+So `0.9 - 1.39706787 = -0.49706787` against the measured `-0.497071`, giving
+**|Δ| = 3.13e-6 m ≈ 3.1 micrometres** — off by a factor of ~313. The residual is
+consistent with float32 transform storage plus decomposition noise.
+
+**The substantive conclusion is untouched**: the entire positional delta is the
+`base_link` anchor, the rotation is identical to the committed kit's, and the
+docstring's "centimetre-scale" argument really was wrong by **1.4 m**. Only the
+closure figure is corrected.
+
+### 15.4 M6: which run discharged the plan of record, stated rather than left to the reader
+
+§14.5 attributes the discharge to "cell B's first measured run".
+`default_mount()`'s docstring says cell B's first **measured (non-ablation)**
+run; this was cell **B-cyc**'s first run, and it was a **non-scored smoke**
+(`duel_admissible: false`). Recorded as the substitution it is.
+
+It is substantively equivalent, and the reason is checkable rather than
+asserted: the mount is a property of the fork's `autoware_demo.py` transform
+chain (`ego -> base_link -> sensor_kit -> lidar`), **not** of the DDS transport,
+and `config/cells.yaml` registers B-cyc as cell B's rig exactly — same fork,
+same launcher, same map bundle, with transport as the only axis it varies.
+Nothing in the captured transform can depend on the middleware.
+
+### 15.5 M5, put in the record: filed evidence PREDICTS cell A's closed-loop arm populates the file, and Task 13 settles it
+
+§14.2 correctly scopes its claim to the static arm ("On present evidence …
+UNAVAILABLE for cell A on the STATIC arm"). What it does not record is that the
+repository already leans on the closed-loop question:
+`config/observer_topics/A.yaml` documents a live probe taken on cell A's own
+stack **after arming**, during `results/A/run-002`, reporting
+`Publisher count: 1` on `/control/command/control_cmd/debug/published_time`
+(16 PublishedTime topics post-arm against 6 pre-arm).
+
+**That is not proof rows would be recorded** — the observer was not subscribed
+to the topic during `run-002`, which is exactly why that run files a header-only
+`published_time.csv` despite its 2987 control messages. But it means the two
+necessary conditions have simply never co-occurred, and **a single cell-A
+closed-loop run with the current observer list settles it.**
+
+**What to check on that run**, so it is not left to judgement:
+`published_time.csv` non-empty; every row keyed to
+`/control/command/control_cmd/debug/published_time`; row count of the same order
+as the run's `/control/command/control_cmd` count in `observer.csv`. If those
+hold, `control_staleness_ms` binds for cell A on the closed-loop arm and the open
+item closes; if they do not, the registration genuinely needs re-scoping.
+
+### 15.6 M4: the console logs §14 quotes are now filed
+
+Several strings §14 quotes existed only in an uncommitted session log — the
+`ros2 topic list` / `ros2 topic info -v` transcripts, `OK: /control/command/control_cmd is flowing`,
+the `OK: base_link anchor -1.39706787 m …` check and the teardown summaries. All
+were still on disk and are now filed under
+**`benchmarks/evidence/p4-task11-bringup/`**, in P3's established
+`*-console.log` shape, with retention status stated per figure in that
+directory's own `PROVENANCE.md` and a row added to `benchmarks/evidence/README.md`.
+
+Every one of them was already corroborated by a filed artifact, so nothing was
+unverifiable in the interim. The directory's `PROVENANCE.md` records the
+precedence rule this round proved necessary: **where a console string and a
+filed artifact disagree, the artifact wins** — §15.2 is exactly such a case, and
+it was resolved against `results/B-cyc/run-001/arm.log`.
+

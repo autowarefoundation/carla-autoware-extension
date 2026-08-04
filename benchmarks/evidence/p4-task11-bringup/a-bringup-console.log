@@ -1,0 +1,87 @@
+=== A  arm=static  run 1/1 ===
+
+ 1. cell_info: resolve cell + class, check the arm
+      cell=A approach=extension map=Town10HD_Opt carla=0.10-fork arms=[static closed-loop]
+      topics=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/observer_topics/A.yaml
+      processes=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/processes/A.yaml
+      route=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/routes/Town10HD_Opt.yaml  tl_groups=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/tl_groups/Town10HD_Opt.yaml
+      autoware_image=ghcr.io/autowarefoundation/autoware:universe-devel
+      observer_image=bench-observer:universe-devel
+
+ 2. RUN_DIR: next gap-free index under results/A
+      /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015
+
+ 3. preflight: host load, disk, RPC port, stale SHM, engine BuildId
+      $ bash /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/scripts/preflight.sh A --port 2000 --results-dir /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results
+      cpu_governor=powersave
+      nproc=24
+      loadavg=1.84
+      results_fs=/home
+      free_gb=453
+      carla_rpc_port=2000
+      shm_user_cleared=0
+      shm_root_cleared=0
+      shm_root_remaining=0
+      engine_build_id=bc08ce19-f19c-46fe-808f-dbb2b0ddf41a
+      carla_tree=/home/youtalk/src/carla-autoware-integration
+      map_bundle_pin=town10_pcd_regen
+
+ 4. write_manifest: transport, versions, placement; excluded=false
+      $ python3 -m benchmarks.scripts.write_manifest --run-dir /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015 --cell A --arm static --rmw rmw_cyclonedds_cpp --shm off --dds-profile /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/docker/cyclonedds.xml --carla-version 0.10-fork --autoware-image ghcr.io/autowarefoundation/autoware:universe-devel --placement-json '<json>'
+      duel_admissible=false (no --duel): bring-up/gate run, dropped by duel_verdict.py and counted in its notes
+
+ 5. cells/extension.sh: boot sim + stack, wait for readiness
+      $ bash /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/cells/extension.sh up
+OK: base_link anchor +0.00000000 m (no vehicle shift)
+ Container autoware Running 
+waiting up to 420s for CARLA + ego (log: /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/launch.log)
+OK: CARLA up on port 2000 with a spawned ego
+
+ 6. observer: bench_observer container recording into the run dir
+      $ cp /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/observer_topics/A.yaml /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/observer_topics.yaml
+      $ docker run -d --name bench-observer --net=host --ipc=host -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015:/out -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp -e CYCLONEDDS_URI=file:///dds-profile.xml -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/docker/cyclonedds.xml:/dds-profile.xml:ro bench-observer:universe-devel bash -lc '<sourced> exec bench_observer ...'
+
+ 7. sampler + collect_gt + clock_watchdog (background)
+      $ python3 -m benchmarks.sampler.sample_resources --processes /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/processes/A.yaml --out /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/resources.csv --interval 1.0
+      $ env PYTHONPATH=/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0 /home/youtalk/carla-venv/bin/python3 -m benchmarks.scripts.collect_gt --host localhost --port 2000 --role-name ego --map Town10HD_Opt --approach extension --out /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/gt.csv --count-lidar
+      $ python3 -m benchmarks.scripts.clock_watchdog --clock-csv /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/clock.csv --stall-s 5 --grace-s 30 --marker /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/clock_stall.marker
+
+ 8. injector: clear-road objects + all-green signals (docker exec)
+      $ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<setup> PYTHONPATH=/work:$PYTHONPATH python3 /work/benchmarks/injector/dummy_perception.py --tl-groups /work/benchmarks/config/tl_groups/Town10HD_Opt.yaml --grid-center 82.654 -37.160 --grid-size 315.157'
+
+ 9. arm: localization only (static) or route + engage (closed-loop)
+      $ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<setup> python3 /work/benchmarks/injector/arm_and_goal.py --goal 74.869 66.891 2.926174 --wait-localized-only --timeout 60'
+[INFO] [1785805961.262773385] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785805962.475579037] [arm_and_goal]: arm observations [localized]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.003 ego_speed_mps=0.000
+LOCALIZED: /localization/kinematic_state sustained 5 Hz over 5 s (static arm; no route set, not engaged)
+
+10. window: sleep 60s (static arm)
+      $ sleep 60
+
+11. teardown: watchdog + GT -> observer (SIGINT, to flush) -> stack -> sim
+      $ bash /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/scripts/teardown.sh /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015
+teardown: SIGTERM clock watchdog (pid 827380)
+teardown: SIGINT container bench-observer
+teardown: SIGTERM gt collector (pid 827379)
+teardown: SIGTERM resource sampler (pid 827377)
+teardown: SIGTERM run_e2e.sh (pid 823774)
+teardown: saved carla-editor.log (editor stdout/stderr from /tmp/carla-e2e.log)
+teardown: docker compose down (/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/docker/compose.yaml)
+teardown: done
+
+12. finalize_rtf: fill resources.csv's rtf column from clock.csv
+      $ python3 -m benchmarks.sampler.finalize_rtf --resources /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/resources.csv --clock /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/clock.csv
+
+13. M5 gate: write quality.json (pose_error, goal, NDT rate, G1 ladder)
+      $ python3 -m benchmarks.scripts.write_quality --run-dir /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015
+/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/quality.json: gate_pass=True branch=absolute ndt_rate_ratio=1.000 pose_err_max_m=0.092
+
+14. exclusions: clock stall, short unpaced window, silent control gate
+      $ if /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/clock_stall.marker exists: write_manifest --exclude 'stall:clock'
+      none
+
+15. smoke: the results tree renders through the real analysis path
+      $ python3 -c 'benchmarks.report.summarize_run(/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015); render_cell(/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A)'
+      OK (/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/report.md)
+
+run 1/1 complete: /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015

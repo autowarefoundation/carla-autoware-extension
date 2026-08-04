@@ -1,0 +1,7 @@
+/control/command/control_cmd/debug/published_time
+/localization/util/downsample/pointcloud/debug/published_time
+/localization/util/measurement_range/pointcloud/debug/published_time
+/localization/util/voxel_grid_downsample/pointcloud/debug/published_time
+/sensing/lidar/top/mirror_cropped/pointcloud_ex/debug/published_time
+/sensing/lidar/top/pointcloud_before_sync/debug/published_time
+/sensing/lidar/top/self_cropped/pointcloud_ex/debug/published_time

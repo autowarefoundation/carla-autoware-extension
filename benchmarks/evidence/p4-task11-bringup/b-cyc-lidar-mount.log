@@ -1,0 +1,37 @@
+synced on frame 1990
+ego: id=25 type=vehicle.lincoln.mkz role=ego
+ego world transform: loc=(107.003609, -38.854282, -0.051325) rot=(roll -0.908902, pitch -0.139839, yaw -108.504372)
+========================================================================
+lidar: id=28 type=sensor.lidar.ray_cast
+  attributes:
+    atmosphere_attenuation_rate = 0.004
+    channels = 16
+    dropoff_general_rate = 0.45
+    dropoff_intensity_limit = 0.8
+    dropoff_zero_intensity = 0.4
+    horizontal_fov = 360.0
+    lower_fov = -20.0
+    noise_seed = 0
+    noise_stddev = 0.0
+    points_per_second = 288000
+    range = 100.0
+    role_name = front
+    ros_name = velodyne_top
+    ros_topic_name = /sensing/lidar/top/pointcloud_raw_ex
+    rotation_frequency = 60.0
+    sensor_tick = 0.1
+    upper_fov = 10.0
+  attach chain (leaf -> root), each actor's WORLD transform:
+    id=28 type=sensor.lidar.ray_cast role=front
+      loc=(107.129730, -38.377472, 1.949631) rot=(roll 0.970209, pitch -0.966605, yaw 163.337418)
+    id=27 type=util.actor.empty role=default
+      loc=(107.129730, -38.377472, 1.949631) rot=(roll -0.970812, pitch -0.965999, yaw -106.405365)
+    id=26 type=util.actor.empty role=default
+      loc=(107.446999, -37.529446, -0.047915) rot=(roll -0.908902, pitch -0.139839, yaw -108.504372)
+    id=25 type=vehicle.lincoln.mkz role=ego
+      loc=(107.003609, -38.854282, -0.051325) rot=(roll -0.908902, pitch -0.139839, yaw -108.504372)
+  RELATIVE TO THE EGO ACTOR (inverse(ego_world) * lidar_world):
+    location_m  = (-0.497071, 0.000002, 2.000000)
+    rotation_deg= (roll 0.859670, pitch -0.053676, yaw -88.156119)
+    decomposition round-trip residual = 5.602e-08
+    --mount -0.497071 0.000002 2.000000 0.859670 -0.053676 -88.156119
