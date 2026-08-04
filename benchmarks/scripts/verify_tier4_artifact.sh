@@ -9,11 +9,13 @@
 #   TIER4_TREE=~/src/carla-autoware-native bash verify_tier4_artifact.sh
 #
 # WHY THIS EXISTS (Task 17b, 2026-07-30). Cell A is gated: cells/extension.sh
-# launches scripts/e2e/run_e2e.sh (cells/extension.sh:192), which calls
+# launches scripts/e2e/run_e2e.sh (cells/extension.sh:491, its `nohup bash
+# scripts/e2e/run_e2e.sh` line), which calls
 # scripts/e2e/verify_editor_artifact.sh (run_e2e.sh:126) and refuses a run
 # whose editor plugin .so is older than CARLA HEAD. The B family reached
 # nothing equivalent: its launcher boots the SHARED engine's UnrealEditor
-# against the tier4 tree's own .uproject (cells/tier4-native.sh:181-183) and
+# against the tier4 tree's own .uproject (cells/tier4-native.sh:464, its
+# `nohup env ROS_DOMAIN_ID=0 "$EDITOR" "$UPROJECT"` line) and
 # neither that launcher nor cells/tier4_autoware.sh contained any artifact
 # check at all. Every B-family run committed before this script was therefore
 # ungated -- see benchmarks/results/B/PROVENANCE.md for what that does and does
@@ -42,7 +44,7 @@
 # EVERY exit path must carry a named check, including the ones nothing here
 # raises deliberately: both callers print "the tier4 plugin-artifact gate
 # refused this run (named reason above)" on a non-zero exit
-# (preflight.sh:316, cells/tier4-native.sh:77), so an unnamed abort --
+# (preflight.sh:318, cells/tier4-native.sh:82), so an unnamed abort --
 # a python traceback, a git command answering nothing -- leaves the operator
 # hunting for a line that was never printed. The `if ! VAR="$(...)"` wrappers
 # below exist for exactly that.
@@ -93,7 +95,8 @@ note() { echo "$*" >&2; }
 # The artifacts. `-game` on the shared engine's UnrealEditor binary loads the
 # plugin's EDITOR .so, which is why cell A's gate names that file and not the
 # shipping one; the tier4 family boots through the same binary
-# (cells/tier4-native.sh:27,181), so the same file is the one that runs.
+# (cells/tier4-native.sh:32 defines $EDITOR, :464 boots it), so the same
+# file is the one that runs.
 #
 # libcarla-ros2-native.so is gated alongside it because the two split the ROS 2
 # publishing path between them and only one of them is rebuilt by some targets.
@@ -380,7 +383,8 @@ if [ -n "${TIER4_STALE_ACK+set}" ]; then
   # trimmed -- by parameter expansion alone, so this spawns nothing and has no
   # exit path (see the named-check note in the header). stdout here is a
   # KEY=VALUE stream that preflight.sh forwards verbatim into the manifest
-  # (run.sh:481 splits on the first `=` per LINE), so a reason carrying a newline
+  # (run.sh:629, `key, _, value = line.partition("=")`, splits on the first `=`
+  # per LINE), so a reason carrying a newline
   # would silently become a second, junk placement key. Spaces inside the value
   # are fine and are preserved.
   STALE_ACK_REASON="${TIER4_STALE_ACK//[$'\n\r\t']/ }"
@@ -530,8 +534,8 @@ done
 #
 # `if ! VAR="$(...)"` and not a bare assignment: an assignment from a failing
 # command substitution aborts under `set -e` with whatever python printed and NO
-# `PREFLIGHT FAIL: <check>` line, while preflight.sh:316 and
-# cells/tier4-native.sh:77 both then tell the operator to read a "named reason
+# `PREFLIGHT FAIL: <check>` line, while preflight.sh:318 and
+# cells/tier4-native.sh:82 both then tell the operator to read a "named reason
 # above" that does not exist. In a condition, `set -e` does not fire, so the
 # named check below is reached on every failure of the block. python's own
 # traceback still goes to stderr, ahead of the named line, because only stdout

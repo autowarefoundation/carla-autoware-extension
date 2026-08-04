@@ -44,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -229,6 +230,96 @@ def test_help_exits_zero_as_a_script_with_no_carla_importable():
 
     assert proc.returncode == 0, proc.stderr
     assert "--out-dir" in proc.stdout
+
+
+# --- --class-id must not be able to lie about the rig (the C1 defect shape) ---
+#
+# Task 15 excluded six B-cyc runs because a 32ch LABEL was filed over a vlp16
+# RIG: the sweep arguments never reached the process that spawns the sensor,
+# and the run completed, scored and filed. `run.sh`'s step-1 refusal closed
+# that seam at the launcher. This is the SAME defect one seam over --
+# `--class-id 32ch` with no `--channels/--pps` ran the rig's DEFAULTS and
+# stamped `"class_id": "32ch"` beside the wrong `attributes` -- and it was open
+# until 2026-08-04. The launchers happen to pass the two together; that is
+# launcher discipline, and the module docstring documents a HAND invocation
+# which has no launcher at all.
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_in_message"),
+    [
+        # A registered class the resolved rig does not implement: the exact
+        # shape that filed a vlp16 rig under a 32ch label.
+        (["--rig", "extension", "--class-id", "32ch"], "disagrees with the resolved"),
+        # Half-specified is still a lie: channels agree, pps does not.
+        (
+            ["--rig", "extension", "--class-id", "32ch", "--lidar-channels", "32"],
+            "points_per_second",
+        ),
+        # An id nothing registers pools nowhere -- or into the legacy vlp16 pool.
+        (
+            ["--rig", "extension", "--class-id", "32chh", "--channels", "32", "--pps", "1200000"],
+            "not registered",
+        ),
+    ],
+)
+def test_class_id_that_disagrees_with_the_rig_is_refused(
+    tmp_path, carla_blocked, argv, expected_in_message, capsys
+):
+    """Refused, and refused BEFORE the CARLA import.
+
+    `carla_blocked` is what makes the second half of that claim real: if the
+    check ever moved below `import carla` this would raise ImportError instead
+    of exiting 2, so the refusal is pinned to reach a machine with no wheel --
+    which is where a hand invocation gets debugged.
+    """
+    module = importlib.reload(raycast_baseline)
+    with pytest.raises(SystemExit) as exc:
+        module.main([*argv, "--tick-hz", "20.0", "--out-dir", str(tmp_path)])
+
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert expected_in_message in err, err
+    assert not (tmp_path / "raycast_baseline.json").exists()
+
+
+def test_class_id_that_matches_the_rig_is_accepted(tmp_path, fake_carla):
+    """The check is on the RESOLVED ATTRIBUTES, not on flag presence.
+
+    `--rig tier4` already defaults to 16 channels / 288000 pps, which IS
+    `vlp16`, so this is a TRUE claim with no sensor flags at all and must pass.
+    Without this the obvious "refuse --class-id unless both flags are given"
+    implementation would look correct while refusing a legitimate run.
+    """
+    rc = raycast_baseline.main(
+        [
+            "--rig",
+            "tier4",
+            "--class-id",
+            "vlp16",
+            "--tick-hz",
+            "20.0",
+            "--duration-s",
+            "0.2",
+            "--out-dir",
+            str(tmp_path),
+            "--initial-pose",
+            "1",
+            "2",
+            "3",
+            "0",
+            "0",
+            "90",
+        ]
+    )
+
+    assert rc == 0
+    summary = json.loads((tmp_path / "raycast_baseline.json").read_text())
+    assert summary["class_id"] == "vlp16"
+    assert (summary["attributes"]["channels"], summary["attributes"]["points_per_second"]) == (
+        "16",
+        "288000",
+    )
 
 
 # --- the clock.csv writer: the ablation arm's only /clock substitute ---
@@ -651,6 +742,101 @@ def test_bcyc_process_map_body_stays_byte_identical_to_cell_bs():
     )
 
 
+# --- spawn-pose precedence: one obligation, three copies of the derivation ---
+#
+# Three launcher snippets read the same committed route file and emit a spawn
+# argument: cells/extension.sh (cell A's runner AND its ablation client, one
+# derivation shared by both arms), cells/tier4_autoware.sh (the tier4 measured
+# arm) and cells/tier4-native.sh (the tier4 ablation client). tier4-native.sh
+# states the obligation in prose -- "the two must be changed together" -- and
+# until 2026-08-04 nothing enforced it and extension.sh was INVERTED against
+# both: it tried `spawn_index` first where the tier4 pair try `spawn_pose`.
+#
+# It was a no-op only by accident of the data: every committed route sets
+# `spawn_index: null`, so both orders emit the pose. A route setting both would
+# have started cell A's baseline at the map's spawn point and cell B-cyc's at
+# the scored pose -- different terminations per ray, hence a different `T - B`
+# -- on runs that complete, score and file. tier4_autoware.sh carries the
+# reason the pose must win: "a route's spawn pose is generally not a member of
+# the map's spawn-point list, so the pose form is what a scored route needs."
+#
+# These RUN each snippet against a route carrying BOTH keys, which is the only
+# input that can tell the two orders apart. A text scan could not: both orders
+# contain both branches, in the same two spellings.
+
+SPAWN_DERIVATIONS = (
+    ("extension.sh", "--initial-pose"),
+    ("tier4_autoware.sh", "--spawn-pose"),
+    ("tier4-native.sh", "--spawn-pose"),
+)
+
+
+def _extract_spawn_derivation(launcher: str) -> str:
+    """The one `python3 - <<'PY'` body in `launcher` that resolves the spawn.
+
+    Extracted from the launcher itself rather than transcribed, so this test
+    cannot pass against a stale copy of a snippet the launcher no longer runs.
+    """
+    text = (REPO_ROOT / "benchmarks" / "cells" / launcher).read_text()
+    bodies = [
+        b
+        for b in re.findall(r"<<'PY'\n(.*?)\nPY\n", text, re.S)
+        if "spawn_pose" in b and "spawn_index" in b
+    ]
+    assert len(bodies) == 1, (
+        f"cells/{launcher} has {len(bodies)} spawn derivations, expected exactly "
+        "one; this test would be extracting the wrong statement"
+    )
+    return bodies[0]
+
+
+def _run_spawn_derivation(launcher: str, route_doc: dict, tmp_path: Path) -> str:
+    route = tmp_path / "route.yaml"
+    route.write_text(yaml.safe_dump(route_doc))
+    proc = subprocess.run(
+        [sys.executable, "-c", _extract_spawn_derivation(launcher)],
+        env={**os.environ, "BENCH_ROUTE_FILE": str(route)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
+
+
+@pytest.mark.parametrize(("launcher", "expected_flag"), SPAWN_DERIVATIONS)
+def test_every_launcher_spawn_derivation_prefers_the_pose_over_the_index(
+    tmp_path, launcher, expected_flag
+):
+    """A route carrying BOTH keys must resolve to the POSE in all three."""
+    out = _run_spawn_derivation(
+        launcher,
+        {
+            "spawn_index": 7,
+            "spawn_pose": {"x": -284.597, "y": 224.709, "z": 0.0, "yaw_deg": -34.187},
+        },
+        tmp_path,
+    )
+    assert out == f"{expected_flag} -284.597 224.709 0.0 0 0 -34.187", (
+        f"cells/{launcher} resolved a both-keys route to {out!r}. All three "
+        "spawn derivations must prefer the pose: a scored route's pose is "
+        "generally not a member of the map's spawn-point list, and two arms "
+        "starting in different places changes what each ray terminates on, "
+        "i.e. the very `T - B` the ablation arm subtracts."
+    )
+
+
+@pytest.mark.parametrize(("launcher", "expected_flag"), SPAWN_DERIVATIONS)
+def test_every_launcher_spawn_derivation_still_falls_back_to_the_index(
+    tmp_path, launcher, expected_flag
+):
+    """The index branch stays REACHABLE -- the 2026-08-04 fix reordered it, it
+    did not remove it. Without this, deleting the fallback outright would pass
+    the test above."""
+    out = _run_spawn_derivation(launcher, {"spawn_index": 7, "spawn_pose": None}, tmp_path)
+    assert out == "--spawn-index 7", out
+
+
 # --- the tier4 --mount seam: the measured pose, and that it reaches the client ---
 #
 # `default_mount()` is EXACT for `--rig extension` (it composes the committed
@@ -985,6 +1171,144 @@ def test_main_runs_the_publish_disabled_rig_and_files_the_contract(tmp_path, fak
     assert summary["class_id"] == "vlp16"
     assert summary["tick_hz"] == 20.0
     assert summary["attributes"]["channels"] == "16"
+
+
+def _ablation_argv(tmp_path, *, tick_hz="20.0"):
+    """The launchers' own invocation shape, minus the parts a test varies."""
+    return [
+        "--rig",
+        "extension",
+        "--class-id",
+        "vlp16",
+        "--lidar-channels",
+        "16",
+        "--lidar-pps",
+        "288000",
+        "--tick-hz",
+        tick_hz,
+        "--duration-s",
+        "0.3",
+        "--out-dir",
+        str(tmp_path),
+        "--initial-pose",
+        "1",
+        "2",
+        "3",
+        "0",
+        "0",
+        "90",
+    ]
+
+
+def test_main_drives_the_loop_PACED_at_the_registered_fixed_delta(
+    tmp_path, fake_carla, monkeypatch
+):
+    """`paced=True` is a MEASURAND property, and it was unpinned.
+
+    `sweep_verdict.py` scores the ablation arm against the PACED arm's rtf
+    series, so the two must tick to the same wall-clock target; a free-running
+    ablation arm produces a series that is not comparable to the thing it is
+    subtracted from -- and the run still completes, scores and files. Flipping
+    the literal to `paced=False` left the whole module's suite green (33
+    passed) before this test existed.
+
+    The kwargs are read off a spy that then calls the REAL loop, so this pins
+    the call `main()` actually makes rather than a description of it, and the
+    rest of the contract (clock.csv, the summary) still runs underneath.
+    """
+    seen = {}
+    real_run_sync_loop = raycast_baseline.run_sync_loop
+
+    def spy(world, **kwargs):
+        seen.update(kwargs)
+        return real_run_sync_loop(world, **kwargs)
+
+    monkeypatch.setattr(raycast_baseline, "run_sync_loop", spy)
+
+    assert raycast_baseline.main(_ablation_argv(tmp_path, tick_hz="20.0")) == 0
+
+    assert seen.get("paced") is True, (
+        "the ablation arm must tick PACED at the registered target; "
+        f"run_sync_loop was called with paced={seen.get('paced')!r}"
+    )
+    assert seen.get("fixed_delta") == pytest.approx(1.0 / 20.0)
+
+
+def test_clock_csv_arrival_is_stamped_in_the_clock_realtime_domain(tmp_path, fake_carla):
+    """`arrival_system_ns` must be CLOCK_REALTIME, and it was unpinned.
+
+    This module's docstring makes the domain load-bearing: the sampler stamps
+    `sample_system_ns` with `time.time_ns()`, and that shared domain is what
+    makes `finalize_rtf`'s `[t-1s, t]` join valid. Swapping this writer to
+    `time.monotonic_ns()` joins NOTHING -- every `rtf` row keeps the `-1`
+    "not measured" sentinel, the ceiling criterion has no series to score, and
+    the run is lost with the diagnosis nowhere near the cause. The swap left
+    the module's suite green (33 passed) before this test existed, because
+    every other assertion on this file only needs the series MONOTONIC, which
+    both clocks are.
+
+    Five seconds is deliberately loose: it must not flake on a slow host, and
+    it does not need to be tight -- CLOCK_MONOTONIC is uptime-since-boot and
+    CLOCK_REALTIME is nanoseconds-since-1970, so the two are apart by years.
+    """
+    assert raycast_baseline.main(_ablation_argv(tmp_path)) == 0
+
+    _, arrival_ns = read_clock_csv(tmp_path / "clock.csv")
+    assert arrival_ns.size >= 2
+    assert abs(int(arrival_ns[0]) - time.time_ns()) < 5_000_000_000, (
+        "clock.csv's arrival_system_ns is not in the CLOCK_REALTIME domain "
+        "sampler/sample_resources.py stamps sample_system_ns with; "
+        "finalize_rtf's [t-1s, t] join would match no samples at all"
+    )
+
+
+@pytest.mark.parametrize("fail_at", ["lidar-spawn", "lidar-listen"])
+def test_a_failure_before_the_loop_still_destroys_every_spawned_actor(
+    tmp_path, fake_carla, monkeypatch, fail_at
+):
+    """No window between the ego spawn and the loop may leak an actor.
+
+    Until 2026-08-04 the `try:` began at `run_sync_loop`, so the attribute
+    loop, the sensor spawn, `lidar.listen` and `clock.open()` all ran outside
+    any teardown. A failure there left a live `role_name=ego`
+    `vehicle.lincoln.mkz` on the server and wrote no `raycast_baseline.json`.
+    That is not merely an untidy exit: this module's docstring documents a
+    HAND invocation against an already-booted cell, and cell A's readiness
+    probe (`cells/extension.sh`'s find_ego) adopts an orphaned ego on the next
+    run -- which then measures a rig carrying a stranger's sensor.
+
+    Both branches of the conditional teardown tuple are covered: a failure
+    BEFORE the sensor exists (only the ego to destroy) and one AFTER it does
+    (stop, destroy, then the ego).
+    """
+    real_spawn_actor = fake_carla.spawn_actor
+
+    def spawn_actor(blueprint, transform, attach_to=None):
+        if attach_to is not None and fail_at == "lidar-spawn":
+            raise RuntimeError("server rejected the sensor spawn")
+        return real_spawn_actor(blueprint, transform, attach_to)
+
+    monkeypatch.setattr(fake_carla, "spawn_actor", spawn_actor)
+    if fail_at == "lidar-listen":
+        monkeypatch.setattr(
+            _FakeActor,
+            "listen",
+            lambda self, callback: (_ for _ in ()).throw(RuntimeError("stream refused")),
+        )
+
+    with pytest.raises(RuntimeError):
+        raycast_baseline.main(_ablation_argv(tmp_path))
+
+    assert fake_carla.actors, "the ego was never spawned; this test proves nothing"
+    ego = fake_carla.actors[0]
+    assert ego.destroyed, (
+        f"a failure at {fail_at} leaked the ego actor: it is still alive on the "
+        "server, and cell A's find_ego probe would adopt it on the next run"
+    )
+    if fail_at == "lidar-listen":
+        lidar = fake_carla.actors[1]
+        assert lidar.stopped and lidar.destroyed
+    assert not (tmp_path / "raycast_baseline.json").exists()
 
 
 def test_main_writes_neither_publisher_counts_nor_quality_json(tmp_path, fake_carla):

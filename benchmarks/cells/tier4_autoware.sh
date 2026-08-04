@@ -612,7 +612,8 @@ echo "OK: the fork's LiDAR is readable inside the stack (Task 9 rung 1 holds)"
 # a SECOND publisher is already a measured, gate-relevant variable in this
 # file (the "THAT PREMISE IS REFUTED" note above -- publishers=2 -> 4.89
 # Hz). But cell B is bounded TWICE against a survivor outliving a run:
-# teardown.sh:361's `docker rm -f` (taken because tier4-native.sh:144 sets
+# teardown.sh:458's `docker rm -f "$AW_CONTAINER"` (taken because
+# tier4-native.sh:399 sets
 # AW_COMPOSE="") and this file's own container removal before the next
 # `docker run` (:323) both clear it even if teardown never ran at all --
 # the duel is not at cross-run risk. What a same-run survivor would do to

@@ -441,7 +441,8 @@ sit still while the logs looked healthy.
 ### The invocation cells B / B-hf / B45 (and D) must use
 
 The cell id is **positional**, and `--arm` is required
-(`run.sh:70-72,89`); `run.sh --cell B …` exits 2 with the usage block.
+(`run.sh:92-99` `usage()`, `run.sh:127` `[ -n "$ARM" ] || die`);
+`run.sh --cell B …` exits 2 with the usage block.
 
 ```bash
 bash benchmarks/run.sh B --arm static --rmw rmw_fastrtps_cpp --shm off

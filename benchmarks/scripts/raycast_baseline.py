@@ -167,6 +167,7 @@ import sys
 import time
 from pathlib import Path
 
+from benchmarks.scripts.cell_info import UnknownIdError, class_entry, load_cells_doc
 from runner.kit import TOP_LIDAR_FRAME, carla_attach_location, carla_attach_rotation, load_kit
 from runner.loop import run_sync_loop
 from runner.spawn import EGO_BLUEPRINT, TOP_LIDAR_BLUEPRINT, top_lidar_attributes
@@ -601,6 +602,74 @@ def _summary_path(out_dir: Path) -> Path:
     return Path(out_dir) / "raycast_baseline.json"
 
 
+# The two `sweep_classes` fields that ARE the workload; everything else on a
+# class entry is metadata (`id`, `applies_to`).
+CLASS_WORKLOAD_KEYS = (("channels", "channels"), ("points_per_second", "points_per_second"))
+
+
+def _refuse_class_id_that_disagrees_with_the_rig(
+    parser: argparse.ArgumentParser, class_id: str, rig: str, attrs: dict[str, str]
+) -> None:
+    """`--class-id` is a CLAIM ABOUT THE WORKLOAD; refuse it if it is false.
+
+    THE C1 DEFECT SHAPE, ONE SEAM OVER. Task 15's six excluded B-cyc runs cost
+    exactly this: a 32ch LABEL was filed over a vlp16 RIG because the sweep
+    arguments never reached the process that spawns the sensor, and the run
+    completed, scored and filed. `run.sh`'s step-1 refusal (Amendment
+    2026-08-04, Task C2) closed that at the launcher. It did not close it HERE:
+    `--class-id 32ch` with no `--channels/--pps` runs the rig's DEFAULT
+    attributes and writes `raycast_baseline.json` stamped `"class_id": "32ch"`
+    with the wrong `attributes` beside it -- the same false measurement,
+    differing only in which process expanded the empty string.
+
+    Today's launchers happen to pass the two together (`extension.sh` and
+    `tier4-native.sh` derive both from `BENCH_CLASS_ID`), but that is launcher
+    DISCIPLINE, not a property of this client -- and the module docstring
+    documents a hand invocation, which has no launcher at all. So the client
+    checks ITSELF: `cell_info` is importable and `sweep_classes` carries the
+    two numbers, so the claim is checked against the registry rather than
+    against a flag's presence.
+
+    Deliberately a check on the RESOLVED attributes, not on "were both flags
+    given": `--rig tier4` already defaults to 16 channels / 288000 pps, which
+    IS `vlp16`, so `--rig tier4 --class-id vlp16` is a TRUE claim and passes
+    with no flags. What is refused is a claim the rig does not support.
+
+    Runs BEFORE the CARLA import, like every other refusal in `main()`, so it
+    costs nothing and reaches a machine with no wheel installed. `--help` is
+    unaffected: argparse exits during `parse_args`.
+    """
+    if not class_id:
+        return
+    try:
+        registered = class_entry(load_cells_doc(None), class_id)
+    except UnknownIdError as exc:
+        parser.error(
+            f"--class-id {class_id!r} is not registered in benchmarks/config/cells.yaml "
+            f"({exc}). It is filed verbatim into raycast_baseline.json and read back by "
+            "sweep_verdict.py's class pool rule, so an unregistered id is a run that "
+            "pools nowhere or, worse, into the legacy vlp16 pool."
+        )
+    wrong = [
+        (attr_key, attrs.get(attr_key), str(registered[class_key]))
+        for attr_key, class_key in CLASS_WORKLOAD_KEYS
+        if class_key in registered and attrs.get(attr_key) != str(registered[class_key])
+    ]
+    if wrong:
+        detail = "; ".join(
+            f"{k}: rig has {got!r}, class {class_id!r} registers {want!r}" for k, got, want in wrong
+        )
+        parser.error(
+            f"--class-id {class_id!r} disagrees with the resolved --rig {rig} attributes "
+            f"({detail}). Pass --channels/--pps (equivalently --lidar-channels/--lidar-pps, "
+            "which is what the cell launchers forward) so the label and the rig are the "
+            "same statement. Refusing rather than warning: the label is what "
+            "sweep_verdict.py pools this run by, so a run filed with the wrong one is a "
+            "false measurement of the class it lands in -- the defect that excluded "
+            "B-cyc/run-031..036."
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
@@ -615,12 +684,17 @@ def main(argv: list[str] | None = None) -> int:
             "world's fixed_delta_seconds"
         )
 
+    # The workload the rig will actually spawn, resolved here rather than after
+    # the CARLA import so the label check below can run offline (and so the
+    # CARLA-free block covers ALL of argument resolution, not most of it).
+    attrs = rig_attributes(args.rig, args.channels, args.pps)
+    _refuse_class_id_that_disagrees_with_the_rig(parser, args.class_id, args.rig, attrs)
+
     # Everything above is argument resolution and must stay CARLA-free: the
     # `--help` path is exercised offline by the unit tests and by the operator
     # on a machine with no wheel installed.
     import carla
 
-    attrs = rig_attributes(args.rig, args.channels, args.pps)
     location, rotation, mount_source = resolve_mount(args.rig, args.mount)
 
     fixed_delta = 1.0 / args.tick_hz
@@ -670,115 +744,154 @@ def main(argv: list[str] | None = None) -> int:
     ego_bp.set_attribute("role_name", "ego")
     ego = world.spawn_actor(ego_bp, spawn)
 
-    lidar_bp = blueprints.find(TOP_LIDAR_BLUEPRINT)
-    for key, value in attrs.items():
-        # Unconditional, no has_attribute() skip: every attribute in both rigs
-        # is stock LiDAR geometry (the native-ROS2 discriminators are exactly
-        # what _ros_free removed), so a missing one is a real blueprint
-        # mismatch and must surface as CARLA's own named set_attribute error
-        # rather than being silently dropped from the workload.
-        lidar_bp.set_attribute(key, value)
-    lidar = world.spawn_actor(
-        lidar_bp,
-        carla.Transform(
-            carla.Location(x=location[0], y=location[1], z=location[2]),
-            carla.Rotation(roll=rotation[0], pitch=rotation[1], yaw=rotation[2]),
-        ),
-        attach_to=ego,
-    )
-
-    sink = NullSink()
-    # THE RPC HOP (see the module docstring's disclosed limitation): a CARLA
-    # sensor only raycasts while a client is subscribed to its stream, so this
-    # subscription is what makes the baseline measure anything at all -- and it
-    # ships every cloud to this process, which the native in-process publisher
-    # does not do.
-    lidar.listen(sink)
-
-    clock = ClockCsvWriter(Path(args.out_dir) / "clock.csv")
-    clock.open()
-    started_ns = time.time_ns()
-    deadline = time.monotonic() + args.duration_s
-    ticks = 0
-    sim_ns: list[int] = []
-
-    def _on_tick() -> None:
-        nonlocal ticks
-        ticks += 1
-        snapshot = world.get_snapshot()
-        clock_ns = int(snapshot.timestamp.elapsed_seconds * 1e9)
-        sim_ns.append(clock_ns)
-        clock.write(clock_ns, time.time_ns())
-
-    def _should_continue() -> bool:
-        return not stop["stop"] and time.monotonic() < deadline
-
+    # ACTOR OWNERSHIP STARTS ON THE VERY NEXT LINE, not at run_sync_loop.
+    #
+    # Everything from here to the loop can fail against a live server -- a
+    # blueprint attribute the rig no longer has (set_attribute raises by
+    # design, see the loop below), the sensor spawn itself, `lidar.listen`, or
+    # `clock.open()` on an unwritable out-dir -- and until 2026-08-04 all four
+    # sat OUTSIDE any teardown. The cost of that window is not a lost run, it
+    # is a LEAKED EGO: a live `role_name=ego` `vehicle.lincoln.mkz` left on the
+    # server with no `raycast_baseline.json` written. Through the harness the
+    # editor is torn down anyway, but this module's own docstring documents a
+    # hand invocation against an already-booted cell, and there cell A's
+    # readiness probe (`cells/extension.sh`'s find_ego) ADOPTS the orphan on
+    # the next run -- so the next run measures a rig carrying someone else's
+    # sensor. `lidar` is pre-bound to None so the teardown tuple can be built
+    # for whichever actors actually exist.
+    lidar = None
     try:
-        run_sync_loop(
-            world,
-            fixed_delta=fixed_delta,
-            on_tick=_on_tick,
-            should_continue=_should_continue,
-            paced=True,
+        lidar_bp = blueprints.find(TOP_LIDAR_BLUEPRINT)
+        for key, value in attrs.items():
+            # Unconditional, no has_attribute() skip: every attribute in both
+            # rigs is stock LiDAR geometry (the native-ROS2 discriminators are
+            # exactly what _ros_free removed), so a missing one is a real
+            # blueprint mismatch and must surface as CARLA's own named
+            # set_attribute error rather than being silently dropped from the
+            # workload.
+            lidar_bp.set_attribute(key, value)
+        lidar = world.spawn_actor(
+            lidar_bp,
+            carla.Transform(
+                carla.Location(x=location[0], y=location[1], z=location[2]),
+                carla.Rotation(roll=rotation[0], pitch=rotation[1], yaw=rotation[2]),
+            ),
+            attach_to=ego,
         )
+
+        sink = NullSink()
+        # THE RPC HOP (see the module docstring's disclosed limitation): a CARLA
+        # sensor only raycasts while a client is subscribed to its stream, so
+        # this subscription is what makes the baseline measure anything at all
+        # -- and it ships every cloud to this process, which the native
+        # in-process publisher does not do.
+        lidar.listen(sink)
+
+        clock = ClockCsvWriter(Path(args.out_dir) / "clock.csv")
+        clock.open()
+        started_ns = time.time_ns()
+        deadline = time.monotonic() + args.duration_s
+        ticks = 0
+        sim_ns: list[int] = []
+
+        def _on_tick() -> None:
+            nonlocal ticks
+            ticks += 1
+            snapshot = world.get_snapshot()
+            clock_ns = int(snapshot.timestamp.elapsed_seconds * 1e9)
+            sim_ns.append(clock_ns)
+            # CLOCK_REALTIME, and it is load-bearing: `sample_resources.py`
+            # stamps `sample_system_ns` from the same domain, and that is what
+            # makes finalize_rtf's [t-1s, t] join match anything at all. See
+            # the module docstring, and the domain's own test in
+            # tests/benchmarks/test_raycast_baseline.py.
+            clock.write(clock_ns, time.time_ns())
+
+        def _should_continue() -> bool:
+            return not stop["stop"] and time.monotonic() < deadline
+
+        try:
+            run_sync_loop(
+                world,
+                fixed_delta=fixed_delta,
+                on_tick=_on_tick,
+                should_continue=_should_continue,
+                # PACED, always: sweep_verdict.py scores this arm's rtf series
+                # against the PACED arm's, so a free-running ablation baseline
+                # is not comparable to the thing it gets subtracted from -- and
+                # the run would still complete, score and file. Pinned.
+                paced=True,
+            )
+        finally:
+            clock.close()
+            # The summary is written BEFORE the actors are destroyed (they go
+            # in the enclosing `finally`). That ordering is deliberate: this
+            # repo's documented teardown gotcha is that actor destroy against a
+            # dead or wedged server HANGS, and a hang there used to mean no
+            # raycast_baseline.json at all for a run that had already produced
+            # all of its data.
+            summary = {
+                "rig": args.rig,
+                "class_id": args.class_id,
+                "attributes": attrs,
+                "ego_blueprint": args.ego_blueprint,
+                "lidar_blueprint": TOP_LIDAR_BLUEPRINT,
+                "mount_location_m": list(location),
+                "mount_rotation_deg": list(rotation),
+                # WHERE the pose came from, added 2026-08-04 (M5). Task 14's six
+                # filed ablation runs predate this key and do not carry it; their
+                # provenance is established instead by the values themselves plus
+                # PROVENANCE §22.3. Readers must use `.get()`.
+                "mount_source": mount_source,
+                "tick_hz": args.tick_hz,
+                "fixed_delta_s": fixed_delta,
+                "duration_cap_s": args.duration_s,
+                "ticks": ticks,
+                "clock_rows_written": clock.rows,
+                # The clock.csv contention record (see ClockCsvWriter): one
+                # re-assert is the NORMAL case (bench_observer truncating the file
+                # at run.sh step 6), and `clock_stood_down` true means /clock was
+                # flowing after all and the observer's series -- not this one -- is
+                # what the run was scored from.
+                "clock_header_reasserts": clock.header_reasserts,
+                # Non-zero means a truncation landed inside write()'s check/append
+                # window and the file was rebuilt (see ClockCsvWriter's fourth
+                # rule). Expected to be 0 on essentially every run; a run that
+                # reports one is not damaged, but it is the ~1e-4 race actually
+                # occurring and is worth knowing when reading that run's clock.csv.
+                "clock_toctou_repairs": clock.toctou_repairs,
+                "clock_stood_down": clock.stood_down,
+                "clock_stand_down_reason": clock.stand_down_reason,
+                "sensor_callbacks": sink.count,
+                "started_system_ns": started_ns,
+                "ended_system_ns": time.time_ns(),
+                "sim_span_ns": (max(sim_ns) - min(sim_ns)) if sim_ns else 0,
+                "stopped_by_signal": stop["stop"],
+            }
+            _summary_path(args.out_dir).write_text(
+                json.dumps(summary, indent=2, sort_keys=True) + "\n"
+            )
+            print(
+                f"raycast_baseline: {ticks} ticks, {sink.count} sensor callbacks, "
+                f"{clock.rows} clock rows"
+                + (f" (STOOD DOWN: {clock.stand_down_reason})" if clock.stood_down else "")
+                + f" -> {_summary_path(args.out_dir)}"
+            )
     finally:
-        clock.close()
         # Best effort, in this order, and never allowed to mask the original
-        # failure: stop the stream, destroy the sensor, destroy the ego.
-        for label, fn in (
-            ("lidar.stop", lidar.stop),
-            ("lidar.destroy", lidar.destroy),
-            ("ego.destroy", ego.destroy),
-        ):
+        # failure: stop the stream, destroy the sensor, destroy the ego. The
+        # sensor pair is CONDITIONAL because this block now also covers the
+        # window before the sensor exists (see the ownership comment above);
+        # the ego is unconditional, because reaching here at all means it was
+        # spawned.
+        teardown = (("ego.destroy", ego.destroy),)
+        if lidar is not None:
+            teardown = (("lidar.stop", lidar.stop), ("lidar.destroy", lidar.destroy)) + teardown
+        for label, fn in teardown:
             try:
                 fn()
             except Exception as exc:  # noqa: BLE001 - teardown must not raise
                 print(f"raycast_baseline: {label} failed during teardown: {exc}", file=sys.stderr)
-        summary = {
-            "rig": args.rig,
-            "class_id": args.class_id,
-            "attributes": attrs,
-            "ego_blueprint": args.ego_blueprint,
-            "lidar_blueprint": TOP_LIDAR_BLUEPRINT,
-            "mount_location_m": list(location),
-            "mount_rotation_deg": list(rotation),
-            # WHERE the pose came from, added 2026-08-04 (M5). Task 14's six
-            # filed ablation runs predate this key and do not carry it; their
-            # provenance is established instead by the values themselves plus
-            # PROVENANCE §22.3. Readers must use `.get()`.
-            "mount_source": mount_source,
-            "tick_hz": args.tick_hz,
-            "fixed_delta_s": fixed_delta,
-            "duration_cap_s": args.duration_s,
-            "ticks": ticks,
-            "clock_rows_written": clock.rows,
-            # The clock.csv contention record (see ClockCsvWriter): one
-            # re-assert is the NORMAL case (bench_observer truncating the file
-            # at run.sh step 6), and `clock_stood_down` true means /clock was
-            # flowing after all and the observer's series -- not this one -- is
-            # what the run was scored from.
-            "clock_header_reasserts": clock.header_reasserts,
-            # Non-zero means a truncation landed inside write()'s check/append
-            # window and the file was rebuilt (see ClockCsvWriter's fourth
-            # rule). Expected to be 0 on essentially every run; a run that
-            # reports one is not damaged, but it is the ~1e-4 race actually
-            # occurring and is worth knowing when reading that run's clock.csv.
-            "clock_toctou_repairs": clock.toctou_repairs,
-            "clock_stood_down": clock.stood_down,
-            "clock_stand_down_reason": clock.stand_down_reason,
-            "sensor_callbacks": sink.count,
-            "started_system_ns": started_ns,
-            "ended_system_ns": time.time_ns(),
-            "sim_span_ns": (max(sim_ns) - min(sim_ns)) if sim_ns else 0,
-            "stopped_by_signal": stop["stop"],
-        }
-        _summary_path(args.out_dir).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-        print(
-            f"raycast_baseline: {ticks} ticks, {sink.count} sensor callbacks, "
-            f"{clock.rows} clock rows"
-            + (f" (STOOD DOWN: {clock.stand_down_reason})" if clock.stood_down else "")
-            + f" -> {_summary_path(args.out_dir)}"
-        )
     return 0
 
 

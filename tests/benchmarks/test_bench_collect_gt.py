@@ -120,11 +120,23 @@ def _gt_count_lidar_for_arm(script: Path, bench_arm: str) -> str | None:
     )
     switches = re.search(r"^(LAUNCH_GT_ENABLED=.*?\nfi)$", text, re.M | re.DOTALL)
     # A launcher with no ablation branch at all (calibration.sh,
-    # python-bridge.sh -- neither registers a sweep arm) writes the key as a
-    # literal, so its env line alone is the whole chain. Nothing is asserted
-    # about which shape a launcher has: `set -u` below turns a half-extracted
-    # chain into a real non-zero exit, which the returncode check catches with
-    # bash's own message rather than this file's guess at one.
+    # python-bridge.sh) writes the key as a literal, so its env line alone is
+    # the whole chain. Nothing is asserted about which shape a launcher has:
+    # `set -u` below turns a half-extracted chain into a real non-zero exit,
+    # which the returncode check catches with bash's own message rather than
+    # this file's guess at one.
+    #
+    # CORRECTED 2026-08-04 (final whole-branch review). This comment used to
+    # explain those two launchers' missing branch with "neither registers a
+    # sweep arm". That premise is FALSE, and it was false when written: the
+    # sweep arms are a TOP-LEVEL global in cells.yaml
+    # (`sweep_arms: [paced, unpaced, ablation]`), not a per-cell key, so
+    # `cell_info.merge` hands them to every registered cell and run.sh's arm
+    # gate opened `ablation` for all four families. `run.sh E --arm ablation
+    # --class vlp16 --check-args` exited 0. run.sh now refuses the arm for any
+    # approach whose launcher does not implement it, and
+    # `test_every_approach_either_implements_the_ablation_arm_or_refuses_it`
+    # below is what keeps the two lists from drifting apart again.
     parts = ["set -euo pipefail", f'BENCH_ARM="{bench_arm}"']
     parts += [m.group(1) for m in (arm_flag, switches) if m]
     parts.append(env_line.group(1))
@@ -164,6 +176,124 @@ def test_the_ablation_arm_turns_the_publisher_side_count_off():
     for script in sweep_launchers:
         assert _gt_count_lidar_for_arm(script, "static") == "1", script
         assert _gt_count_lidar_for_arm(script, "ablation") == "0", script
+
+
+def _implements_the_ablation_arm(approach: str) -> bool:
+    """Does `cells/<approach>.sh` branch on the ablation arm at all?
+
+    Read from the launcher, not from a list kept here -- the whole defect this
+    guards was two lists (cells.yaml's arms and the launchers' branches) that
+    nothing compared. `BENCH_ARM_IS_ABLATION` is the switch every implementing
+    launcher sets; a launcher without it never starts the baseline client.
+    """
+    return "BENCH_ARM_IS_ABLATION" in (CELLS_DIR / f"{approach}.sh").read_text()
+
+
+def _one_cell_per_approach() -> dict[str, str]:
+    """One reachable (non-`dropped:`) cell id per registered approach."""
+    doc = load_cells_doc()
+    out: dict[str, str] = {}
+    for entry in doc["cells"]:
+        if entry.get("dropped"):
+            continue
+        out.setdefault(str(entry["approach"]), str(entry["id"]))
+    return out
+
+
+@pytest.mark.parametrize("approach", sorted(_one_cell_per_approach()))
+def test_every_approach_either_implements_the_ablation_arm_or_refuses_it(approach):
+    """No approach may ACCEPT `--arm ablation` without implementing it.
+
+    `sweep_arms: [paced, unpaced, ablation]` is a top-level global in
+    cells.yaml, so `cell_info.merge` hands it to every registered cell and
+    run.sh's arm gate opened `ablation` for all four families -- while only
+    `extension.sh` and `tier4-native.sh` have an ablation branch. Verified
+    live before the guard existed: `run.sh E --arm ablation --class vlp16
+    --check-args` exited 0, and E is not `dropped:`.
+
+    What such a run FILES is why acceptance is the defect: it boots the full
+    publishing stack, never starts `raycast_baseline.py`, and writes
+    `manifest.arm = "ablation"`. `publisher_counts.json` is then absent for
+    the ordinary reason (`python-bridge.sh` sets `GT_COUNT_LIDAR="0"` as a
+    literal), which is exactly the state `sweep_verdict` reads as "publishing
+    disabled by design" -- so it renders a clean ablation row for a baseline
+    containing the whole transport layer. `T - B ~ 0`, silently.
+
+    Parametrised over the REGISTERED approaches and answered from the
+    LAUNCHERS, so a family added later is covered without editing this test:
+    it either grows an ablation branch or run.sh must refuse it.
+    """
+    cell = _one_cell_per_approach()[approach]
+    proc = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "benchmarks" / "run.sh"),
+            cell,
+            "--arm",
+            "ablation",
+            "--class",
+            "vlp16",
+            "--check-args",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if _implements_the_ablation_arm(approach):
+        # A family that DOES implement it must still be able to run it -- so a
+        # refusal that simply blocks `ablation` outright cannot satisfy this.
+        assert proc.returncode == 0, (
+            f"cells/{approach}.sh implements the ablation arm but run.sh "
+            f"refused cell {cell}:\n{proc.stderr}"
+        )
+    else:
+        assert proc.returncode != 0, (
+            f"run.sh accepted `--arm ablation` for cell {cell} ({approach}), whose "
+            f"launcher cells/{approach}.sh has no ablation branch. That run files "
+            f'arm="ablation" for a fully-publishing stack:\n{proc.stdout}'
+        )
+        # WHICH refusal fires is deliberately not pinned here: the calibration
+        # family is refused earlier and for an independent reason (no sweep
+        # class lists a CAL-* cell in `applies_to`, so `cell_info.merge` rejects
+        # the invocation before the arm gate is reached), and pinning a message
+        # would make this test assert the ORDER of run.sh's preflight rather
+        # than the property. What must hold for every non-implementing family
+        # is only that nothing accepts the arm -- with a NAMED failure, never a
+        # bare crash. `test_the_ablation_arm_is_refused_for_the_bridge_family`
+        # pins the new refusal's own wording on the one cell that could reach
+        # it.
+        assert "FAIL:" in proc.stderr, proc.stderr
+
+
+def test_the_ablation_arm_is_refused_for_the_bridge_family():
+    """The one live hole, pinned by its own message.
+
+    Cell E is `approach: python-bridge`, is not `dropped:`, and IS registered
+    for `vlp16` -- so it was the one cell that could reach the arm gate with a
+    valid class and be ACCEPTED. Verified live before the guard existed:
+    `run.sh E --arm ablation --class vlp16 --check-args` exited 0.
+    """
+    proc = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "benchmarks" / "run.sh"),
+            "E",
+            "--arm",
+            "ablation",
+            "--class",
+            "vlp16",
+            "--check-args",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode != 0, proc.stdout
+    assert "arm 'ablation' is not implemented by the python-bridge family" in proc.stderr, (
+        proc.stderr
+    )
 
 
 def test_publisher_counts_key_matches_every_reconciled_cells_registered_topic():

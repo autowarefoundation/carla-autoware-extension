@@ -49,7 +49,8 @@ MAX_CONSECUTIVE_FAILURES=2
 # THE PROBLEM THIS FIXES. A completed run leaves the host loaded long after
 # `run.sh` exits: a 2 s-interval /proc/loadavg sample across a whole cell-B
 # run, nothing else running on the box, recorded mean 25.80 / peak 50.05 on
-# 24 cores (benchmarks/README.md:1789-1797), and the 1-min loadavg decays
+# 24 cores (benchmarks/README.md, `### Host load during a run is unbounded,
+# and it changes outcomes (Task 13)`), and the 1-min loadavg decays
 # with a ~60 s time constant. preflight.sh:28 refuses any run at loadavg >= 8
 # (MAX_LOADAVG; exclusions.md criterion 6) -- correctly: that gate is a
 # measurement-validity condition (localization degrades under load), not a

@@ -243,6 +243,19 @@ fi
 # (--initial-pose x y z roll pitch yaw_deg, CARLA frame). The ablation client
 # takes the SAME string (it accepts --initial-pose/--spawn-index with the
 # runner's own spelling), so both arms start the rig at one pose.
+#
+# PRECEDENCE IS POSE-FIRST, and it is not free choice: it must match what
+# cells/tier4_autoware.sh derives for the OTHER family, whose comment states
+# the reason -- "a route's spawn pose is generally not a member of the map's
+# spawn-point list, so the pose form is what a scored route needs". This block
+# read `spawn_index` first until 2026-08-04, inverted against BOTH tier4
+# derivations. It was a latent no-op only because every committed route sets
+# `spawn_index: null` (config/routes/*.yaml); a route setting both would have
+# started cell A at the map's spawn point and cell B-cyc at the scored pose,
+# changing what each ray terminates on and therefore the very `T - B` the
+# ablation arm subtracts -- silently, on a run that completes and scores.
+# All three derivations are now pinned together by
+# tests/benchmarks/test_raycast_baseline.py's spawn-precedence test.
 SPAWN_ARGS="$(BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" python3 - <<'PY'
 import os
 
@@ -251,12 +264,12 @@ import yaml
 route = yaml.safe_load(open(os.environ["BENCH_ROUTE_FILE"]))
 pose = route.get("spawn_pose")
 index = route.get("spawn_index")
-if index is not None:
-    print(f"--spawn-index {int(index)}")
-elif pose:
+if pose:
     print(f"--initial-pose {pose['x']} {pose['y']} {pose['z']} 0 0 {pose['yaw_deg']}")
+elif index is not None:
+    print(f"--spawn-index {int(index)}")
 else:
-    raise SystemExit("route file has neither spawn_index nor spawn_pose")
+    raise SystemExit("route file has neither spawn_pose nor spawn_index")
 PY
 )" || fail "could not derive the spawn pose from $BENCH_ROUTE_FILE"
 

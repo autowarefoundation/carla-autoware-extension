@@ -1090,8 +1090,14 @@ def test_gt_collector_host_pid_stops_after_the_observer(tmp_path, fake_docker):
     never fires for them) -- must stop AFTER the observer's SIGINT+flush
     wait.
 
-    README finding ("The static arm's windowed M2 reconciliation charges a
-    teardown-ordering gap to the publisher", benchmarks/README.md :3793):
+    README finding -- benchmarks/README.md's heading `#### 1. The static arm's
+    windowed M2 reconciliation charges a teardown-ordering gap to the
+    publisher`, under `### Cell A's bench-harness control (Task 15b)`. Cited
+    by HEADING, not by line: this citation read `benchmarks/README.md :3793`
+    until 2026-08-04, by which point that README's own growth during P4 had
+    moved the finding several hundred lines and nothing had noticed. A line
+    pin into maintained prose is a citation with an expiry date; a heading is
+    not:
     `window.static_window` sets the window's upper bound to
     `clock_wall.max()` (the observer's LAST /clock sample, flushed only
     once teardown SIGINTs it -- run.sh step 6: "teardown sends SIGINT, and

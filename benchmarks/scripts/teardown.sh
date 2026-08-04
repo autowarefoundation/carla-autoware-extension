@@ -134,7 +134,7 @@ stop_container() {
 # uses compose_exec_script for the identical "no bind mount needed" reason
 # (launch_autoware.sh:113-118), but that helper wraps `docker compose exec`,
 # and this family's container is a bare `docker run` with AW_COMPOSE=""
-# (cells/tier4-native.sh:144) -- there is no compose file for it to
+# (cells/tier4-native.sh:399) -- there is no compose file for it to
 # target. `docker exec -i` piping the script on stdin gets the same
 # no-bind-mount property without that dependency.
 #

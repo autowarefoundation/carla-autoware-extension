@@ -382,6 +382,75 @@ do_run() {
       ;;
   esac
 
+  # THE ABLATION ARM NEEDS A LAUNCHER THAT IMPLEMENTS IT (2026-08-04, final
+  # whole-branch review). Named preflight refusal, at step 1, same place and
+  # same reason as the sweep-arm class refusal above.
+  #
+  # `sweep_arms: [paced, unpaced, ablation]` is a TOP-LEVEL global in
+  # cells.yaml, not a per-cell key, so `cell_info.merge` hands it to every
+  # registered cell and the `allowed` gate above opens `ablation` for all of
+  # them. Only two of the four launchers implement the arm: cells/extension.sh
+  # and cells/tier4-native.sh branch on BENCH_ARM_IS_ABLATION;
+  # cells/python-bridge.sh and cells/calibration.sh have no ablation branch at
+  # all. Verified live before this refusal existed: `run.sh E --arm ablation
+  # --class vlp16 --check-args` exited 0, and cell E is not `dropped:`.
+  #
+  # What that run would have FILED is why this is a refusal and not a warning.
+  # A bridge/calibration cell on `--arm ablation` boots the FULL publishing
+  # stack, never starts the publish-disabled baseline client, and writes
+  # manifest.arm = "ablation". `publisher_counts.json` is then absent for the
+  # ordinary reason -- python-bridge.sh sets GT_COUNT_LIDAR="0" as a literal --
+  # which is exactly the state sweep_verdict.py reads as "ablation, publishing
+  # disabled by design", so it renders a clean ablation row. The result is a
+  # "publish-disabled baseline" that contains the entire transport layer:
+  # `T - B ~ 0`, arriving silently, in the one column whose whole job is to be
+  # the thing transport cost gets subtracted from.
+  #
+  # Checked against the APPROACH rather than against a cell id, so a cell
+  # registered later inherits the answer from its family; and it is the
+  # positive form (an approach must be named here to run the arm), so a NEW
+  # approach is refused until someone writes its ablation branch. The paired
+  # test lives in tests/benchmarks/test_bench_collect_gt.py.
+  if [ "$effective_arm" = "ablation" ]; then
+    case "$approach" in
+      extension | tier4-native) ;;
+      *) die "arm 'ablation' is not implemented by the $approach family's launcher
+  (cells/$approach.sh has no ablation branch; only cells/extension.sh and
+  cells/tier4-native.sh do). cells.yaml's sweep_arms is a top-level global, so the
+  arm gate opens 'ablation' for every registered cell -- but this cell would boot
+  its FULL publishing stack, never start benchmarks/scripts/raycast_baseline.py,
+  and file manifest arm=\"ablation\" with no publisher_counts.json. sweep_verdict.py
+  reads that as a legitimate publish-disabled baseline and scores it, so the
+  transport cost T - B would come out at ~0 with nothing anywhere to say why." ;;
+    esac
+  fi
+
+  # A DUEL RUN MUST CARRY THE DUEL IT IS FOR (2026-08-04, final whole-branch
+  # review). The exactly-analogous refusal to the sweep-arm one above, for the
+  # exactly-analogous reason, on the other pre-registration amendment's field.
+  #
+  # `_walk_cell_runs`' pool rule admits a duel-admissible run into the (A, B)
+  # pool when its `duel_id` is "" (duel_verdict.py's legacy clause), and
+  # analysis/manifest.py:149-156 states that clause's ENTIRE justification: the
+  # empty string is *a statement about the past*, there so the filed P3 A-vs-B
+  # verdict keeps reproducing byte-for-byte without rewriting a single filed
+  # manifest. `--duel` with no `--duel-id` is the one way to break that: it
+  # mints a NEW run with duel_id="" that pools straight into a published
+  # verdict's pool. Verified live before this refusal existed: `run.sh A --arm
+  # static --duel --check-args` printed duel_admissible=true with duel_id=
+  # empty.
+  #
+  # No registered form loses anything: scripts/duel.sh always passes
+  # `--duel-id "${CELL_A}+${CELL_B}"` alongside `--duel` (see its own comment
+  # on why the two travel together), and a bring-up run simply omits --duel.
+  if [ "$DUEL" = "1" ] && [ -z "$DUEL_ID" ]; then
+    die "--duel requires --duel-id <A+B>. Refusing: a duel-admissible run with an
+  empty duel_id pools into the FILED P3 (A, B) verdict by duel_verdict.py's legacy
+  clause, whose only justification is that \"\" is a statement about ALREADY-FILED
+  runs -- it must never become a way to mint new ones into a published pool.
+  scripts/duel.sh always passes both flags together."
+  fi
+
   # Config files this cell needs. Checked BEFORE the run directory exists, so
   # a missing topic list or process map costs nothing.
   local observer_topics processes route_file tl_groups launcher

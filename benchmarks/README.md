@@ -344,7 +344,7 @@ exists — nothing else — so that is what the rule tests, applied per run:
   stamp with wall `now()`), so the metric definitions below read the same way
   with no special case, and `one_hop_wall_ms` reduces to the direct
   `arrival_system_ns - header_stamp_ns` — the form `cal_report.summarize_run`
-  computes at `scripts/cal_report.py:83`, by calling `analysis/latency.py`
+  computes at `scripts/cal_report.py:123`, by calling `analysis/latency.py`
   `segment_sim_ms(header_stamp_ns, arrival_system_ns)`.
 
 **Expected branch per cell, so a surprise is loud.** The calibration-approach
@@ -585,7 +585,7 @@ must not be assumed to be the same number.
 Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code path,
 deliberately. On **`CAL-rmw`** the publisher stamps `header.stamp` with wall
 `now()` and nothing publishes `/clock`, so `cal_report.summarize_run` takes the
-direct `arrival_system_ns - header_stamp_ns` — `scripts/cal_report.py:83`,
+direct `arrival_system_ns - header_stamp_ns` — `scripts/cal_report.py:123`,
 `segment_sim_ms(header_stamp_ns, arrival_system_ns)`, whose percentiles become
 `one_hop_p50_ms` on the next lines — and no fit is possible. Both
 halves are evidenced for that cell and only that cell:
@@ -1646,7 +1646,8 @@ than the `observer_env` row it shows up in:
 - **DISCLOSED APPROXIMATION: publisher PLACEMENT is not the duel's.** In
   `CAL-rmw` both ends are containerised — `bench_pub` and `bench_observer` run
   in two containers from the ONE observer image, `--net=host --ipc=host`
-  (`cells/calibration.sh:136-142`, `run.sh:605-607`), and every CAL-rmw
+  (`cells/calibration.sh:319`, `run.sh:781` — the two `docker run -d --name
+… --net=host --ipc=host` lines), and every CAL-rmw
   manifest records it as `placement.run_mode: container-only`. In the native
   cells the publisher is a HOST process — the CARLA fork, whose manifests
   record `editor-game` — and only the observer is containerised. So the
@@ -3923,7 +3924,7 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   sensor rigs. Recorded as finding 4 of "Cell A's bench-harness control (Task
   15b)", with a pointer from the 8.78× CPU finding it bears on.
   **Completeness, and nothing in the cut's own rationale had noticed it:**
-  `cells.yaml:232-240` and `cells/tier4_autoware.sh:70-80` both justify the duel's
+  `cells.yaml:266-274` and `cells/tier4_autoware.sh:76-83` both justify the duel's
   deliberate rig asymmetry by naming the M4 sweep as the place "where the two rigs
   ARE equalized" — so the sweep was carrying a **duel-level** job as well as an M4
   one, and reducing it to a ceiling confirmation (which then did not fire) left
@@ -3938,7 +3939,7 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   decided** here (it needs Task 23's class → argument mapping, and the scheduling
   is the coordinator's and the owner's). Finally it records a NEWLY MEASURED
   contradiction the remedy must verify rather than assume:
-  `cells/tier4_autoware.sh:78-80` registers per-message size as landing "within 4%
+  `cells/tier4_autoware.sh:84-86` registers per-message size as landing "within 4%
   either way", but the as-emitted medians are **512 184 B/msg (A)** against
   **241 813 B/msg (B)** — **2.118×**, stable across two cell-A and six cell-B runs
   (0.35% / 0.30% spread), on the same instrument and topic so no point-layout
@@ -4545,16 +4546,16 @@ This is a **duel-level confound**, not a cell-A one, and it lands directly on th
 8.78× CPU finding above, which compares two different sensor rigs.
 
 **The asymmetry is registered and deliberate, and that part is sound.**
-`config/cells.yaml:232-240` keeps cell B's LiDAR at "the demo's OWN value,
+`config/cells.yaml:266-274` keeps cell B's LiDAR at "the demo's OWN value,
 deliberately NOT harmonized to cell A's 20 Hz", because the demo derives
 `points_per_second` FROM its `sensor_tick`, so re-rating it would be "a fidelity
 change dressed as harmonization" — it would either halve the angular resolution or
 specify a different sensor than the VLP16 the demo documents.
-`cells/tier4_autoware.sh:70-80` repeats the reasoning. **Each approach running on
+`cells/tier4_autoware.sh:76-83` repeats the reasoning. **Each approach running on
 its native rig is by design.**
 
 **But both of those blocks name the same equalization point, and it is gone.**
-Verbatim, `cells.yaml:238-240`: "The M4 sweep classes (`sweep_classes` below,
+Verbatim, `cells.yaml:272-274`: "The M4 sweep classes (`sweep_classes` below,
 applying to A and B alike) are where the two rigs ARE equalized." The M4 sweep is
 now reduced to a ceiling confirmation by the 2026-07-30 core-duel scope cut, and
 the ceiling criterion did not fire, so **no rig-matched A-vs-B measurement exists
@@ -4581,7 +4582,7 @@ Task 26 is struck; both sweep launchers refuse a `--class` without it), and the
 scheduling is the coordinator's and the owner's.
 
 **One thing that remedy must VERIFY rather than assume, newly measured.**
-`cells/tier4_autoware.sh:78-80` registers a per-message-size parity claim —
+`cells/tier4_autoware.sh:84-86` registers a per-message-size parity claim —
 "Per-message size happens to land within 4% either way (A: 600000 \* 0.05 = 30000
 points/message; B: 288000 \* 0.1 = 28800), so M1/M2's per-message latency terms
 compare like with like even at different rates". **On the wire it is not within 4%;
@@ -4640,7 +4641,7 @@ distinguishes them — the byte gap is layout. Cell A's share is explained by
 source-vs-wire contradiction rather than with its registration.
 
 **The registered claim is therefore UNIT-AMBIGUOUS rather than simply wrong.**
-`cells/tier4_autoware.sh:78-80`'s "within 4% either way" is **false for bytes
+`cells/tier4_autoware.sh:84-86`'s "within 4% either way" is **false for bytes
 (2.118×)** and **nearly true for points (5.9%)** — its own parenthetical reasons in
 _points per message_ (30 000 vs 28 800) while the quantity it licenses,
 "M1/M2's per-message latency terms", is carried by **bytes** on the wire. Someone

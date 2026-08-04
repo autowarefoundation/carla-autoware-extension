@@ -338,7 +338,12 @@ PY
   # the ablation arm starts the rig where the measured arm starts it. The
   # derivation is duplicated rather than sourced because tier4_autoware.sh is
   # the whole Autoware launch, which this arm exists not to run; the two must
-  # be changed together.
+  # be changed together. That obligation is now ENFORCED rather than merely
+  # stated (2026-08-04): tests/benchmarks/test_raycast_baseline.py runs this
+  # snippet, tier4_autoware.sh's, and cells/extension.sh's against a route file
+  # carrying BOTH keys and requires all three to pick the POSE. extension.sh
+  # picked the index until that date -- see its own comment for what the
+  # divergence would have cost the measurand.
   ABLATION_SPAWN_ARGS="$(BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" python3 - <<'PY'
 import os
 

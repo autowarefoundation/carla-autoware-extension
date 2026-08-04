@@ -4,7 +4,8 @@ B-family counterpart to cell A's scripts/e2e/verify_editor_artifact.sh.
 These exist because the gap they close was MEASURED, not imagined (Task 17b,
 2026-07-30): `grep -rn verify_editor_artifact` over the tree returned exactly
 one call site, scripts/e2e/run_e2e.sh:126, which cells/extension.sh reaches at
-cells/extension.sh:192 -- and neither cells/tier4-native.sh nor
+cells/extension.sh:491 (its `nohup bash scripts/e2e/run_e2e.sh` line) -- and
+neither cells/tier4-native.sh nor
 cells/tier4_autoware.sh reached it or anything like it. Every B-family run in
 benchmarks/results/B was therefore produced with no check standing between a
 stale plugin .so and a filed measurement, and its manifest recorded
@@ -476,9 +477,10 @@ def test_an_acknowledgement_that_was_not_needed_is_recorded_as_unused(tree):
 
 
 def test_a_multiline_reason_stays_a_single_key_value_line(tree):
-    """preflight.sh forwards this stdout verbatim and run.sh:481 splits on the
-    first `=` PER LINE, so a reason carrying a newline would become a second,
-    junk placement key on every affected run."""
+    """preflight.sh forwards this stdout verbatim and run.sh:629
+    (`key, _, value = line.partition("=")`) splits on the first `=` PER LINE, so
+    a reason carrying a newline would become a second, junk placement key on
+    every affected run."""
     bound = source_sha256(tree)
     make_stale(tree)
     r = run_gate(

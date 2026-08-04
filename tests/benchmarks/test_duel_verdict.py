@@ -1099,6 +1099,90 @@ def test_pool_rule_is_inactive_when_expected_duel_id_is_not_given(tmp_path):
     assert (len(records), n_inadmissible) == (1, 0)
 
 
+def test_build_verdict_table_computes_the_pool_rule_from_the_cell_pair(tmp_path):
+    """The pool rule's PRODUCTION WIRING, pinned through the only entry
+    point that computes it.
+
+    The three tests above call `_walk_cell_runs` with hand-supplied
+    `expected_duel_id=`/`legacy_ok=` kwargs, so they pin the rule's
+    BEHAVIOUR and nothing about how the two values are DERIVED.
+    `build_verdict_table` is the sole place that derives them
+    (`expected_duel_id = f"{cell_a_id}+{cell_b_id}"`, `legacy_ok =
+    (cell_a_id, cell_b_id) == ("A", "B")`), and it was unpinned: both
+    derivations were mutation-tested on a throwaway clone and BOTH
+    SURVIVED the whole `tests/benchmarks/` tree --
+    `legacy_ok = True` (which leaks every legacy `duel_id: ""` P3 run
+    into the A-vs-B-cyc pool) and `expected_duel_id = None` (which
+    disables the pool filter entirely at its only production call site).
+    This test kills both.
+
+    Discriminating property: cell A carries two INTERLEAVED pools that
+    are separable only by `duel_id` -- three legacy `""` runs at
+    `one_hop_extra_ms=5.0` and three `"A+B-cyc"` runs at 50.0 -- against
+    a partner at 6.0. The correct pool selection is n=3 on each side of
+    each duel, with the A-minus-B delta reading OPPOSITE SIGNS:
+
+    - `("A", "B-cyc")` -> only the 50.0 runs pool -> delta ~ +44.0
+    - `("A", "B")`     -> only the 5.0 runs pool (legacy clause) -> ~ -1.0
+
+    Either mutant pools all six cell-A runs (median 27.5), which shows up
+    twice over: the n column reads "6/3" instead of "3/3", and the delta
+    reads ~ +21.5 -- a value neither assertion admits.
+    """
+
+    def _delta_and_n(b_id, b_duel_id):
+        tree = tmp_path / b_id
+        tree.mkdir()
+        for i in range(1, 4):
+            # Cell A's two pools, physically interleaved in run order so
+            # nothing separates them but the duel_id itself.
+            _make_run(
+                tree, cell="A", name=f"run-{2 * i - 1:03d}", arm="static", one_hop_extra_ms=5.0
+            )
+            _make_run(
+                tree,
+                cell="A",
+                name=f"run-{2 * i:03d}",
+                arm="static",
+                one_hop_extra_ms=50.0,
+                duel_id="A+B-cyc",
+            )
+            _make_run(
+                tree,
+                cell=b_id,
+                name=f"run-{i:03d}",
+                arm="static",
+                one_hop_extra_ms=6.0,
+                duel_id=b_duel_id,
+            )
+        doc = _cells_doc(arms=("static",), b_id=b_id)
+        table = build_verdict_table(
+            tree / "A",
+            tree / b_id,
+            "A",
+            b_id,
+            {"one_hop_wall_ms": {"margin": 2.0}},
+            doc,
+            min_n=3,
+        )
+        line = next(ln for ln in table.splitlines() if "| static |" in ln)
+        # Columns: metric | arm | n (a/b) | delta_median | 95% ci | ...
+        return float(line.split("|")[4].strip()), line.split("|")[3].strip()
+
+    # The P4 duel: `legacy_ok` is False, so cell A's three legacy ""
+    # runs must stay OUT. `legacy_ok = True` admits them -> "6/3", +21.5.
+    delta, n = _delta_and_n("B-cyc", "A+B-cyc")
+    assert n == "3/3"
+    assert delta == pytest.approx(44.0, abs=0.5)
+
+    # The P3 duel: `legacy_ok` is True, so the three "" runs are the pool
+    # and the three "A+B-cyc" runs must stay out. `expected_duel_id =
+    # None` disables the filter and admits all six -> "6/3", +21.5.
+    delta, n = _delta_and_n("B", "")
+    assert n == "3/3"
+    assert delta == pytest.approx(-1.0, abs=0.5)
+
+
 # ---------------------------------------------------------------------------
 # BEHAVIOURAL pins for the fail-closed default: these RUN the real scripts.
 #
@@ -1158,8 +1242,49 @@ def test_run_sh_really_resolves_duel_admissible_false_without_the_flag():
 def test_run_sh_really_resolves_duel_admissible_true_with_the_flag():
     """The other direction, so the pin above cannot be satisfied by a
     resolver hardwired to `false` -- which would break the duel instead of
-    contaminating it, and would be just as invisible."""
-    assert _resolved("A", "--arm", "closed-loop", "--duel")["duel_admissible"] == "true"
+    contaminating it, and would be just as invisible.
+
+    `--duel-id` joined this invocation 2026-08-04: `--duel` alone is now a
+    named step-1 refusal (see
+    `test_run_sh_refuses_duel_without_a_duel_id` below), so passing it here is
+    what keeps this pin about `duel_admissible` rather than about the new
+    guard. duel.sh has always passed the two together.
+    """
+    assert (
+        _resolved("A", "--arm", "closed-loop", "--duel", "--duel-id", "A+B")["duel_admissible"]
+        == "true"
+    )
+
+
+def test_run_sh_refuses_duel_without_a_duel_id():
+    """`--duel` with no `--duel-id` mints a run into a PUBLISHED pool.
+
+    `_walk_cell_runs`' legacy clause admits a duel-admissible run whose
+    `duel_id` is "" into the (A, B) pool, and `analysis/manifest.py`'s own
+    comment states that clause's entire justification: the empty string is a
+    statement about the PAST, there so the filed P3 A-vs-B verdict keeps
+    reproducing byte-for-byte without rewriting a filed manifest. `--duel`
+    with no id was the one way to turn it into a way of minting NEW runs into
+    that pool -- verified live before the guard existed:
+    `run.sh A --arm static --duel --check-args` printed `duel_admissible=true`
+    with an empty `duel_id`, exit 0.
+
+    Refused at step 1, before preflight sweeps /dev/shm and before any
+    manifest exists, in the same shape as the sweep-arm class refusal that
+    closed the exactly-analogous hole on `class_id`.
+    """
+    proc = subprocess.run(
+        ["bash", str(_RUN_SH), "A", "--arm", "static", "--duel", "--check-args"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=_REPO_ROOT,
+    )
+    assert proc.returncode != 0, (
+        "run.sh accepted --duel with no --duel-id; that run files "
+        f'duel_id="" straight into the published P3 pool:\n{proc.stdout}'
+    )
+    assert "--duel requires --duel-id" in proc.stderr, proc.stderr
 
 
 def test_duel_sh_really_produces_duel_admissible_invocations_end_to_end():
@@ -1300,11 +1425,18 @@ def _metrics(**overrides) -> dict:
     return m
 
 
-def _cells_doc(a_overrides=None, b_overrides=None, arms=("static", "closed-loop")):
+def _cells_doc(a_overrides=None, b_overrides=None, arms=("static", "closed-loop"), b_id="B"):
     """A minimal synthetic cells.yaml document matching
     cell_info.metrics_for's schema -- real registered topic/label
     values by default, so the binders exercise the actual registered
-    bindings rather than an invented shape."""
+    bindings rather than an invented shape.
+
+    `b_id` names the second cell. It defaults to "B" -- the P3 duel, and
+    the ONE pair for which `build_verdict_table` opens the empty-`duel_id`
+    legacy pool. Pass "B-cyc" to build the P4 duel, where that clause must
+    stay shut. Both pairings are needed to pin the pool wiring; see
+    `test_build_verdict_table_computes_the_pool_rule_from_the_cell_pair`.
+    """
     return {
         "cells": [
             {
@@ -1314,7 +1446,7 @@ def _cells_doc(a_overrides=None, b_overrides=None, arms=("static", "closed-loop"
                 "metrics": _metrics(**(a_overrides or {})),
             },
             {
-                "id": "B",
+                "id": b_id,
                 "approach": "tier4-native",
                 "arms": list(arms),
                 "metrics": _metrics(**(b_overrides or {})),
