@@ -33,7 +33,7 @@
  5. cells/extension.sh: boot sim + stack, wait for readiness
       $ bash /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/cells/extension.sh up
 OK: base_link anchor +0.00000000 m (no vehicle shift)
- Container autoware Running 
+ Container autoware Running
 waiting up to 420s for CARLA + ego (log: /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/results/A/run-015/launch.log)
 OK: CARLA up on port 2000 with a spawned ego
 

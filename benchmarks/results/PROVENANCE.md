@@ -4714,3 +4714,204 @@ precedence rule this round proved necessary: **where a console string and a
 filed artifact disagree, the artifact wins** — §15.2 is exactly such a case, and
 it was resolved against `results/B-cyc/run-001/arm.log`.
 
+## 16. CORRECTIONS to §15, appended 2026-08-03 (P4 Task 11, review fix round 2)
+
+**§14 and §15 are left exactly as written**; this section supersedes §15 on two
+points. Nothing under `benchmarks/results/*/run-*` was touched. Both items were
+re-derived here from the filed artifacts and from the code, not taken on
+report.
+
+### 16.1 CORRECTED: §15.2's base rate is 15, not 17 — and the padding pulled in the exact counter-case the paragraph argues against
+
+§15.2 says the `change_to_autonomous: not yet ok` WARN appears in **17** filed
+`arm.log`s, 7 of them cell C. **Both figures are wrong.** The true count, on an
+exact-match predicate for the server-authored reason text:
+
+| reason text carried by the WARN                                    | files  |
+| ------------------------------------------------------------------ | ------ |
+| `(The target mode is not available. Please check the diagnostics.)` | **15** |
+| `(no response (spin timed out))`                                    | **3**  |
+
+with the 15 breaking down **A 1, B 4, B-cyc 1, C 8, E 1** — cell C contributes
+**8**, not 7.
+
+```bash
+python3 - <<'PY'
+import collections, pathlib
+SERVER = ("change_to_autonomous: not yet ok (The target mode is not available. "
+          "Please check the diagnostics.); retrying")
+TIMEOUT = "change_to_autonomous: not yet ok (no response (spin timed out)); retrying"
+srv, tmo = [], []
+for d in sorted(pathlib.Path("benchmarks/results").glob("*/run-*")):
+    ap = d / "arm.log"
+    if not ap.exists():
+        continue
+    txt = ap.read_text()
+    key = f"{d.parent.name}/{d.name}"
+    if SERVER in txt: srv.append(key)
+    if TIMEOUT in txt: tmo.append(key)
+print(f"server-authored refusal: {len(srv)} files {collections.Counter(k.split('/')[0] for k in srv)}")
+print(f"spin timed out:          {len(tmo)} files {tmo}")
+PY
+```
+
+**How 17 was reached, and why it was self-undermining.** The count came from a
+substring match on `change_to_autonomous: not yet ok`, which matches **both**
+reason texts. The two extra files are `B/run-009` and `B/run-012`, and they
+carry **only** the `no response (spin timed out)` form — **the
+discovery-failure signature that the very paragraph is arguing the filed WARN is
+NOT.** Padding the base rate with the counter-case makes the number circular as
+well as wrong.
+
+**Those two files are therefore EXCLUDED from the base rate, and the exclusion
+is the substantive part of the number, not a footnote.** A base rate offered as
+evidence that "this WARN is not a discovery failure" may not count
+discovery-failure events among its instances.
+
+**A precision the correction itself turned up, and it CUTS IN I2's FAVOUR.** The
+spin-timeout signature appears in **3** files, not 2: `B/run-009`, `B/run-012`
+and **`B/run-028`** — and `run-028` carries **both** forms (1 server refusal +
+1 spin timeout), which is why it was already inside the 15 and did not inflate
+the count. This shows the two signatures are **not mutually exclusive at run
+granularity**, because `arm_and_goal.py:601` chooses the reason text **per
+call**. The discriminator is therefore a property of each individual WARN, not
+of a run — and `B-cyc/run-001` carries **1 server-authored refusal and 0
+spin-timeouts**. §15.2's adjudication is unaffected and slightly better founded
+than it was.
+
+**Composition of the 15, stated rather than left as the bare claim "both
+middlewares" (which survives):**
+
+- transport: **12 `rmw_cyclonedds_cpp` / 3 `rmw_fastrtps_cpp`** (the three
+  Fast-DDS files are `B/run-010`, `B/run-028`, `B/run-032`);
+- note that the split is **not** cell-keyed: `B/run-033` is a *cell-B* run that
+  ran under `rmw_cyclonedds_cpp` — its filed manifest's deviation-probe
+  transport — so it counts on the cyclone side. Read the split off the
+  manifests, not off the cell ids;
+- outcome: **10 of 15** went on to `change_to_autonomous: SUCCEEDED` (7 of the
+  8 cell-C files, plus `A/run-002`, `B/run-033`, `B-cyc/run-001`), and **11 of
+  15** reached `ARMED:` — the extra one is `C/run-009`, which armed through the
+  legacy `/autoware/engage` path without `change_to_autonomous` ever succeeding.
+
+**I2's adjudication is NOT overturned.** It rests on the code discriminator
+(`arm_and_goal.py:591`, `:601-602`, `:175`) and on `arm.log:5-6`, neither of
+which uses this count. Only the corroborating base rate was miscounted.
+
+**The superseded figure is in permanent history and cannot be recalled.**
+Commit `cf072ea`'s message body carries the wrong 17/7 figures, and this
+campaign does not rewrite history to correct a record — the correction is
+attached here instead, so a reader who greps the log finds it.
+
+### 16.2 CORRECTED: a REGISTERED-but-EMPTY metric does NOT drop the row — traced in code and reproduced offline
+
+§15.1 states the Task 12 consequence as the "either side unbound" condition that
+makes `duel_verdict.build_verdict_table` drop the whole M1b row. **That
+mechanism is wrong, and Task 5's own registration is what makes it wrong.**
+
+**The trace, end to end:**
+
+1. `_bind_control_staleness_ms` (`benchmarks/scripts/duel_verdict.py:769-772`)
+   binds on `topic is None` — on **registration**, never on measured rows. Task
+   5 filled cell A's `control_published_time_topic`, so cell A is no longer
+   `None`. **The bind SUCCEEDS for both cells** (measured: `extractor=SET
+   reason=None` for A and for B).
+2. `build_verdict_table`'s early-out is `if extractor_a is None or extractor_b
+   is None` (`:1281`), which produces the `"UNAVAILABLE: … not registered"`
+   `insufficient-data` row **without walking the run directories**. With A now
+   bound, **that branch is not taken.** This is the path §15.1 described, and it
+   is no longer the path taken.
+3. Execution reaches `_apply_extractor` (`:487-504`), which runs the extractor
+   **per run**. `extract_control_staleness_ms` reads `published_time.csv`;
+   `read_published_time_csv` on a header-only file returns `{}` (measured
+   directly on `results/A/run-015/published_time.csv`), so
+   `published_time_topic not in published` raises
+   `MetricUnavailableError("<topic> not in <run_dir>/published_time.csv")`.
+4. `_apply_extractor` catches it (`:502-503`, `# reported, never swallowed`) and
+   records `"<run>: FAILED MetricUnavailableError: …"`. **No exception escapes,
+   no NaN is fabricated, no run is silently skipped.**
+5. `values_a` is therefore empty. `verdict_row` (`:180`) takes its
+   `a.size < 3` branch (`:230`), returning a row with `n_a = 0`, `delta = None`,
+   `ci = None`, verdict **`insufficient-data`**; the per-run errors are then
+   appended to that row's notes (`:1305-1307`).
+
+**Reproduced offline rather than argued** — real filed runs copied to a temp
+tree, `duel_admissible` flipped **in the copies only**, `margins` restricted to
+the single metric:
+
+```text
+| metric               | arm    | n (a/b) | delta_median | 95% ci | margin | verdict           | notes |
+| control_staleness_ms | static | 0/3     | -            | -      | 10     | insufficient-data | UNDER-N: a has 0 run(s) (< 3); insufficient data for a bootstrap CI (need >= 3 per side; got a=0, b=3); run-013: FAILED MetricUnavailableError: /control/command/control_cmd/debug/published_time not in …/A/run-013/published_time.csv; run-014: FAILED …; run-015: FAILED … |
+```
+
+**So what the code actually does with a registered-but-empty metric: it EMITS
+the row** — `n (a/b) = 0/N`, no delta, no CI, verdict `insufficient-data` —
+**and carries one `MetricUnavailableError` line per cell-A run in the notes.**
+On a duel-size pool that is ten repeated note lines for one cell.
+
+**What survives from §15.1, and what is corrected.** The *conclusion* survives
+and is unchanged: there is no computable A-vs-B `control_staleness_ms`
+comparison on the static arm, and the situation is **asymmetric** — cell B binds
+*and* measures, cell A binds and measures nothing. The *mechanism* is corrected:
+this is **not** the "either side unbound" condition. Task 5's registration moved
+cell A **out** of that condition, from *cleanly unavailable with a single
+"not registered" reason line* to *bound-but-empty with N per-run failure lines*.
+
+**A consequence Task 16 should know before it writes the table:** the verdict
+cell will read `insufficient-data`, not `UNAVAILABLE: … not registered`, so the
+*reason* is legible only in the notes column — and it arrives as N repeated
+lines rather than one. That is louder and per-run localized, which is the
+harness behaving as designed, but it is a different reading experience from what
+§15.1 implied.
+
+**DISCLOSURE about the reproduction, recorded rather than omitted.** The quoted
+run used temp **copies** of three real filed static runs per side (originals
+untouched, `duel_admissible` the only field changed, in the copy), a pool of 3
+against `min_n=3`. **It is not a duel verdict and must never be read as one**:
+the pool is far under the registered duel size and every source run's real
+manifest says `duel_admissible: false`. `margins` was restricted to
+`control_staleness_ms`, so no other metric was computed and **no delta was
+produced anywhere** — the one row computed has `n_a = 0` and therefore carries
+none by construction.
+
+An **earlier variant** of the same reproduction ran with the **full** margins
+set and incidentally rendered the other four metric rows over that same
+non-admissible 3-run pool. **Those values were not recorded, are not filed, and
+are not carried into this or any other document or decision**; the reproduction
+was immediately re-run scoped to the single metric, and the scoped run is what
+is quoted above. This is disclosed because the no-peeking rule is a rule about
+what gets *used*, and an undisclosed near-miss is worse than a disclosed one.
+
+### 16.3 Found while filing §16: `benchmarks/evidence/**` is NOT excluded from the text-mutating hooks, and one filed byte moved
+
+Recorded because it is a standing property of the repository, not an artefact of
+this task, and because it made a certification written in fix round 1 briefly
+false.
+
+`.pre-commit-config.yaml` excludes `^benchmarks/(patches|results)/` from
+`trailing-whitespace`, `end-of-file-fixer` and `mixed-line-ending`, with the
+stated reason that those trees are recorded evidence and "a formatter that
+rewrites them alters the measurement after the fact" (measured in Task 10: 17
+committed result files modified, `manifest.json` among them). It separately
+excludes `^benchmarks/evidence/` from `ruff` / `ruff-format`, with an even
+stronger note — evidence is "RETAINED EVIDENCE, not style-linted code", and
+reformatting a certified script would "falsify that certification".
+
+**But `benchmarks/evidence/**` is not excluded from the generic TEXT mutators.**
+So evidence *scripts* are protected from reformatting while evidence *text* is
+not. Filing this task's console logs hit exactly that: the
+`trailing-whitespace` hook stripped one trailing space from one line of
+`benchmarks/evidence/p4-task11-bringup/a-bringup-console.log`
+(`" Container autoware Running "` → `" Container autoware Running"`, docker
+compose's own output). **One byte, one line, no quoted figure affected** — and
+`benchmarks/results/**` was untouched throughout, as its exclude guarantees.
+
+**Nothing was changed to "fix" this**, for two reasons: widening the excludes is
+a policy decision over the whole evidence tree rather than something to take
+unilaterally while filing into it, and the existing precedent
+(`b-closed-loop-stopcheck/run-004-console.log`) is in the same state, so the
+current behaviour is the house norm rather than a regression. What was corrected
+instead is the **claim**: that directory's own `PROVENANCE.md` said the logs were
+"byte-exact", and it now carries a dated correction narrowing that to "the
+session capture modulo trailing-whitespace normalization on the one line named".
+A certification is only worth what it is true about.
+
