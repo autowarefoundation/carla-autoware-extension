@@ -1,0 +1,47 @@
+[INFO]: Deployed PostProcess profile: /home/youtalk/src/carla-autoware-native/Unreal/CarlaUnreal/Content/Carla/Config/PostProcess/autoware_demo.json
+Map 'None' is already loaded — skipping reload.
+Loaded map: Not set yet
+[INFO]: Applied settings:
+	synchronous mode: True
+	fixed time step: 20 (in Hz)
+	simulation dt: 0.05 (in seconds)
+	physics substepping: True
+	time scale: 1.00
+	pure step execution: False
+[INFO]: Ego spawned!
+[WARNING]: Kill this script before stopping simulation!
+[WARNING]: Simulation is 180.8 ms behind schedule
+[WARNING]: Simulation is 136.8 ms behind schedule
+[WARNING]: Simulation is 213.8 ms behind schedule
+[WARNING]: Simulation is 170.0 ms behind schedule
+[WARNING]: Simulation is 223.8 ms behind schedule
+[WARNING]: Simulation is 180.9 ms behind schedule
+[WARNING]: Simulation is 229.6 ms behind schedule
+[WARNING]: Simulation is 189.3 ms behind schedule
+[WARNING]: Simulation is 256.0 ms behind schedule
+[WARNING]: Simulation is 211.6 ms behind schedule
+[WARNING]: Simulation is 372.6 ms behind schedule
+[WARNING]: Simulation is 328.6 ms behind schedule
+[WARNING]: Simulation is 455.4 ms behind schedule
+[WARNING]: Simulation is 412.0 ms behind schedule
+[WARNING]: Simulation is 503.4 ms behind schedule
+[WARNING]: Simulation is 460.5 ms behind schedule
+[WARNING]: Simulation is 493.5 ms behind schedule
+[WARNING]: Simulation is 448.7 ms behind schedule
+[WARNING]: Simulation is 447.6 ms behind schedule
+[WARNING]: Simulation is 404.2 ms behind schedule
+[WARNING]: Simulation is 401.2 ms behind schedule
+[WARNING]: Simulation is 358.0 ms behind schedule
+[WARNING]: Simulation is 354.4 ms behind schedule
+[WARNING]: Simulation is 311.5 ms behind schedule
+[WARNING]: Simulation is 316.9 ms behind schedule
+[WARNING]: Simulation is 272.6 ms behind schedule
+[WARNING]: Simulation is 266.1 ms behind schedule
+[WARNING]: Simulation is 222.9 ms behind schedule
+[WARNING]: Simulation is 210.0 ms behind schedule
+[WARNING]: Simulation is 167.1 ms behind schedule
+[WARNING]: Simulation is 153.4 ms behind schedule
+[WARNING]: Simulation is 113.4 ms behind schedule
+[WARNING]: Simulation is 105.5 ms behind schedule
+[WARNING]: Simulation is 63.8 ms behind schedule
+[WARNING]: Simulation is 53.6 ms behind schedule
