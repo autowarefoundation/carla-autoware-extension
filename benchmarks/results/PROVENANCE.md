@@ -4915,3 +4915,46 @@ instead is the **claim**: that directory's own `PROVENANCE.md` said the logs wer
 session capture modulo trailing-whitespace normalization on the one line named".
 A certification is only worth what it is true about.
 
+## 17. `benchmarks/evidence/**` closed against the text-mutating hooks (2026-08-03, config fix)
+
+§16.3 recorded a standing gap in `.pre-commit-config.yaml`, not just a fact
+about this task's filing: `trailing-whitespace`, `end-of-file-fixer` and
+`mixed-line-ending` were excluded on `^benchmarks/(patches|results)/`, and
+`ruff`/`ruff-format` were separately excluded on all of `benchmarks/evidence/`,
+but the three generic text mutators still applied to `benchmarks/evidence/**`
+unexcluded. That gap is what let `cf072ea`'s `trailing-whitespace` run silently
+strip one trailing space from the filed
+`p4-task11-bringup/a-bringup-console.log`. Tasks 12-16 file more console
+evidence into that tree, so leaving the gap open exposed every future filing to
+the same silent mutation.
+
+**What changed:** the three hooks' excludes now also match
+`^benchmarks/evidence/(?!.*\.md$)` — every file under `benchmarks/evidence/`
+except `.md` files. That covers the verbatim captures (`.log`, `.txt`, and
+data/config copies such as `Town10HD_Opt.yaml`) and the probe scripts that
+produced them (`.py`, `.sh`), on the same certification-falsifying reasoning
+the existing `ruff` exclude already states: each directory's `PROVENANCE.md`
+certifies specific scripts as the exact code behind a specific filed figure, and
+a whitespace/newline rewrite falsifies that exactly as a `ruff` reformat would.
+`PROVENANCE.md` and `README.md` were deliberately left OUT of the new exclude —
+they are authored narrative, not captured transcripts, markdownlint already
+lints them (`benchmarks/results/` is markdownlint-excluded; `benchmarks/
+evidence/` is not), and they benefit from ordinary whitespace/line-ending
+hygiene like any other maintained prose in this repo.
+
+Verified live rather than assumed: an untracked file with trailing whitespace
+and a CRLF line placed under `benchmarks/evidence/` came out of
+`pre-commit run --all-files` byte-for-byte identical, while an identical
+control file placed outside the tree was rewritten by both
+`trailing-whitespace` and `mixed-line-ending`. The temporary files were removed
+after the check; nothing under `benchmarks/evidence/` or `benchmarks/results/`
+was added, deleted, or edited by this verification.
+
+**Deliberately NOT changed:** the space `cf072ea` already stripped from
+`a-bringup-console.log` is NOT restored. That file is filed evidence, and
+editing it now, for any reason, would be a second hand-edit of the exact kind
+the Global Constraint forbids. §15's narrowed certification in
+`p4-task11-bringup/PROVENANCE.md` — "byte-exact... modulo trailing-whitespace
+normalization on the one line named" — stands as written and is not revised by
+this section.
+
