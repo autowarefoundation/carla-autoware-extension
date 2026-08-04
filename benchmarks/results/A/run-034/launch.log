@@ -1,0 +1,44 @@
+OK: map Town10HD_Opt  autoware bundle /autoware_map/town10-regen
+OK: export CARLA_AUTOWARE_MAP=Town10HD_Opt  # gate scripts in this shell need this too
+OK: editor plugin .so is newer than HEAD (1785790050 >= 1785789893)
+OK: engine and Carla module BuildId agree (bc08ce19-f19c-46fe-808f-dbb2b0ddf41a)
+OK: /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/extension/build/libcarla-autoware-extension.so exports carla_ros2_extension_init
+OK: reusing extracted fork carla wheel at /tmp/carla-e2e-carla-wheel
+OK: export PYTHONPATH=/tmp/carla-e2e-carla-wheel:$PYTHONPATH  # gate scripts in this shell need this too
+OK: fork carla wheel injected; World.set_publish_tf present
+OK: CARLA RPC port 2000 bound after 20s
+OK: bringing Autoware up (e2e_simulator, simulator_type:=carla, map Town10HD_Opt, bundle /autoware_map/town10-regen) -- log: /tmp/e2e-autoware.log
+autoware launch pid 77
+OK: waiting for Autoware to settle and /autoware_carla_interface to fire-and-die (<= 300s)
+OK: Autoware up (169 nodes); /autoware_carla_interface has fired-and-died -- safe to spawn the native ego
+OK: starting single-LiDAR concat relay /sensing/lidar/top/pointcloud_before_sync -> /sensing/lidar/concatenated/pointcloud
+concat relay pid 1692
+stop: pid 1692 (/tmp/e2e-concat-relay.cpid) + 1 descendant(s)
+stop: 2 of pid 1692's tree still up; SIGINT
+stop: pid 1692 tree gone
+stop: pid 77 (/tmp/e2e-autoware.cpid) + 63 descendant(s)
+stop: 64 of pid 77's tree still up; SIGINT
+stop: pid 77 tree gone
+autoware launch + concat relay stopped (2 pid file(s) checked, 66 process(es) in the recorded trees, 0 survivor(s); container now: 4 running, 3 defunct)
+scripts/e2e/run_e2e.sh: line 249: 1412560 Segmentation fault      (core dumped) "$CARLA_UNREAL_ENGINE_PATH/Engine/Binaries/Linux/UnrealEditor" "$CARLA_ROOT/Unreal/CarlaUnreal/CarlaUnreal.uproject" "$MAP" -game -RenderOffScreen -nosound --ros2 --rmw=cyclonedds --ros2-extension="$EXT_SO" > "$LOG" 2>&1
+ERROR: failed to destroy actor 26 : std::exception 
+ERROR: failed to destroy actor 27 : std::exception 
+ERROR: failed to destroy actor 25 : std::exception 
+Traceback (most recent call last):
+  File "/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/runner/loop.py", line 87, in run_sync_loop
+    world.tick()
+RuntimeError: std::exception
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/runner/__main__.py", line 362, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/runner/__main__.py", line 333, in main
+    loop(
+  File "/home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/runner/loop.py", line 97, in run_sync_loop
+    world.apply_settings(settings)
+RuntimeError: std::exception

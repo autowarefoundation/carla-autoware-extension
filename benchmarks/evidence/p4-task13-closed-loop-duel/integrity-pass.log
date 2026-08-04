@@ -1,0 +1,60 @@
+# new runs: A=10  B-cyc=10
+
+## integrity pass -- cell A
+run              arm         mval  duel_id    adm   qual  wdog  excl  engage  goal!=None reason
+A/run-026        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-027        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-028        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-029        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-030        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-031        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-032        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-033        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-034        closed-loop True  A+B-cyc    True  True  False False True    True       -
+A/run-035        closed-loop True  A+B-cyc    True  True  False False True    True       -
+
+## integrity pass -- cell B-cyc
+run              arm         mval  duel_id    adm   qual  wdog  excl  engage  goal!=None reason
+B-cyc/run-012    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-013    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-014    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-015    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-016    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-017    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-018    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-019    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-020    closed-loop True  A+B-cyc    True  True  False False True    True       -
+B-cyc/run-021    closed-loop True  A+B-cyc    True  True  False False True    True       -
+
+## closed-loop checks summary (per cell, no comparison)
+A      engage_recorded 10/10   goal_closest_approach_m non-null 10/10   arm=='closed-loop' 10/10   quality.arm=='closed-loop' 10/10
+B-cyc  engage_recorded 10/10   goal_closest_approach_m non-null 10/10   arm=='closed-loop' 10/10   quality.arm=='closed-loop' 10/10
+
+## Q1 -- PROVENANCE section 15.5's three checks, cell A (within-cell gate fact)
+run               pt_rows  cc_rows   ratio  all_rows_registered_topic  topics
+A/run-026            2963     2963   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-027            2965     2966   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-028            2968     2968   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-029            2966     2967   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-030            2967     2967   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-031            2966     2967   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-032            2964     2965   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-033            2965     2966   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-034            2969     2969   1.000  True                       /control/command/control_cmd/debug/published_time
+A/run-035            2967     2967   1.000  True                       /control/command/control_cmd/debug/published_time
+
+## PROVENANCE section 15.5's three checks, cell B-cyc -- CHECKS ONLY (no counts)
+run              non_empty  all_registered_topic  rows==cc_rows 
+B-cyc/run-012    True       True                  True          
+B-cyc/run-013    True       True                  True          
+B-cyc/run-014    True       True                  True          
+B-cyc/run-015    True       True                  True          
+B-cyc/run-016    True       True                  True          
+B-cyc/run-017    True       True                  True          
+B-cyc/run-018    True       True                  True          
+B-cyc/run-019    True       True                  True          
+B-cyc/run-020    True       True                  True          
+B-cyc/run-021    True       True                  True          
+
+## admissible: A=10  B-cyc=10
+## admissible PAIRS (min of the two) = 10

@@ -1,0 +1,56 @@
+{
+  "advisory": true,
+  "attempts": [
+    {
+      "attempt": 1,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "15.22 [s]",
+          "level": 0,
+          "status": "OK"
+        }
+      },
+      "relog_after": {
+        "lanelet2_map_visualization]: Map is loaded": 2,
+        "vector_map_tf_generator]: broadcast static tf": 1
+      },
+      "relog_before": {
+        "lanelet2_map_visualization]: Map is loaded": 2,
+        "vector_map_tf_generator]: broadcast static tf": 1
+      },
+      "verified": true,
+      "verified_relog": false,
+      "verify_wait_s": 0.007
+    }
+  ],
+  "capture_wait_s": 6.029,
+  "captured": true,
+  "data_bytes": 1305281,
+  "exit_code": 0,
+  "matching_settled": true,
+  "monitor_final": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "15.22 [s]",
+      "level": 0,
+      "status": "OK"
+    }
+  },
+  "pre_republish_delivered": true,
+  "pre_republish_monitor": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "15.22 [s]",
+      "level": 0,
+      "status": "OK"
+    }
+  },
+  "process_exit_code": 0,
+  "relog_final": {
+    "lanelet2_map_visualization]: Map is loaded": 2,
+    "vector_map_tf_generator]: broadcast static tf": 1
+  },
+  "subscriber_count": 17,
+  "topic": "/map/vector_map",
+  "verdict_code": 0,
+  "verified": true,
+  "verified_relog": false
+}

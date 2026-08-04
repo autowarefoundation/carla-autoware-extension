@@ -5478,3 +5478,275 @@ per-run table was and remains exact, and the load-bearing claim — **all ten
 ≥ 0.9**, satisfying the claim table's first disjunct — is correct and unchanged.
 The commit message cannot be amended after the fact, so the superseded bound is
 recorded here as superseded.
+
+## 20. P4 Task 13: the A-vs-B-cyc CLOSED-LOOP duel collected (live, 2026-08-04)
+
+**This is the arm P3 could never collect at all.** §10.2 records that P3 filed no
+closed-loop equivalence verdict because cell B's closed loop would not arm;
+§7.11 bounded that blocker to the Fast-DDS transport; Task 11 showed cell B-cyc
+under the registered row-11 Cyclone configuration arms and drives. This section
+records the collection of the closed-loop half of the duel.
+
+**No comparison between the two cells appears in this section, in the evidence
+directory, or anywhere else this task wrote.** `duel_verdict.py` was NOT run —
+Task 16 owns the single invocation. Where a per-run number is stated it is a
+gate or integrity fact about one cell, never set against the other.
+
+### 20.1 Session preamble
+
+One `duel.sh` invocation, so one preamble, taken immediately before it. `pgrep`
+was bracket-escaped (`pgrep -af '[U]nrealEditor|[C]arlaUE4'`) so it could not
+self-match.
+
+| reading                       | value                                                             |
+| ----------------------------- | ----------------------------------------------------------------- |
+| wall clock                    | 2026-08-03T23:01:18-07:00                                         |
+| loadavg 1 min (gate < 2)      | **0.78**                                                          |
+| `scaling_governor`            | `powersave` (recorded, NOT changed)                               |
+| CARLA already running?        | no                                                                |
+| other GPU consumer?           | none — Xorg, gnome-shell, browser, warp-terminal only             |
+
+Across all twenty runs the per-run preflight recorded `engine_build_id`
+`bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` and `cpu_governor=powersave` without
+variation. **D8 was not spent**: no relink, and nothing committed in
+`~/src/carla-autoware-integration` or `~/src/carla-autoware-native`. Preflight
+`loadavg` spanned **0.32 … 2.14**, never near `MAX_LOADAVG` = 8.
+
+Transport verified per run, one distinct tuple per cell: both cells
+`rmw_cyclonedds_cpp` with SHM off, cell A with the `lo` profile (`1eeef31e…`),
+B-cyc with none — the registered rmw-matched-not-profile-matched interface
+difference, still a confound row, recorded here and not re-litigated.
+
+### 20.2 The invocation, and the supervision change
+
+```bash
+bash benchmarks/scripts/duel.sh A B-cyc --arm closed-loop --pairs 10
+```
+
+Ran to `duel complete: A 10 ok / 0 failed, B-cyc 10 ok / 0 failed`. **One
+invocation, no abort, no resume, no make-up pairs.** The cells were passed in
+the order `A B-cyc`, so `duel.sh` stamped `--duel-id "A+B-cyc"` on all twenty
+runs — the order `duel_verdict.py:1232` concatenates without normalisation.
+
+Two capture-level deviations from the brief's literal text, neither able to
+affect what `duel.sh` did:
+
+- **`>` redirection instead of `| tee`**, to the brief's own path
+  (`/tmp/duel-closedloop-p4.log`); an `rtk` proxy compresses piped output and
+  this console is filed as byte-exact evidence.
+- **Launched under `setsid`**, in its own session, PID in
+  `/tmp/duel-closedloop.pid`, managed from there and never via `pgrep -f` /
+  `pkill -f`. This applies §18.2's lesson from the start rather than after a
+  loss. It is a change to how the driver is **supervised**, never to how runs
+  are produced: `duel.sh` retained ownership of interleaving, pacing, `--duel`
+  and the `--duel-id` stamp throughout.
+
+**The supervision earned its keep, and in doing so it corroborated §19.1.** At
+2026-08-04T00:21 local a passive background watcher — a bare `until grep …;
+sleep 30` loop touching nothing in the benchmark — was reported killed by the
+agent orchestration layer. The duel driver was checked at that instant and was
+alive: `PID = PGID = SID = 1204301`, state `Ss`, 1 h 39 m elapsed. It completed
+all ten pairs. §19.1 classified the Task 12 kill on exactly this shape of
+evidence and conceded that the watcher-death observation had no byte-exact
+artifact; the same is true here, and it is recorded as an **operator
+observation** rather than dressed up. What is new is the control: this time a
+driver outside the agent's process tree survived the same event that killed a
+watcher inside it.
+
+### 20.3 Integrity pass — twenty runs, every check, zero exclusions
+
+All twenty runs: `manifest.validate()` → `[]`, `duel_id == "A+B-cyc"`,
+`duel_admissible == true`, `quality.json` present, `clock_stall.marker` absent,
+`excluded == false` with an empty `exclusion_reason`. **No exclusion was taken,
+so no reason text needed quoting**, and no `exclusions.md` criterion 1-10 was
+invoked.
+
+The two closed-loop checks the static duel could not have:
+
+- **engage recorded — 20/20.** Each run's `arm.log` carries both
+  `/autoware/engage: published engage=true` (`arm_and_goal.py:730`) and the
+  `ARMED: … autonomous engaged` verdict line (`:936`). Both are required: the
+  publish is not the verdict, and the verdict line is what step 9's exit status
+  reflects.
+- **`goal_closest_approach_m` non-null — 20/20.** Every run also carries
+  `arm: "closed-loop"` in both `manifest.json` and `quality.json`.
+
+Additionally, every one of the twenty recorded `gate_pass: true` with
+`reasons: []` and `ladder_branch: "absolute"`.
+
+| pair | slot 1        | slot 2        |
+| ---- | ------------- | ------------- |
+| 1    | `A/run-026`   | `B-cyc/run-012` |
+| 2    | `B-cyc/run-013` | `A/run-027`   |
+| 3    | `A/run-028`   | `B-cyc/run-014` |
+| 4    | `B-cyc/run-015` | `A/run-029`   |
+| 5    | `A/run-030`   | `B-cyc/run-016` |
+| 6    | `B-cyc/run-017` | `A/run-031`   |
+| 7    | `A/run-032`   | `B-cyc/run-018` |
+| 8    | `B-cyc/run-019` | `A/run-033`   |
+| 9    | `A/run-034`   | `B-cyc/run-020` |
+| 10   | `B-cyc/run-021` | `A/run-035`   |
+
+**Admissible pairs = 10.** Target met; no make-up pairs needed.
+
+Reproduce: `benchmarks/evidence/p4-task13-closed-loop-duel/integrity_pass.py`,
+output filed alongside it as `integrity-pass.log`.
+
+### 20.4 Measurement conditions: §18.3's two residues do NOT recur
+
+Both of Task 12's disclosed residues were artefacts of its **resume**, and this
+collection took one invocation, so both are absent:
+
+- **First-slot occupancy is exactly 5/5** (cell A first in pairs 1, 3, 5, 7, 9;
+  B-cyc first in pairs 2, 4, 6, 8, 10), read off the pair table above. §19.7
+  established that slot 1 is the favourable position; here neither cell is
+  charged it more often than the other.
+- **Exactly one unpaced start** — `A/run-026`, the invocation's first run, which
+  `duel.sh` skips pacing for by design (`one_run`'s `RUN_COUNT` check). Its
+  preflight `loadavg` was 0.99, inside the 0.32-2.14 band of the nineteen paced
+  runs.
+
+Pacing was textbook: **19 records appended to `duel-pacing.log`, all with
+`topup_s=0`** — the load-triggered top-up never fired, so every wait paid was
+the uniform 120 s floor alone.
+
+### 20.5 Q1 SETTLED: cell A's closed-loop arm DOES populate `published_time.csv`
+
+§15.5 put in the record that filed evidence *predicted* this and that a single
+cell-A closed-loop run with the current observer list would settle it. Ten did.
+It named three checks; **all three hold on all ten cell-A runs**:
+
+1. `published_time.csv` non-empty — 10/10, 2963-2969 rows (the static arm's
+   14/14 filed cell-A runs are header-only, 36 bytes).
+2. Every row keyed to `/control/command/control_cmd/debug/published_time` —
+   10/10, that topic is the **only** one present in any of the files.
+3. Row count of the same order as the run's `/control/command/control_cmd`
+   count in `observer.csv` — the ratio is **1.000 on all ten** (six runs exact,
+   four short by a single row).
+
+**`control_staleness_ms` therefore binds for cell A on the closed-loop arm, and
+the open item closes. The registration does NOT need re-scoping.** §14.2's claim
+was correctly scoped to the static arm and is unaffected; what is now settled is
+that the asymmetry §15.1 identified is an *arm* property for cell A, not a cell
+property. The predicted mechanism is confirmed exactly as
+`config/observer_topics/A.yaml`'s post-arm probe suggested: the topic exists and
+publishes once the stack is armed, and the observer records it once both
+conditions co-occur.
+
+Stated as a per-cell gate fact. **No cell-B-cyc counterpart is set against it
+here**, and the row counts of the two cells are not compared.
+
+### 20.6 Q2: the §19.4 signature LOSES its discriminating power, and no sample was lost
+
+§19.4 left open whether the static-arm break was an Autoware-side state bug
+(cell-independent) or an intermittent bare-DDS discovery miss — which, if true,
+would mean B-cyc's registered row-11 caveat is costing it samples. It named
+Task 13's closed-loop runs as the free discriminator. Recorded per run,
+observation only; no diagnostic run was added and the frozen observer set was
+not touched.
+
+| signature                                                       | runs, of 10                                                     |
+| --------------------------------------------------------------- | --------------------------------------------------------------- |
+| `Subscribed control_cmd is timed out.` (§19.4's discriminator)   | **1** — `run-013` (10×)                                          |
+| `waiting for operation_mode_availability msg...`                 | 8 — all but `run-014`, `run-015`                                 |
+| `waiting for mrm emergency stop to become available...`          | 2 — `run-013`, `run-017`                                         |
+| `no mrm operation available: operate emergency_stop`             | 10 — 1-11× each                                                  |
+| `MRM State changed`                                              | 10 — 136-459× each                                               |
+| arm reached `ARMED`                                              | **10**                                                           |
+| `change_to_autonomous` retries                                   | **exactly 1 in every run**, including both runs with no readiness message |
+
+**Three findings, each a gate/diagnostic fact.**
+
+**(a) The signature is not a marker of a lost sample.** It appeared in
+`B-cyc/run-013`, and that run armed, engaged, drove, recorded `gate_pass: true`,
+and filed a full `published_time.csv` at ratio 1.000 against its own
+`control_cmd` count — indistinguishable in shape from the nine runs without it.
+A signature that occurs in a fully successful run does not identify the failed
+ones.
+
+**(b) It is downstream of the condition, not a cause of it — established by
+timestamps.** In `run-013` the ten occurrences form one contiguous band at 3 s
+cadence, `1785824064.934` → `1785824091.968`, and then never recur. The arm
+script's first line (`waiting for /localization`) is at `1785824092.925`, i.e.
+the band ends **0.96 s before the arm even starts**, and the first observed
+`/control/command/control_cmd` arrival is at `1785824094.686`, **2.72 s after
+the last occurrence**. The line reports "control_cmd has not arrived within the
+timeout" — it tracks the symptom. In a static arm, where §19.4 showed
+`control_cmd` exists only while `mrm_handler` cycles, that condition becomes
+permanent once the cycling stops, which is why the line ran the whole window in
+`002`/`003`. In a closed-loop arm it clears the moment the controller starts
+publishing.
+
+**(c) The readiness messages are routine bring-up ordering, not a discovery
+race.** `waiting for operation_mode_availability msg...` appears in 8 of 10
+runs, seven of which show no timeout signature at all, and **all ten armed**.
+Arm difficulty does not correlate with any signature: every run took exactly one
+`change_to_autonomous` retry — the same single retry §15.2 established as the
+norm — including `run-014` and `run-015`, which carry no readiness message. And
+`mrm_handler` cycled 136-459 times in every run, continuing past engage, so its
+availability / hazard-status feedback path was live in 10/10 closed-loop runs.
+
+**What this does and does not settle.** It removes the §19.4 signature's
+discriminating power for the discovery-miss hypothesis, and it establishes that
+**B-cyc's row-11 caveat cost this collection nothing: 10/10 runs armed, zero
+exclusions, no retry attributable to discovery.** There is no systematic row-11
+uncollectability on the closed-loop arm, so the wrap has no arm-cost to report.
+It does **not** directly reproduce the static-arm failure, and honesty requires
+saying so: in the closed-loop arm `control_cmd` is produced by a controller, so
+the static arm's precondition — `control_cmd` existing only as a side effect of
+emergency cycling — cannot arise. §19.4's own proposal, capturing
+`/system/operation_mode/availability` and the diagnostic-graph output directly,
+remains the only thing that would settle the static-arm case, and both topics
+are still outside the frozen five-topic observer set.
+
+**§19.4's non-exclusion of `B-cyc/run-002` and `run-003` is not reopened**, and
+nothing here reclassifies them. Establishing more about a cause does not make a
+run excludable; the criteria are the criteria.
+
+### 20.7 Registered behaviours that held
+
+**No editor-artifact ownership flip.** `tier4_plugin_sha256` (`26f95dec…`) and
+`tier4_source_sha256` (`eb8aa9af…`) are identical across all ten B-cyc runs and
+identical to Task 12's, with both verify scripts passing on every run. §11.6's
+alternation hazard did not materialise across a further twenty alternating runs,
+extending §18.6's twenty-run observation to forty.
+
+**Cell A's empty `published_time.csv` is a STATIC-arm behaviour, now bounded.**
+It held 24/24 on the static arm and 0/10 here — see §20.5. The registration
+stands; its scope is now measured rather than assumed.
+
+### 20.8 Refuted hypotheses
+
+1. **"The §19.4 signature marks a run that lost its control-traffic sample."**
+   Refuted by `B-cyc/run-013`: the signature is present 10× and the run armed,
+   engaged, passed its gate and filed full control traffic at ratio 1.000.
+2. **"The readiness messages indicate a bare-DDS discovery race at bring-up."**
+   Not supported here: they appear in 8 of 10 runs, all of which armed, and the
+   two runs *without* them took the same single `change_to_autonomous` retry as
+   the eight with them. §19.4 offered this as "consistent with" a race; on
+   closed-loop evidence it is consistent with routine start-up ordering.
+3. **"Cell A's closed-loop arm will also file a header-only
+   `published_time.csv`, so the registration needs re-scoping."** Refuted 10/10
+   by §20.5 — §15.5's prediction was right.
+4. **"Twenty closed-loop runs would force an editor-artifact ownership flip."**
+   Refuted by digests, §20.7.
+5. **"Systematic row-11 uncollectability would surface on the harder arm."**
+   Refuted: 10/10 B-cyc closed-loop runs completed, zero failures, zero
+   exclusions, and `duel.sh`'s two-consecutive-failure abort never armed. No
+   STOP was warranted.
+
+### 20.9 What was written
+
+- `benchmarks/results/A/run-026` … `run-035` and
+  `benchmarks/results/B-cyc/run-012` … `run-021` — the twenty run directories.
+- `benchmarks/results/duel-pacing.log` — 19 appended pacing records.
+- `benchmarks/results/PROVENANCE.md` — this §20, appended as a dated block with
+  no rewrite of anything above it.
+- `benchmarks/evidence/p4-task13-closed-loop-duel/` — the duel console
+  byte-exact, both analysis outputs, both scripts, and a directory
+  `PROVENANCE.md` recording capture method and sha256 digests.
+
+Nothing under `benchmarks/results/` was deleted or hand-edited; no manifest was
+touched outside `write_manifest.py`. `exclusions.md`, `margins.yaml`,
+`benchmarks/analysis/**`, `expected_topics.yaml` and `spike_stack.json` are
+untouched.

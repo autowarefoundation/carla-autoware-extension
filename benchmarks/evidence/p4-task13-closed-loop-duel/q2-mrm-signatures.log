@@ -1,0 +1,22 @@
+# B-cyc closed-loop runs examined: 10
+
+## per-run signature counts (tier4-autoware.log) and arm difficulty (arm.log)
+run        timedout wait_avail wait_mrm  no_mrm  mrm_chg  mon_ERR mon_WARN retries  armed  ad_api
+run-012           0          1        0       9      361        6        0       1   True    True
+run-013          10          1        1       2      136       14        0       1   True    True
+run-014           0          0        0       7      353        5        0       1   True    True
+run-015           0          0        0      10      356        6        0       1   True    True
+run-016           0          1        0       1      360        4        0       1   True    True
+run-017           0          1        1       1      359        5        0       1   True    True
+run-018           0          1        0       9      354        4        0       1   True    True
+run-019           0          1        0       4      348        6        0       1   True    True
+run-020           0          1        0      11      367        4        0       1   True    True
+run-021           0          1        0       7      459        5        0       1   True    True
+
+## Q2 readings
+section 19.4 signature `Subscribed control_cmd is timed out.` present in: ['run-013']
+`waiting for operation_mode_availability msg...` present in: ['run-012', 'run-013', 'run-016', 'run-017', 'run-018', 'run-019', 'run-020', 'run-021']
+`waiting for mrm emergency stop to become available...` present in: ['run-013', 'run-017']
+runs whose arm needed >=1 change_to_autonomous retry: ['run-012', 'run-013', 'run-014', 'run-015', 'run-016', 'run-017', 'run-018', 'run-019', 'run-020', 'run-021']
+runs that did NOT reach ARMED: NONE
+runs with BOTH an arm retry and any readiness/timeout signature: ['run-012', 'run-013', 'run-016', 'run-017', 'run-018', 'run-019', 'run-020', 'run-021']
