@@ -4958,3 +4958,37 @@ the Global Constraint forbids. §15's narrowed certification in
 normalization on the one line named" — stands as written and is not revised by
 this section.
 
+### 17.1 Review fix round 1 (2026-08-03): the `.md` carve-out had a counterexample
+
+§17's exclude protects `benchmarks/evidence/**` by extension, treating `.md` as
+always-authored-narrative and leaving it linted. Review found that assumption
+false for one file: `p3-phase0/probe-transcripts.md` is a 1224-line, 19-block
+verbatim console transcript that describes itself as "`tee`-appended
+unedited... Nothing was removed", and unlike every other evidence directory,
+`p3-phase0/` files no companion `.log` holding that output a second time. The
+extension rule was leaving exactly the file that most needs the protection
+unprotected — currently benign (checked: zero trailing-whitespace lines, no
+CRLF in the file today) but live going forward, since the directory is
+designed for more appends.
+
+**Fix:** the three excludes gained a third alternative, an exact-path match on
+`benchmarks/evidence/p3-phase0/probe-transcripts.md`, alongside the extension
+rule rather than replacing it. Every other fenced block under
+`benchmarks/evidence/**/*.md` was checked and confirmed to be either a
+recompute snippet or a short excerpt backed by a companion file the extension
+rule already protects, so no second counterexample exists today. The comment
+records that the extension split is a heuristic, not a guarantee, and states
+the criterion (sole verbatim capture, no companion non-`.md` original) a future
+filer must check before assuming a new `.md` under `benchmarks/evidence/` is
+protected.
+
+Verified live, in a scratch git repo reproducing the path shape rather than
+against the real tracked file (an exact-path exclude can only be exercised at
+that literal path, and the real file's bytes are not to be touched for a
+test): a file at the matching relative path
+`benchmarks/evidence/p3-phase0/probe-transcripts.md` survived all three hooks
+byte-for-byte, while an identical control file elsewhere in the scratch repo
+was rewritten by both `trailing-whitespace` and `mixed-line-ending`. Nothing
+under the real `benchmarks/evidence/` or `benchmarks/results/` was created,
+deleted, or edited by this verification.
+

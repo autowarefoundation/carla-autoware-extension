@@ -22,16 +22,18 @@ repos:
         # 17 committed result files, manifest.json among them.
         # benchmarks/evidence/** carries the same hazard for its verbatim
         # captures and their producing scripts. See the trailing-whitespace
-        # exclude below for the incident that proved it and the scoping
+        # exclude below for the incident that proved it, the scoping
         # rationale (captures and scripts excluded; PROVENANCE.md/README.md
-        # records are not).
-        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)
+        # records are not), and the one .md file that is path-special-cased
+        # because it is itself a verbatim capture, not authored narrative.
+        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)|^benchmarks/evidence/p3-phase0/probe-transcripts\.md$
       - id: mixed-line-ending
         # See the trailing-whitespace exclude below: any generic text
         # mutator is unsafe on these byte-exact patch files, and on the
         # recorded results for the reason given above -- and, per the same
-        # exclude, on benchmarks/evidence/'s captures and scripts too.
-        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)
+        # exclude, on benchmarks/evidence/'s captures and scripts (plus one
+        # path-special-cased .md file) too.
+        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)|^benchmarks/evidence/p3-phase0/probe-transcripts\.md$
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         # In a unified diff, a blank context line is one significant
@@ -68,7 +70,38 @@ repos:
         #     excluded below, not benchmarks/evidence/), and they benefit
         #     from the same whitespace/newline/line-ending hygiene as any
         #     other maintained prose in this repo.
-        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)
+        #
+        # The extension split above is a HEURISTIC, not a guarantee: it
+        # assumes .md under benchmarks/evidence/ is always authored narrative,
+        # and that assumption already has a counterexample.
+        # benchmarks/evidence/p3-phase0/probe-transcripts.md is the file's OWN
+        # description of itself: "Every console block's output is
+        # `tee`-appended unedited... Nothing was removed from any output for
+        # being inconvenient." It carries 19 fenced ```console blocks that ARE
+        # the record, and unlike every other evidence directory, p3-phase0/
+        # has no companion .log/.txt holding that output a second time -- so
+        # the extension rule would leave the one file that most needs this
+        # protection unprotected. It is therefore special-cased into this
+        # exclude by exact path, alongside the extension rule, not instead of
+        # it.
+        #
+        # Checked and ruled OUT as needing the same treatment (2026-08-03):
+        # every other fenced block under benchmarks/evidence/**/*.md is
+        # either a ```bash recompute/reproduction snippet (g1-ladder-rigid,
+        # g1-nishi-bundle, g2-nishi-cellc, route-town10-pre-repick,
+        # task-15-adapi-engage-cellc, p3-phase0/PROVENANCE.md, README.md) or a
+        # short ```text quoted excerpt (b-vector-map-delivery/PROVENANCE.md,
+        # b-closed-loop-stopcheck/PROVENANCE.md) whose full, byte-exact source
+        # is a companion .log/.txt file this exclude already protects --
+        # mutating the .md quoting it does not falsify anything the campaign
+        # cites as the record.
+        #
+        # A future .md filed under benchmarks/evidence/ needs the same
+        # path-specific exclude if it is itself the PRIMARY, SOLE verbatim
+        # capture of a session (raw console/tool output not also retained
+        # byte-for-byte in a companion non-.md file). Check for that before
+        # assuming the extension rule alone protects a new filing.
+        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)|^benchmarks/evidence/p3-phase0/probe-transcripts\.md$
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.49.1
