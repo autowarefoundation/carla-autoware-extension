@@ -294,6 +294,22 @@ def default_mount() -> tuple[tuple[float, float, float], tuple[float, float, flo
     ego through the API, record it, and pass it to `--mount` on that cell's
     ablation runs. Until that is done the tier4 baseline carries this estimate,
     and `--mount` is the seam it goes through.
+
+    DISCHARGED 2026-08-04 (Task 14). The paragraph above is kept as written
+    rather than edited, because what it predicted is part of the record. Task
+    11 took the measurement on cell B-cyc's first measured run (PROVENANCE
+    sec 14.5; benchmarks/evidence/p4-task11-bringup/b-cyc-lidar-mount.log),
+    and `cells/tier4-native.sh` now passes it as `--mount` on every tier4
+    ablation run -- so this function is no longer on that family's measured
+    path. Two corrections it is owed:
+
+      * "both stacks model the same AWSIM kit, so it is centimetre-scale" was
+        an argument, and it was WRONG: the gap is 1.397071 m along the
+        vehicle's x axis -- the tier4 rig's extra `base_link` anchor actor --
+        while the rotation is EXACTLY this kit's, to the last digit.
+      * a direct `--rig tier4` invocation with no `--mount` still gets the
+        estimate, so it stays reachable by hand. The launcher is the only
+        production caller, and it always passes the measured pose.
     """
     kit = load_kit()
     return carla_attach_location(kit, TOP_LIDAR_FRAME), carla_attach_rotation(kit, TOP_LIDAR_FRAME)

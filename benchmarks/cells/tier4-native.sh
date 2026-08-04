@@ -209,6 +209,42 @@ ABLATION_PID_FILE="$BENCH_RUN_DIR/raycast_baseline.pid"
 ABLATION_LOG="$BENCH_RUN_DIR/raycast_baseline.log"
 ABLATION_TICK_HZ=""
 ABLATION_SPAWN_ARGS=""
+# The tier4 rig's LiDAR mount, MEASURED -- relative to the ego actor, in the
+# six-number spelling raycast_baseline.py's `--mount` takes (location x y z m,
+# then rotation roll pitch yaw deg).
+#
+# WHY THIS EXISTS AT ALL. Without `--mount` the client falls back to
+# `raycast_baseline.default_mount()`, which composes the committed
+# `awsim_labs_sensor_kit` calibration. That is EXACT for `--rig extension` and
+# an ESTIMATE for `--rig tier4`, whose real chain lives in the fork's own
+# `autoware_demo.py` (ego -> base_link -> sensor_kit -> lidar) and is not
+# committed here. That docstring's plan of record was to read the spawned
+# actor's transform live on cell B-cyc's first MEASURED run and feed it back
+# through this seam; PROVENANCE sec 14.5 is that measurement and this line is
+# the wiring it asked for.
+#
+# THE ESTIMATE IT REPLACES WAS WRONG BY 1.397071 m IN x, not by the
+# centimetres the docstring argued for: the whole discrepancy is the tier4
+# rig's extra `base_link` anchor actor (-1.39706787 m, the same offset this
+# launcher's own anchor check prints), and the rotation is EXACTLY the
+# committed kit's. Ray COUNT is set by the sweep class, so a wrong mount
+# cannot change the ray budget -- but per-ray cost tracks traced distance and
+# what each ray terminates on, so a 1.4 m displacement moves the very quantity
+# `T - B` subtracts, and it moves it silently: the run completes and scores.
+#
+# TRANSCRIBED from benchmarks/evidence/p4-task11-bringup/b-cyc-lidar-mount.log
+# (which prints the line in this exact spelling), so it gets the same treatment
+# TIER4_LIDAR_ATTRIBUTES' `sensor_tick` gets -- pinned by a unit test against
+# that filed capture rather than trusted. Family-wide, not B-cyc-only: B and
+# B-cyc are the same fork tree, the same launcher and the same rig, and only
+# the DDS transport differs.
+#
+# BENCH_ABLATION_MOUNT overrides it, so a re-measurement needs no code change.
+# A malformed override is not caught here: it reaches the client's own
+# argparse, which exits non-zero, which this launcher reports as "the raycast
+# baseline client exited during bring-up (see $ABLATION_LOG)". Loud, but paid
+# for after the editor boot.
+TIER4_ABLATION_MOUNT="-0.497071 0.000002 2.000000 0.859670 -0.053676 -88.156119"
 # A CAP on the client's tick loop, not the scoring window (run.sh step 10 owns
 # that). It bounds how long an orphaned client can tick a server nobody watches.
 ABLATION_DURATION_S="${BENCH_ABLATION_DURATION_S:-600}"
@@ -395,14 +431,20 @@ if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
   # (--lidar-channels/--lidar-pps, the patched demo's own flag names) and
   # $ABLATION_SPAWN_ARGS the route's spawn in the demo's spelling;
   # raycast_baseline.py accepts both verbatim, so neither is re-derived here.
-  # Both are deliberately word-split: resolved multi-flag strings, not single
-  # arguments.
+  # All three are deliberately word-split: resolved multi-flag strings, not
+  # single arguments.
+  #
+  # The mount is resolved HERE rather than beside the constant so this
+  # statement group carries the whole seam -- constant, override, flag -- and
+  # a unit test can run it and read the client's argv back.
+  ABLATION_MOUNT_ARGS="--mount ${BENCH_ABLATION_MOUNT:-$TIER4_ABLATION_MOUNT}"
   # shellcheck disable=SC2086
   nohup env PYTHONPATH="$BENCH_REPO" "$GT_PYTHON" -m benchmarks.scripts.raycast_baseline \
     --host localhost --port "$BENCH_RPC_PORT" --rig tier4 \
     --class-id "${BENCH_CLASS_ID:-}" --tick-hz "$ABLATION_TICK_HZ" \
     --duration-s "$ABLATION_DURATION_S" --out-dir "$BENCH_RUN_DIR" \
-    $ABLATION_SPAWN_ARGS ${BENCH_TIER4_SWEEP_ARGS:-} >"$ABLATION_LOG" 2>&1 &
+    $ABLATION_SPAWN_ARGS ${BENCH_TIER4_SWEEP_ARGS:-} $ABLATION_MOUNT_ARGS \
+    >"$ABLATION_LOG" 2>&1 &
   echo $! >"$ABLATION_PID_FILE"
 
   # Readiness is the FILE, not the process: nothing publishes /clock on this

@@ -5938,3 +5938,279 @@ run takes has a discovery component is **not established either way** by this
 data. §15.2 independently established that single retry as the campaign-wide
 norm, including on cells that are not B-cyc, which is evidence against a
 B-cyc-transport-specific cause but is not addressed here.
+
+## 22. P4 Task 14: the vlp16 sweep collected on cells A and B-cyc (live, 2026-08-04)
+
+Three arms per cell — `paced`, `unpaced` and `ablation` — at the `vlp16` sweep
+class, n = 3 each. Eighteen runs, one driver invocation, **zero exclusions**.
+
+**No comparison between the two cells appears in this section, in
+`benchmarks/evidence/p4-task14-vlp16-sweep/`, or anywhere else this task
+wrote.** The one reading taken is the per-cell ceiling boolean of §22.7, which
+is a gate fact deciding a pre-registered branch, taken from each cell's own
+verdict table and never set against the other's. `duel_verdict.py` was not run;
+`sweep_verdict.py`'s two tables were written to `/tmp` and deliberately not
+filed, because they carry per-run magnitudes nothing is licensed to compare
+before Task 16.
+
+### 22.1 Session preamble
+
+One driver invocation, so one preamble, taken immediately before it. The
+`pgrep -af 'UnrealEditor|CarlaUE4'` check returned exactly one line and that
+line was **its own command** — the `eval`'d shell carrying the pattern text.
+That is the documented self-match, not a running simulator.
+
+| reading                       | value                                                            |
+| ----------------------------- | ---------------------------------------------------------------- |
+| wall clock                    | 2026-08-04T02:00:45−07:00 (preamble); 02:12:14−07:00 (launch)     |
+| loadavg 1 min (gate < 2)      | **0.20** at preamble, **0.38** at launch                          |
+| `scaling_governor`            | `powersave` (recorded, NOT changed)                               |
+| CARLA already running?        | no                                                                |
+| other GPU consumer?           | none — Xorg, gnome-shell, a browser, warp-terminal only           |
+
+Across all eighteen runs the per-run preflight recorded `engine_build_id`
+`bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` and `cpu_governor=powersave` without
+variation, and `run_mode=editor-game` throughout. **D8 was not spent**: no
+relink, and nothing committed in `~/src/carla-autoware-integration` or
+`~/src/carla-autoware-native`. Preflight `loadavg` spanned **0.40 … 2.05**,
+never near `MAX_LOADAVG` = 8.
+
+Transport, verified per run, one distinct tuple per cell and both reached with
+no flag: cell A `rmw_cyclonedds_cpp`, SHM off, the `lo` profile
+(`1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865`); cell
+B-cyc `rmw_cyclonedds_cpp`, SHM off, **no profile**. That is the registered
+rmw-matched-not-profile-matched interface difference — still a confound row,
+recorded here and not re-litigated.
+
+### 22.2 Step 1: form verification, all six cell×form combinations
+
+`--check-args` then `--dry-run`, for {A, B-cyc} × {paced, unpaced, ablation}.
+**Twelve invocations, twelve `exit=0`. No refusal, so there was no Stage-1
+defect to fix and no follow-up commit was needed.** The console is filed
+verbatim at
+`benchmarks/evidence/p4-task14-vlp16-sweep/step1-form-verification.log`.
+
+The effective arm resolved to `paced` / `unpaced` / `ablation` respectively in
+every case: `--unpaced` prints `arm: paced -> unpaced (--unpaced)` and
+`--check-args` then reports `arm=unpaced`, while the scoring window still
+follows the arm that was asked for. The class resolved to `vlp16`,
+`288000 pts/s`, on both cells.
+
+B-cyc's transport is reached by **two** corrections in sequence, both printed:
+the tier4-native family requirement fires first
+(`rmw_fastrtps_cpp`, `udp_only.xml`), then cell B-cyc's own registration
+overrides it to `rmw_cyclonedds_cpp`, SHM off, none. Neither needed a flag,
+which is exactly what makes `duel.sh` passing identical flags to both cells
+sound.
+
+**The two Stage-1 fixes this task depends on were verified, not assumed.**
+`config/cells.yaml`'s three `sweep_classes` all carry
+`applies_to: [A, B, B-cyc, E]`; without B-cyc there, every invocation above
+would have refused. `config/processes/B-cyc.yaml` carries
+`- { label: raycast-baseline, pattern: benchmarks.scripts.raycast_baseline }`,
+and it demonstrably works: in `results/B-cyc/run-028/resources.csv` the
+`raycast-baseline` process appears in **145** samples with **107** of them at
+non-zero `cpu_pct`. Without that entry the ablation client would have been
+reported as a flat 0.0%.
+
+### 22.3 The tier4 `--mount` plan of record is now WIRED, and it took effect
+
+§14.5 recorded the measurement and stated "`raycast_baseline.py` was NOT
+modified. Task 14 owns the wiring." This task wired it:
+`benchmarks/cells/tier4-native.sh` gained the constant
+
+```text
+TIER4_ABLATION_MOUNT="-0.497071 0.000002 2.000000 0.859670 -0.053676 -88.156119"
+```
+
+and resolves `ABLATION_MOUNT_ARGS="--mount ${BENCH_ABLATION_MOUNT:-$TIER4_ABLATION_MOUNT}"`
+immediately before the ablation client's invocation, passing it on every tier4
+ablation run. It is family-wide (B and B-cyc share the tree, the launcher and
+the rig; only the DDS transport differs), and `BENCH_ABLATION_MOUNT` overrides
+it so a re-measurement needs no code change.
+
+**Two tests pin it, and neither is a text scan of a comment.** One asserts the
+constant equals the `--mount` line in the filed capture
+`benchmarks/evidence/p4-task11-bringup/b-cyc-lidar-mount.log`, so the
+transcription is checked against the evidence rather than against a second copy
+of itself — the same treatment `TIER4_LIDAR_ATTRIBUTES`' `sensor_tick` gets.
+The other **executes the real statement** with `nohup` stubbed and reads the
+client's argv back, in both the defaulted and the `BENCH_ABLATION_MOUNT`-
+overridden case.
+
+**It took effect, verified from the run directories rather than from the
+launcher.** Each ablation run's `raycast_baseline.json` is written by the
+client itself, and all three B-cyc runs record
+
+```text
+mount_location_m   [-0.497071, 2e-06, 2.0]
+mount_rotation_deg [0.85967, -0.053676, -88.156119]
+```
+
+— the §14.5 value, 3/3. Cell A's three ablation runs record `[0.9, 0.0, 2.0]`
+with the same rotation, which is the committed kit composed by
+`default_mount()` and is **exact** for the extension rig; that arm correctly
+passes no `--mount`, and the 1.397071 m x-offset between the two is the tier4
+rig's `base_link` anchor, exactly as §14.5 decomposed it.
+
+`raycast_baseline.default_mount()`'s docstring was appended to rather than
+edited: the plan-of-record paragraph stays as written because what it predicted
+is part of the record, and a dated DISCHARGED block below it records the
+wiring, corrects the docstring's own "centimetre-scale" argument, and states
+that a hand invocation of `--rig tier4` with no `--mount` still gets the
+estimate.
+
+### 22.4 `TIER4_LIDAR_ATTRIBUTES`: no disagreement to report, and what was actually checked
+
+The brief required recording any disagreement between the transcription and the
+live blueprint. **None was observed — but this task took no independent
+reading, and that distinction is load-bearing.** The ablation client *sets*
+these attributes; it does not read them back, so the run cannot confirm the
+transcribed VALUES. What it does confirm is that all six attribute NAMES exist
+on the live `sensor.lidar.ray_cast` blueprint, because `set_attribute` is called
+unconditionally with no `has_attribute()` skip and a missing key would have
+surfaced as CARLA's own named error and failed the run; six ablation runs
+across two forks passed. The value-level agreement remains Task 11's
+measurement (§14.6), unchallenged and un-re-verified here.
+
+### 22.5 The collection
+
+One `sweep_driver.sh` invocation under `setsid`, filed at
+`benchmarks/evidence/p4-task14-vlp16-sweep/sweep_driver.sh`, wall window
+02:12:14 … 03:49:16 −07:00. **Eighteen `run.sh` invocations, eighteen
+`EXIT 0`.** The driver makes no measurement decision — ordering, hygiene and
+an inter-run settle only.
+
+| cell  | arm        | runs                              | excluded |
+| ----- | ---------- | --------------------------------- | -------- |
+| A     | `paced`    | `results/A/run-036 … run-038`     | 0/3      |
+| A     | `unpaced`  | `results/A/run-039 … run-041`     | 0/3      |
+| A     | `ablation` | `results/A/run-042 … run-044`     | 0/3      |
+| B-cyc | `paced`    | `results/B-cyc/run-022 … run-024` | 0/3      |
+| B-cyc | `unpaced`  | `results/B-cyc/run-025 … run-027` | 0/3      |
+| B-cyc | `ablation` | `results/B-cyc/run-028 … run-030` | 0/3      |
+
+All eighteen carry `duel_admissible: false` and an empty `duel_id`: sweep data
+is never duel data, and the fail-closed default is what makes that true without
+anyone remembering a flag. **Zero exclusions, so no `exclusions.md` reason
+needed quoting.** The known B-cyc row-11 discovery flakiness did not appear —
+its `control_cmd is timed out` signature is absent from the console.
+
+The ablation runs behave exactly as `raycast_baseline.py`'s module docstring
+predicts: `observer.csv` exists but holds **0** data rows (nothing publishes
+on that arm), `publisher_counts.json` and `quality.json` are **absent** by
+design, and `clock.csv` carries ~2 900 rows written by the client itself. On
+all six, `clock_header_reasserts` is **1** — the documented normal case of
+`bench_observer` truncating the file when it opens it at step 6, after the
+client started at step 5 — with `clock_toctou_repairs` **0** and
+`clock_stood_down` **false**. That last field is the positive evidence that no
+other process was extending the file, i.e. the client was `clock.csv`'s sole
+writer on every ablation run.
+
+The two rigs' `sensor_callbacks`/`ticks` ratios differ by construction and are
+not a defect: ≈1:1 on cell A (2914/2912) and ≈1:2 on B-cyc (1456/2909), which
+is their own `sensor_tick` — 0.05 s in `runner.spawn.top_lidar_attributes`
+versus 0.1 s in `TIER4_LIDAR_ATTRIBUTES`. A sweep class pins `channels` and
+`points_per_second` only, so neither value is a class knob and neither moved.
+
+### 22.6 Inter-run hygiene, and a deviation the rule's own ordering forces
+
+`docker compose -f docker/compose.yaml down --remove-orphans` then
+`bash scripts/bootstrap_carla_msgs.sh` ran before **every** run, including the
+first. The settle wait between runs was the same shape `duel.sh`'s registered
+pacing amendment (§3) uses — a 120 s floor, then poll the 1-minute loadavg down
+to 6, capped at 300 s — and it was applied 17 times (never before the first
+run). Every one of the seventeen took **exactly the 120 s floor**: the loadavg
+was already under target each time, so no top-up was spent and the ceiling was
+never reached.
+
+**DEVIATION, recorded rather than silently skipped:
+`bootstrap_carla_msgs.sh` REFUSED on all eighteen hygiene blocks**, with
+
+```text
+PREFLIGHT FAIL: container 'autoware' is not running (docker compose up -d)
+```
+
+This is a property of the hygiene rule's ORDERING, not of this task and not of
+the ablation arm alone. The rule pairs a `docker compose down` with a bootstrap
+whose first act is to require a **running** `autoware` container — and the
+`down` it is paired with has just removed exactly that container. So the
+bootstrap can only ever succeed when something re-creates the container between
+the two, which nothing here does: each cell's launcher brings the container up
+itself, later, as part of the run. §12.7 recorded the same refusal for CAL-seam
+and attributed it to that cell having no Autoware container at all; the
+observation here is broader and worth stating plainly — **on this ordering the
+step is unreachable for every cell, not only for the Autoware-less ones.**
+
+It cost this collection nothing, and that is checkable rather than asserted.
+The ablation arm boots no Autoware at all, so it has no referent. On the twelve
+measured runs, `carla_msgs` is sourced by `scripts/e2e/launch_autoware.sh:202`
+as `source ~/carla_msgs_ws/install/setup.bash 2>/dev/null || true` — optional by
+construction — and no other code path in either cell's launch consumes it. All
+twelve armed, drove, and produced `quality_ok: true` with full observer and
+publisher-count data. What the hygiene rule is actually for (DDS ghost nodes,
+stale containers, a held port 2000) was still achieved by the `down` half, which
+ran and succeeded every time.
+
+**Not fixed here.** Changing the rule's ordering mid-collection would be
+revising a registered procedure after data exists. It is recorded for whoever
+owns the harness next.
+
+### 22.7 The per-cell ceiling booleans (the registered gate-fact exception)
+
+Read once per cell, from that cell's own verdict table, for the single question
+"did any ceiling disjunct fire":
+
+```bash
+PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py A     --class vlp16
+PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py B-cyc --class vlp16
+```
+
+| cell  | rows scored | `reached: True` rows | reasons | **ceiling disjunct fired** |
+| ----- | ----------- | -------------------- | ------- | -------------------------- |
+| A     | 9           | **0**                | none    | **NO**                     |
+| B-cyc | 9           | **0**                | none    | **NO**                     |
+
+Every one of the eighteen rows reports `reached False` with an empty reasons
+column. On the six ablation rows the notes column carries "publisher rate not
+measurable (no `publisher_counts.json`)" and "quality not applicable (ablation
+arm, no closed loop)" — the two designed absences, neither of which becomes a
+disjunct, which is precisely why the ablation arm must not write a file-backed
+`0`. No row carries a `window_branch_note`, so no run's scoring window took a
+branch its cell was not expected to take.
+
+**Consequently NO n = 5 extension was executed.** The parent spec's "≥ 5 at the
+ceiling class" is pre-registered for a cell whose disjunct FIRED; neither did.
+Both cells stand at n = 3 per arm.
+
+### 22.8 What this decides for Task 15, mechanically
+
+A cell whose vlp16 disjunct did not fire steps up to the `32ch` class. Both
+cells' booleans are NO, so **both A and B-cyc step up to `32ch`**. `128ch`
+stays struck on either branch, and both launchers still refuse it for want of a
+sensor-argument mapping. Nothing about this follows from comparing the cells;
+each boolean was read from its own table and decides its own cell.
+
+### 22.9 Recorded and deliberately NOT acted on
+
+**`sweep_verdict.py --class` does not filter the rows it scores.** It validates
+the class against `cells.yaml` and merges it, but the table it renders is
+*every* run of the cell whose arm is in `sweep_arms` — and `manifest.json`
+records no class at all (its keys are `approach`, `arm`, `autoware_image`,
+`carla_version`, `cell`, `duel_admissible`, `duel_id`, `excluded`,
+`exclusion_reason`, `harness_git_sha`, `map_name`, `patches_git_sha`,
+`placement`, `run_index`, `started_at_ns`, `transport`). Today that is exact,
+because the only sweep-arm runs in either cell are this task's vlp16 runs — the
+tables report 35 and 21 runs skipped for being out of arm, i.e. the P3/P4
+static and closed-loop data. **From Task 15 onward it will not be**: once
+`32ch` runs land in the same flat `run-NNN` sequence, `--class vlp16` and
+`--class 32ch` will render the SAME rows, silently mixing two workloads in one
+table. The class of a run is currently recoverable only from
+`raycast_baseline.json` (ablation arm) or the launcher's own log (measured
+arms), never from the manifest.
+
+Not fixed here, on purpose: this task's reading is unaffected, and changing a
+scorer while its data is being collected is exactly what "registration is not
+revised after data exists" forbids. Task 15 must either segregate its 32ch runs
+or teach the scorer a class filter **before** it collects, and it should know
+that a manifest field is the only durable fix.

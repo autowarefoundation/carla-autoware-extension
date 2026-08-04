@@ -651,6 +651,108 @@ def test_bcyc_process_map_body_stays_byte_identical_to_cell_bs():
     )
 
 
+# --- the tier4 --mount seam: the measured pose, and that it reaches the client ---
+#
+# `default_mount()` is EXACT for `--rig extension` (it composes the committed
+# kit) and an ESTIMATE for `--rig tier4`, whose real chain lives in the fork's
+# `autoware_demo.py` and is not in this repo. That docstring's plan of record
+# was to measure it live and feed it to `--mount`; Task 11 did the measuring
+# (benchmarks/evidence/p4-task11-bringup/b-cyc-lidar-mount.log, PROVENANCE
+# sec 14.5) and Task 14 owns the wiring, which is what these two tests pin.
+#
+# It matters because the estimate is wrong by 1.397071 m in x -- the tier4
+# rig's extra `base_link` anchor actor -- not by the centimetres the docstring
+# argued for. Per-ray cost tracks traced distance and what each ray terminates
+# on, so a 1.4 m displacement moves the very quantity `T - B` subtracts, and it
+# would do so SILENTLY: the run completes, scores, and files.
+
+MEASURED_TIER4_MOUNT_LOG = (
+    REPO_ROOT / "benchmarks" / "evidence" / "p4-task11-bringup" / "b-cyc-lidar-mount.log"
+)
+
+
+def _measured_tier4_mount() -> str:
+    """The six numbers Task 11 measured, read out of the filed capture itself.
+
+    The capture prints them already in `--mount`'s own spelling, so this is a
+    read rather than a re-derivation -- and the launcher's constant is then
+    checked against the EVIDENCE, not against a second copy of itself.
+    """
+    text = MEASURED_TIER4_MOUNT_LOG.read_text()
+    m = re.search(r"^\s*--mount ([-0-9. ]+)$", text, re.M)
+    assert m, f"no `--mount` line in {MEASURED_TIER4_MOUNT_LOG}"
+    return m.group(1).strip()
+
+
+def test_tier4_launcher_mount_constant_is_the_task11_measurement():
+    """The launcher's constant is a TRANSCRIPTION of a filed capture, so it gets
+    the same treatment `sensor_tick` gets: pinned against its source, not
+    trusted. A typo in any of the six numbers is a silently wrong workload."""
+    text = (REPO_ROOT / "benchmarks" / "cells" / "tier4-native.sh").read_text()
+    m = re.search(r'^TIER4_ABLATION_MOUNT="([^"]+)"$', text, re.M)
+    assert m, "TIER4_ABLATION_MOUNT not found in cells/tier4-native.sh"
+    assert m.group(1) == _measured_tier4_mount()
+
+
+def _extract_tier4_ablation_client_launch() -> str:
+    """The mount resolution AND the client invocation it feeds, down to the
+    PID-file line -- one statement group, so the test exercises the real
+    `${BENCH_ABLATION_MOUNT:-...}` seam rather than a copy of it."""
+    text = (REPO_ROOT / "benchmarks" / "cells" / "tier4-native.sh").read_text()
+    start = '  ABLATION_MOUNT_ARGS="--mount '
+    assert text.count(start) == 1, (
+        "the ablation client's mount resolution is no longer uniquely anchored "
+        "in tier4-native.sh; this test would be extracting some other statement"
+    )
+    end = 'echo $! >"$ABLATION_PID_FILE"\n'
+    i = text.index(start)
+    j = text.index(end, i)
+    return text[i : j + len(end)]
+
+
+@pytest.mark.parametrize("override", [None, "1.0 2.0 3.0 4.0 5.0 6.0"])
+def test_tier4_ablation_client_is_launched_with_the_measured_mount(tmp_path, override):
+    """Runs the real statement with `nohup` stubbed and reads its argv.
+
+    Both cases, because only the pair pins the seam: with no environment the
+    MEASURED pose must be passed (never omitted, which would silently restore
+    `default_mount()`'s 1.4 m-wrong estimate), and an explicit
+    BENCH_ABLATION_MOUNT must win, so a later re-measurement needs no code
+    change.
+    """
+    env = {
+        "BENCH_ARM_IS_ABLATION": "1",
+        "BENCH_REPO": str(REPO_ROOT),
+        "GT_PYTHON": "/nonexistent/python3",
+        "BENCH_RPC_PORT": "2000",
+        "BENCH_CLASS_ID": "vlp16",
+        "ABLATION_TICK_HZ": "20.0",
+        "ABLATION_DURATION_S": "600",
+        "BENCH_RUN_DIR": str(tmp_path),
+        "ABLATION_SPAWN_ARGS": "--spawn-index 0",
+        "BENCH_TIER4_SWEEP_ARGS": "--lidar-channels 16 --lidar-pps 288000",
+        "ABLATION_LOG": str(tmp_path / "raycast_baseline.log"),
+        "ABLATION_PID_FILE": str(tmp_path / "raycast_baseline.pid"),
+        "TIER4_ABLATION_MOUNT": _measured_tier4_mount(),
+    }
+    if override is not None:
+        env["BENCH_ABLATION_MOUNT"] = override
+    expected = (override or _measured_tier4_mount()).split()
+
+    argv = _record_editor_argv(_extract_tier4_ablation_client_launch(), tmp_path, env)
+
+    assert "benchmarks.scripts.raycast_baseline" in argv, (
+        f"the extracted statement is not the ablation client launch: {argv}"
+    )
+    assert "--mount" in argv, (
+        "the tier4 ablation client is launched with no --mount, so it falls "
+        "back to default_mount()'s estimate -- wrong by 1.397071 m in x (the "
+        "rig's base_link anchor). The run still completes and scores."
+    )
+    i = argv.index("--mount")
+    assert argv[i + 1 : i + 7] == expected, argv
+
+
 def test_clock_writer_does_not_duplicate_a_header_that_already_exists(tmp_path):
     """The observer may win the race and create the file first."""
     path = tmp_path / "clock.csv"
