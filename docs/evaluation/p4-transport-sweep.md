@@ -81,9 +81,11 @@ exit — reading `ValueError: need >= 2 paired (sim, wall) samples`. CAL-rmw is 
 `/clock`; its registered renderer is `benchmarks/scripts/cal_report.py`. The
 other 16 failures are all `(EXCLUDED)`-tagged and are the expected shape of an
 excluded run whose data was never written. **No P4-collected run failed to
-render**: cells A (`run-016`…`run-053`), B-cyc (all 45) and CAL-seam (all 5)
-render in full, with B-cyc's six criterion-3 exclusions rendering as ordinary
-`(EXCLUDED)` rows carrying data.
+render**: cells A (`run-015`…`run-053`, 39 runs — see §9.1 on why the P4
+boundary falls at `run-015` and not `run-016`), B-cyc (all 45) and CAL-seam
+(all 5) render in full, with B-cyc's six criterion-3 exclusions rendering as
+ordinary `(EXCLUDED)` rows carrying data. That is **89** runs, with zero
+`RENDER FAILED` rows among them.
 
 **DEVIATION from P3's style, recorded rather than done silently.** P3 §3
 embedded the whole 320-line rendering and documented the formatter's whitespace
@@ -396,8 +398,17 @@ standing question.
   carrying 2.118× the payload. In P3 that made an A-favourable latency result
   conservative. Here the rows are `parity` with Δ slightly positive (cell A
   slower by 1.7 ms and 1.4 ms), so the asymmetry works the other way: correcting
-  for it could only move those deltas toward or past zero, i.e. **it can only
-  make the parity call safer, never overturn it.**
+  for it could only move those deltas toward or past zero. **Scoped to what that
+  supports: the correction cannot overturn parity toward a B-cyc-favouring
+  separation.** It is not an unbounded safety claim, and it must not be read as
+  one: Δ = +1.687 ms sits 3.687 ms above the −2.0 ms boundary, so a byte
+  correction larger than that would produce `a_better` — parity overturned in
+  the _other_ direction. **No bound on the correction's magnitude is offered
+  anywhere in this document, and none is measured here**; `README:3986-4008`
+  registers the byte ratio, not a latency coefficient, and deriving one from a
+  ratio would be exactly the kind of claim outrunning its measurement this
+  record keeps catching. What the asymmetry rules out is a B-cyc-favouring
+  reading of these two rows; what it does not rule out is an A-favouring one.
 - **It does not replace a P4↔P3 identity caveat.** The harness sha and the
   engine BuildId both moved between P3 and P4 (section 9). The bracket compares
   two verdicts each computed within its own phase, which is the design; it does
@@ -421,11 +432,15 @@ standing question.
   These are **maxima over a run**, not typical errors — the metric takes a p50
   over ~1400 samples, so a localised excursion moves few of them — but the
   B-cyc closed-loop pool's median max-residual is 54.6 ms, 27× the margin, and
-  seven of its ten runs exceed 20 ms. **The `one_hop_wall_ms` parity rows are
-  the weakest of the parity rows in this document**, the closed-loop one more so
-  than the static one, and a reader who needs that row to bear weight should
-  treat it as such. Cell A's fit is an order of magnitude tighter on both arms.
-  Reproduce with command 6.
+  **eight of its ten runs exceed 20 ms** (seven exceed 40 ms). **The
+  `one_hop_wall_ms` parity rows are the weakest of the parity rows in this
+  document**, the closed-loop one more so than the static one, and a reader who
+  needs that row to bear weight should treat it as such. Cell A's fit is tighter
+  on both arms, but by very different factors: **2.1× on the static arm** (1.77
+  against 3.77) and **15× on the closed-loop arm** (3.58 against 54.60). Only
+  the closed-loop gap is an order of magnitude; the static one is not, and the
+  static `one_hop_wall_ms` row is correspondingly better supported than the
+  closed-loop one. Reproduce with command 6.
 
 ## 3. The closed-loop verdict — the campaign's first
 
@@ -902,7 +917,7 @@ and adds the P4-era rows. Nothing here is a correction to a measurement.
 
 | id   | confound                                              | what it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | cells      | where registered                                             |
 | ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------ |
-| P4-1 | **The image confound, on every B-side number**        | Cell B-cyc runs the **same Autoware image as cell B**, pinned by digest `ghcr.io/autowarefoundation/autoware@sha256:5c22369a…e8ee` (`universe-devel-cuda`); cell A runs `ghcr.io/autowarefoundation/autoware:universe-devel` **by tag**. This is deliberate — transport is the only variable P4 changes on the tier4 side, so B-vs-B-cyc is clean, and separating the two images is explicitly out of scope. The cost is that **every A-vs-B-cyc row in this document also spans an image difference**, and no row in section 2 or 3 is corrected for it.                                                                                                                                                                                                     | A vs B-cyc | spec 1c; `cells.yaml` B-cyc entry; verified by command 10    |
+| P4-1 | **The image confound, on every B-side number**        | Cell B-cyc runs the **same Autoware image as cell B**, pinned by digest `ghcr.io/autowarefoundation/autoware@sha256:5c22369a…e8ee` (`universe-devel-cuda`); cell A runs `ghcr.io/autowarefoundation/autoware:universe-devel` **by tag**. This is deliberate — transport is the only variable P4 changes on the tier4 side, so B-vs-B-cyc is clean, and separating the two images is explicitly out of scope. The cost is that **every A-vs-B-cyc row in this document also spans an image difference**, and no row in section 2 or 3 is corrected for it.                                                                                                                                                                                                     | A vs B-cyc | spec 1c; `cells.yaml` B-cyc entry; verified by command 11    |
 | P4-2 | **rmw-matched, NOT profile-matched**                  | Both cells run `rmw_cyclonedds_cpp` with SHM off. Cell A runs the **lo-pinned** profile (`transport.dds_profile_sha256 = 1eeef31e…f2865`); cell B-cyc runs **no profile** (`""`). This is a **measured necessity**, not a preference: the Task 9 wire-visibility matrix (`benchmarks/patches/tier4-native/README.md:349-355`) shows rows 5 and 10 (cyclone + `cyclonedds.xml`) see **nothing** from the tier4 fork's Fast-DDS publishers — `LIST no, ECHO no` — and **row 11 (cyclone, no profile) is the only cyclone configuration in which the fork is readable at all** (`ECHO yes`, `RATE 9.930`). The A(lo-profile) ↔ B-cyc(no-profile) interface difference is therefore structural to the comparison and cannot be removed without losing it.         | A vs B-cyc | spec 1c; matrix rows 5 / 10 / 11                             |
 | P4-3 | **Row-11's own registered caveats, inherited**        | Quoted from the matrix rather than tidied away: "Rows 6 and 11 work only because Cyclone with no profile binds a routable interface (`wlp130s0f0`) — they make the measurement depend on the host's wireless NIC and on Cyclone's graph being flaky for bare-DDS publishers (row 11 receives data while `topic list` denies the topic exists). **Do not use them.**" B-cyc uses row 11 knowingly, because it is the only workable option. **Neither caveat surfaced as a run failure**: 20/20 static and 20/20 closed-loop runs completed, zero exclusions, `duel.sh`'s two-consecutive-failure abort never armed, and the artefact digests were identical across all runs. The caveats stand as confounds on the _result_, not as costs to the _collection_. | B-cyc      | matrix caveat paragraph; PROVENANCE §18.6, §20.6, §20.8      |
 | P4-4 | **Observer / NIC placement**                          | Every cell is observed by the same `bench-observer:universe-devel` image (local digest `sha256:b78ec01a…a5385`) with SHM off, and the observer's RMW **follows the cell** — in P4 that means **both** cells are observed over CycloneDDS, which is a tighter instrument match than P3 had (where the observer followed cell B onto Fast-DDS). What is **not** matched is the interface: cell A's traffic rides the lo-pinned profile while B-cyc's rides the host's routable NIC (P4-2/P4-3). The observer container is `network_mode: host` in both cases.                                                                                                                                                                                                   | A vs B-cyc | `benchmarks/pins.yaml`; `config/observer_topics/<cell>.yaml` |
@@ -1005,8 +1020,54 @@ cannot answer a question about the live environment — and recorded **zero
 
 - **Within-P4 comparisons are unaffected by the BuildId.** One engine identity
   across all P4 collection, verified by Task 10's six-key census on all six keys
-  and re-verified per run: `bc08ce19` appears in every P4 measurement manifest
-  that carries the key, without variation, across all 91 P4 runs (command 10).
+  and re-verified per run by command 11, which prints the census and the
+  partition it counted:
+
+  ```text
+  engine_build_id over all 191 filed manifests:
+    bc08ce19-f19c-46fe-808f-dbb2b0ddf41a     84
+    4210e602-78ec-46e1-8f2f-03fadbe036a3     61
+    None                                     46
+
+  P4 runs (patches_git_sha startswith 7000c785): 89
+    A          run-015..run-053  n=39  engine_build_id={'bc08ce19': 39}
+    B-cyc      run-001..run-045  n=45  engine_build_id={'bc08ce19': 45}
+    CAL-seam   run-001..run-005  n=5   engine_build_id={'None': 5}
+  ```
+
+  **`bc08ce19` appears in every P4 manifest that carries the key, without
+  variation — 84 of them — and the other five P4 runs (CAL-seam) carry no key at
+  all.** That absence is §12.2's structural finding, not drift: `preflight.sh`'s
+  BuildId check is gated on `APPROACH = extension | tier4-native` and CAL-seam
+  registers `calibration`, so no BuildId ever reaches its manifest. Zero P4
+  manifests carry `4210e602`.
+
+  **THREE COUNTS ARE IN CIRCULATION HERE AND THE RECORD SHOULD STATE WHY**, since
+  an earlier revision of this bullet asserted a fourth (`91`) that no command
+  produces and that is simply wrong:
+
+  | count  | what it counts                                                                        |
+  | ------ | ------------------------------------------------------------------------------------- |
+  | **84** | P4 manifests carrying `engine_build_id` — the only ones the identity claim is _about_ |
+  | **89** | **all filed P4 runs**, i.e. 84 + CAL-seam's five key-less ones                        |
+  | 88     | the count you get from the partition `A/016-053 + B-cyc/001-045 + CAL-seam/001-005`   |
+  | ~~91~~ | **retracted — reconstructible from no partition of the filed data**                   |
+
+  **The P4 boundary in cell A falls at `run-015`, not `run-016`**, and that is
+  where the 88/89 discrepancy comes from. `A/run-015` is Task 11's cell-A
+  bring-up (`duel_admissible: false`, §14.2), and it is the first cell-A run to
+  carry both `patches_git_sha 7000c78` (Task 9's relink commit) and
+  `engine_build_id bc08ce19`; `A/run-014` carries `ccff4f9` / `4210e602` and its
+  harness sha `f0f8b4b` is a 2026-07-31 P3-era commit. **§0.3's rendering
+  statement is corrected to match**: the P4-collected cell-A range is
+  `run-015`…`run-053`, 39 runs, and all 39 render (zero `RENDER FAILED` rows in
+  that range).
+
+  The boundary is **derived, not asserted**: command 11 defines a P4 run as one
+  whose `patches_git_sha` starts with `7000c785`, which is the sha that moved at
+  the relink (§9.3), and prints the resulting per-cell ranges so the definition
+  is checkable rather than taken on trust.
+
 - **P4 ↔ P3 cross-phase comparisons carry the engine-identity caveat.** Any
   statement that sets a P4 per-cell absolute against a P3 one crosses an engine
   relink. **This document makes no such statement.** The attribution bracket
@@ -1065,20 +1126,20 @@ local digest `sha256:b78ec01a…a5385`, `map_name` `Town10HD_Opt`,
 Every command in this document, in one place. All were run from the repository
 root at commit `fcb83334637b6c7be6e7fda88da2ce2dd0f77c46` on an idle host.
 
-| #   | produces                                                     | command                                                                                                                                                                            |
-| --- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | 0.3's per-cell regeneration (exit 1, explained in 0.3)       | `PYTHONPATH=. python3 -m benchmarks.report benchmarks/results > /tmp/p4-report-tables.md`                                                                                          |
-| 2   | sections 2 and 3's verdict — **P4's single duel invocation** | `PYTHONPATH=. python3 benchmarks/scripts/duel_verdict.py A B-cyc > /tmp/p4-duel-verdict.md`                                                                                        |
-| 3   | 0.4's pool census (the 4 + 10 split the tool prints as 14)   | the `manifest.json` walk below                                                                                                                                                     |
-| 4   | 3.2's `vector-map-delivery.json` census                      | the `vector-map-delivery.json` walk below                                                                                                                                          |
-| 5   | section 4's `ndt_rate_ratio` table                           | the `quality.json` walk below                                                                                                                                                      |
-| 6   | 2.6's clock-fit residual table                               | the `fit_sim_wall_affine` walk below                                                                                                                                               |
-| 7   | the per-cell metric bindings quoted throughout               | `PYTHONPATH=. python3 -c "from benchmarks.scripts.cell_info import load_cells_doc, metrics_for; d=load_cells_doc(None); print(metrics_for(d,'A')); print(metrics_for(d,'B-cyc'))"` |
-| 8   | 6.4's ablation decomposition                                 | the `read_resources_csv` walk below                                                                                                                                                |
-| 9   | section 5's C1(a) table                                      | `for r in 001 002 003 004 005; do PYTHONPATH=. python3 -m benchmarks.scripts.cal_report benchmarks/results/CAL-seam/run-$r; done` + the delta walk below                           |
-| 10  | section 6's ceiling tables                                   | `PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py {A,B-cyc} --class {vlp16,32ch}` (four invocations)                                                                       |
-| 11  | section 9's identity census                                  | the six-key census in `p3-baseline.md` §9.1, run verbatim, plus the per-pool walk below                                                                                            |
-| 12  | the test-suite baseline                                      | `python3 -m pytest tests/ -q` → **1317 passed, 1 skipped** (P3's was 1084 passed / 1 skipped). See the note below on the one registered load-sensitive flake.                      |
+| #   | produces                                                                                                                                      | command                                                                                                                                                                            |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 0.3's per-cell regeneration (exit 1, explained in 0.3)                                                                                        | `PYTHONPATH=. python3 -m benchmarks.report benchmarks/results > /tmp/p4-report-tables.md`                                                                                          |
+| 2   | sections 2 and 3's verdict — **P4's single duel invocation**                                                                                  | `PYTHONPATH=. python3 benchmarks/scripts/duel_verdict.py A B-cyc > /tmp/p4-duel-verdict.md`                                                                                        |
+| 3   | 0.4's pool census (the 4 + 10 split the tool prints as 14)                                                                                    | the `manifest.json` walk below                                                                                                                                                     |
+| 4   | 3.2's `vector-map-delivery.json` census                                                                                                       | the `vector-map-delivery.json` walk below                                                                                                                                          |
+| 5   | section 4's `ndt_rate_ratio` table                                                                                                            | the `quality.json` walk below                                                                                                                                                      |
+| 6   | 2.6's clock-fit residual table                                                                                                                | the `fit_sim_wall_affine` walk below                                                                                                                                               |
+| 7   | the per-cell metric bindings quoted throughout                                                                                                | `PYTHONPATH=. python3 -c "from benchmarks.scripts.cell_info import load_cells_doc, metrics_for; d=load_cells_doc(None); print(metrics_for(d,'A')); print(metrics_for(d,'B-cyc'))"` |
+| 8   | 6.4's ablation decomposition                                                                                                                  | the `read_resources_csv` walk below                                                                                                                                                |
+| 9   | section 5's C1(a) table                                                                                                                       | `for r in 001 002 003 004 005; do PYTHONPATH=. python3 -m benchmarks.scripts.cal_report benchmarks/results/CAL-seam/run-$r; done` + the delta walk below                           |
+| 10  | section 6's ceiling tables                                                                                                                    | `PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py {A,B-cyc} --class {vlp16,32ch}` (four invocations)                                                                       |
+| 11  | **all of section 9** — the BuildId census and count (9.1), the per-pool `harness_git_sha` / `patches_git_sha` table (9.2), and 9.3's key move | the walk below (plus the six-key census in `p3-baseline.md` §9.1, run verbatim, for the live-vs-filed distinction)                                                                 |
+| 12  | the test-suite baseline                                                                                                                       | `python3 -m pytest tests/ -q` → **1317 passed, 1 skipped** (P3's was 1084 passed / 1 skipped). See the note below on the one registered load-sensitive flake.                      |
 
 **The suite figure carries a disclosure, because the wrap's own verification run
 did not print it cleanly.** The baseline was measured on an idle host at this
@@ -1212,22 +1273,48 @@ print("median", round(statistics.median(d50),4), "min", round(min(d50),4), "max"
 PY
 ```
 
-Command 11 — the per-pool identity walk:
+Command 11 — the identity walk. It produces **all three** of section 9's
+subsections: the campaign-wide `engine_build_id` census with its counts and the
+derived P4 partition (§9.1), the per-pool `harness_git_sha` / `patches_git_sha`
+table (§9.2), and the `patches_git_sha` value §9.3 is about. Filed as
+`benchmarks/evidence/p4-task16-wrap/identity_walk.py`; its output is filed
+alongside as `identity-walk.log`.
 
 ```bash
-PYTHONPATH=. python3 - <<'PY'
-import json, pathlib
-from collections import defaultdict
-for cell in ("A", "B-cyc", "CAL-seam"):
-    agg = defaultdict(set)
-    for p in sorted((pathlib.Path("benchmarks/results")/cell).glob("run-*/manifest.json")):
-        m = json.loads(p.read_text())
-        agg["engine_build_id"].add(str(m["placement"].get("engine_build_id")))
-        agg["autoware_image"].add(m["autoware_image"])
-        agg["dds_profile_sha256"].add(m["transport"]["dds_profile_sha256"])
-    print(cell, {k: sorted(v) for k, v in agg.items()})
-PY
+PYTHONPATH=. python3 benchmarks/evidence/p4-task16-wrap/identity_walk.py
 ```
+
+```text
+engine_build_id over all 191 filed manifests:
+  bc08ce19-f19c-46fe-808f-dbb2b0ddf41a     84
+  4210e602-78ec-46e1-8f2f-03fadbe036a3     61
+  None                                     46
+
+P4 runs (patches_git_sha startswith 7000c785): 89
+  A          run-015..run-053  n=39  engine_build_id={'bc08ce19': 39}
+  B-cyc      run-001..run-045  n=45  engine_build_id={'bc08ce19': 45}
+  CAL-seam   run-001..run-005  n=5   engine_build_id={'None': 5}
+
+  A closed-loop duel           n=10  harness=['3fcd807'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A static duel                n=10  harness=['d57df9d'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A static non-duel            n=1   harness=['876b500'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A sweep 32ch                 n=9   harness=['55df5c1'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A sweep vlp16                n=9   harness=['51d27f2-dirty'] patches=['7000c78-dirty'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  B-cyc EXCLUDED               n=6   harness=['55df5c1'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc closed-loop duel       n=10  harness=['3fcd807'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc closed-loop non-duel   n=1   harness=['876b500'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc static duel            n=10  harness=['d57df9d'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc sweep 32ch             n=9   harness=['4e195f6', '55df5c1'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc sweep vlp16            n=9   harness=['51d27f2-dirty'] patches=['7000c78-dirty'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  CAL-seam static non-duel     n=5   harness=['7a3651b'] patches=['7000c78'] buildid=['None'] image=['none'] dds=['1eeef31e']
+```
+
+Read §9.2's table off the `harness=` column and §9.1's image confound (row P4-1)
+off the `image=` / `dds=` columns. The walk abbreviates shas by `partition("-")`
+rather than by slicing, deliberately: `sha[:7]` would silently drop the
+`-dirty` suffix that `write_manifest.py:19-22` appends when the working tree
+differed from HEAD — which is the one thing about these two keys most worth
+surfacing, and which §8.2 and §9.2 both depend on being visible.
 
 ## 11. What P4 hands to P5/P6
 

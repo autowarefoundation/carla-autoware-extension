@@ -7311,3 +7311,90 @@ producing an empty `/proc/<pid>/cmdline` read, and the assertion that fired was
 this should be the PRE-exec argv", i.e. exactly that mode. Re-run in isolation:
 **1 passed in 5.17 s**, the same figure §26.1 recorded. Equal to the baseline,
 which is what a documentation-only task should produce: it adds no tests.
+
+## 29. CORRECTIONS to §28, appended 2026-08-04 (P4 Task 16, review fix round 1)
+
+**§28 is left exactly as written and is not revised in place**; this section
+supersedes it on one point. Nothing under `benchmarks/results/*/run-*` was
+touched, and this append preserves the file's append-only invariant
+(`new.startswith(old)`).
+
+Review round 1 raised six Important findings. **Five of them are in
+`docs/evaluation/p4-transport-sweep.md`, which is Task 16's own deliverable
+rather than filed evidence, and were corrected in place** — the same disposition
+P3's wrap took for its own fix commits. **One lands in this file**, and it is
+recorded here in the shape §27.1 established: the wrong sentence quoted verbatim,
+retracted, with the numbers that refute it.
+
+### 29.1 RETRACTED: "seven of ten B-cyc closed-loop runs exceed 20 ms" (corrects §28.4(b))
+
+§28.4(b) says, verbatim:
+
+> These are maxima over a run, not typical errors — the metric takes a p50 over
+> ~1400 samples, so a localised excursion moves few of them — but seven of ten
+> B-cyc closed-loop runs exceed 20 ms, and the pool median is 27× the margin.
+
+**"seven" is wrong. It is eight.** The refutation is the table printed one line
+above the sentence in §28.4(b) itself, and it needs no new measurement:
+
+```text
+B-cyc closed-loop: [78.5, 79.2, 71.8, 77.4, 23.7, 64.4, 44.8, 1.7, 44.8, 1.8]
+```
+
+Eight of those ten exceed 20 ms — every value except `1.7` and `1.8`. **Seven is
+the count above 40 ms** (the same list minus `23.7`), so the threshold was
+transcribed wrong, not the count.
+
+**The direction of the error is the part worth recording.** This sentence is what
+establishes how much weight the campaign's weakest parity row can bear, and the
+mistake made the caveat look **milder** than the data supports. The corrected
+reading is therefore slightly stronger against the closed-loop `one_hop_wall_ms`
+parity row than §28.4(b) claimed, not weaker: eight of ten runs, not seven, carry
+a max-abs sim→wall fit residual above 10× the metric's own 2.0 ms margin.
+
+**Unaffected:** the median (54.60 ms), the 27×-the-margin figure, the per-run
+list itself, the A-side figures, and §28.4(b)'s conclusion that the
+`one_hop_wall_ms` parity rows are the weakest in the wrap. Only the count and its
+threshold move. Reproduce with the wrap document's command 6.
+
+### 29.2 A second claim in the same paragraph was too strong, and is corrected in the wrap only
+
+The wrap's §2.6 asserted "Cell A's fit is an order of magnitude tighter on both
+arms". That is true on the closed-loop arm (3.58 against 54.60 — 15×) and
+**false on the static arm** (1.77 against 3.77 — 2.1×). It is corrected in
+`docs/evaluation/p4-transport-sweep.md` rather than here, because **no sentence
+in §28 makes that claim**; it is recorded in this section only so that a reader
+comparing the two documents does not read the divergence as a new discrepancy.
+
+### 29.3 §28 is otherwise unchanged, and what the review verified independently
+
+The other four findings are wrap-document defects with no counterpart in §28:
+two mis-numbered command citations, an unbounded absolute in the byte-asymmetry
+caveat, and a run count (`91`) attached to a walk that printed neither a run
+count nor the shas it was cited for. That last one was **fixed at the source
+rather than by substituting a better number**: the walk now emits the
+`engine_build_id` census with counts, the P4 partition it derives from
+`patches_git_sha`, and the per-pool `harness_git_sha` / `patches_git_sha` table,
+and it is filed as
+`benchmarks/evidence/p4-task16-wrap/identity_walk.py` with its output alongside.
+
+Two facts that walk establishes and that no section above states, recorded here
+because they are properties of the filed data rather than of the wrap:
+
+- **The P4 boundary in cell A falls at `run-015`, not `run-016`.** `A/run-015`
+  is Task 11's cell-A bring-up (§14.2, `duel_admissible: false`) and is the first
+  cell-A run carrying both `patches_git_sha 7000c78` and `engine_build_id
+  bc08ce19`. `A/run-014` carries `ccff4f9` / `4210e602`, and its harness sha
+  `f0f8b4b` is a 2026-07-31 P3-era commit.
+- **84 filed manifests carry `bc08ce19`; 89 filed runs are P4 runs.** The
+  difference is CAL-seam's five, which carry **no** `placement.engine_build_id`
+  key at all — §12.2's structural finding, not drift. Zero P4 manifests carry
+  `4210e602`, so §28's within-P4 single-identity claim stands; only the count
+  attached to it in the wrap was wrong.
+
+**§28.1's one-shot record is untouched and was independently re-derived by the
+review**: `duel_verdict.py A B-cyc` reproduces md5
+`f59d33f279b30e5374408b84322c7e25` at 4351 bytes, and the pool matches the
+pre-registered run-ids on all four legs. **It was not re-run as a recorded
+invocation by this fix round** — the one-shot rule binds the record, and a
+read-only re-derivation for verification is not a second invocation of it.
