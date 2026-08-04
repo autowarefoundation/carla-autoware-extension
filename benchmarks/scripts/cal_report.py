@@ -56,6 +56,34 @@ on the SAME host as the observer, so one-hop wall latency is the direct
 difference `arrival_system_ns - header_stamp_ns` -- no sim/wall affine fit
 (`benchmarks/analysis/clockfit.py`) is needed, or even possible, here.
 
+    FIRST SENTENCE CORRECTED 2026-08-03 (P4 Task 10 fix round). The paragraph
+    above stays verbatim as what it asserted; its CONCLUSION is unaffected.
+    "A CAL run has NO `clock.csv`: there is no simulation" is FALSE for
+    CAL-seam, and became false the moment that cell was reinstated. CAL-seam is
+    `carla: 0.10-fork`, not `carla: none`: it boots a real CARLA fork editor,
+    `cell_info` reports `has_sim_clock: true` for it, and each of the five
+    filed runs (`benchmarks/results/CAL-seam/run-001..005`) carries a 1258-row
+    `clock.csv` recording `/clock` at ~19.95 Hz. The claim was written while
+    CAL-rmw -- which genuinely has no simulator -- was the only live CAL cell,
+    and it generalised from that one cell to the whole approach.
+
+    WHAT STILL HOLDS, and why this is still the right tool: the reason no
+    affine fit is wanted here is NOT the absence of a sim clock. It is that
+    BOTH bench publishers stamp `header.stamp` with WALL `now()` on the same
+    host as the observer -- the second sentence above, which is correct and is
+    what the arithmetic actually rests on. The direct difference is therefore
+    right for these publishers whether or not a sim clock exists, and on
+    CAL-seam one does. "or even possible" is the part that does not survive: a
+    fit is possible on CAL-seam, it is simply wrong for these stamps.
+
+    That distinction is load-bearing rather than pedantic. BECAUSE
+    `has_sim_clock` is true, `benchmarks/run.sh` step 15 hands CAL-seam runs to
+    `report.summarize_run`, which DOES apply `fit_sim_wall_affine` to these
+    wall stamps and renders one-hop columns of about -1.79e12 ms in every filed
+    `report.md`. That rendering is a registered, expected artefact rather than
+    a defect (`benchmarks/results/PROVENANCE.md` 12.4), and THIS module -- not
+    that one -- is what a CAL-seam one-hop number may be read from.
+
 Percentile and rate math is not reimplemented: achieved Hz comes from
 `benchmarks.analysis.cadence.inter_arrival_stats` (the same helper
 `report.py` uses); the direct-difference one-hop latency is

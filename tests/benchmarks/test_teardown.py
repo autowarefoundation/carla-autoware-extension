@@ -1347,3 +1347,138 @@ def test_teardown_without_an_ablation_pid_file_is_unchanged(tmp_path):
         if sim.poll() is None:
             sim.kill()
         sim.wait(timeout=5)
+
+
+# --- P4 Task 10 fix round: the editor-log capture -------------------------
+#
+# WHY THESE EXIST. The first CAL-seam collection (results/CAL-seam/run-001..005,
+# PROVENANCE 12) found a per-run publish gap on `/bench/incore_cloud` that it
+# could not attribute, because the only place the in-core twin reports a skip is
+# carla::log_error -> std::cerr (BenchIncoreCloudPublisher.cpp:281,299) -- the
+# EDITOR's stderr -- and on the run_e2e.sh launch path nothing copied that stream
+# into the run directory. teardown.sh now files it as carla-editor.log.
+#
+# Per this file's binding rule, none of the three below asserts on source text
+# for the WIRING: the two behavioural ones run the real teardown.sh and check a
+# real file appearing (or not appearing) with real content. The third pins a
+# cross-file literal, which is the one thing only a text comparison can pin, and
+# says so.
+
+
+def _editor_log_env(run_dir: Path, editor_log: Path | None) -> dict:
+    """A minimal extension-family launch.env with no simulator to stop, so the
+    only thing teardown.sh can do here is the log copy under test."""
+    kv = {
+        "APPROACH": "extension",
+        "AW_CONTAINER": "",
+        "AW_COMPOSE": "",
+        "CARLA_TREE": "",
+        "CARLA_PID_FILE": "",
+    }
+    if editor_log is not None:
+        kv["EDITOR_LOG"] = str(editor_log)
+    _write_launch_env(run_dir, **kv)
+    return kv
+
+
+def _seed_manifest(run_dir: Path) -> Path:
+    """run.sh writes manifest.json at step 4, before the launcher boots
+    anything, so it is teardown.sh's reference for 'written by this run'."""
+    manifest = run_dir / "manifest.json"
+    manifest.write_text("{}")
+    return manifest
+
+
+def test_editor_log_is_filed_into_the_run_dir_when_fresher_than_the_manifest(tmp_path):
+    """The real-effect pin: a run whose editor log was written AFTER the
+    manifest gets that log filed as carla-editor.log, with its content intact.
+
+    Content, not just existence: a zero-byte or truncated copy would satisfy an
+    existence check while retaining none of the diagnostics the capture exists
+    for."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _seed_manifest(run_dir)
+
+    editor_log = tmp_path / "carla-e2e.log"
+    body = "ERROR: CAL-seam: BlobPublish FAILED on /bench/incore_cloud\nLogInit: Display: x\n"
+    editor_log.write_text(body)
+    os.utime(editor_log, (time.time() + 10, time.time() + 10))
+
+    env = _editor_log_env(run_dir, editor_log)
+    result = run_teardown(run_dir, {**os.environ, **env})
+
+    assert result.returncode == 0, result.stderr
+    filed = run_dir / "carla-editor.log"
+    assert filed.is_file(), f"carla-editor.log was not filed; teardown said: {result.stdout}"
+    assert filed.read_text() == body
+
+
+def test_stale_editor_log_is_NOT_filed(tmp_path):
+    """The guard that makes the capture trustworthy rather than merely present.
+
+    EDITOR_LOG is a fixed /tmp path that outlives the run that wrote it, so a
+    run whose editor never wrote one must not inherit the PREVIOUS run's log --
+    that would file another run's evidence under this run's directory, which is
+    worse than the gap the capture closes."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest = _seed_manifest(run_dir)
+
+    editor_log = tmp_path / "carla-e2e.log"
+    editor_log.write_text("ERROR: CAL-seam: BlobPublish FAILED on /bench/incore_cloud\n")
+    # Older than the manifest == left behind by an earlier run.
+    old = time.time() - 3600
+    os.utime(editor_log, (old, old))
+    now = time.time()
+    os.utime(manifest, (now, now))
+
+    env = _editor_log_env(run_dir, editor_log)
+    result = run_teardown(run_dir, {**os.environ, **env})
+
+    assert result.returncode == 0, result.stderr
+    assert not (run_dir / "carla-editor.log").exists(), (
+        "a stale editor log was filed as if this run had produced it"
+    )
+    assert "NOT saving" in result.stdout
+
+
+def test_no_editor_log_declared_files_nothing_and_is_not_an_error(tmp_path):
+    """The launchers that start the editor themselves (cells/tier4-native.sh,
+    cells/extension.sh's ablation arm) already redirect it into the run
+    directory and leave EDITOR_LOG unset. That must be a silent no-op, not a
+    failure and not a copy."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _seed_manifest(run_dir)
+
+    env = _editor_log_env(run_dir, None)
+    result = run_teardown(run_dir, {**os.environ, **env})
+
+    assert result.returncode == 0, result.stderr
+    assert not (run_dir / "carla-editor.log").exists()
+
+
+def test_launcher_editor_log_path_matches_run_e2e_sh(tmp_path):
+    """Cross-file literal pin, and deliberately the ONE text assertion here.
+
+    The path is a constant duplicated in three files: scripts/e2e/run_e2e.sh
+    decides where the editor's output goes, and the two launchers that delegate
+    the editor to it must name the same file or teardown.sh copies nothing (or,
+    worse, something else). No behavioural test can catch that drift without
+    booting a real editor, so it is pinned as the literal it is. The WIRING is
+    pinned behaviourally by the three tests above."""
+    log_line = [
+        ln
+        for ln in (REPO / "scripts" / "e2e" / "run_e2e.sh").read_text().splitlines()
+        if ln.startswith("LOG=")
+    ]
+    assert len(log_line) == 1, f"expected exactly one LOG= in run_e2e.sh, got {log_line}"
+    editor_log_path = log_line[0].split("=", 1)[1].strip().strip('"')
+
+    for launcher in ("calibration.sh", "extension.sh"):
+        text = (REPO / "benchmarks" / "cells" / launcher).read_text()
+        assert f'EDITOR_LOG="{editor_log_path}"' in text, (
+            f"{launcher} does not declare EDITOR_LOG={editor_log_path!r}; "
+            "it has drifted from run_e2e.sh and teardown.sh would file the wrong file"
+        )

@@ -3906,3 +3906,223 @@ before booting, and each manifest records the loadavg its own preflight read.
 This is the same class of disclosure as §8.4 and bounds nothing about the
 paired delta, which is taken within a single run.
 
+---
+
+## 13. CORRECTIONS to §12, appended 2026-08-03 (P4 Task 10, review fix round 1)
+
+**§12 above is left exactly as written and is not revised in place**; this
+section supersedes it point by point. Read §12 **with** this section, not
+instead of it — several figures in §12 are wrong and one of its arguments had
+no discriminating power at all. Nothing under
+`benchmarks/results/CAL-seam/run-*` was touched: the data is unchanged and only
+the reading of it is corrected.
+
+**The headline is unchanged and was re-verified from the filed CSVs:** both
+twins are live in all five runs, byte-identical at 921 908 B, and the Step-3
+STOP correctly did not fire. What follows narrows the *strength* of two
+arguments and fixes several wrong numbers.
+
+### 13.1 The pair spread is up to 1.59 %, not 0.6 % (corrects §12.5)
+
+§12.5 says the twins "track each other to within 0.6 % in every run". That is
+wrong, and it is the number the common-mode claim rests on:
+
+| run | seam Hz | in-core Hz | spread |
+| --- | --- | --- | --- |
+| run-001 | 8.0472 | 8.0155 | 0.39 % |
+| run-002 | 7.9664 | 7.9187 | 0.60 % |
+| run-003 | 8.0443 | 8.0284 | 0.20 % |
+| run-004 | 7.9553 | 7.8758 | **1.00 %** |
+| run-005 | 8.0017 | 7.8748 | **1.59 %** |
+
+The correct statement is **0.20–1.59 %**. 0.6 % was the worst of the first two
+runs generalised to all five; it understates the true worst case by 2.6×.
+
+### 13.2 The decimation is common-mode; a residual in-core-only loss is not (corrects §12.5)
+
+§12.5's "the sim-clock delta at publish takes exactly two values and no others"
+is true **only of the seam twin**:
+
+| run | `/bench/seam_cloud` | `/bench/incore_cloud` |
+| --- | --- | --- |
+| 001 | 100/150 only | + one 250 ms |
+| 002 | 100/150 only | + three 250 ms |
+| 003 | 100/150 only | clean |
+| 004 | 100/150 only | + four 250 ms |
+| 005 | 100/150 only | + two 200, three 250, one 300 ms |
+
+The seam twin has **zero** anomalous gaps in **5 of 5** runs; the in-core twin
+has them in **4 of 5**. Correspondingly `seam Hz > incore Hz` in **5 of 5** —
+one-directional, so this is a real asymmetry, not noise. Same-tick pairing (the
+two topics sharing an observer `clock_ns`) is 97.4 / 98.4 / 99.0 / 95.8 /
+95.0 %.
+
+The split is therefore: **the decimation is genuinely common-mode** — that part
+of §12.5 stands, proved in both publishers' sources — but **there is a
+residual, in-core-only sample loss that is not**, and §12 said nothing about it.
+
+**DIRECTION, which is what makes it survivable.** The losses fall on the
+in-core twin and never on the seam. A lost sample removes that publish from the
+in-core population, so the surviving in-core population is the one that kept up
+— if anything the *faster* one. The bias therefore runs **against** the seam
+measuring cheap: the same direction as the pre-registered publish-order bias in
+§11.9, and conservative under that section's upper-bound rule. This is a
+**bounded, disclosed residual, not a dismissal** — it is a second reason
+`C1(a)` must be read as an upper bound, and Task 16 should state it alongside
+the publish-order and serializer residuals rather than treat the pair as
+perfectly matched.
+
+### 13.3 RETRACTED: the observer-loss refutation had no discriminating power (retracts §12.5's refuted-hypothesis paragraph)
+
+§12.5 refutes "the ~8 Hz is observer-side loss" on the ground that mean
+`header_stamp` Δ equals mean `arrival_system` Δ to five significant figures.
+**That argument is withdrawn: it cannot distinguish the two cases.** It stays in
+the record with the diagnostic that killed it, per this campaign's convention.
+
+Both means telescope over the *same surviving rows*:
+
+```text
+mean(diff(x)) == (x[-1] - x[0]) / (n - 1)
+=> mean(dArrival) - mean(dHeader) == (latency_last - latency_first) / (n - 1)
+```
+
+There is **no term counting missing rows**. Checked against the filed data, the
+identity reproduces the observed difference exactly (run-001 seam: observed
+−0.001617 ms, predicted −0.001617 ms; ~1.3e-05 of the 124 ms mean). Deleting
+20 % of run-003's rows at random leaves the equality just as tight (0.0028 ms →
+0.0036 ms) while the mean interval moves 124 → 156 ms. It is a **latency-drift
+test mislabelled as a loss test**, and it "passes" whether or not anything was
+lost.
+
+Loss was a live possibility, not a hypothetical: both publishers are
+`best_effort / volatile / KeepLast(1)` (`BenchCloudPublisher.cpp:37`,
+`BenchIncoreCloudPublisher.cpp:148`) into a `best_effort` subscriber
+(`bench_observer.cpp:165-166`), carrying 921 KB samples.
+
+**What actually carries the seam-side conclusion** is the quantization evidence
+in §13.2: the seam twin's publish gaps are *only* 100 ms or 150 ms, in every
+run, with zero exceptions across ~2 500 publishes. Transport dropping seam
+samples would necessarily produce 200/250/300 ms gaps, and none exist. So for
+the **seam** twin the ~8 Hz is publisher-side decimation, on that ground.
+
+**For the in-core twin the hypothesis is NOT refuted.** Its anomalous gaps are
+exactly the signature loss would leave, and §13.4 explains why the filed
+evidence cannot presently settle drops-versus-skips.
+
+### 13.4 The attribution gap, and what was done about it (extends §12)
+
+The in-core twin's two non-terminal skip paths report through
+`carla::log_error` → `std::cerr` (`BenchIncoreCloudPublisher.cpp:281`
+"serialize_to_cdr failed", `:299` "BlobPublish FAILED") — onto the **editor's**
+stderr. On the `run_e2e.sh` launch path CAL-seam uses, that stream goes to a
+fixed `/tmp` file (`scripts/e2e/run_e2e.sh:24`), overwritten every boot and
+copied into no run directory. **The five filed runs therefore cannot
+distinguish "the transport dropped it" from "the publisher skipped it"** — on
+the cell whose entire purpose is that publisher. The pool keeps this gap,
+disclosed; nothing was retrofitted onto it.
+
+**An inference that is NOT available, stated so nobody draws it later.** The
+surviving `/tmp` copy from run-005 (the worst run) contains none of those
+strings. That is **not** evidence that no skip occurred: it contains no
+`CAL-seam` line at any level, including the `log_info` enable line at `:246`
+that must have printed, and `carla::log_*` is compile-time gated
+(`LibCarla/source/carla/Logging.h:18-24`: `NDEBUG` ⇒ level `WARNING`, which
+compiles `log_info` out and `log_error` in). With no positive control that the
+channel is live in this build, absence proves nothing either way.
+
+**Fixed for the runs still to come, not for this pool.** The gap belongs to the
+launch path, not the cell — checked, not assumed:
+
+| launcher | how the editor starts | editor stdout filed? |
+| --- | --- | --- |
+| `cells/tier4-native.sh:369-371` (B, B-cyc, D) | launched there, `>"$LAUNCH_LOG"` | **yes**, already |
+| `cells/extension.sh:372-374` (A, ablation arm) | launched there, `>"$LAUNCH_LOG"` | **yes**, already |
+| `cells/extension.sh:460` (A, normal arms) | via `run_e2e.sh` | **no** |
+| `cells/calibration.sh:191` (CAL-seam) | via `run_e2e.sh` | **no** |
+
+Cell B-cyc was never affected, nor was cell A's ablation arm — but cell A's
+**normal** arms, which Tasks 11-15 collect next, were. Those two launchers now
+declare `EDITOR_LOG` in `launch.env`, and `benchmarks/scripts/teardown.sh`
+files it as `carla-editor.log`, guarded so a **stale** `/tmp` log left by an
+earlier run is never filed under a run that did not write one (the guard
+compares against `manifest.json`, which `run.sh` writes before the launcher
+boots anything). Pinned by three new tests in
+`tests/benchmarks/test_teardown.py` that run the real `teardown.sh` and check a
+real file appearing, not appearing, and carrying its content — each verified to
+fail when the wiring it pins is removed — plus one cross-file literal pin
+against drift from `run_e2e.sh`'s own `LOG=`.
+
+**This moves `harness_git_sha` between the CAL-seam pool and every later
+cell.** That is an already-disclosed class of move for this campaign
+(`docs/evaluation/p3-baseline.md` §9.3, "it moved during P3"): the five
+CAL-seam runs are filed at `7a3651b`; cells collected after this fix carry the
+later sha. No CAL-seam artifact changed.
+
+### 13.5 §12.4 stated a number §12's own preamble forbade (corrects §12.4)
+
+§12.4 says "`run-001` reads 0.72 ms / 0.45 ms p50 there". Those are the seam
+and in-core one-hop p50s — **both legs of the C1(a) paired measurement**, from
+which that run's Δ follows by subtraction. §12's preamble promises the section
+"deliberately states no seam-vs-in-core delta and no verdict — Task 16 reads
+the number." The two contradict each other. **The preamble governs.** §12.4
+should have said "sub-millisecond", which is all its actual point — that
+`report.py`'s 1-hop columns are nonsense and `cal_report.py`'s are sane —
+required.
+
+The numbers are **not deleted**: they are committed, and removing them would be
+a second falsification of the record. Instead — that pair is **n = 1 of 5**, it
+is **not an anchor**, and it carries no privileged status. `C1(a)` is computed
+by Task 16 over the full five-run pool, under §11.9's upper-bound rule and the
+residuals in §13.2. Nobody may quote §12.4's pair as the result.
+
+### 13.6 Smaller corrections to §12
+
+- **RTF.** §12.8's "RTF 0.9975–0.9978" omits run-005. True range
+  **0.9975–0.9979** (001 .9975, 002 .9978, 003 .9976, 004 .9976, 005 .9979).
+- **The mean rate.** §12.5's "the observed ~8.03 Hz" is run-001's seam figure.
+  Across five runs the seam mean is **8.003 Hz**, the both-topic mean
+  **7.973 Hz**.
+- **The `lidar_expected_hz` consumer list is incomplete.** §12.5 says it
+  reaches an analysis "only through `_bind_achieved_rate_ratio` and
+  `sweep_verdict.py`". A third binder exists:
+  `duel_verdict.py::_cell_reconciliation_row` (defined `:974`, binds
+  `lidar_topic`/`lidar_expected_hz` at `:1007`). It applies the **same**
+  `lidar_topic`-null guard, so §12.5's conclusion — no consumer, therefore no
+  silent wrong number for CAL-seam — **survives**; only the enumeration was
+  wrong.
+- **"sim-clock delta at publish" is arrival-side.** `observer.csv`'s `clock_ns`
+  is the observer's `latest_clock_ns_` **at receipt** (`bench_observer.cpp:189`
+  sets it, `:296` writes it), not a stamp the publisher applied. Sub-millisecond
+  one-hop latency against a 50 ms tick makes it a faithful tick proxy — which is
+  why the histograms land on exact multiples of 50 ms — but it is a proxy, and
+  §12.5 should have said so.
+- **Step 14 is not corroboration.** §12.5 cites "what the harness itself
+  concluded at step 14 ('none')" as support for not excluding the runs.
+  `run.sh:939-959` tests only `clock_stall.marker`, `WINDOW_SHORT` and
+  `CONTROL_SILENT`; it **structurally cannot** evaluate publish rate, so its
+  silence says nothing about it. The exclusion decision rests solely on the
+  criterion-by-criterion walk, which is unaffected. Claim withdrawn.
+- **The census `carla=` column does separate the two CAL cells.** §12.2 calls
+  CAL-seam's `buildid=-` rows "indistinguishable at a glance from the genuinely
+  container-only CAL-rmw rows". They are not: CAL-seam reads `carla=0.10-fork`
+  and CAL-rmw `carla=none`, on the same census line. The `engine_build_id` gap
+  §12.2 reports is real; only this characterisation of it was overstated.
+- **Every `launch.log` ends in a teardown SIGSEGV, and §12 never said so.** All
+  five carry `UnrealEditor ... Segmentation fault (core dumped)` plus a runner
+  `world.tick()` traceback. This is **not** a criterion-1 crash and the runs are
+  correctly non-excluded: it is the known post-measurement Chaos-teardown
+  SIGSEGV, firing after the window has closed and all data is flushed
+  (`docs/nishishinjuku-map.md`, "Teardown note": it "core-dumps _after_ the
+  measurement has completed and printed all results — benign to the
+  measurement"). Verified as the house norm rather than assumed: **12 of 14**
+  filed cell-A runs and **14 of 14** filed cell-C runs carry the identical
+  signature. Recorded so a first-time reader of this cell meets it here rather
+  than discovering it in the raw log.
+- **`cal_report.py`'s docstring carried a false statement in live code.** Its
+  "a CAL run has NO `clock.csv`: there is no simulation" is falsified by these
+  five runs (1258-row `clock.csv` each) and by §12.4's own `has_sim_clock:
+  true` sentence. Corrected in the campaign's dated-append shape (the paragraph
+  stays; the correction follows it). The tool's arithmetic and conclusion are
+  unaffected, because what justifies the direct difference is that both
+  publishers stamp **wall** time — not the absence of a sim clock.
+

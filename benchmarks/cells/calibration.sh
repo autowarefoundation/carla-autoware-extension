@@ -144,6 +144,20 @@ CARLA_TREE="$BENCH_CARLA_TREE"
 CARLA_RPC_PORT="$BENCH_RPC_PORT"
 CARLA_PID_FILE="$CARLA_PID_FILE"
 LAUNCH_LOG="$LAUNCH_LOG"
+# The EDITOR's own stdout/stderr, as distinct from LAUNCH_LOG above, which
+# holds run_e2e.sh's. run_e2e.sh redirects the editor to this fixed path
+# (scripts/e2e/run_e2e.sh:24) and overwrites it on every boot, so teardown.sh
+# copies it into the run directory as carla-editor.log. Without it the in-core
+# twin's two skip diagnostics (carla::log_error -> std::cerr,
+# BenchIncoreCloudPublisher.cpp:281,299) are retained nowhere, and a publish
+# gap cannot be attributed to the publisher rather than to the transport --
+# the gap P4 Task 10's first collection hit. Declared HERE rather than assumed
+# by teardown.sh, because the launchers that start the editor themselves
+# already redirect it into the run directory and must NOT have a stale /tmp
+# file copied over them; teardown.sh carries the per-path table. Kept
+# byte-identical to run_e2e.sh's own LOG=, which
+# tests/benchmarks/test_teardown.py pins against drift.
+EDITOR_LOG="/tmp/carla-e2e.log"
 AW_CONTAINER=""
 AW_EXEC=""
 AW_SETUP=""

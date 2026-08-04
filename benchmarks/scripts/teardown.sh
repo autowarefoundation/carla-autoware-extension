@@ -408,6 +408,45 @@ if [ -n "${AW_CONTAINER:-}" ] && docker inspect "${AW_CONTAINER}" >/dev/null 2>&
   done
 fi
 
+# The UE editor's OWN stdout/stderr, for the launch path that does not already
+# file it. Added 2026-08-03 (P4 Task 10 fix round) after the first CAL-seam
+# collection could not attribute a per-run publish gap: the in-core bench
+# twin's two non-terminal skip paths log through carla::log_error to std::cerr
+# (LibCarla/.../BenchIncoreCloudPublisher.cpp:281,299 -- "serialize_to_cdr
+# failed", "BlobPublish FAILED"), i.e. into the editor's stderr, and nothing
+# copied that stream into the run directory. Without it the filed evidence
+# cannot separate "the transport dropped it" from "the publisher skipped it"
+# -- on the cell whose entire purpose is that publisher.
+#
+# WHICH PATHS NEED THIS, exactly (checked, not assumed):
+#   cells/tier4-native.sh:369-371  editor launched here, `>"$LAUNCH_LOG"`  -- already filed
+#   cells/extension.sh:372-374     ablation arm, same shape               -- already filed
+#   cells/extension.sh:460         via scripts/e2e/run_e2e.sh             -- NOT filed
+#   cells/calibration.sh:191       via scripts/e2e/run_e2e.sh             -- NOT filed
+# run_e2e.sh owns the editor on the last two and redirects it to its own fixed
+# LOG path (scripts/e2e/run_e2e.sh:24), which is overwritten on every boot. So
+# the launcher that used that path declares EDITOR_LOG in launch.env and this
+# copies it; the two launchers that already redirect into the run directory
+# leave EDITOR_LOG empty and are untouched.
+#
+# FRESHNESS IS LOAD-BEARING, not defensive coding. The source path is a fixed
+# /tmp file that survives the run that wrote it, so an unconditional copy would
+# file the PREVIOUS run's editor log whenever this run's editor died before
+# writing one -- misattributed evidence, which is worse than the gap it closes.
+# manifest.json is the reference because run.sh writes it at step 4, before the
+# launcher boots anything (run.sh:559), so "newer than the manifest" means
+# "written by this run".
+if [ -n "${EDITOR_LOG:-}" ] && [ -r "$EDITOR_LOG" ]; then
+  if [ "$EDITOR_LOG" -nt "$RUN_DIR/manifest.json" ]; then
+    if cp "$EDITOR_LOG" "$RUN_DIR/carla-editor.log" 2>/dev/null; then
+      say "saved carla-editor.log (editor stdout/stderr from $EDITOR_LOG)"
+    fi
+  else
+    say "NOT saving $EDITOR_LOG: older than this run's manifest (stale from an
+  earlier run; this run's editor never wrote it)"
+  fi
+fi
+
 # Containers. The Autoware container is REMOVED, not left running: cells
 # differ in the image they run under the same container name (B45's 0.45 pin
 # vs B's, the bridge image vs compose's), so leaving one up would silently

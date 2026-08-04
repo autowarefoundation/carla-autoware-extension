@@ -285,6 +285,23 @@ if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
   LAUNCH_ARM_ENABLED=0
 fi
 
+# The EDITOR's own stdout/stderr, for teardown.sh to file as carla-editor.log.
+# ARM-DEPENDENT, and that is the point: the ablation arm launches the editor
+# itself, straight into $LAUNCH_LOG (:372-374 below), so its editor output is
+# ALREADY in the run directory and EDITOR_LOG must stay EMPTY there -- pointing
+# it at the shared /tmp path on that arm would file a stale log left by
+# whichever run last used run_e2e.sh. The normal path (:460) hands the editor
+# to run_e2e.sh, which redirects it to that fixed path
+# (scripts/e2e/run_e2e.sh:24) and overwrites it on every boot; nothing filed it
+# until P4 Task 10's fix round, whose first CAL-seam collection could not
+# attribute a per-run publish gap to the publisher rather than the transport
+# because the in-core twin's skip diagnostics live only on that stream.
+# teardown.sh carries the per-path table and the staleness guard;
+# tests/benchmarks/test_teardown.py pins this path against drift from
+# run_e2e.sh's own LOG=.
+EDITOR_LOG=""
+[ "$BENCH_ARM_IS_ABLATION" = "1" ] || EDITOR_LOG="/tmp/carla-e2e.log"
+
 cat >"$BENCH_LAUNCH_ENV" <<EOF
 # Written by benchmarks/cells/extension.sh ($MODE) -- sourced by run.sh and
 # teardown.sh. Every value is resolved, never re-derived downstream.
@@ -297,6 +314,7 @@ CARLA_TREE="$BENCH_CARLA_TREE"
 CARLA_RPC_PORT="$BENCH_RPC_PORT"
 CARLA_PID_FILE="$CARLA_PID_FILE"
 LAUNCH_LOG="$LAUNCH_LOG"
+EDITOR_LOG="$EDITOR_LOG"
 AW_CONTAINER="$AW_CONTAINER"
 AW_EXEC="docker exec -e ROS_DOMAIN_ID=0 $AW_CONTAINER"
 AW_SETUP="source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0"
