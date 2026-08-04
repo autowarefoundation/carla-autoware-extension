@@ -7083,3 +7083,231 @@ already exclude it — a lint-driven edit, even a `# shellcheck disable=` line,
 would make a certified producer no longer the file that produced the recorded
 figure — and lets prettier format the .md, which is authored narrative and
 deliberately not excluded. No measurement is affected.
+
+## 28. P4 Task 16: THE ONE-SHOT WRAP — the duel verdicts, C1(a), and the ceiling search adjudicated (2026-08-04)
+
+**Nothing above is rewritten and nothing under `benchmarks/results/*/run-*` was
+touched.** This section is appended, and it is the section in which the
+campaign's no-peeking rule is lifted — for this task and only for this task,
+exactly as the P4 spec's Stage 3 registered it. Every prior P4 task was
+forbidden from reading a duel verdict, a delta or a cross-cell median; this is
+the registered one-shot where that reading happens, and the one-shot discipline
+replaces the rule it lifts.
+
+The published record is `docs/evaluation/p4-transport-sweep.md`. This section
+records what this task *did*, what it found while doing it, and the two things
+it corrects in the record above. It does not restate the wrap.
+
+### 28.1 The single duel invocation
+
+```bash
+PYTHONPATH=. python3 benchmarks/scripts/duel_verdict.py A B-cyc > /tmp/p4-duel-verdict.md
+```
+
+Exit 0, 4351 bytes, md5 `f59d33f279b30e5374408b84322c7e25`. **Invoked exactly
+once**, with no filtering flags, at commit
+`fcb83334637b6c7be6e7fda88da2ce2dd0f77c46`. It was not re-run with adjusted
+flags after the first result and it is not re-run anywhere else. The cells were
+passed in the order `A B-cyc`, matching the `duel_id` `duel.sh` stamped on all
+forty runs — `duel_verdict.py:1232` concatenates without normalisation and the
+legacy clause at `:1233` is gated on `("A","B")`, so the order is not
+reversible.
+
+**Capture deviation, same as §20.2's and for the same reason:** `>` redirection
+instead of the brief's `| tee`, because an `rtk` proxy compresses piped output
+on this host and the verdict is filed as byte-exact evidence. It cannot affect
+what the tool computed.
+
+The complete output is reproduced verbatim in the wrap document's §2.1, in a
+fenced block rather than as a re-typed markdown table — so that, unlike P3 §4.1,
+no formatter transformation stands between the tool's output and the record and
+no padding check is needed.
+
+### 28.2 The pool was selected by `duel_id`, and the partition is verified on live data
+
+The spec's 1d amendment existed to stop a P4 verdict silently pulling P3's cell-A
+static pool into its count. It worked, and the evidence is positive rather than
+inferential:
+
+```text
+A static:          {'not-admissible': 4, 'wrong-duel_id': 10, 'pooled': 10}   run-016..025
+A closed-loop:     {'not-admissible': 1,                      'pooled': 10}   run-026..035
+B-cyc static:      {                                          'pooled': 10}   run-002..011
+B-cyc closed-loop: {'not-admissible': 1,                      'pooled': 10}   run-012..021
+```
+
+The ten `wrong-duel_id` drops on cell A's static arm are exactly
+`A/run-003`…`run-012` — P3's own duel pool, carrying `duel_id: ""` — held out of
+a P4 verdict **with no filed manifest rewritten**. Zero exclusions on any of the
+four pools.
+
+**A reading trap worth recording.** The tool prints `14 run(s) not
+duel-admissible in A`, not `4 + 10`. `_walk_cell_runs`' own docstring registers
+that a run dropped by the `duel_id` filter is counted on the **same**
+`n_inadmissible` counter as a `duel_admissible: false` run, deliberately, because
+both are "valid data outside this duel's design". The 4/10 split is therefore
+**not** recoverable from the notes column and has to come from a manifest walk;
+the wrap files that walk as its command 3.
+
+### 28.3 What the verdicts say, in one paragraph
+
+Static: `one_hop_wall_ms`, `lidar_to_ndt_sim_ms` and `achieved_rate_ratio` all
+return **`parity`** where P3's A-vs-B returned a separation outside the margin on
+every one of them; `carla_process_cpu_pct` separates beyond its margin **in the
+opposite direction from P3** (+52.005 pp against P3's −12.873 pp);
+`control_staleness_ms` is `insufficient-data` at n = 0/8. Closed-loop — the
+campaign's first — **all five** metrics compute at n = 10/10: four `parity`,
+`carla_process_cpu_pct` `b_better` at +58.250 pp. The pre-registered per-metric
+reading is applied in the wrap's §2.3 and §2.5; **no composite was formed**, as
+the claim table forbids.
+
+### 28.4 TWO CORRECTIONS to sections above, found by this task
+
+**(a) §14.4's two-row delivery table is accurate but its n is smaller than it
+reads.** §14.4 sets `B/run-031` (`pre_republish_delivered: false`, three 60 s
+attempts, `exit_code` 5) against `B-cyc/run-001` (true, one attempt, 27 ms). A
+census of **every** filed `vector-map-delivery.json` — three on cell B, eleven on
+cell B-cyc — shows a **third** Fast-DDS run carrying the probe:
+
+| cell / run    | rmw / profile                  | `pre_republish_delivered` | attempts | `exit_code` | run disposition                |
+| ------------- | ------------------------------ | ------------------------- | -------- | ----------- | ------------------------------ |
+| `B/run-031`   | fastrtps + `udp_only.xml`      | **false**                 | 3        | 5           | excluded `crash:cell-launch`   |
+| `B/run-032`   | fastrtps + `udp_only.xml`      | **true**                  | 1        | 0           | excluded **`gate:arm-failed`** |
+| `B/run-033`   | cyclone, no profile            | true                      | 1        | 0           | the P3 bounding probe          |
+| `B-cyc/*`     | cyclone, no profile            | **true, 11 of 11**        | 1 each   | 0           | `run-001` + `run-012`…`021`    |
+
+Two consequences, neither of which §14.4 could have stated at n = 1:
+
+1. **The map leg is nondeterministic under Fast-DDS** — 1 false of 2 runs that
+   carry the probe on that transport. That is exactly what P3 §5.1 says the
+   defect is, and it means the Fast-DDS side of this comparison is **n = 2, not a
+   rate**. The Cyclone side is n = 11, all delivered pre-republish, verified in
+   0.006–0.027 s.
+2. **The map leg is not the whole blocker.** `B/run-032` got its map *and still
+   failed to arm*. §14.4 already scoped its claim to the map leg ("the route and
+   `operation_mode` legs have no equivalent artefact"); this is the positive
+   evidence for that scoping rather than an assertion of it, and it is why the
+   closed-loop result rests on twenty filed runs rather than on the probe.
+
+`data_bytes` is **1 305 281 on all fourteen**, so the payload-identity leg is
+unaffected. §14.4 is not rewritten; this supersedes how its table may be read.
+
+**(b) The `one_hop_wall_ms` rows must be read next to a clock-fit residual that
+is worse than P3's on one pool, and no section above states it.**
+`benchmarks/README.md:624` registers that "a duel row must be read next to that
+run's `fit_residual_ns`". The tool prints the medians; the per-run spread was
+derived here:
+
+| pool              | max-abs sim→wall fit residual per run (ms)              | median   |
+| ----------------- | -------------------------------------------------------- | -------- |
+| A static          | 2.0 1.7 2.5 2.1 1.5 1.7 2.0 1.6 1.8 1.7                  | **1.77** |
+| B-cyc static      | 1.3 5.8 65.4 58.9 1.3 1.1 70.4 24.9 1.0 1.7              | **3.77** |
+| A closed-loop     | 3.1 2.3 3.0 4.4 2.8 2.4 4.1 4.1 4.8 5.2                  | **3.58** |
+| B-cyc closed-loop | 78.5 79.2 71.8 77.4 23.7 64.4 44.8 1.7 44.8 1.8          | **54.60**|
+
+`one_hop_wall_ms` is computed through that fit against a **2.0 ms** margin.
+These are maxima over a run, not typical errors — the metric takes a p50 over
+~1400 samples, so a localised excursion moves few of them — but seven of ten
+B-cyc closed-loop runs exceed 20 ms, and the pool median is 27× the margin.
+**The `one_hop_wall_ms` parity rows are the weakest parity rows in the wrap**,
+the closed-loop one more so than the static one, and the wrap says so in its
+§2.6 rather than letting the printed `parity` stand unqualified.
+
+### 28.5 C1(a): measured, and reported as an UPPER BOUND
+
+Five CAL-seam runs, `cal_report.py` per run, paired seam − in-core one-hop p50:
+**median +0.2784 ms, range +0.2392 … +0.2988 ms, positive in 5 of 5.** Tail
+deltas do not separate (Δ p99 median −0.045 ms, negative in 3 of 5), and no tail
+claim is made.
+
+**§11.9's pre-registered rule is applied, on two independent grounds.** The
+rule's antecedent — "on the order of a cache-warming effect" — is a judgement
+about scale, and resolving it *after* seeing the number, in the direction that
+weakens the rule, is the post-hoc move the rule exists to prevent. Independently,
+§13.2 instructs this task in terms: the in-core-only sample loss "is a **second
+reason** `C1(a)` must be read as an upper bound, and Task 16 should state it
+alongside the publish-order and serializer residuals". Both are stated in the
+wrap's §5.2 and §5.3, together with §11.9's own 2026-08-03 correction (the seam
+is a late writer on a warm path, so the conservatism argument does not survive
+and the order effect's **sign is not established** — which makes the rule do more
+work, not less).
+
+**The CPU half of the C1(a) table cannot decompose and the wrap says so.** Both
+twins publish from the one `carla-server` process (mean 249.70–252.67 % across
+the five runs), so the per-process table measures the pair together. The ≈0.28 ms
+latency delta is the only quantity C1(a) rests on.
+
+§12.4's early-published run-001 pair (0.72 / 0.45 ms) is **n = 1 of 5**, is not
+an anchor, and was not used as one — §13.5's ruling, honoured.
+
+### 28.6 The ceiling search, adjudicated
+
+All four `sweep_verdict.py` tables were regenerated here and reproduce §22.7,
+§26.7 and §27.4 exactly: **A vlp16 9/9 scored, A 32ch 9/9, B-cyc vlp16 9/9,
+B-cyc 32ch 9 scored + 6 EXCLUDED `harness:65fbe09`** — every scored row
+`reached False` with an empty `reasons` column, `publisher_rate 1.000`, and the
+class-drop counters unchanged (35/9, 35/9, 21/15, 21/9). **No disjunct fired at
+either class on either cell**, so no `n = 5` extension applies, `128ch` stays
+struck on either branch, and the campaign's wording is **"ceiling not located up
+to the 32ch class"** — where the search stopped, not a new step-up.
+
+The ablation decomposition was computed for the wrap (median-of-run-means
+`carla-server` `cpu_pct`, measured arm minus ablation arm, within cell and within
+class): A vlp16 +8.02 pp, A 32ch +5.44 / +10.47 pp, B-cyc vlp16 +0.69 / +0.94 pp,
+B-cyc 32ch **−11.57 / −13.53 pp**. The negative row is the registered RPC-hop
+caveat made concrete — the baseline carries a client stream the natives do not,
+so `total − baseline` is a **lower bound** and on that cell/class **no positive
+bound is recoverable**. It is disclosed, not corrected. The two cells' ablation
+rigs also differ by construction (`sensor_tick` 0.05 vs 0.1, `range` 120 vs 100,
+fov limits present only on the tier4 rig, read from each run's own
+`raycast_baseline.json`), so **no cross-cell reading of that table is licensed**.
+
+### 28.7 Refuted / declined hypotheses
+
+1. **"The three `parity` rows mean the two approaches are equivalent."**
+   Declined. `parity` is a TOST decision against a **frozen** margin, not a proof
+   of identity; on `one_hop_wall_ms` the static CI is [1.441, 1.849] against a
+   2.0 ms margin — inside, but not far inside — and the closed-loop row carries
+   §28.4(b)'s fit-residual caveat.
+2. **"P3's `carla_process_cpu_pct` result can be re-read as the approach
+   difference, now that a shared-rmw comparison exists."** Refuted by the sign:
+   P3 measured A 12.9 pp **below** B; P4 measures A 52.0 pp **above** B-cyc. Both
+   cannot be an approach property. The pre-registered rule attributes the **P4**
+   separation and says nothing that licenses retro-attributing P3's.
+3. **"The M2 `publisher_drop_rate` improvement from ~0.020 to ~0.001 is a
+   transport result."** Refuted: it is the spec's 1f instrument fix (`3b9212e`,
+   pinned by `fd2c125`), applied symmetrically to both cells, removing the
+   teardown-ordering artefact §1 and P3 §7.3 disclosed. The **`observer_loss_rate`**
+   collapse (B 0.085/0.108 → B-cyc 0.000/0.000) is the transport result; the two
+   must not be conflated.
+4. **"The 32ch step-up needed an owner decision."** It did not:
+   `cells.yaml`'s `sweep_classes` block pre-registers both branches, and §22.7's
+   booleans triggered it mechanically. Recorded because the wrap must not read as
+   if a judgement was made where a registration was executed.
+
+### 28.8 What was written
+
+- `docs/evaluation/p4-transport-sweep.md` — the published P4 record.
+- `benchmarks/results/PROVENANCE.md` — this §28, appended as a dated block with
+  no rewrite of anything above it.
+
+Nothing under `benchmarks/results/*/run-*` was deleted, hand-edited, re-scored or
+reclassified; no manifest was touched at all, by `write_manifest.py` or
+otherwise. `benchmarks/config/exclusions.md`, `benchmarks/config/margins.yaml`,
+`benchmarks/analysis/**`, `scripts/expected_topics.yaml` and
+`scripts/spike_stack.json` are untouched. `pre-commit run --all-files` is clean.
+
+**Suite at this wrap: 1317 passed, 1 skipped — effective, and the qualifier is
+disclosed rather than dropped.** The pre-edit baseline at
+`fcb83334637b6c7be6e7fda88da2ce2dd0f77c46` on an idle host was exactly that. The
+post-edit verification run, taken while the host was still loaded from
+`pre-commit run --all-files` (1-minute loadavg 2.44, 5-minute 14.69), reported
+**1 failed, 1316 passed, 1 skipped**:
+`tests/benchmarks/test_teardown.py::test_tier4_autoware_sh_aw_sidecar_settles_on_the_post_exec_cmdline`,
+one of the two registered load-sensitive flakes. **Not accepted on authority** —
+§26.1 records its failure mode as a race in the test's own subprocess setup
+producing an empty `/proc/<pid>/cmdline` read, and the assertion that fired was
+`assert 'os.execv' in ''` under the test's own message "stub setup is broken --
+this should be the PRE-exec argv", i.e. exactly that mode. Re-run in isolation:
+**1 passed in 5.17 s**, the same figure §26.1 recorded. Equal to the baseline,
+which is what a documentation-only task should produce: it adds no tests.
