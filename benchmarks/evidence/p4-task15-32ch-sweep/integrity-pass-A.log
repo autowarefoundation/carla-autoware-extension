@@ -1,8 +1,9 @@
 # P4 Task 15 -- 32ch sweep integrity pass, cell A
 
 Facts only: arm, class label, exclusion label, transport, duel flags,
-instrument PRESENCE (not size), and the ablation client's self-recorded
-rig. No verdicts, no magnitudes, one cell.
+instrument PRESENCE (not size), each measured arm's RIG derived from
+its own observer payload, and the ablation client's self-recorded rig.
+No ceiling verdict, one cell. Exits non-zero on any rig mismatch.
 
 ## cell A: 9 sweep-arm run(s) at class `32ch`
 
@@ -46,6 +47,24 @@ rig. No verdicts, no magnitudes, one cell.
 | run-052 | ablation | empty | True | True | False | False |
 | run-053 | ablation | empty | True | True | False | False |
 
+### cell A measured-arm rig, from each run's own observer.csv
+
+topic `/sensing/lidar/top/pointcloud_raw_ex`; baseline class `vlp16`; registered point
+ratio 32ch/vlp16 = 4.1667; tolerance +/-5%.
+
+baseline: 6 vlp16 measured run(s) (run-036, run-037, run-038, run-039, run-040, run-041), median 245080 B
+
+| run | arm | excluded | median size_bytes | x baseline | rig |
+|---|---|---|---|---|---|
+| run-045 | paced | False | 1020888 | x4.1655 | OK |
+| run-046 | paced | False | 1022104 | x4.1705 | OK |
+| run-047 | paced | False | 1020920 | x4.1657 | OK |
+| run-048 | unpaced | False | 1020632 | x4.1645 | OK |
+| run-049 | unpaced | False | 1021208 | x4.1668 | OK |
+| run-050 | unpaced | False | 1021192 | x4.1668 | OK |
+
+-> the 32ch rig is confirmed from measured data on 6 non-excluded measured run(s) of cell A
+
 ### cell A ablation client, as the client itself recorded it
 
 | run | rig | class_id | channels | pps | mount_location_m | mount_rotation_deg | mount_source |
@@ -65,4 +84,8 @@ rig. No verdicts, no magnitudes, one cell.
 ## exclusions
 
 None. No run of cell A at class `32ch` carries `excluded: true`.
+
+## rig verdict
+
+PASS: every non-excluded run of cell A at class `32ch` carries the rig its manifest claims, on both arms.
 
