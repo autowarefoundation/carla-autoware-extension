@@ -285,3 +285,41 @@ def test_create_defaults_duel_id_empty(tmp_path):
     assert write_manifest.main(_argv(run_dir)) == 0
     m = load_manifest(run_dir / "manifest.json")
     assert m.duel_id == ""
+
+
+def test_create_stamps_class_id(tmp_path):
+    """class_id partitions SWEEP scoring pools the way duel_id partitions
+    duel admission pools (Amendment 2026-08-04): `arm` says which sweep arm
+    a run belongs to, class_id says which sweep CLASS's point it measures.
+    Without it, `sweep_verdict.py A --class 32ch` renders Task 14's vlp16
+    rows under a "class 32ch" heading -- demonstrated live, and guaranteed
+    to corrupt the next task's gate facts once 32ch runs land in the same
+    flat run-NNN/ sequence."""
+    run_dir = tmp_path / "A" / "run-003"
+    assert write_manifest.main([*_argv(run_dir, **{"--arm": "paced"}), "--class-id", "32ch"]) == 0
+    m = load_manifest(run_dir / "manifest.json")
+    assert m.class_id == "32ch"
+
+
+def test_create_defaults_class_id_empty(tmp_path):
+    """The legacy/no-class value, matching RunManifest.class_id's own
+    default: a duel run (or any run taken with no `--class`) carries no
+    class, and the pool rule's legacy clause is what decides what "" means
+    at scoring time -- not this tool."""
+    run_dir = tmp_path / "A" / "run-004"
+    assert write_manifest.main(_argv(run_dir)) == 0
+    m = load_manifest(run_dir / "manifest.json")
+    assert m.class_id == ""
+
+
+def test_exclude_preserves_the_class_declaration(tmp_path):
+    """Same rationale as `test_exclude_preserves_the_duel_declaration`
+    above: `excluded` and `class_id` answer different questions, and a
+    32ch run that crashed is still a 32ch run that crashed. Rewrite mode
+    must not silently reclassify it into the legacy "" pool, which the
+    pool rule would then read as vlp16."""
+    run_dir = tmp_path / "A" / "run-005"
+    assert write_manifest.main([*_argv(run_dir, **{"--arm": "paced"}), "--class-id", "32ch"]) == 0
+    assert write_manifest.main(["--run-dir", str(run_dir), "--exclude", "stall:clock"]) == 0
+    after = load_manifest(run_dir / "manifest.json")
+    assert (after.excluded, after.class_id) == (True, "32ch")

@@ -4388,6 +4388,55 @@ B-cyc.yaml` and `config/processes/B-cyc.yaml` are byte-for-byte copies of
   owner now and the refusal stands until someone writes it" claim it left
   behind in `config/cells.yaml` is annotated there. Nothing pre-registered is
   amended; no frozen file is touched.
+- **2026-08-04 (Task C2 of the P4 transport-sweep plan) — `class_id`
+  partitions the M4 sweep's scoring pool by sweep class, closing a
+  `sweep_verdict.py` defect that rendered one class's runs under another
+  class's heading.** `benchmarks/scripts/sweep_verdict.py --class <id>`
+  validated the id against `cells.yaml` (`cell_info.merge`'s typo guard) and
+  printed it in the table heading, but filtered NOTHING: its only row filter
+  was the sweep-arm one, so `sweep_verdict.py A --class 32ch` rendered Task
+  14's eighteen vlp16 rows under a "class 32ch" heading — demonstrated live.
+  No `manifest.json` recorded a class at all. Today's filed results are sound
+  (the only sweep-arm runs in either cell are Task 14's eighteen, all taken
+  `--class vlp16`, and the filed ceiling booleans were read with `--class
+vlp16`), but the next task files 32ch runs into the same flat `run-NNN/`
+  sequence, at which point `--class vlp16` and `--class 32ch` would render
+  identical rows with no field left to recover the class from.
+  `benchmarks/analysis/manifest.py` gains `class_id: str = ""` on
+  `RunManifest`, beside `duel_id` and validated the same way (a non-`str`
+  fails `validate()`), stamped by `benchmarks/run.sh` from its own `--class`
+  — the SAME resolved value it exports as `BENCH_CLASS_ID` for the launchers'
+  sensor-argument derivation, so the manifest's workload label and the rig
+  actually booted come from one resolution — and threaded through
+  `write_manifest.py --class-id`. `sweep_verdict.py` gains the pool rule
+  (`_class_admits`): a sweep-arm run is eligible for a verdict over class `C`
+  iff `manifest.class_id == C` OR (`manifest.class_id == ""` AND `C ==
+"vlp16"`) — the legacy clause exists ONLY so Task 14's already-filed
+  ceiling booleans keep reproducing without a single filed manifest being
+  rewritten, and its premise was VERIFIED before it was written (the only
+  filed sweep-arm runs are `results/A/run-036…044` and
+  `results/B-cyc/run-022…030`;
+  `evidence/p4-task14-vlp16-sweep/sweep-console.log` records `--class vlp16`
+  on all eighteen invocations, and the six ablation runs corroborate it
+  independently in their own `raycast_baseline.json`'s `"class_id":
+"vlp16"`). Runs dropped by the filter are COUNTED and surfaced in the
+  rendered table on their own line, never silently skipped — a separate
+  counter from the out-of-arm one, because that line names a specific reason
+  a class-dropped run does not match. `benchmarks/analysis/**` is listed as
+  **frozen, never modified** among this document's global constraints; this
+  field is the second ruled exception, on the same reading Task 2's `duel_id`
+  was granted (recorded in the P4 transport-sweep plan's SDD ledger): **the
+  freeze protects scoring semantics; adding a metadata field with default
+  `""` changes no score.** Every filed manifest keeps scoring identically,
+  and the legacy clause above is precisely what keeps the filed vlp16 ceiling
+  booleans untouched — confirmed by re-running `sweep_verdict.py <cell>
+--class vlp16` on both A and B-cyc after the change and diffing against the
+  pre-change output (byte-identical: 9 rows per cell, all `reached False`
+  with empty reasons), and by confirming `--class 32ch` now scores zero rows
+  on both cells instead of those same nine. No metric, threshold, margin,
+  aggregation rule or scoring window changes; `config/margins.yaml` and
+  `config/exclusions.md` byte-identical, and `benchmarks/analysis/**` changes
+  only by the one field and its validation.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 

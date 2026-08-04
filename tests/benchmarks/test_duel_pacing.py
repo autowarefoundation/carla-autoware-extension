@@ -62,6 +62,8 @@ failure abort was left with no test exercising it while pacing is active.
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import stat
 import subprocess
 import time
@@ -360,6 +362,131 @@ def test_bcyc_default_transport_is_row11():
     assert proc.returncode == 0, proc.stderr
     assert "rmw=rmw_cyclonedds_cpp" in proc.stdout, proc.stdout
     assert "shm=off" in proc.stdout, proc.stdout
+
+
+# --- Task C2 (Amendment 2026-08-04): run.sh must RESOLVE the sweep class ---
+# --- and FORWARD it to write_manifest as --class-id -------------------------
+#
+# Same reason `test_bcyc_default_transport_is_row11` just above lives here
+# rather than in a duel test: this is run.sh's OWN resolution, so duel.sh's
+# stand-in would test nothing, and --check-args is what makes driving the
+# REAL run.sh cheap and hermetic. Two properties, pinned separately because
+# they can break independently:
+#
+#   (1) --class resolves into run.sh's CLASS_ID and is echoed in the
+#       --check-args block (the two tests immediately below), and
+#   (2) that resolved value is actually FORWARDED to write_manifest as
+#       `--class-id <value>` (the extract-then-execute tests after them).
+#
+# (2) cannot be reached through --check-args -- it exits at step 2, and the
+# write_manifest invocation is step 4 -- and cannot be reached through
+# --dry-run either, which deliberately DOES run preflight (host load, engine
+# BuildId) and so needs the CARLA trees. So the forwarding block is pulled
+# out of the real run.sh by regex and executed as real bash, the same
+# extract-then-execute idiom tests/benchmarks/test_sweep_args.py uses for
+# the launchers' class -> sensor-argument derivation and test_teardown.py
+# uses for its sidecar polling loops. What is asserted is the REAL argv the
+# real block builds, so deleting the `class_args+=(...)` line, inverting the
+# guard, or dropping the array from the write_manifest call site all show up
+# as a failure -- none of which a source text-scan would catch.
+
+
+def test_run_sh_really_resolves_class_id_empty_by_default():
+    """The legacy/no-class value: a plain (non-sweep) invocation must
+    resolve to "", which is what RunManifest.class_id defaults to and what
+    the pool rule's legacy clause (sweep_verdict._class_admits) reads as
+    vlp16 -- the value every manifest predating the field carries."""
+    proc = subprocess.run(
+        ["bash", str(RUN_SH), "A", "--arm", "static", "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "class_id=\n" in proc.stdout + "\n", proc.stdout
+
+
+def test_run_sh_really_resolves_class_id_from_the_class_flag():
+    """The other direction, so the pin above cannot be satisfied by a
+    resolver hardwired to empty: `--class 32ch` must resolve VERBATIM.
+    This is the value the launchers already derive their sensor arguments
+    from (BENCH_CLASS_ID -> cells/extension.sh, cells/tier4-native.sh), so
+    the manifest label and the rig actually booted come from one resolution,
+    not two."""
+    proc = subprocess.run(
+        ["bash", str(RUN_SH), "A", "--arm", "paced", "--class", "32ch", "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "class_id=32ch" in proc.stdout, proc.stdout
+
+
+_CLASS_ARGS_BLOCK = re.compile(r'(  local class_args=\(\) class_show=""\n.*?\n  fi\n)', re.DOTALL)
+
+
+def _extract_class_args_block() -> str:
+    """The REAL `class_args` forwarding block out of benchmarks/run.sh, by
+    regex -- so a change to the real file is what these tests run, not this
+    file's memory of it (test_sweep_args._extract_derivation_block's idiom)."""
+    m = _CLASS_ARGS_BLOCK.search(RUN_SH.read_text())
+    assert m, "class_args forwarding block not found in run.sh"
+    return m.group(1)
+
+
+def _resolve_class_args(class_id: str) -> tuple[list[str], str]:
+    """Run the extracted block as real bash for `CLASS_ID=<class_id>` and
+    return (the argv elements it appends, the string it prints in the echoed
+    command line). `local` needs a function body, so the snippet is wrapped
+    in one -- exactly as run.sh itself has it, inside do_run()."""
+    script = (
+        "set -euo pipefail\n"
+        f"CLASS_ID={shlex.quote(class_id)}\n"
+        "probe() {\n"
+        f"{_extract_class_args_block()}"
+        "  printf 'COUNT<<%s>>\\n' \"${#class_args[@]}\"\n"
+        '  for a in ${class_args[@]+"${class_args[@]}"}; do printf \'ARG<<%s>>\\n\' "$a"; done\n'
+        "  printf 'SHOW<<%s>>\\n' \"$class_show\"\n"
+        "}\n"
+        "probe\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    args = re.findall(r"ARG<<(.*?)>>", proc.stdout)
+    count = int(re.search(r"COUNT<<(\d+)>>", proc.stdout).group(1))
+    assert count == len(args), (count, args)
+    show = re.search(r"SHOW<<(.*?)>>", proc.stdout, re.DOTALL).group(1)
+    return args, show
+
+
+def test_run_sh_forwards_the_resolved_class_to_write_manifest():
+    """The forwarding half: a resolved class must reach write_manifest as
+    `--class-id <value>` -- two separate argv elements, so a class id is
+    never re-split or re-quoted on the way."""
+    assert _resolve_class_args("32ch")[0] == ["--class-id", "32ch"]
+
+
+def test_run_sh_forwards_nothing_when_no_class_was_requested():
+    """A non-sweep run must append NO argument at all, not `--class-id ""`:
+    an empty array element would become a stray argument, the same failure
+    the --duel/--duel-id blocks above are shaped to avoid. write_manifest's
+    own default ("") is then what lands in the manifest."""
+    args, show = _resolve_class_args("")
+    assert args == []
+    assert show == ""
+
+
+def test_run_sh_echoed_command_line_shows_the_class_id_flag():
+    """The printed form must show the flag only when it is actually
+    non-empty (the `duel_show` split's own rule): a run.sh transcript is
+    evidence, and a printed command line that does not match the command
+    that ran is a misstatement of the record."""
+    assert _resolve_class_args("vlp16")[1] == " --class-id vlp16"
 
 
 # --- Task 2 (Amendment 2026-08-03): duel.sh must stamp --duel-id on every --

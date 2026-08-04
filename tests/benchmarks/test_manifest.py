@@ -277,3 +277,57 @@ def test_a_manifest_written_before_duel_id_reads_as_the_legacy_empty_string(tmp_
     loaded = load_manifest(path)
     assert loaded.duel_id == ""
     assert loaded.validate() == []
+
+
+# --- class_id (Amendment 2026-08-04, Task C2 of the P4 transport-sweep plan)
+#
+# Exactly the shape `duel_id` above has, for the SWEEP axis: `arm` says which
+# sweep arm a run belongs to, `class_id` says which sweep CLASS's point it
+# measures. Without it `sweep_verdict.py --class <id>` scores every sweep-arm
+# run in the cell whatever class it was collected under, so the moment a 32ch
+# run lands in the same flat run-NNN/ sequence as Task 14's vlp16 runs, both
+# `--class vlp16` and `--class 32ch` render identical rows.
+
+
+def test_class_id_defaults_empty(valid_kwargs):
+    """Legacy/no-class default (Amendment 2026-08-04): a run not explicitly
+    stamped with a sweep class must read as carrying none -- the same
+    fail-safe direction `duel_admissible`/`duel_id` point in, so a forgotten
+    `--class-id` cannot be silently mistaken for membership in a DIFFERENT
+    class's scoring pool."""
+    assert RunManifest(**valid_kwargs).class_id == ""
+
+
+def test_validate_rejects_a_non_str_class_id(valid_kwargs):
+    """Mirrors `duel_id`'s str check exactly, for the same reason: a
+    hand-edited or externally-generated manifest must not be able to smuggle
+    a non-string class_id past validate() and into the `==` pool-membership
+    comparison `sweep_verdict._class_admits` makes."""
+    m = RunManifest(**{**valid_kwargs, "class_id": 32})
+    errs = m.validate()
+    assert any("class_id must be a str" in e for e in errs)
+
+
+def test_class_id_survives_a_roundtrip(tmp_path, valid_kwargs):
+    m = RunManifest(**{**valid_kwargs, "class_id": "32ch"})
+    m.save(tmp_path / "manifest.json")
+    assert load_manifest(tmp_path / "manifest.json").class_id == "32ch"
+
+
+def test_a_manifest_written_before_class_id_reads_as_the_legacy_empty_string(tmp_path):
+    """Every manifest filed before this field existed -- which is every
+    manifest in the tree today, Task 14's eighteen sweep-arm runs included --
+    has no `class_id` key in its JSON. It must load as "": both true of them
+    and the exact value the pool rule's legacy clause
+    (benchmarks/scripts/sweep_verdict.py's `_class_admits`) requires so the
+    filed vlp16 ceiling booleans keep reproducing without a single filed
+    manifest being rewritten."""
+    m = _valid()
+    path = tmp_path / "manifest.json"
+    m.save(path)
+    doc = json.loads(path.read_text())
+    del doc["class_id"]
+    path.write_text(json.dumps(doc))
+    loaded = load_manifest(path)
+    assert loaded.class_id == ""
+    assert loaded.validate() == []

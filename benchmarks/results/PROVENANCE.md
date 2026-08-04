@@ -6365,3 +6365,93 @@ tell whether the omission was an oversight or a deliberate exclusion. The
 comment now justifies the scope by **approach** and names all five cells,
 noting that an approach-based justification cannot go stale the next time a
 cell is registered.
+
+---
+
+## 24. `sweep_verdict.py --class` did not filter (P4 Task C2, offline, 2026-08-04)
+
+**Nothing under `benchmarks/results/*/run-*/` is modified by this section**, and
+no filed `manifest.json` is rewritten — the pool rule's legacy clause exists
+precisely so that none has to be. This is an offline harness fix; no run was
+collected, excluded, re-scored or re-filed.
+
+### 24.1 The defect
+
+`benchmarks/scripts/sweep_verdict.py --class <id>` **did not filter the runs it
+scored.** `args.class_id` reached exactly two places: `cell_info.merge`'s typo
+guard, and the table heading. The only row filter was the sweep-arm one
+(`_peek_arm(run_dir) not in sweep_arms`). No `manifest.json` recorded a class at
+all — the schema had no field for one.
+
+Demonstrated live before the fix, on the committed tree:
+`PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py A --class 32ch`
+printed Task 14's nine vlp16 rows (`run-036`…`run-044`) under a
+`## Sweep verdict: cell A, class 32ch` heading, byte-identical to the
+`--class vlp16` table apart from that one word. The same held for `B-cyc`
+(`run-022`…`run-030`).
+
+### 24.2 Why the FILED numbers are nevertheless sound
+
+Verified against the tree, not assumed:
+
+- The whole results tree holds **167 run directories**; exactly **18** carry a
+  sweep arm (`paced`/`unpaced`/`ablation`, `cells.yaml` `sweep_arms`):
+  `results/A/run-036…044` and `results/B-cyc/run-022…030`. Every other filed
+  run is a duel/bring-up/gate arm and was already excluded by the arm filter.
+- Those eighteen are exactly Task 14's, and all eighteen were taken
+  `--class vlp16`: `benchmarks/evidence/p4-task14-vlp16-sweep/sweep-console.log`
+  records the verbatim `benchmarks/run.sh <cell> --arm <arm> --class vlp16`
+  invocation and the resulting `run 1/1 complete: …/run-NNN` line for each of
+  the eighteen, and they enumerate to exactly the eighteen directories above.
+- The six **ablation** runs corroborate it from inside the run directory,
+  independently of that console log: `raycast_baseline.json` carries its own
+  `"class_id": "vlp16"` (and `raycast_baseline.log` the matching
+  `class=vlp16 attrs={'channels': '16', …, 'points_per_second': '288000', …}`)
+  on `A/run-042…044` and `B-cyc/run-028…030`.
+- Task 14's ceiling booleans were read with `--class vlp16`, i.e. under the one
+  class those eighteen runs actually are.
+
+So no filed number is wrong. **What was guaranteed to go wrong is the NEXT
+task**: `run.sh` files every arm and every class of a cell into one flat,
+gap-free `run-NNN/` sequence, so the first 32ch run landing beside these would
+have made `--class vlp16` and `--class 32ch` render identical rows, mixing two
+workloads with no field left to recover the class from.
+
+### 24.3 The fix
+
+`RunManifest` gains `class_id: str = ""` (beside `duel_id`, validated the same
+way — a non-`str` fails `validate()`), stamped by `run.sh` from its own
+`--class` and threaded through `write_manifest.py --class-id`. `run.sh` forwards
+the **same resolved value** it exports as `BENCH_CLASS_ID` for the launchers'
+sensor-argument derivation, so a run's workload label and the rig actually
+booted come from one resolution rather than two, and echoes it in the
+`--check-args` resolution block.
+
+`sweep_verdict._class_admits` is the pool rule, mirroring `duel_verdict.py`'s
+legacy clause: a sweep-arm run is eligible for a verdict over class `C` iff
+`manifest.class_id == C` **or** (`manifest.class_id == ""` **and**
+`C == "vlp16"`). Runs dropped by it are **counted and surfaced** in the rendered
+table on their own line — a separate counter from the out-of-arm one, because
+that line names a specific reason ("arm not in this cell's sweep_arms") a
+class-dropped run does not match.
+
+The `benchmarks/analysis/**` freeze is amended for the one field on the reading
+Task 2's `duel_id` was granted under and recorded verbatim in
+`benchmarks/README.md`'s amendment list: **the freeze protects scoring
+semantics; adding a metadata field with default `""` changes no score.**
+
+### 24.4 Verification that the filed booleans still reproduce
+
+Re-run after the change, both cells, both classes
+(`PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py <cell> --class <id>`):
+
+| invocation            | scored rows                   | result                                               |
+| --------------------- | ----------------------------- | ---------------------------------------------------- |
+| `A --class vlp16`     | 9 (`run-036`…`run-044`)       | **byte-identical** to the pre-change output (`diff`) |
+| `B-cyc --class vlp16` | 9 (`run-022`…`run-030`)       | **byte-identical** to the pre-change output (`diff`) |
+| `A --class 32ch`      | **0** (was: the 9 vlp16 rows) | 9 run(s) skipped: class not in this point's pool     |
+| `B-cyc --class 32ch`  | **0** (was: the 9 vlp16 rows) | 9 run(s) skipped: class not in this point's pool     |
+
+All eighteen vlp16 rows still read `reached False` with an empty `reasons`
+column, which is Task 14's filed record. The out-of-arm skip counts are
+unchanged as well (35 on A, 21 on B-cyc).

@@ -51,18 +51,33 @@ silently outvote the registry the campaign's reproducibility claim rests
 on. See `_resolve_override`'s docstring.
 
 `--class <id>` is validated against cells.yaml via `cell_info.merge` (the
-same typo guard `cell_info.py` uses) but does NOT filter which run
-directories get scored: the manifest schema has no per-run class field yet
-(sweep-class wiring into run.sh / write_manifest.py is a separate,
+same typo guard `cell_info.py` uses) AND filters which runs are scored, on
+`RunManifest.class_id` (Amendment 2026-08-04, Task C2 -- see `_class_admits`
+for the pool rule and its legacy clause).
+
+SUPERSEDED, kept because it records the state this filter replaced and the
+discipline that stood in for it: "`--class <id>` ... does NOT filter which
+run directories get scored: the manifest schema has no per-run class field
+yet (sweep-class wiring into run.sh / write_manifest.py is a separate,
 not-yet-landed step). Every SWEEP-ARM run under `results/<cell>/` is scored
 as belonging to `--class`'s point; campaign discipline (one class in flight
 per cell at a time) is what makes that correct until that wiring lands a
-real per-run class field. What IS filtered here is `arm`: `run.sh` files
-every run for a cell -- duel arms (static/closed-loop) and sweep arms
-(paced/unpaced/ablation) alike -- under one flat, gap-free `run-NNN/`
-sequence, so a cell shared by both the P3 duel and the M4 sweep needs the
-non-sweep-arm rows excluded explicitly (`main`'s `sweep_arms` filter); a
-skipped count is reported rather than silently dropped.
+real per-run class field." That discipline held only while ONE class had
+ever been collected: with `run.sh` filing every arm and every class into one
+flat, gap-free `run-NNN/` sequence per cell, the first 32ch run landing
+beside Task 14's vlp16 runs would have made `--class vlp16` and `--class
+32ch` render IDENTICAL rows -- and `sweep_verdict.py A --class 32ch` already
+printed the vlp16 rows under a "class 32ch" heading before the field
+existed.
+
+`arm` is filtered the same way and for the same reason: `run.sh` files duel
+arms (static/closed-loop) and sweep arms (paced/unpaced/ablation) alike
+under that one sequence, so a cell shared by both the P3 duel and the M4
+sweep needs the non-sweep-arm rows excluded explicitly (`main`'s
+`sweep_arms` filter). Both filters report a COUNT rather than silently
+dropping, and they report SEPARATE counts: "filed in this cell but not a
+sweep run at all" and "a sweep run of a different class" are different
+facts, and a reader acts differently on each.
 
 `benchmarks/README.md`'s scoring-window section registers a per-RUN
 discriminator (fittable: `clock.csv` has >= 2 rows; unfittable: fewer)
@@ -90,7 +105,7 @@ import numpy as np
 from benchmarks.analysis.bench_io import read_clock_csv, read_observer_csv, read_resources_csv
 from benchmarks.analysis.cadence import expected_count, reconcile_drops
 from benchmarks.analysis.ceiling import CeilingVerdict, evaluate_ceiling
-from benchmarks.analysis.manifest import load_manifest
+from benchmarks.analysis.manifest import RunManifest, load_manifest
 from benchmarks.analysis.publisher_counts import read_publisher_counts
 from benchmarks.scripts.cell_info import UnknownIdError, load_cells_doc, merge, metrics_for
 
@@ -507,15 +522,69 @@ def _resolve_override(flag: str, metrics_key: str, registered, cli_value, overri
     return registered
 
 
-def _peek_arm(run_dir: Path) -> str | None:
-    """The run's `manifest.json` `arm`, or None if the manifest cannot be
-    read at all. Used only by main's sweep-arm filter, so a run aborted
-    before its manifest was ever written is treated as out-of-scope
-    (skipped, counted) rather than crashing the whole cell's table."""
+def _peek_manifest(run_dir: Path) -> RunManifest | None:
+    """The run's `manifest.json`, or None if it cannot be read at all.
+
+    Used only by main's two admission filters (`arm`, then `class_id`), so a
+    run aborted before its manifest was ever written is treated as
+    out-of-scope (skipped, counted) rather than crashing the whole cell's
+    table. Read ONCE per run directory and both fields taken off the one
+    result -- `verdict_for_run` loads and VALIDATES the manifest properly for
+    the runs that survive the filters, so this is deliberately the cheap,
+    non-validating peek it was when it returned `arm` alone (`_peek_arm`,
+    which this replaced when the class filter landed on 2026-08-04).
+    """
     try:
-        return load_manifest(run_dir / "manifest.json").arm
+        return load_manifest(run_dir / "manifest.json")
     except (OSError, ValueError, TypeError):
         return None
+
+
+# The sweep class every run filed BEFORE `RunManifest.class_id` existed
+# belongs to. VERIFIED against the tree before the legacy clause below was
+# written, not assumed: the only sweep-arm runs filed anywhere under
+# `benchmarks/results/` are Task 14's eighteen (`results/A/run-036..044` and
+# `results/B-cyc/run-022..030`), and
+# `benchmarks/evidence/p4-task14-vlp16-sweep/sweep-console.log` records
+# `--class vlp16` on every one of the eighteen `run.sh` invocations that
+# produced them. The six ablation runs corroborate it from INSIDE the run
+# directory (`raycast_baseline.json`'s own `"class_id": "vlp16"`), which is
+# independent of the console log. If a filed sweep-arm run were ever found
+# that is NOT vlp16, this clause would be unsound and would have to go.
+LEGACY_CLASS_ID = "vlp16"
+
+
+def _class_admits(manifest_class_id: str, class_id: str) -> bool:
+    """Is a sweep-arm run carrying `manifest_class_id` eligible for a verdict
+    over class `class_id`?
+
+    The pool rule (Amendment 2026-08-04, Task C2), mirroring
+    `duel_verdict.py`'s `_walk_cell_runs` legacy clause exactly: eligible iff
+    `manifest.class_id == class_id`, OR (`manifest.class_id == ""` AND
+    `class_id == LEGACY_CLASS_ID`).
+
+    The legacy clause exists for exactly ONE reason: every filed sweep-arm
+    run predating the field is a vlp16 run (see `LEGACY_CLASS_ID`), so it
+    keeps Task 14's filed ceiling booleans reproducing WITHOUT a single filed
+    manifest being rewritten -- the same "no filed evidence is touched"
+    guarantee Task 2's duel-pool clause bought for the filed P3 (A, B)
+    verdict. It is deliberately narrow in the other direction: `""` is NOT
+    admitted for any other class, because admitting it for 32ch is precisely
+    the defect this filter closes (the eighteen vlp16 runs rendering under a
+    "class 32ch" heading).
+
+    A run dropped here is COUNTED and surfaced by `render_verdicts`, never
+    silently skipped -- on its own counter rather than folded into the
+    out-of-arm one, unlike `duel_verdict.py`'s fold onto `n_inadmissible`.
+    The difference is in what the existing counter's message claims: that
+    tool's counter already meant the general "valid data outside this duel's
+    design", while this module's existing line names one specific reason
+    ("arm not in this cell's sweep_arms") that a class-dropped run does not
+    match, so folding would make an already-rendered sentence false.
+    """
+    return manifest_class_id == class_id or (
+        manifest_class_id == "" and class_id == LEGACY_CLASS_ID
+    )
 
 
 def verdict_for_run(
@@ -625,7 +694,12 @@ def _fmt_ratio(value: float | None) -> str:
 
 
 def render_verdicts(
-    cell: str, class_id: str, verdicts: list[RunVerdict], *, skipped_out_of_arm: int = 0
+    cell: str,
+    class_id: str,
+    verdicts: list[RunVerdict],
+    *,
+    skipped_out_of_arm: int = 0,
+    skipped_out_of_class: int = 0,
 ) -> str:
     """Markdown per-point verdict table.
 
@@ -638,10 +712,20 @@ def render_verdicts(
     e.g. a P3 duel run (static/closed-loop) filed in the same flat run-NNN/
     sequence as this cell's M4 sweep runs. Naming the count keeps that
     exclusion visible instead of it reading as "this cell has fewer runs
-    than it does". The notes column also carries `window_branch_note`
-    (S5): a run whose scoring window took the branch its cell was NOT
-    expected to take is a loud finding here, in the artifact a reader
-    sees, not only in a log.
+    than it does".
+
+    `skipped_out_of_class` (Amendment 2026-08-04, Task C2; same default-0
+    contract) is the second admission filter's count: sweep-arm runs whose
+    `RunManifest.class_id` does not admit them to THIS class's pool (see
+    `_class_admits`). Deliberately a SEPARATE number and a separate line
+    rather than folded into the one above: the line above names one specific
+    reason ("arm not in this cell's sweep_arms"), which a class-dropped run
+    does not match, and "this cell has 9 runs of another class" is a
+    different fact for a reader than "this cell also holds duel runs".
+
+    The notes column also carries `window_branch_note` (S5): a run whose
+    scoring window took the branch its cell was NOT expected to take is a
+    loud finding here, in the artifact a reader sees, not only in a log.
     """
     lines = [
         f"## Sweep verdict: cell {cell}, class {class_id}",
@@ -667,6 +751,13 @@ def render_verdicts(
     if skipped_out_of_arm:
         lines.append("")
         lines.append(f"{skipped_out_of_arm} run(s) skipped: arm not in this cell's sweep_arms.")
+    if skipped_out_of_class:
+        lines.append("")
+        lines.append(
+            f"{skipped_out_of_class} run(s) skipped: class not in this point's "
+            f"pool (manifest class_id is neither {class_id!r} nor the legacy "
+            f"'' this tool reads as {LEGACY_CLASS_ID!r})."
+        )
     return "\n".join(lines)
 
 
@@ -782,9 +873,23 @@ def main(argv: list[str] | None = None) -> int:
     cell_dir = args.results_root / args.cell
     verdicts = []
     skipped = 0
+    skipped_class = 0
     for run_dir in sorted(cell_dir.glob("run-*")):
-        if _peek_arm(run_dir) not in sweep_arms:
+        # ONE cheap read per run directory, both admission filters off it
+        # (the manifest is loaded and properly VALIDATED again inside
+        # verdict_for_run for the runs that survive). Arm first, class
+        # second: a duel run has no class at all, so charging it to the
+        # class counter would misattribute it.
+        manifest = _peek_manifest(run_dir)
+        if manifest is None or manifest.arm not in sweep_arms:
             skipped += 1
+            continue
+        # The class pool rule (Amendment 2026-08-04, Task C2). Counted and
+        # surfaced, never silently dropped -- see `_class_admits` for the
+        # rule, its legacy clause, and why this gets its own counter rather
+        # than joining the out-of-arm one.
+        if not _class_admits(manifest.class_id, args.class_id):
+            skipped_class += 1
             continue
         verdicts.append(
             verdict_for_run(
@@ -795,7 +900,15 @@ def main(argv: list[str] | None = None) -> int:
                 expected_window_branch=expected_window_branch,
             )
         )
-    print(render_verdicts(args.cell, args.class_id, verdicts, skipped_out_of_arm=skipped))
+    print(
+        render_verdicts(
+            args.cell,
+            args.class_id,
+            verdicts,
+            skipped_out_of_arm=skipped,
+            skipped_out_of_class=skipped_class,
+        )
+    )
     return 0
 
 

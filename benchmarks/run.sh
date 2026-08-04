@@ -440,6 +440,12 @@ do_run() {
     echo "shm=$SHM"
     echo "duel_admissible=$([ "$DUEL" = "1" ] && echo true || echo false)"
     echo "duel_id=$DUEL_ID"
+    # The RESOLVED sweep class (Amendment 2026-08-04, Task C2): the value
+    # step 5 exports as BENCH_CLASS_ID for the launchers' sensor-argument
+    # derivation AND step 4 forwards to write_manifest as --class-id, echoed
+    # here for the same reason duel_id is -- a resolved VALUE a test can
+    # assert on, rather than the presence of a word somewhere in prose.
+    echo "class_id=$CLASS_ID"
     echo "run_dir=$run_dir"
     exit 0
   fi
@@ -531,10 +537,30 @@ PY
     duel_args+=(--duel-id "$DUEL_ID")
     duel_show="$duel_show --duel-id $DUEL_ID"
   fi
+  # WHICH sweep class this run measures (Amendment 2026-08-04, Task C2),
+  # threaded to RunManifest.class_id via write_manifest.py --class-id. The
+  # value is $CLASS_ID -- the SAME resolved id step 5 exports as
+  # BENCH_CLASS_ID and the launchers (cells/extension.sh,
+  # cells/tier4-native.sh) derive --lidar-channels/--lidar-pps from -- so the
+  # manifest's workload label and the rig actually booted come from ONE
+  # resolution and cannot drift apart. Already validated at step 1:
+  # cell_info was called with --class "$CLASS_ID" and dies on an id that is
+  # not registered, or is registered but not for this cell.
+  #
+  # Same array-element / printed-string split as --duel and --duel-id just
+  # above, and the same reason: CLASS_ID defaults to "" on every non-sweep
+  # run (never a stray empty argument), and the printed form must show the
+  # flag only when it is actually non-empty, or every duel run's echoed
+  # command line misstates the command that ran.
+  local class_args=() class_show=""
+  if [ -n "$CLASS_ID" ]; then
+    class_args+=(--class-id "$CLASS_ID")
+    class_show=" --class-id $CLASS_ID"
+  fi
   show "python3 -m benchmarks.scripts.write_manifest --run-dir $run_dir --cell $CELL" \
     "--arm $effective_arm --rmw $RMW --shm $SHM --dds-profile $DDS_PROFILE" \
     "--carla-version $carla_kind --autoware-image $autoware_image" \
-    "--placement-json '<json>'$duel_show"
+    "--placement-json '<json>'$duel_show$class_show"
   if [ "$DUEL" = "1" ]; then
     echo "      duel_admissible=true (--duel): this run WILL feed the primary" \
       "duel's equivalence verdict"
@@ -560,7 +586,8 @@ PY
     --run-dir "$manifest_dir" --cell "$CELL" --arm "$effective_arm" \
     --rmw "$RMW" --shm "$SHM" --dds-profile "$DDS_PROFILE" \
     --carla-version "$carla_kind" --autoware-image "$autoware_image" \
-    --placement-json "$placement_json" "${duel_args[@]+"${duel_args[@]}"}") >/dev/null ||
+    --placement-json "$placement_json" "${duel_args[@]+"${duel_args[@]}"}" \
+    "${class_args[@]+"${class_args[@]}"}") >/dev/null ||
     die "manifest refused; nothing measured"
   if [ "$DRY_RUN" = "1" ]; then
     echo "      manifest VALIDATED (written to $manifest_dir, not results/)"
