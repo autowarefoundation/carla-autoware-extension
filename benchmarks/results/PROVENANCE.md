@@ -4992,3 +4992,260 @@ was rewritten by both `trailing-whitespace` and `mixed-line-ending`. Nothing
 under the real `benchmarks/evidence/` or `benchmarks/results/` was created,
 deleted, or edited by this verification.
 
+
+## 18. P4 Task 12: the A-vs-B-cyc STATIC duel collected (live, 2026-08-03/04)
+
+Twenty runs, ten interleaved pairs, `benchmarks/results/A/run-016` … `run-025`
+and `benchmarks/results/B-cyc/run-002` … `run-011`. Every run is
+`duel_admissible: true` with `duel_id: "A+B-cyc"`, every run's
+`manifest.validate()` returns `[]`, every run has a `quality.json`, no run has a
+`clock_stall.marker`, and **no run is excluded** — `exclusion_reason` is empty on
+all twenty, and `run.sh` step 14 printed `none` on all twenty.
+
+**Nothing in this section compares the two cells.** Every figure below is either
+a per-run integrity fact, a within-cell gate fact, or a measurement condition.
+Cell A's `ndt_rate_ratio` is deliberately not stated anywhere in this section;
+the A-vs-B-cyc reading is Task 16's single `duel_verdict.py` invocation and this
+task did not run it.
+
+Console evidence: `benchmarks/evidence/p4-task12-static-duel/` (both duel
+consoles, the integrity-pass output, and the script that produced it, with
+sha256 recorded in that directory's own `PROVENANCE.md`).
+
+### 18.1 Session preamble, taken before each `duel.sh` invocation
+
+| reading | invocation 1 (pairs 1-7) | invocation 2 (the make-up) |
+| --- | --- | --- |
+| wall clock | 2026-08-03T20:14:59-07:00 | 2026-08-03T21:25:57-07:00 |
+| loadavg 1 min (gate: < 2) | **0.90** | **1.35** |
+| `scaling_governor` | `powersave` (recorded, NOT changed) | `powersave` (recorded, NOT changed) |
+| CARLA already running? | no | no |
+| other GPU consumer? | none (Xorg / gnome-shell / browser / terminal only) | none (same four) |
+
+The `pgrep` check was run bracket-escaped (`pgrep -af '[U]nrealEditor|[C]arlaUE4'`)
+so it could not self-match its own command line. Across all twenty runs the
+per-run preflight recorded `engine_build_id`
+`bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` and `cpu_governor=powersave` without
+variation, so **D8 was not spent**: no engine relink was performed or needed,
+and nothing was committed in either CARLA tree. B-cyc's ten runs all recorded
+the identical `tier4_plugin_sha256`
+`26f95decb0b18dda86f73f6c1ebd2445a287d8dedde3f1cb1544bfffbd093c4e` and
+`tier4_source_sha256`
+`eb8aa9af8d91b65a587409771db0c08a47f3584076a06e18cd665d13db71f5e5`, so no tier4
+source changed and — as §11.6 predicted and §14.1 first observed — the
+editor-artifact ownership flip was **not** needed even though the two cells
+alternated twenty times. `verify_editor_artifact.sh` and
+`verify_tier4_artifact.sh` gated every run and were never bypassed.
+
+Per-run preflight `loadavg` spanned 0.82 … 2.55 across the twenty runs, every
+one of them far under `preflight.sh`'s `MAX_LOADAVG` of 8 (exclusions.md
+criterion 6), which therefore never fired.
+
+Transport, as registered and verified per run: both cells `rmw_cyclonedds_cpp`
+with SHM off; cell A carries the `lo`-pinned profile
+(`dds_profile_sha256` `1eeef31e…`) and cell B-cyc carries none
+(`dds_profile_sha256` `""`). That is the pre-registered
+A(lo-profile)↔B-cyc(no-profile) interface difference — the duel is
+**rmw-matched, not profile-matched** — and it remains a named confound row for
+the wrap, not something this collection resolved.
+
+### 18.2 The collection took TWO `duel.sh` invocations, and why
+
+Invocation 1, the brief's command verbatim:
+
+```bash
+bash benchmarks/scripts/duel.sh A B-cyc --arm static --pairs 10
+```
+
+It completed pairs 1-7 (14 runs, first run started 2026-08-04T03:15:17Z) and
+then **the driver process was killed by the orchestration layer** — the agent
+harness's background-task supervisor — at approximately 04:17-04:19Z, while
+`pace_between_runs` was inside its 120 s floor `sleep` ahead of pair 8.
+Invocation 2 made up the shortfall as the rule requires — additional
+**interleaved pairs**, never singles:
+
+```bash
+bash benchmarks/scripts/duel.sh A B-cyc --arm static --pairs 3
+```
+
+It ran to `duel complete: A 3 ok / 0 failed, B-cyc 3 ok / 0 failed`.
+
+**The kill is an orchestration-layer event, not a duel abort, not a stack
+defect, and not an exclusion.** It is classified that way on four checkable
+facts, all in `benchmarks/evidence/p4-task12-static-duel/duel-static-console-part1.log`
+and `duel-pacing.log`:
+
+1. **No `DUEL FAIL` line anywhere in the console.** That string is written only
+   by `duel.sh`'s `die()`, which is also the two-consecutive-failure abort's
+   exit path. `duel.sh` did not stop itself.
+2. **No `duel: <cell> run in pair N FAILED` line.** The driver recorded zero
+   failed runs before it died; `COMPLETED` was 7 and 7.
+3. **A passive, unrelated watcher process died in the same instant.** A
+   second background command — a bare `until grep …; sleep 60` loop that
+   touched nothing in the benchmark — was reported killed at the same moment as
+   the driver. No fault in CARLA, Autoware, DDS or the host can explain the
+   death of that loop; a supervisor reaping tracked background tasks can.
+4. **The death landed BETWEEN runs, not inside one.** `run.sh`'s full 15-step
+   pipeline for `B-cyc/run-008` completed above the final console line,
+   including `teardown: done`, step 14 `none`, and step 15 `OK`. The last line
+   of the file is pair 8's pacing-floor announcement. Corroborating this from a
+   second artefact: `pace_between_runs` writes its `duel-pacing.log` line
+   *after* the sleep, and this task contributed **no** `before_pair=8` entry
+   (its 18 entries run `before_pair=1…7` for invocation 1 and `1…3` for
+   invocation 2), so the process died during that floor and never reached the
+   log write.
+
+Independent corroboration that the teardown was clean: the inter-run hygiene
+`docker compose -f docker/compose.yaml down` run immediately afterwards reported
+`No resource found to remove` — the killed invocation had already torn its own
+stack down completely. `pgrep -af '[U]nrealEditor|[C]arlaUE4'` found nothing and
+no `autoware` container survived.
+
+Because no run was in flight and no run's data was truncated, **no run is
+excluded on account of the kill** and none of exclusions.md's criteria 1-10
+applies to it. `A/run-022` and `B-cyc/run-008`, the last pair of invocation 1,
+are ordinary complete runs.
+
+**Inter-run hygiene before resuming**, exactly as the standing rule requires
+after a hard kill: `docker compose -f docker/compose.yaml down`, then
+`scripts/bootstrap_carla_msgs.sh` (which needed the compose container up, so it
+was started first). Recorded for the same reason §14.1 recorded it: the
+bootstrap is a **no-op for this harness path** — no code under `benchmarks/`
+references `carla_msgs` at all, and both cell launchers recreate the `autoware`
+container themselves (`cells/extension.sh` via `docker compose up -d`,
+`cells/tier4_autoware.sh` via `docker rm -f` + `docker run`). It is run because
+the rule says to run it, and stated rather than left as a silent no-op.
+
+### 18.3 Two disclosed measurement-condition residues from the resume
+
+Both follow from `duel.sh`'s documented per-invocation behaviour, neither was
+introduced by hand, and neither is hidden.
+
+**(a) First-slot occupancy is 6/4, not the ideal 5/5.** `duel.sh` alternates
+which cell takes the first slot by pair *within an invocation*, and pair
+numbering restarts at 1 for each invocation (the property `duel-pacing.log`'s
+own comment already names). Invocation 1 gave A the first slot on its pairs
+1,3,5,7 and B-cyc on 2,4,6; invocation 2 gave A the first slot on its pairs 1,3
+and B-cyc on 2. Over the pooled ten pairs that is **A first in 6, B-cyc first in
+4**, where one uninterrupted 10-pair invocation would have given 5/5. The
+per-pair effect that alternation exists to spread — the first run after a
+teardown paying cold caches — is therefore charged one pair more often to cell A
+than to cell B-cyc. Bounded at one pair, disclosed here, and a covariate Task 16
+can account for.
+
+**Why this was NOT "fixed" by swapping the arguments.** Invoking
+`duel.sh B-cyc A --pairs 3` would have restored 5/5 exactly. It was rejected
+because `duel.sh` stamps `--duel-id "${CELL_A}+${CELL_B}"` from its own argument
+order, so those three pairs would have been filed `duel_id: "B-cyc+A"`, and
+`duel_verdict.py`'s `f"{cell_a_id}+{cell_b_id}"` lookup — which its own comment
+says matches "without normalising order" — would have **silently dropped them
+from the pool**. Trading a disclosed 6/4 slot imbalance for three pairs that
+vanish from the verdict without a message is not a trade worth making. The
+integrity pass's `duel_id == "A+B-cyc"` check exists to catch exactly this, and
+all twenty runs pass it.
+
+**(b) One extra unpaced run start.** `duel.sh` deliberately does not pace before
+the first run of an invocation (its "NOT applied before the FIRST run" note), so
+the pool contains two unpaced starts — `A/run-016` and `A/run-023` — where a
+single invocation would have contained one. `A/run-023`'s own preflight recorded
+`loadavg=1.20`, inside the 0.82-2.55 band spanned by the eighteen paced runs and
+nowhere near the gate of 8, so the extra unpaced start did not place that run in
+a different load regime. Consistent with the design note's own reasoning, the
+resume began from a host verified quiescent by the §18.1 preamble.
+
+Otherwise pacing behaved exactly as `duel.sh` predicts: all 18 pacing waits
+recorded `topup_s=0`, i.e. the load-triggered top-up **never fired once** and
+every paid wait was the uniform 120 s floor alone.
+
+### 18.4 Step 3 — cell B-cyc's own `ndt_rate_ratio` and the reading it satisfies
+
+A within-cell gate fact about B-cyc alone. Neither outcome was a STOP and
+neither was an exclusion; the spec's claim table pre-registers both readings.
+
+| run | `ndt_rate_ratio` | `gate_pass` | `reasons` |
+| --- | --- | --- | --- |
+| `B-cyc/run-002` | 0.9989550530354242 | true | `[]` |
+| `B-cyc/run-003` | 0.9989594023880347 | true | `[]` |
+| `B-cyc/run-004` | 0.9989679933693522 | true | `[]` |
+| `B-cyc/run-005` | 0.9999999850840338 | true | `[]` |
+| `B-cyc/run-006` | 0.9989679933693522 | true | `[]` |
+| `B-cyc/run-007` | 0.9989506671719838 | true | `[]` |
+| `B-cyc/run-008` | 0.9989550530354242 | true | `[]` |
+| `B-cyc/run-009` | 0.9989701190060682 | true | `[]` |
+| `B-cyc/run-010` | 0.9989679933693522 | true | `[]` |
+| `B-cyc/run-011` | 0.9989506671719838 | true | `[]` |
+
+n = 10, minimum 0.998951, maximum 1.000000. **All ten runs are ≥ 0.9**, and by a
+wide margin — the smallest is 0.0989 above the threshold.
+
+The claim table's pre-registered reading for this row is, verbatim: *"Ratio ≥
+0.9 across the pool ⇒ the depression is bound to the Fast-DDS configuration;
+still depressed ⇒ transport-independent, cause stays open (and is itself a
+finding). n = 1 `B/run-033` is superseded either way."* **The first disjunct is
+the one the data satisfies**, for cell B-cyc's static pool. The n = 1
+`B/run-033` probe is superseded by this n = 10 pool as the claim table says it
+is either way.
+
+Stated with its boundary: this is a fact about **B-cyc's own** NDT rate under the
+row-11 Cyclone transport. It is not a comparison with cell A, and the branch-(c)
+disposition itself is Task 16's to write, per the plan's own assignment of the
+branch-(c) update to the wrap.
+
+### 18.5 Registered behaviours that held, and one within-B-cyc observation
+
+**Cell A's empty `published_time.csv` held 10/10**, exactly as §§14-16 record it.
+Every one of `A/run-016` … `run-025` filed a 36-byte `published_time.csv` — the
+header and nothing else, zero PublishedTime rows. This is **registered
+behaviour, not a failed run**: because Task 5 registered
+`control_published_time_topic` for cell A, `_bind_control_staleness_ms` binds on
+registration rather than on measured rows, so the M1b row will not drop but will
+be emitted as `n (a/b) = 0/N` with verdict `insufficient-data` and one
+`MetricUnavailableError` note per cell-A run. Nothing was excluded on it and
+nothing was changed to "fix" it. The census is now 24/24 across every filed
+cell-A static run.
+
+**Within cell B-cyc, two of the ten runs recorded no control traffic at all.**
+`B-cyc/run-002` and `B-cyc/run-003` filed a 36-byte `published_time.csv`
+(0 rows) and 0 `/control/command/control_cmd` observer rows; the other eight
+recorded 121-1341 PublishedTime rows, matching their `control_cmd` row counts
+essentially 1:1. Recorded here as a per-run gate fact because it bears on how
+many B-cyc runs can supply the M1b metric, not because it is a defect finding.
+
+It is **not** an exclusion, and was not made one. exclusions.md criterion 2's
+`gate:control_cmd-silent` reads "the gated control command never flowing after a
+successful engage", and `run.sh` only ever sets `CONTROL_SILENT=1` inside a
+block predicated on step 9 having already reported ARMED — which cannot happen
+in the **static** arm, where there is no route and no engage. The harness's own
+step 14 accordingly printed `none` for both runs, and that judgement was left
+alone: tightening a gate after the data exists to reclassify two runs is exactly
+the "registration is not revised after data exists" failure mode. The cause of
+the two-vs-eight split is **not established** here and no hypothesis about it is
+offered.
+
+### 18.6 Refuted hypotheses
+
+**REFUTED 1 — "the driver stopping mid-duel was the two-consecutive-failure
+abort."** Refuted by the console: `MAX_CONSECUTIVE_FAILURES` is reached only
+through `die()`, which prints `DUEL FAIL: … consecutive failed runs; stopping
+the duel`, and neither that string nor any `… FAILED` line appears in
+`duel-static-console-part1.log`. The driver's own counters stood at 7 completed
+and 0 failed per cell.
+
+**REFUTED 2 — "the kill indicates a stack defect or systematic row-11
+uncollectability."** Refuted by three independent observations: the run in
+progress had already completed its full pipeline through teardown; an unrelated
+passive watcher process was killed in the same instant; and the resumed
+invocation collected 6 further runs (3 pairs) with zero failures and zero
+exclusions on the same host, same trees and same transports. Systematic
+uncollectability would not resume cleanly on the first attempt. The registered
+row-11 caveats (routable-NIC binding, flaky discovery for bare-DDS publishers)
+were inherited as confound rows and did not surface as run failures in this
+collection.
+
+**REFUTED 3 — "the alternation hazard of §11.6 would force an editor-artifact
+ownership flip across twenty alternating runs."** Refuted by the artefact
+digests: `tier4_plugin_sha256` and `tier4_source_sha256` are identical across
+all ten B-cyc runs and both verify scripts passed on every run, with no flip
+performed. This extends §14.1's two-run observation to twenty and confirms the
+prediction that ownership flips only on a source change, not on alternating
+runs.

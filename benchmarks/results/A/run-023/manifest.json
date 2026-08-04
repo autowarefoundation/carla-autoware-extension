@@ -1,0 +1,43 @@
+{
+  "cell": "A",
+  "approach": "extension",
+  "map_name": "Town10HD_Opt",
+  "run_index": 23,
+  "arm": "static",
+  "harness_git_sha": "d57df9d1ec140068d92863eb23375045b2b8bb6b",
+  "patches_git_sha": "7000c7855bea62960f47d18774b2aca02f264777",
+  "transport": {
+    "rmw": "rmw_cyclonedds_cpp",
+    "shm_enabled": false,
+    "dds_profile_sha256": "1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865"
+  },
+  "carla_version": "0.10-fork",
+  "autoware_image": "ghcr.io/autowarefoundation/autoware:universe-devel",
+  "started_at_ns": 1785817573378450574,
+  "excluded": false,
+  "exclusion_reason": "",
+  "placement": {
+    "carla_rpc_port": "2000",
+    "carla_tree": "/home/youtalk/src/carla-autoware-integration",
+    "container_image": "ghcr.io/autowarefoundation/autoware:universe-devel",
+    "cpu_governor": "powersave",
+    "engine_build_id": "bc08ce19-f19c-46fe-808f-dbb2b0ddf41a",
+    "free_gb": "453",
+    "loadavg": "1.20",
+    "map_bundle_pin": "town10_pcd_regen",
+    "nproc": "24",
+    "observer_env": {
+      "image": "bench-observer:universe-devel",
+      "rmw": "rmw_cyclonedds_cpp",
+      "shm": "off",
+      "topics_file": "A.yaml"
+    },
+    "results_fs": "/home",
+    "run_mode": "editor-game",
+    "shm_root_cleared": "0",
+    "shm_root_remaining": "0",
+    "shm_user_cleared": "84"
+  },
+  "duel_admissible": true,
+  "duel_id": "A+B-cyc"
+}
