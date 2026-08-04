@@ -107,3 +107,40 @@ owns the only comparison:
 This follows Task 12's convention, which printed cell B-cyc's `ndt_rate_ratio`
 because its brief asked for it within-cell and deliberately did not print cell
 A's.
+
+## Fix round 1, appended 2026-08-04 — both scripts amended, both logs regenerated
+
+The text above is left as written; this block supersedes its digest table for
+four of the five files. Nothing under `benchmarks/results/*/run-*` was touched,
+and the duel console is **unchanged** — no run's data moved.
+
+**Why the scripts changed.**
+
+- `integrity_pass.py` (M5): `PROVENANCE.md` §20.3 asserts `gate_pass: true`,
+  `reasons: []` and `ladder_branch: "absolute"` on all twenty runs and names this
+  script as the reproducer, but the script collected the first two without
+  printing them and never read the third. It now prints all three per run plus
+  an explicit per-cell check line, which also puts the previously unused
+  `duel_id_ok` to work. All three claims were true beforehand; only the evidence
+  for them was missing.
+- `q2_mrm_signatures.py` (I1, I2): §21.1 and §21.2 correct §20.6's Q2 reading,
+  and every figure they state is now produced by this script rather than
+  asserted — the pre-arm window table (observer attach vs arm start vs first
+  `control_cmd`), the per-run shape table (MRM cycle count, last cycle relative
+  to engage, control-traffic span), and the signature band's placement against
+  the observer window start.
+
+Both logs were regenerated from the amended scripts, and both scripts were
+re-verified **deterministic**: two consecutive runs of each produce byte-identical
+output, so a filed log can be reproduced at any time with the commands in the
+"Reproducing" section above.
+
+### Digests after fix round 1
+
+```text
+c0f03c04a76685bf6dc471f0cc471fa686055a6ad2e9dcd4ae9155a405b0e65c  duel-closedloop-console.log   (UNCHANGED)
+9c597d433c0c05eed6742defb7f255eddfa2dacc1dc49b2ea28737809143bfcc  integrity-pass.log
+770b80f5301485a060825569395c831ccc317eddc8b9cac5800994b67fe1d420  integrity_pass.py
+76e3f73b7a4410b9a87b4c68f8bfe082b98a68d2ea4e43b8f733aca997ef50b6  q2-mrm-signatures.log
+299f24f7e1ff9c42ffe0052560cb3bb8249c9a183d1f77b521e0b33907a74a6f  q2_mrm_signatures.py
+```

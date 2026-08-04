@@ -20,3 +20,37 @@ section 19.4 signature `Subscribed control_cmd is timed out.` present in: ['run-
 runs whose arm needed >=1 change_to_autonomous retry: ['run-012', 'run-013', 'run-014', 'run-015', 'run-016', 'run-017', 'run-018', 'run-019', 'run-020', 'run-021']
 runs that did NOT reach ARMED: NONE
 runs with BOTH an arm retry and any readiness/timeout signature: ['run-012', 'run-013', 'run-016', 'run-017', 'run-018', 'run-019', 'run-020', 'run-021']
+distinct change_to_autonomous retry counts across the ten runs: [1]
+
+## PRE-ARM WINDOW: the observer attaches before the arm, so the static
+## arm's precondition (control_cmd only from emergency cycling) DOES arise.
+run         arm-obs_s  first_cc-obs_s  first_cc-arm_s  pre_arm_cc
+run-012         +6.11           +0.09           -6.01  YES
+run-013         +6.09           +7.85           +1.76  NO -- SILENT
+run-014         +6.07           +0.30           -5.77  YES
+run-015         +6.07           +0.65           -5.42  YES
+run-016         +6.03           +0.65           -5.38  YES
+run-017         +6.08           +0.55           -5.53  YES
+run-018         +6.07           +0.45           -5.62  YES
+run-019         +6.09           +1.50           -4.59  YES
+run-020         +6.02           +0.60           -5.42  YES
+run-021         +6.06           +0.70           -5.36  YES
+
+## per-run shape: mrm cycling extent and control-traffic span
+run         sig  mrm_n  last_mrm-engage_s  cc_span_s
+run-012       0    361             +155.9      153.5
+run-013      10    136              +68.4      145.7
+run-014       0    353             +156.0      153.3
+run-015       0    356             +156.4      152.9
+run-016       0    360             +155.4      152.8
+run-017       0    359             +155.3      153.0
+run-018       0    354             +155.2      153.1
+run-019       0    348             +155.2      152.0
+run-020       0    367             +155.4      152.9
+run-021       0    459             +156.5      152.8
+
+## signature band vs observer window start (signature-carrying runs only)
+run-013: n=10 band 1785824064.934 -> 1785824091.968 (span 27.03s)
+  observer start 1785824086.835; 8 warnings precede it, 2 follow
+  band opens 21.90s BEFORE the observer attaches, closes 5.13s AFTER it
+  arm starts 1785824092.925 (+0.96s vs last warning); first control_cmd 1785824094.686 (+2.72s vs last warning)

@@ -5750,3 +5750,191 @@ Nothing under `benchmarks/results/` was deleted or hand-edited; no manifest was
 touched outside `write_manifest.py`. `exclusions.md`, `margins.yaml`,
 `benchmarks/analysis/**`, `expected_topics.yaml` and `spike_stack.json` are
 untouched.
+
+## 21. CORRECTIONS to §20, appended 2026-08-04 (P4 Task 13, review fix round 1)
+
+**§20 is left exactly as written**; this section supersedes it on six points.
+Nothing under `benchmarks/results/*/run-*` was touched. Every figure below was
+re-derived here from the filed artifacts, and all of them are now produced by
+the two committed evidence scripts rather than asserted — see §21.5.
+
+The pool itself is unaffected: ten admissible pairs, zero exclusions, every
+integrity check still passing. Four of the six items are corrections to
+*readings and counts*; none changes which runs are admissible. Still no
+comparison between the two cells appears anywhere, and `duel_verdict.py` was
+still not run.
+
+### 21.1 (I1) FALSIFIED: §20.6's "the static arm's precondition cannot arise" — it arises, and it failed once in ten
+
+§20.6 concluded that the closed-loop arm "does not directly reproduce the
+static-arm failure" because "in the closed-loop arm `control_cmd` is produced by
+a controller, so the static arm's precondition — `control_cmd` existing only as
+a side effect of emergency cycling — **cannot arise**". **That inference is
+wrong, and the disproof is inside this task's own ten runs.**
+
+**Every closed-loop run has a pre-arm window.** The observer attaches
+**+6.02 … +6.11 s before the arm script's first line** in all ten B-cyc runs.
+Nothing is engaged in that gap, so `control_cmd` can only come from
+`mrm_handler`'s EMERGENCY_STOP cycling driving `vehicle_cmd_gate` — §19.4's
+exact mechanism, running in a closed-loop run.
+
+**In nine runs that stream was flowing; in one it was silent.** First
+`control_cmd` arrival minus observer start:
+
+| run             | arm − observer | first `control_cmd` − observer | first `control_cmd` − arm | pre-arm `control_cmd` |
+| --------------- | -------------- | ------------------------------ | ------------------------- | --------------------- |
+| `B-cyc/run-012` | +6.11          | +0.09                          | −6.01                     | yes                   |
+| `B-cyc/run-013` | +6.09          | **+7.85**                      | **+1.76**                 | **NO — silent**       |
+| `B-cyc/run-014` | +6.07          | +0.30                          | −5.77                     | yes                   |
+| `B-cyc/run-015` | +6.07          | +0.65                          | −5.42                     | yes                   |
+| `B-cyc/run-016` | +6.03          | +0.65                          | −5.38                     | yes                   |
+| `B-cyc/run-017` | +6.08          | +0.55                          | −5.53                     | yes                   |
+| `B-cyc/run-018` | +6.07          | +0.45                          | −5.62                     | yes                   |
+| `B-cyc/run-019` | +6.09          | +1.50                          | −4.59                     | yes                   |
+| `B-cyc/run-020` | +6.02          | +0.60                          | −5.42                     | yes                   |
+| `B-cyc/run-021` | +6.06          | +0.70                          | −5.36                     | yes                   |
+
+`run-013`'s first `control_cmd` lands **1.76 s after the arm script began** — so
+its pre-arm emergency-cycling stream produced nothing for the entire 6.09 s
+pre-arm window. Its ten timeout warnings sit exactly where that predicts: a
+**27.03 s band** at 3 s cadence, `…064.934` → `…091.968`, of which **8 precede
+the observer's own start** at `…086.835`; the band opens **21.90 s before the
+observer attaches** and closes **5.13 s after** it.
+
+**That is §19.4's precondition arising and failing, in a closed-loop run.** It
+cost nothing only because the controller then started publishing — which is a
+statement about **recovery**, not about the precondition being unreachable.
+
+**The corrected conclusion is narrower than §20.6's and stronger.** The
+closed-loop rate (**1 of 10**) is comparable to the static arm's (**2 of 10**),
+so the condition **recurred at a similar rate** rather than losing its meaning:
+
+- The signature does not mark a lost sample **on the closed-loop arm**, because
+  the controller masks the condition within ~2 s.
+- The underlying **pre-arm break still occurred once in ten**, and it **remains a
+  live confound for the static pool**, where nothing masks it.
+- §20.6's "the wrap has no arm-cost to report" is therefore **too strong as
+  written**: correctly, *on this evidence* there is no measured arm-cost **on
+  the closed-loop arm**, and the static-arm confound is untouched.
+
+**What `run-013` adds to the settling experiment.** §20.6 said §19.4's proposed
+capture "remains the only thing that would settle the static-arm case" while
+this collection already held an unanalysed partial discriminator. `run-013` is
+that discriminator: a fully-logged run in which the pre-arm cycling stream was
+silent for the whole pre-arm window and then recovered. It does not settle the
+question — `/system/operation_mode/availability` and the diagnostic-graph output
+are still outside the frozen five-topic observer set — but it **re-targets the
+experiment**: the break lives in the **pre-arm window**, so the capture must
+cover the interval between observer attach and arm, not merely the scored
+window, and `run-013` is the filed precedent showing that window is where to
+look.
+
+**Two scoping restorations.**
+
+- §20.6's title says the signature "**LOSES** its discriminating power",
+  unconditionally. **§19.4's 2-vs-8 correlation *within the static arm* is
+  untouched by anything here.** Read the title as scoped: *the signature loses
+  its discriminating power on the closed-loop arm.*
+- §20.6 dropped the "**on this evidence**" qualifier that the task report
+  carried. It is restored above.
+
+### 21.2 (I2) CORRECTED: "indistinguishable in shape from the nine runs without it" is contradicted by §20's own data
+
+§20.6 says `run-013` is "indistinguishable in shape from the nine runs without
+it". **It is not.** It sits outside the other nine on three measured dimensions,
+two of them disjoint:
+
+| dimension                                  | `run-013`   | the other nine   |
+| ------------------------------------------ | ----------- | ---------------- |
+| pre-arm `control_cmd` present              | **no**      | yes (9/9)        |
+| `MRM State changed`                        | **136**     | 348 … 459        |
+| last MRM cycle relative to engage          | **+68.4 s** | +155.2 … +156.5 s |
+| control-traffic span (the control)         | 145.7 s     | 152.0 … 153.5 s  |
+
+The last row is the control that rules out a duration artifact: the spans are
+essentially equal, so `run-013`'s cycling stopping **87 s earlier relative to
+engage** is a real difference in behaviour, not a shorter run.
+
+**§20 quotes the range "136-459" twice** (in its Q2 table and again in its
+narrative) **without noting that its low end *is* the signature run** — which is
+precisely the presentation that makes the outlier disappear into a range. And
+§20.6 cites the 68 s figure as reassurance ("continuing past engage") without
+the contrast that makes it the outlier. Both readings are corrected here.
+
+**None of this invalidates the run, and it is not reopened.** `B-cyc/run-013`
+armed, engaged, passed its gate (`gate_pass: true`, `reasons: []`) and filed
+2915 well-formed `published_time` rows at ratio 1.000 against its own
+`control_cmd` count — independently re-verified. It remains admissible and
+unexcluded. What changes is that "indistinguishable in shape" must not be used
+to dismiss the confound.
+
+### 21.3 (I3) CORRECTED: §20.5's cell-A static census regresses to a superseded figure
+
+§20.5 says "the static arm's **14/14** filed cell-A runs are header-only, 36
+bytes". **The true count is 24.** Re-counted here over every filed cell-A run
+with `arm == "static"`: **24 runs, all 24 with zero `published_time` rows, all
+at exactly 36 bytes** (one distinct file size across the set).
+
+14/14 was the §16-era figure. §18.5 had **already corrected it** — "the census
+is now 24/24 across every filed cell-A static run" — and this same commit's
+§20.7 says "It held **24/24** on the static arm and 0/10 here". So §20.5
+regressed a number an earlier section had fixed and then contradicted itself two
+subsections later. **The correct figure is 24/24**, and §20.5's load-bearing
+point (cell A's static arm files header-only, its closed-loop arm does not) is
+unaffected.
+
+### 21.4 (M4) CORRECTED: the exact/short-by-one split is 5 and 5, not 6 and 4
+
+§20.5 says the ratio-1.000 result breaks down as "six runs exact, four short by
+a single row". **It is five and five**, and the filed `integrity-pass.log` table
+shows it directly:
+
+- **Exact** (`pt_rows == cc_rows`): `A/run-026`, `run-028`, `run-030`,
+  `run-034`, `run-035`.
+- **Short by one**: `A/run-027`, `run-029`, `run-031`, `run-032`, `run-033`.
+
+No run differs by more than one row. **The load-bearing claim — ratio 1.000 on
+all ten — is correct and unaffected**; only the breakdown was miscounted.
+
+### 21.5 (M5) CLOSED: the named reproducer now evidences the three fields it was cited for
+
+§20.3 asserts that all twenty runs recorded `gate_pass: true`, `reasons: []` and
+`ladder_branch: "absolute"`, and points the reader at `integrity_pass.py` /
+`integrity-pass.log`. **All three are true — independently re-verified — but the
+named reproducer did not evidence them**: the script collected `gate_pass` and
+`reasons` and never printed them, and never read `ladder_branch` at all, so none
+of the three appeared in the filed log.
+
+Fixed at the source rather than by re-citing: `integrity_pass.py` now prints all
+three per run and adds an explicit check line per cell, which also puts the
+previously-computed-but-unused `duel_id_ok` to work:
+
+```text
+  -> duel_id == 'A+B-cyc': 10/10   gate_pass true: 10/10   reasons == []: 10/10   ladder_branch == 'absolute': 10/10
+```
+
+`integrity-pass.log` was regenerated from the amended script and both were
+re-verified deterministic (two consecutive runs `diff` clean). These are
+pass/fail-shaped fields, not measured magnitudes, so printing them does not
+weaken the no-peeking discipline the script documents.
+
+`q2_mrm_signatures.py` was extended in the same spirit, so that **every figure
+in §21.1 and §21.2 has a runnable source** rather than being asserted: it now
+emits the pre-arm window table, the per-run shape table, and the signature-band
+placement. Its log was likewise regenerated and re-verified deterministic.
+
+### 21.6 (M6) SCOPED: "no retry attributable to discovery" claims more than the evidence shows
+
+§20.6 states "no retry attributable to discovery" as established. The support
+offered is that the `change_to_autonomous` retry count is **invariant at exactly
+1** across runs with and without the readiness signatures. That invariance
+**rules out co-variation** with those signatures — it does **not** rule out a
+uniformly discovery-induced single retry, which would produce exactly the same
+invariance.
+
+**Correctly scoped:** no retry *varies with* the readiness or timeout
+signatures, so none is attributable to them; whether the one uniform retry every
+run takes has a discovery component is **not established either way** by this
+data. §15.2 independently established that single retry as the campaign-wide
+norm, including on cells that are not B-cyc, which is evidence against a
+B-cyc-transport-specific cause but is not addressed here.

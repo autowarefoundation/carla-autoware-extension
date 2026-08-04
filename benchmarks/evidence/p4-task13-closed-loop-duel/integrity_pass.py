@@ -13,6 +13,13 @@ PLUS the two closed-loop checks this task adds:
     what run.sh's step 9 exit code is derived from.
   * `goal_closest_approach_m` non-null in quality.json.
 
+It also prints `gate_pass`, `reasons` and `ladder_branch` per run (fix round 1,
+M5): PROVENANCE.md section 20.3 asserts all three and names this script as the
+reproducer, and an earlier cut collected the first two without printing them and
+never read the third — so the named reproducer did not evidence the claim it was
+cited for. These are pass/fail-shaped fields, not measured magnitudes, so
+printing them does not weaken the no-peeking discipline below.
+
 Also answers Q1 (does cell A's CLOSED-LOOP arm populate published_time.csv?)
 with PROVENANCE.md section 15.5's three named checks.
 
@@ -123,6 +130,7 @@ def rows(cell: str):
             "reason_known": known_exclusion_reason(reason) if reason else None,
             "gate_pass": qd.get("gate_pass") if qd else None,
             "reasons": qd.get("reasons") if qd else None,
+            "ladder_branch": qd.get("ladder_branch") if qd else None,
             "goal_closest_approach_m": (qd.get("goal_closest_approach_m") if qd else None),
             "quality_arm": qd.get("arm") if qd else None,
             "cc_rows": observer_control_cmd_rows(d),
@@ -139,7 +147,8 @@ def integrity_table(label: str, recs: list[dict]) -> None:
     print(f"\n## integrity pass -- {label}")
     print(
         f"{'run':<16} {'arm':<11} {'mval':<5} {'duel_id':<10} {'adm':<5} "
-        f"{'qual':<5} {'wdog':<5} {'excl':<5} {'engage':<7} {'goal!=None':<10} reason"
+        f"{'qual':<5} {'wdog':<5} {'excl':<5} {'engage':<7} {'goal!=None':<10} "
+        f"{'gate_pass':<10} {'ladder':<9} {'reasons':<9} reason"
     )
     for r in recs:
         print(
@@ -147,11 +156,22 @@ def integrity_table(label: str, recs: list[dict]) -> None:
             f"{r['duel_id']:<10} {str(r['duel_admissible']):<5} "
             f"{str(r['quality_json']):<5} {str(r['watchdog_marker']):<5} "
             f"{str(r['excluded']):<5} {str(r['engage_recorded']):<7} "
-            f"{str(r['goal_non_null']):<10} {r['exclusion_reason'] or '-'}"
+            f"{str(r['goal_non_null']):<10} {str(r['gate_pass']):<10} "
+            f"{str(r['ladder_branch']):<9} {str(r['reasons']):<9} "
+            f"{r['exclusion_reason'] or '-'}"
             + (f"  [reason_known={r['reason_known']}]" if r["exclusion_reason"] else "")
         )
         if r["manifest_errors"]:
             print(f"    MANIFEST ERRORS: {r['manifest_errors']}")
+    # duel_id_ok exists to be asserted, not merely computed: the table prints the
+    # raw duel_id, and this line is what states the CHECK over the whole set.
+    print(
+        f"  -> duel_id == 'A+B-cyc': {sum(r['duel_id_ok'] for r in recs)}/{len(recs)}   "
+        f"gate_pass true: {sum(r['gate_pass'] is True for r in recs)}/{len(recs)}   "
+        f"reasons == []: {sum(r['reasons'] == [] for r in recs)}/{len(recs)}   "
+        f"ladder_branch == 'absolute': "
+        f"{sum(r['ladder_branch'] == 'absolute' for r in recs)}/{len(recs)}"
+    )
 
 
 def q1_table_cell_a(recs: list[dict]) -> None:

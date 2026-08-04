@@ -1,30 +1,32 @@
 # new runs: A=10  B-cyc=10
 
 ## integrity pass -- cell A
-run              arm         mval  duel_id    adm   qual  wdog  excl  engage  goal!=None reason
-A/run-026        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-027        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-028        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-029        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-030        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-031        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-032        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-033        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-034        closed-loop True  A+B-cyc    True  True  False False True    True       -
-A/run-035        closed-loop True  A+B-cyc    True  True  False False True    True       -
+run              arm         mval  duel_id    adm   qual  wdog  excl  engage  goal!=None gate_pass  ladder    reasons   reason
+A/run-026        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-027        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-028        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-029        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-030        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-031        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-032        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-033        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-034        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+A/run-035        closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+  -> duel_id == 'A+B-cyc': 10/10   gate_pass true: 10/10   reasons == []: 10/10   ladder_branch == 'absolute': 10/10
 
 ## integrity pass -- cell B-cyc
-run              arm         mval  duel_id    adm   qual  wdog  excl  engage  goal!=None reason
-B-cyc/run-012    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-013    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-014    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-015    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-016    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-017    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-018    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-019    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-020    closed-loop True  A+B-cyc    True  True  False False True    True       -
-B-cyc/run-021    closed-loop True  A+B-cyc    True  True  False False True    True       -
+run              arm         mval  duel_id    adm   qual  wdog  excl  engage  goal!=None gate_pass  ladder    reasons   reason
+B-cyc/run-012    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-013    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-014    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-015    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-016    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-017    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-018    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-019    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-020    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+B-cyc/run-021    closed-loop True  A+B-cyc    True  True  False False True    True       True       absolute  []        -
+  -> duel_id == 'A+B-cyc': 10/10   gate_pass true: 10/10   reasons == []: 10/10   ladder_branch == 'absolute': 10/10
 
 ## closed-loop checks summary (per cell, no comparison)
 A      engage_recorded 10/10   goal_closest_approach_m non-null 10/10   arm=='closed-loop' 10/10   quality.arm=='closed-loop' 10/10
