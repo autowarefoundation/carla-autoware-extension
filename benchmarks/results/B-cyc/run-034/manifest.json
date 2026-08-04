@@ -14,8 +14,8 @@
   "carla_version": "0.10-tier4",
   "autoware_image": "ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee",
   "started_at_ns": 1785853747196498999,
-  "excluded": false,
-  "exclusion_reason": "",
+  "excluded": true,
+  "exclusion_reason": "harness:65fbe09",
   "placement": {
     "carla_rpc_port": "2000",
     "carla_tree": "/home/youtalk/src/carla-autoware-native",
