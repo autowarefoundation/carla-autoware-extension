@@ -62,6 +62,22 @@ SINCE_365D="$(date -u -d '365 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 
 hdr() { printf '\n=== %s ===\n' "$1"; }
 
+# gh search prs is CAP-SILENT: it returns exactly --limit results with no
+# indication a real total was truncated to fit. Fix-round-1 finding: the
+# JArmandoAnaya cell was originally captured at --limit 50 and returned
+# EXACTLY 50 (38 merged + 12 open + 0 closed) -- a truncation artifact that
+# happened to erase the 2 closed-unmerged PRs the account actually has,
+# erring in the extension's favor. Every author-scoped PR search below goes
+# through this helper so every count carries an explicit "did we hit the
+# cap" check instead of silently trusting a round number.
+pr_state_breakdown() {
+  local repo="$1" author="$2" limit="${3:-200}"
+  gh search prs --repo "$repo" --author "$author" --limit "$limit" --json state --jq \
+    "(group_by(.state) | map({state: .[0].state, n: length})),
+     (\"total=\" + (length|tostring)),
+     (if length >= $limit then \"WARNING: result count == --limit=$limit -- may be truncated, RAISE THE LIMIT and re-run\" else \"OK: total is below --limit=$limit, count is exhaustive\" end)"
+}
+
 hdr "Snapshot retrieval time (record this as the table's retrieval date)"
 echo "NOW_UTC=$NOW_UTC"
 echo "90-day cutoff (SINCE_90D)=$SINCE_90D"
@@ -102,14 +118,26 @@ gh api "repos/$EXT_REPO/contents/CODEOWNERS" >/dev/null 2>&1 \
   && echo "CODEOWNERS present" \
   || echo "CODEOWNERS absent (404) -- no formal reviewer gate beyond the ruleset's required status checks"
 
-hdr "Criteria 1-2 -- tier4-native: rulesets + inherited CODEOWNERS"
-gh api "repos/$TIER4_REPO/rulesets" --jq '.[] | .name + " (" + .enforcement + ")"'
-TIER4_ALLBRANCH_ID="$(gh api "repos/$TIER4_REPO/rulesets" --jq '.[] | select(.name=="Require PR for develop/release/master on *") | .id')"
-echo "-- ref_name include patterns (does it cover autoware-support?) --"
-gh api "repos/$TIER4_REPO/rulesets/$TIER4_ALLBRANCH_ID" --jq '.conditions.ref_name.include[]'
-echo "-- pull_request rule parameters (approving review requirement) --"
-gh api "repos/$TIER4_REPO/rulesets/$TIER4_ALLBRANCH_ID" --jq '.rules[] | select(.type=="pull_request") | .parameters | "required_approving_review_count=" + (.required_approving_review_count|tostring), "require_code_owner_review=" + (.require_code_owner_review|tostring)'
-echo "-- CODEOWNERS content (inherited from the upstream CARLA fork, not tier4-specific) --"
+# Fix-round-1 finding: chasing a ruleset by NAME and reading its
+# conditions/rules is the wrong method -- a repo can have several rulesets,
+# each covering a different branch set with different rules, and a reader
+# (or an earlier run of this very script) can accidentally attribute one
+# ruleset's rules to a branch actually governed by a different one. GitHub's
+# per-branch EFFECTIVE-rules endpoint (`rules/branches/<branch>`) is the
+# authoritative source: it returns the union of whatever rulesets actually
+# apply to that exact branch, with no name-matching required.
+hdr "Criteria 1-2 -- tier4-native: the two repo-level rulesets (context only -- see the per-branch check below for what actually applies)"
+gh api "repos/$TIER4_REPO/rulesets" --jq '.[] | (.id|tostring) + " " + .name + " (" + .enforcement + ")"'
+
+hdr "Criteria 1-2 -- tier4-native: EFFECTIVE rules on autoware-support itself (authoritative -- not a ruleset chased by name)"
+echo "gh api repos/$TIER4_REPO/rules/branches/autoware-support"
+gh api "repos/$TIER4_REPO/rules/branches/autoware-support" --jq '[.[].type]'
+echo "(expect: creation, update, deletion, non_fast_forward -- i.e. the branch is FROZEN"
+echo " against updates/deletion/force-push, but NO pull_request rule reaches it, so no"
+echo " approving-review gate applies here despite the repo having a ruleset elsewhere that"
+echo " requires one -- that ruleset's ref_name.include list does not cover autoware-support)"
+
+hdr "Criteria 1-2 -- tier4-native: inherited CODEOWNERS (context; see above for whether it's ever consulted on autoware-support)"
 gh api "repos/$TIER4_REPO/contents/.github/CODEOWNERS" --jq '.content' | base64 -d
 
 hdr "Criteria 1-2 -- Bridge: autoware_universe main ruleset (1 CODEOWNER approval required) + package CODEOWNERS line"
@@ -171,10 +199,10 @@ fi
 # known authors against the upstream repo the fork tracks.
 # ---------------------------------------------------------------------------
 hdr "Criterion 4 -- Extension's upstreaming: youtalk's PRs to carla-simulator/carla"
-gh search prs --repo carla-simulator/carla --author youtalk --limit 50 --json state --jq 'group_by(.state) | map({state: .[0].state, n: length})'
+pr_state_breakdown carla-simulator/carla youtalk 200
 
 hdr "Criterion 4 -- Extension's upstreaming: JArmandoAnaya's PRs to carla-simulator/carla (2nd fork contributor)"
-gh search prs --repo carla-simulator/carla --author JArmandoAnaya --limit 50 --json state --jq 'group_by(.state) | map({state: .[0].state, n: length})'
+pr_state_breakdown carla-simulator/carla JArmandoAnaya 200
 
 hdr "Criterion 4 -- Extension's mitigation PR chain the spec names (#9743-#9758, full inclusive range)"
 for n in $(seq 9743 9758); do
@@ -182,7 +210,28 @@ for n in $(seq 9743 9758); do
     || echo "$n does not exist as a PR in carla-simulator/carla (gap in the number sequence)"
 done
 
-hdr "Criterion 4 -- tier4-native's upstreaming: search for any PR referencing tier4/robotec (spec: none)"
+# Fix-round-1 finding: "no PR from any of the delta's actual authors" is
+# broader than any command originally run here, and false as literally
+# written -- the ~98-commit range shared with the un-upstreamed
+# CARLA-community pool (see Criterion 3/6) has authors (glopezdiest, Blyron,
+# ...) who DO have large upstream PR histories; they're just not
+# tier4/robotec-specific. The claim must be scoped to the delta's actual
+# ROBOTEC/TIER4 authors (GH logins resolved from the shortlog emails via
+# `gh api search/users?q=<name>` / direct `gh api users/<login>` lookups),
+# and both halves -- scoped-zero and shared-nonzero -- need their own command.
+hdr "Criterion 4 -- tier4-native's upstreaming, SCOPED to the delta's Robotec/tier4-specific authors (the 4 responsible for 198/305 commits -- see Criterion 6): expect zero"
+for u in TauTheLepton Goldob wojciechczerski hosokawa-ikuto; do
+  echo "-- $u (Mateusz Palczuk / Adam Gotlib / Wojciech Czerski / HOSOKAWA Ikuto's GH login) --"
+  pr_state_breakdown carla-simulator/carla "$u" 200
+done
+
+hdr "Criterion 4 -- CONTRAST: shared-ancestor community authors in the SAME delta are NOT zero (why the claim above must be scoped, not repo-wide)"
+for u in glopezdiest Blyron mackierx111; do
+  echo "-- $u --"
+  pr_state_breakdown carla-simulator/carla "$u" 200
+done
+
+hdr "Criterion 4 -- broader text search (context only, not the basis of the scoped claim above)"
 gh search prs --repo carla-simulator/carla "tier4" --limit 10 --json number,title,state
 gh search prs --repo carla-simulator/carla "robotec" --limit 10 --json number,title,state
 
@@ -224,6 +273,8 @@ if [ -d "$TIER4_FORK_CLONE" ]; then
   git -C "$TIER4_FORK_CLONE" rev-list --count --since="90 days ago" "$UPSTREAM_BASE..$TIER4_FORK_BRANCH"
   echo "-- 12-month distinct author emails in the delta --"
   git -C "$TIER4_FORK_CLONE" log --since="365 days ago" "$UPSTREAM_BASE..$TIER4_FORK_BRANCH" --format='%ae' | sort -u
+  echo "-- count of the above (machine-produced -- do not hand-count the printed list) --"
+  git -C "$TIER4_FORK_CLONE" log --since="365 days ago" "$UPSTREAM_BASE..$TIER4_FORK_BRANCH" --format='%ae' | sort -u | wc -l
   echo "-- last commit date on tier4/autoware-support itself (staleness check; CI-coverage check is under Criterion 9) --"
   git -C "$TIER4_FORK_CLONE" log -1 --format='%H %ci' "$TIER4_FORK_BRANCH"
 else
@@ -238,6 +289,8 @@ if [ -d "$EXT_FORK_CLONE" ]; then
   git -C "$EXT_FORK_CLONE" rev-list --count --since="90 days ago" "$UPSTREAM_BASE..$EXT_FORK_BRANCH"
   echo "-- 12-month distinct author emails in the delta --"
   git -C "$EXT_FORK_CLONE" log --since="365 days ago" "$UPSTREAM_BASE..$EXT_FORK_BRANCH" --format='%ae' | sort -u
+  echo "-- count of the above (machine-produced -- do not hand-count the printed list; fix-round-1 finding: a hand-count of this exact list previously miscounted 24 instead of 25) --"
+  git -C "$EXT_FORK_CLONE" log --since="365 days ago" "$UPSTREAM_BASE..$EXT_FORK_BRANCH" --format='%ae' | sort -u | wc -l
 else
   echo "SKIP: EXT_FORK_CLONE not found"
 fi
