@@ -39,17 +39,24 @@ Sources, and the only ones:
    applies.
 5. **A P3 figure and a P4 figure never share a sentence without the P4↔P3
    identity caveat inline** (`p4-transport-sweep.md` §9): the engine BuildId and
-   the harness sha both moved between phases, so only **verdicts computed
-   entirely within one phase** are set against each other — never a per-cell
-   absolute against another phase's.
+   the harness sha both moved between phases. The attribution bracket therefore
+   sets **verdicts computed entirely within one phase** against each other, and
+   **no per-cell margin-metric absolute is compared across phases.** One
+   cross-phase per-cell comparison does appear — the M2 `observer_loss_rate`
+   bullet in §3.2 — because `p4-transport-sweep.md` §2.3 draws it itself; it is
+   not a margin metric, and it restates the identity caveat in its own
+   sentence. The rule is stated this way rather than absolutely, because a rule
+   the document does not follow is worse than a narrower one it does.
 6. **No composite score, and no ranking table.** Per-criterion and per-metric
    evidence only.
 
 **What this document is not.** It is not a "which approach wins" study; the
 spec says so in terms. It is not a cross-approach equivalence statistic — none
 was computed in either phase, and none may be inferred (`p3-baseline.md` §4.3,
-`p4-transport-sweep.md` §2.6). It is not a re-scoring: no filed run was read,
-re-read, re-scored or reclassified by this task.
+`p4-transport-sweep.md` §2.6). It is not a re-scoring: no filed run was
+re-scored, reclassified or read-modify-written by this task. Its only read of
+`benchmarks/results/` is the read-only per-cell census behind §1.2 and §2.4,
+which opens each run's `manifest.json` and nothing else (appendix command 10).
 
 ## 1. The approaches and the workload matrix
 
@@ -66,8 +73,10 @@ Full ownership, licensing and maintenance detail: `docs/evaluation/rubric.md`,
 
 ### 1.2 The cells as filed
 
-**191 manifests are filed across eight cells; 37 are excluded.** Counts are the
-per-cell census reproduced by command 3 of the appendix.
+**191 manifests are filed across eight cells; 37 are excluded.** Every count in
+this section and in §2.4 is reproduced by **appendix command 10**, a read-only
+`manifest.json` walk that prints filed and excluded totals per cell with each
+cell's exclusion reasons.
 
 | cell       | approach      | CARLA      | map           | filed | excluded | role                                 |
 | ---------- | ------------- | ---------- | ------------- | ----- | -------- | ------------------------------------ |
@@ -112,9 +121,25 @@ wanting; no result about any of them may be inferred from its absence.**
 
 `CAL-seam` is the one reversal: struck in P3 with `C1(a)` recorded as
 UNMEASURED, revived for one registered relink round, and measured in P4 on five
-runs (§3.1). The M4 `128ch` class stays struck on either branch and is enforced
-in code — both launchers refuse the class by name
-(`p4-transport-sweep.md` §6.3).
+runs (§3.1).
+
+**The M4 ceiling search is the other thing this campaign did not establish, and
+the campaign's registered wording for it is used verbatim: "ceiling not located
+up to the 32ch class"** — a statement about where the search stopped, _not_ a
+new step-up and not a licence for one (`p4-transport-sweep.md` §6.3). No
+disjunct fired at `vlp16` on cell A or cell B-cyc, so `cells.yaml`'s
+`sweep_classes` pre-registration stepped **both** cells up to `32ch` with no
+owner consultation; no disjunct fired there either. All 18 scored rows per
+class read `reached False` with empty reasons, and "did not fire" is a real
+evaluation rather than an unevaluable disjunct — `analysis/ceiling.py:84` raises
+when both `rtf` and `tick_rate_ratio` are `None`, so an unscoreable row cannot
+render as a passing one (`p4-transport-sweep.md` §6.1). **No `n = 5` extension was executed
+on either class** — that is pre-registered for a cell whose disjunct fired, and
+neither did — so both cells stand at n = 3 per arm at both classes. The `128ch`
+class stays struck on either branch and the strike is enforced in code: both
+launchers refuse the class by name. **Cell E is out of the sweep entirely**, by
+its registered static-only downgrade, and the spec required that recorded in
+wording rather than left as silence (`p4-transport-sweep.md` §6.3).
 
 ## 2. Methodology
 
@@ -213,7 +238,8 @@ between the phases** — the diff is one README line
 
 Ten criteria were frozen before the first measurement run
 (`benchmarks/config/exclusions.md`) and **may not be edited after it**. What
-they actually excluded:
+they actually excluded, per the census of appendix command 10 (its full output
+is printed there, so each row below is checkable against it):
 
 | cell    | n   | reasons                                                          |
 | ------- | --- | ---------------------------------------------------------------- |
@@ -363,11 +389,16 @@ hypothesis exists and is untested (`p4-transport-sweep.md` §2.4).
   separation outside the margin on every one. Per the rule pre-registered
   before any P4 run, the P3 separation on those three metrics is **attributed
   to the as-shipped Fast-DDS configuration, not to the approach.**
-- **The M2 reconciliation corroborates it on a different quantity.** P3's cell B
-  lost frames observer-side (`observer_loss_rate` median 0.085, max 0.108,
-  against cell A's 0.000/0.000); cell B-cyc — same image, same launcher, only
-  the middleware changed — reads 0.000/0.000 on both arms
-  (`p4-transport-sweep.md` §2.3). **One row of that same table is not a
+- **The M2 reconciliation corroborates it on a different quantity, and this one
+  bullet does set a P3 per-cell figure against a P4 one — carrying the identity
+  caveat here, in its own sentence, because §0 rule 5 requires it and this
+  section's preamble scopes its copy to the bracket table above.** The engine
+  BuildId and the harness sha moved between the phases; `observer_loss_rate` is
+  **not** a margin metric, and the comparison is `p4-transport-sweep.md` §2.3's
+  own, not one this report constructs. P3's cell B lost frames observer-side
+  (`observer_loss_rate` median 0.085, max 0.108, against cell A's 0.000/0.000);
+  cell B-cyc — same image, same launcher, only the middleware changed — reads
+  0.000/0.000 on both arms. **One row of that same table is not a
   transport result**: `publisher_drop_rate` fell on _both_ cells because of the
   spec's 1f instrument fix, applied symmetrically.
 - **⬇ Equivalence is inconclusive on `carla_process_cpu_pct`, and the wording
@@ -465,6 +496,29 @@ depression is bound to the as-shipped Fast-DDS configuration**
 (`p4-transport-sweep.md` §4). **Scope it exactly: that names where the cause
 lives, not what it is.** Phase 0's finding that the double-publication
 differential is real but not the cause stands unchanged.
+
+**Two of Phase 0's own rulings were refuted, and both stay in the record with
+the diagnostic that refuted them** — the branch ruling is unaffected by either;
+only the reasoning is (`p3-baseline.md` §5.2's closing paragraph):
+
+- **The first ruling rested on a publisher COUNT**, which cannot distinguish
+  advertising from emitting, and so measured a quantity the hypothesis does not
+  name (PROVENANCE §6.5). What replaced it is a stamp-identity measurement:
+  cell A has 2 advertised publishers and **1 emitter** (0 duplicate stamps);
+  cell B has 2 advertised publishers and **2 emitters** (72 duplicate stamps of
+  88 unique).
+- **The second ruling's causal wording — "killing the relay stops NDT" — is
+  refuted by the repository's own `results/B/run-027/observer.csv`**, which
+  records NDT **resuming ≈ 29 s after the kill** with `concatenate_data` as
+  sole publisher (PROVENANCE §6.8).
+
+A third correction of the same class sits inside the figure quoted above: an
+earlier revision of the P3 record said **nine** of the ten duel-pool runs fail
+the M5 gate, which contradicted its own 0.257–0.989 range and overstated the
+pervasiveness of the campaign's central unexplained confound. **Eight** is the
+corrected count, it is the count used here, and PROVENANCE §4.1's identical
+off-by-one is deliberately left as written with a pointer to the diagnostic
+that corrected it (`p3-baseline.md` §5.2).
 
 ### 3.5 C1(c) — the structural half
 
@@ -798,18 +852,18 @@ amendment ledger.
 Each constraint is ticked with **the mechanism that enforced it**, not with an
 assertion that it holds.
 
-| #   | constraint (spec, Global Constraints)                                                          | mechanism in this document                                                                                                                                                                                                                                                                                                                                                                   |
-| --- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **No composite acceptance score**                                                              | `rubric.md` carries a "No composite score" banner as its own section; this report contains **no ranking table, no weighting and no total**. §6 summarises per criterion and links out; §3–§5 report per metric and per entry.                                                                                                                                                                |
-| 2   | **Bridge and native numbers never share a ranking table without the generation caveat inline** | Exactly one table places an E-family figure beside a native one (§4.4). It carries a **generation-caveat column filled per row**, and the sentence under it states it is not a ranking and draws no ordering. All other E/E0 figures live in §4's own arm-scoped tables.                                                                                                                     |
-| 3   | **No attribution of UE4-vs-UE5 renderer/engine differences to the bridge**                     | C2's load-bearing contrast is **E vs E0**, within one approach, one CARLA version and one container family, differing only by the patch set (§4.1–§4.3). No cross-generation delta is computed anywhere. The publish-disabled ablation arm exists only inside cells A and B-cyc and is registered **within-cell only** (§7 row 15; P4 §6.4).                                                 |
-| 4   | **E2E latency under a 20 Hz sim clock is context, never C1 evidence**                          | C1 rests **only** on the five pre-registered margin metrics (§3.2, §3.3) and the C1(a) paired delta (§3.1). The ~51–53 ms arrival-domain figures on cell A are one sim tick and appear nowhere in §3; the arrival-domain rates quoted in §4 are labelled as such, and §4.5 restates the prohibition on cross-reading them against `achieved_rate_ratio`.                                     |
-| 5   | **Every number carries its cell/run reference**                                                | Every figure names its pool (`A/run-016`…`025`, `CAL-seam/run-001`…`005`, `E0/run-002`…`008`, …) or the census that produced it, plus the wrap-doc section that owns it.                                                                                                                                                                                                                     |
-| 6   | **Every C1/C2 sentence names its arm**                                                         | C1 sentences name `A-vs-B` or `A-vs-B-cyc` **and** static or closed-loop; C2 sentences name E0, E, or the struck E-opt. §0 rule 2 states the discipline; §3.2/§3.3 headings carry the arm; §4.1 fixes the three C2 arms before any C2 number is quoted.                                                                                                                                      |
-| 7   | **Wording downgrades the data forced are applied mechanically**                                | Marked ⬇ at each site: equivalence **inconclusive** on static `control_staleness_ms` and on `carla_process_cpu_pct` (§3.2, §3.3); A-vs-B closed-loop **not computable** (§1.2, §3.3); C1(a) an **upper bound** (§3.1); C1(c) rescoped (§3.5); cell E **static-only** (§4.3); the E family on the **relative** G1 branch (§4.5); the spec's bridge byte-layout premise **unmeasured** (§4.4). |
-| 8   | **Mandatory caveats travel inline**                                                            | The four-of-five static bracket, A-vs-B-cyc-not-A-vs-B, C1(a)-upper-bound and E0-optimistic-bias caveats each appear **in the paragraph that quotes their figures** (§3.2, §3.3, §3.1, §4.2), not in a trailing caveats section.                                                                                                                                                             |
-| 9   | **Nothing is recomputed, no verdict is manufactured**                                          | This task ran no verdict tool and read no filed run. Both wrap docs computed their verdict **once**, with no filtering flags, and reproduce their full output verbatim; §9 gives the commands and the SHAs so a reader regenerates rather than trusts.                                                                                                                                       |
-| 10  | **Refuted hypotheses stay in the record with the diagnostic that refuted them**                | Carried, not dropped: Phase 0's publisher-count-vs-emission error and its causal-wording refutation (§3.4), the `B/run-032` correction to the delivery-probe reading (§3.4), C1(a)'s retracted conservatism argument (§3.1), and the spec's own bridge byte-layout premise (§4.4).                                                                                                           |
+| #   | constraint (spec, Global Constraints)                                                          | mechanism in this document                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **No composite acceptance score**                                                              | `rubric.md` carries a "No composite score" banner as its own section; this report contains **no ranking table, no weighting and no total**. §6 summarises per criterion and links out; §3–§5 report per metric and per entry.                                                                                                                                                                                                                                               |
+| 2   | **Bridge and native numbers never share a ranking table without the generation caveat inline** | Exactly one table places an E-family figure beside a native one (§4.4). It carries a **generation-caveat column filled per row**, and the sentence under it states it is not a ranking and draws no ordering. All other E/E0 figures live in §4's own arm-scoped tables.                                                                                                                                                                                                    |
+| 3   | **No attribution of UE4-vs-UE5 renderer/engine differences to the bridge**                     | C2's load-bearing contrast is **E vs E0**, within one approach, one CARLA version and one container family, differing only by the patch set (§4.1–§4.3). No cross-generation delta is computed anywhere. The publish-disabled ablation arm exists only inside cells A and B-cyc and is registered **within-cell only** (§7 row 15; P4 §6.4).                                                                                                                                |
+| 4   | **E2E latency under a 20 Hz sim clock is context, never C1 evidence**                          | C1 rests **only** on the five pre-registered margin metrics (§3.2, §3.3) and the C1(a) paired delta (§3.1). The ~51–53 ms arrival-domain figures on cell A are one sim tick and appear nowhere in §3; the arrival-domain rates quoted in §4 are labelled as such, and §4.5 restates the prohibition on cross-reading them against `achieved_rate_ratio`.                                                                                                                    |
+| 5   | **Every number carries its cell/run reference**                                                | Every figure names its pool (`A/run-016`…`025`, `CAL-seam/run-001`…`005`, `E0/run-002`…`008`, …) or the census that produced it — appendix command 10, whose script and output are both printed — plus the wrap-doc section that owns it.                                                                                                                                                                                                                                   |
+| 6   | **Every C1/C2 sentence names its arm**                                                         | C1 sentences name `A-vs-B` or `A-vs-B-cyc` **and** static or closed-loop; C2 sentences name E0, E, or the struck E-opt. §0 rule 2 states the discipline; §3.2/§3.3 headings carry the arm; §4.1 fixes the three C2 arms before any C2 number is quoted.                                                                                                                                                                                                                     |
+| 7   | **Wording downgrades the data forced are applied mechanically**                                | Marked ⬇ at each site: equivalence **inconclusive** on static `control_staleness_ms` and on `carla_process_cpu_pct` (§3.2, §3.3); A-vs-B closed-loop **not computable** (§1.2, §3.3); C1(a) an **upper bound** (§3.1); C1(c) rescoped (§3.5); cell E **static-only** (§4.3); the E family on the **relative** G1 branch (§4.5); the spec's bridge byte-layout premise **unmeasured** (§4.4).                                                                                |
+| 8   | **Mandatory caveats travel inline**                                                            | The four-of-five static bracket, A-vs-B-cyc-not-A-vs-B, C1(a)-upper-bound and E0-optimistic-bias caveats each appear **in the paragraph that quotes their figures** (§3.2, §3.3, §3.1, §4.2), not in a trailing caveats section.                                                                                                                                                                                                                                            |
+| 9   | **Nothing is recomputed, no verdict is manufactured**                                          | This task ran no verdict tool and **re-scored, reclassified or rewrote no filed run**; its only read of `benchmarks/results/` is appendix command 10's read-only `manifest.json` census, which is why §0 states the narrower claim rather than "read no filed run". Both wrap docs computed their verdict **once**, with no filtering flags, and reproduce their full output verbatim; §9 gives the commands and the SHAs so a reader regenerates rather than trusts.       |
+| 10  | **Refuted hypotheses stay in the record with the diagnostic that refuted them**                | Carried, not dropped, each with the diagnostic that refuted it: Phase 0's publisher-count-vs-emission error and its "killing the relay stops NDT" causal wording, plus the nine-vs-eight count correction (§3.4's closing three paragraphs, quoting `p3-baseline.md` §5.2 and PROVENANCE §6.5/§6.8); the `B/run-032` correction to the delivery-probe reading (§3.4); C1(a)'s retracted conservatism argument (§3.1); and the spec's own bridge byte-layout premise (§4.4). |
 
 **Known residual weaknesses of this report, stated rather than left to the
 reviewer:** the C1(a) publish-order residual's sign is unestablished; the
@@ -853,7 +907,8 @@ for r in 001 002 003 004 005; do
   PYTHONPATH=. python3 -m benchmarks.scripts.cal_report benchmarks/results/CAL-seam/run-$r
 done
 
-# 5. M4 ceiling tables (section 1.3's "not located up to the 32ch class").
+# 5. M4 ceiling tables (section 1.3's "ceiling not located up to the 32ch
+#    class").
 PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py A     --class vlp16
 PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py A     --class 32ch
 PYTHONPATH=. python3 benchmarks/scripts/sweep_verdict.py B-cyc --class vlp16
@@ -873,12 +928,52 @@ bash scripts/evaluation/rubric_snapshot.sh
 python3 -m pytest tests/ -q
 ```
 
-Four walks are given verbatim in the wrap docs rather than repeated here,
-because repeating a script is how two copies drift: the per-run manifest
-classification (`p3-baseline.md` §2.1), the duel-pool census
-(`p4-transport-sweep.md` §10 command 3, which also produces §2.4's exclusion
-counts), the `ndt_rate_ratio` walk (command 5) and the clock-fit residual walk
-(command 6).
+Command 10 — the per-cell filed/excluded census behind §1.2 and §2.4. It is
+given in full rather than cited, because no walk in either wrap doc produces
+it: `p4-transport-sweep.md` §10 command 3 iterates cells `A` and `B-cyc` only,
+so it cannot produce the counts for `B`, `E`, `E0` or `C`. This walk opens each
+run's `manifest.json` and reads nothing else.
+
+```bash
+PYTHONPATH=. python3 - <<'PYTHON'
+import collections, json, pathlib
+root = pathlib.Path("benchmarks/results")
+filed = excluded = 0
+for cell in sorted(p for p in root.iterdir() if p.is_dir()):
+    reasons = collections.Counter()
+    n = 0
+    for run in sorted(cell.glob("run-*")):
+        m = json.loads((run / "manifest.json").read_text())
+        n += 1
+        if m["excluded"]:
+            reasons[m["exclusion_reason"]] += 1
+    filed += n
+    excluded += sum(reasons.values())
+    print(f"{cell.name:9s} filed={n:3d} excluded={sum(reasons.values()):3d} {dict(reasons)}")
+print(f"TOTAL filed={filed} excluded={excluded}")
+PYTHON
+```
+
+Its output, which is where §1.2's and §2.4's tables come from:
+
+```text
+A         filed= 53 excluded=  0 {}
+B         filed= 33 excluded= 15 {'crash:cell-launch': 7, 'crash:collect_gt': 1, 'gate:arm-failed': 7}
+B-cyc     filed= 45 excluded=  6 {'harness:65fbe09': 6}
+C         filed= 14 excluded=  2 {'warmup:nishi': 2}
+CAL-rmw   filed= 15 excluded=  0 {}
+CAL-seam  filed=  5 excluded=  0 {}
+E         filed= 16 excluded= 10 {'gate:arm-failed': 2, 'crash:cell-launch': 4, 'harness:fac5cb7': 1, 'harness:7425084': 1, 'harness:092dc9a': 2}
+E0        filed= 10 excluded=  4 {'harness:e7ba92a': 2, 'gate:arm-failed': 1, 'crash:cell-launch': 1}
+TOTAL filed=191 excluded=37
+```
+
+Four further walks are given verbatim in the wrap docs rather than repeated
+here, because repeating a script is how two copies drift: the per-run manifest
+classification (`p3-baseline.md` §2.1), the **duel-pool** census
+(`p4-transport-sweep.md` §10 command 3 — cells `A` and `B-cyc` only, which is
+why §2.4's exclusion counts need command 10 above instead), the
+`ndt_rate_ratio` walk (command 5) and the clock-fit residual walk (command 6).
 
 **Collection is a different operation and is not needed to check anything
 above.** A cell is collected with `bash benchmarks/run.sh <cell> [--arm ...]`,
