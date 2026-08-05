@@ -142,6 +142,22 @@ pr_state_breakdown() {
      (if length >= $limit then \"WARNING: result count == --limit=$limit -- may be truncated, RAISE THE LIMIT and re-run\" else \"OK: total is below --limit=$limit, count is exhaustive\" end)"
 }
 
+# The `gh api .../commits` calls below are cap-silent in exactly the same way,
+# and were left unguarded when the PR searches above were fixed. `per_page`
+# maxes out at 100 and a single unpaginated request returns at most that many
+# items with no marker that a longer history was cut off -- so a commit count
+# that lands on exactly 100 is a FLOOR, not a total, and reading it as a total
+# would understate an active repo (the opposite direction of the JArmandoAnaya
+# truncation above, but the same class of error). Every commits call routes
+# through this helper so the cap check is printed next to the figure it
+# qualifies. $2 is the jq expression producing the figure itself.
+gh_api_commits_capped() {
+  local url="$1" expr="$2"
+  gh api "$url" --jq \
+    "($expr),
+     (if length >= 100 then \"WARNING: response length == per_page cap of 100 -- TRUNCATED; the figure above is a FLOOR, not a total. Paginate (--paginate) and re-run\" else \"OK: below the per_page cap of 100, the figure above is exhaustive\" end)"
+}
+
 hdr "Snapshot retrieval time (record this as the table's retrieval date)"
 echo "NOW_UTC=$NOW_UTC"
 echo "90-day cutoff (SINCE_90D)=$SINCE_90D"
@@ -274,7 +290,7 @@ else
 fi
 
 hdr "Criterion 3 -- Extension repo's own commit count (the '+ this repo' half of the artifact set)"
-gh api "repos/$EXT_REPO/commits?per_page=100&sha=main" --jq 'length'
+gh_api_commits_capped "repos/$EXT_REPO/commits?per_page=100&sha=main" 'length'
 
 hdr "Criterion 3 -- Bridge's unmerged artifact set (spec quotes 0, quoted explicitly)"
 echo "MANUAL OBSERVATION: the bridge ships inside $BRIDGE_REPO at $BRIDGE_PATH and installs"
@@ -371,7 +387,10 @@ echo "  https://github.com/tier4/carla-autoware-native/blob/autoware-support/REA
 # mix in every other Autoware package's history).
 # ---------------------------------------------------------------------------
 hdr "Criteria 6-7 -- Extension repo (this repo): commits + unique author"
-gh api "repos/$EXT_REPO/commits?per_page=100&sha=main" --jq '[.[].commit.author.name] | unique'
+# Guarded on the same grounds as the bridge-side author list: a truncated page
+# yields a SUBSET of the authors, and "one unique author" is exactly the claim
+# this line is quoted for -- so an unnoticed cap would manufacture the finding.
+gh_api_commits_capped "repos/$EXT_REPO/commits?per_page=100&sha=main" '[.[].commit.author.name] | unique'
 echo "(repo created 2026-07-20 -- 90-day and lifetime windows are identical; see rubric.md's annotation)"
 
 hdr "Criteria 2+6 -- Extension repo: PR authorship + review history (solo-authored/zero-external-reviewers claim)"
@@ -410,13 +429,17 @@ fi
 
 hdr "Criteria 6-7 -- Bridge ($BRIDGE_PATH, path-scoped -- NOT autoware_universe-wide)"
 echo "-- lifetime commits touching the path --"
-gh api "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&per_page=100" --jq 'length'
+gh_api_commits_capped "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&per_page=100" 'length'
 echo "-- earliest/latest commit date touching the path (lifetime window) --"
-gh api "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&per_page=100" --jq '[.[].commit.author.date] | (min, max)'
+# Same capped page: if it truncated, 'min' is the oldest commit ON THE PAGE and
+# not the true first-touch date, so the cap check qualifies this pair too.
+gh_api_commits_capped "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&per_page=100" '[.[].commit.author.date] | (min, max)'
 echo "-- 90-day commits touching the path --"
-gh api "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&since=$SINCE_90D&per_page=100" --jq 'length'
+gh_api_commits_capped "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&since=$SINCE_90D&per_page=100" 'length'
 echo "-- 12-month distinct author logins touching the path --"
-gh api "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&since=$SINCE_365D&per_page=100" --jq '[.[].author.login] | unique'
+# Truncation here drops CONTRIBUTORS, not just commits: the unique set is a
+# subset of the true one, so the cap check is load-bearing for this line.
+gh_api_commits_capped "repos/$BRIDGE_REPO/commits?path=$BRIDGE_PATH&since=$SINCE_365D&per_page=100" '[.[].author.login] | unique'
 echo "-- named maintainers (package.xml, already printed under Criterion 10) --"
 
 # ---------------------------------------------------------------------------

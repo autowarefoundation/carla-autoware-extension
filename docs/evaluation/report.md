@@ -230,11 +230,25 @@ The metric definitions, the equivalence rule, the margins, the ceiling
 evaluator and the exclusion criteria were committed **before any measurement
 run existed**. The first commit touching `benchmarks/results/` is `ccd456e`,
 **2026-07-29 16:11:54 −0700**; every hash below precedes it. **Every date in
-this section is a COMMITTER date (`%cd`), not an author date** — the two differ
-on two of the eight hashes (`ccd456e` `%ad` 15:28:28 against `%cd` 16:11:54;
-`75f0fc1c` `%ad` 11:00:39 against `%cd` 11:03:39), so a reader reaching for
-`%ad` gets a mismatch and no way to know which field was meant. The ordering
-argument holds under either field; the command is in §9.
+the table below is a COMMITTER date (`%cd`), not an author date** — the two
+differ on two of the eight hashes (`ccd456e` `%ad` 15:28:28 against `%cd`
+16:11:54; `75f0fc1c` `%ad` 11:00:39 against `%cd` 11:03:39), so a reader
+reaching for `%ad` gets a mismatch and no way to know which field was meant.
+For those eight the ordering argument holds under either field.
+
+**⚠ The two rubric commits quoted at the end of this section are the exception:
+they are quoted by AUTHOR date.** A later rebase of `docs/evaluation-report`
+rewrote them and gave both the **same** committer date (2026-08-04 21:53:10
+−0700), so `%cd` no longer orders them at all; their 18:56 and 19:22 timestamps
+are `%ad`. **What warrants the ordering there is DAG ancestry, not either
+timestamp**: `git merge-base --is-ancestor febb895 4e8eff0` exits 0, i.e. the
+pre-registration commit is a literal ancestor of the snapshot commit. Ancestry
+is the stronger warrant precisely because it survived the rebase that flattened
+the committer dates, and because it **cannot be forged backward** — a commit
+cannot be inserted as an ancestor of one that already exists without rewriting
+the successor's hash, whereas both date fields are freely writable metadata.
+The author dates only **corroborate** the ancestry; on their own they prove
+nothing. Both commands are in §9.
 
 | commit                                     | date (−0700)     | what it registered                          |
 | ------------------------------------------ | ---------------- | ------------------------------------------- |
@@ -277,13 +291,17 @@ Two later registrations are load-bearing and are named with the same rigour:
   moved at all.
 
 - **The rubric's criterion list and directions were committed before its
-  snapshot**: `dd3737971955b6f5df637c18b4d3de37352a754f` (2026-08-04 18:56)
-  precedes `324dc36` (19:22), which filled the value cells. **What that ordering
-  shows, stated exactly:** the criteria and directions were **committed** before
-  the value-filling commit. It does **not** establish that the author was
-  blinded to the data — one author, a 26-minute gap, and a git DAG cannot show
-  when a number was first seen — so it is a provenance fact, not a blinding
-  one. **And the absolute reading ("no criterion could be re-directioned") has a
+  snapshot**: `febb89513b1309e0084591ecf491c1b418e840af` (author date
+  2026-08-04 18:56) is a **DAG ancestor** of `4e8eff0` (19:22), which filled the
+  value cells. **A branch rebase renamed both commits**: this report previously
+  cited them as `dd37379` and `324dc36`, hashes that are no longer reachable
+  from the pushed branch. Only the hashes moved — **the pre-registration record
+  is unchanged in content**, and the ancestry relation the claim rests on
+  survived the rewrite intact. **What that ordering shows, stated exactly:** the
+  criteria and directions were **committed** before the value-filling commit. It
+  does **not** establish that the author was blinded to the data — one author, a
+  26-minute gap, and a git DAG cannot show when a number was first seen — so it
+  is a provenance fact, not a blinding one. **And the absolute reading ("no criterion could be re-directioned") has a
   recorded counterexample**: `rubric.md`'s own note under Criterion 7 records
   that the **value-filling commit edited a pre-registered Direction paragraph**,
   inserting "(16-day-old at this snapshot)" — a slip against the rubric's own
@@ -1530,7 +1548,7 @@ left is not.
 | --- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **No composite acceptance score**                                                              | `rubric.md` carries a "No composite score" banner as its own section; this report contains **no ranking table, no weighting and no total**. §6 summarises per criterion and links out; §3–§5 report per metric and per entry.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 2   | **Bridge and native numbers never share a ranking table without the generation caveat inline** | Exactly one table places an E-family figure beside a native one (§4.4). It carries a **per-row caveat column, filled on every row and SYMMETRIC** — the 2026-08-05 round added the native rows' own registered caveats (cell A's 2.118× byte layout, cell B's unresolved wire `point_step`), which previously sat two paragraphs above the table while only the bridge rows carried a limitation in-row. The sentence under it states it is not a ranking and draws no ordering. All other E/E0 figures live in §4's own arm-scoped tables.                                                                                                       |
-| 3   | **No attribution of UE4-vs-UE5 renderer/engine differences to the bridge**                     | C2's load-bearing contrast is **E vs E0**, within one approach, one CARLA version and one container family, differing only by the patch set (§4.1–§4.3). No cross-generation delta is computed anywhere. The publish-disabled ablation arm exists only inside cells A and B-cyc and is registered **within-cell only** (§7 row 15; P4 §6.4).                                                                                                                                                                                                                                                                                                      |
+| 3   | **No attribution of UE4-vs-UE5 renderer/engine differences to the bridge**                     | C2's load-bearing contrast is **E vs E0**, within one approach, one CARLA version and one container family, differing only by the patch set (§4.1–§4.3). No cross-generation delta is computed anywhere. The publish-disabled ablation arm exists only inside cells A and B-cyc and is registered **within-cell only** (P4 §6.4 — §7 carries no row for it).                                                                                                                                                                                                                                                                                      |
 | 4   | **E2E latency under a 20 Hz sim clock is context, never C1 evidence**                          | C1 rests **only** on the five pre-registered margin metrics (§3.2, §3.3) and the C1(a) paired delta (§3.1). The ~51–53 ms arrival-domain figures on cell A are one sim tick and appear nowhere in §3; the arrival-domain rates quoted in §4 are labelled as such, and §4.5 restates the prohibition on cross-reading them against `achieved_rate_ratio`.                                                                                                                                                                                                                                                                                          |
 | 5   | **Every number carries its cell/run reference**                                                | Every figure names its pool (`A/run-016`…`025`, `CAL-seam/run-001`…`005`, `E0/run-002`…`008`, …) or the census that produced it — appendix command 10, whose script and output are both printed — plus the wrap-doc section that owns it.                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 6   | **Every C1/C2 sentence names its arm**                                                         | C1 sentences name `A-vs-B` or `A-vs-B-cyc` **and** static or closed-loop; C2 sentences name E0, E, or the struck E-opt. §0 rule 2 states the discipline; §3.2/§3.3 headings carry the arm; §4.1 fixes the three C2 arms before any C2 number is quoted.                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1631,12 +1649,12 @@ item 7).
 The two phases pin the commits they were generated at, and **those pins are
 reused here rather than re-derived**:
 
-| phase                        | pinned at                                                                                                                                                                                            | source                    |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| P3 (`p3-baseline.md`)        | `269b931`                                                                                                                                                                                            | its §0 and §10            |
-| P4 (`p4-transport-sweep.md`) | `fcb83334637b6c7be6e7fda88da2ce2dd0f77c46`                                                                                                                                                           | its §0.1 and §10          |
-| rubric snapshot              | `dd37379` → `324dc36` → `16e6757`, retrieved 2026-08-05T02:13 UTC; clone endpoints `upstream/ue5-dev` `0a5ce0d5`, `feat/autoware-seminative-phase-b` `62ca380f`, `tier4/autoware-support` `6315b856` | `rubric.md` header + §3.5 |
-| gap catalog                  | `tier4/autoware-support` @ `6315b856f8faf2118578322eb20a2b902a45a384`, fetched 2026-08-04 23:15 UTC                                                                                                  | gap-catalog §1.1          |
+| phase                        | pinned at                                                                                                                                                                                                                                                                                                                                                                         | source                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| P3 (`p3-baseline.md`)        | `269b931`                                                                                                                                                                                                                                                                                                                                                                         | its §0 and §10            |
+| P4 (`p4-transport-sweep.md`) | `fcb83334637b6c7be6e7fda88da2ce2dd0f77c46`                                                                                                                                                                                                                                                                                                                                        | its §0.1 and §10          |
+| rubric snapshot              | `febb895` → `4e8eff0` → `2671130` (a branch rebase renamed these three; the pre-registration record is unchanged in content, and the earlier hashes `dd37379` → `324dc36` → `16e6757` are no longer reachable), retrieved 2026-08-05T02:13 UTC; clone endpoints `upstream/ue5-dev` `0a5ce0d5`, `feat/autoware-seminative-phase-b` `62ca380f`, `tier4/autoware-support` `6315b856` | `rubric.md` header + §3.5 |
+| gap catalog                  | `tier4/autoware-support` @ `6315b856f8faf2118578322eb20a2b902a45a384`, fetched 2026-08-04 23:15 UTC                                                                                                                                                                                                                                                                               | gap-catalog §1.1          |
 
 All commands run from the repository root. **Environment the filed digests were
 produced on**, recorded because §2.2's `seed=20260727` reproducibility claim is
@@ -1730,12 +1748,20 @@ bash scripts/evaluation/rubric_snapshot.sh > /tmp/rubric-snapshot.log 2>&1
 #    5-min < 3.0 rather than silenced.
 python3 -m pytest tests/ -q
 
-# 11. Section 2.1's pre-registration ordering. The dates quoted there are
-#     COMMITTER dates (%cd); %ad differs on ccd456e and 75f0fc1c.
+# 11. Section 2.1's pre-registration ordering. The TABLE's dates are COMMITTER
+#     dates (%cd); %ad differs on ccd456e and 75f0fc1c. The two rubric commits
+#     (febb895, 4e8eff0) are the exception and are quoted by AUTHOR date: a
+#     rebase of this branch gave both the same %cd (2026-08-04 21:53:10), so
+#     %cd cannot order them. Those two hashes were renamed by that rebase --
+#     the report used to cite dd37379 and 324dc36, which no longer resolve on
+#     a fresh clone; the pre-registration record itself is unchanged.
 git log --reverse --format='%h %cd' --date=iso -- benchmarks/results | head -1
-for h in b791ee9 941c805 884368d a3ca131 bdb5c42 96af345 75f0fc1 dd37379 324dc36; do
+for h in b791ee9 941c805 884368d a3ca131 bdb5c42 96af345 75f0fc1 febb895 4e8eff0; do
   git show -s --format='%h | ad=%ad | cd=%cd | %s' --date=iso "$h"
 done
+# The rubric pair's ordering warrant is ancestry, not either timestamp: it
+# survives rebases and cannot be forged backward. Exits 0 and prints OK.
+git merge-base --is-ancestor febb895 4e8eff0 && echo "OK: febb895 is an ancestor of 4e8eff0"
 
 # 12. Section 5's C3 counts, recountable in-tree without the external clone.
 #     -> 54 and 54; one of each is the section-3 Entry template line, giving
