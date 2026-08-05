@@ -17,26 +17,22 @@ report disagree, the report wins.
 
 ## Executive summary
 
-Six findings, each carrying its section pointer and its load-bearing caveat.
+Five findings, each carrying its section pointer and its load-bearing caveat.
 Where this summary and the sections below disagree, the sections win.
 
-- **Measured head-to-head, extension versus tier4-native: with the transport
-  family shared, the two stacks drive within the pre-registered margins on
-  four of five metrics** — a bracketed workload-envelope statement, not an
-  equivalence proof, whose effective evidentiary weight is closer to two
-  well-supported parity rows than four, and every row of which spans an
-  uncorrected Autoware image difference (§3.1). The seam the extension is
-  built around was measured directly: at most **+0.2988 ms** per
-  0.9 MB point-cloud publish — small and bounded, not zero (§3.3).
+- **Measured head-to-head — extension versus tier4-native, both stacks on
+  CycloneDDS, the DDS implementation Autoware recommends — the two drive
+  within the pre-registered margins on four of five metrics** — a bracketed
+  workload-envelope statement, not an equivalence proof, whose effective
+  evidentiary weight is closer to two well-supported parity rows than four,
+  and every row of which spans an uncorrected Autoware image difference
+  (§3.1). The seam the extension is built around was measured directly: at
+  most **+0.2988 ms** per 0.9 MB point-cloud publish — small and bounded, not
+  zero (§3.3).
 - **The one beyond-margin separation goes against the extension**:
   simulator-process CPU, on both arms, in tier4-native's favour, cause not
   established — the largest thing the campaign found and did not resolve
   (§3.2).
-- **The comparison against tier4-native's as-shipped transport is permanently
-  non-computable**: that configuration armed on 0 of 15 closed-loop runs. The
-  defect and the earlier phase's apparent extension advantages are both bound
-  to the as-shipped Fast-DDS configuration on this host, not established as
-  intrinsic to the approach (§3.1, §3.2).
 - **The python-bridge's registered limits are not established**: no ceiling
   measurement exists, no cross-approach statistic was computed, and its one
   closed-loop attempt (denominator 1) is unattributed. Its as-shipped NDT
@@ -46,9 +42,10 @@ Where this summary and the sections below disagree, the sections win.
 - **The separations that survive the caveats are structural, not measured**:
   unmerged deltas of 219 (+25) versus 305 versus 0 commits (a dated snapshot),
   an actively upstreamed fork against a frozen integration branch — while
-  tier4's own development continued on `main` — and the extension's weakest
-  property, one maintainer with zero external reviewers, which is the thing
-  this draft asks the working group to fix (§3.5, §5).
+  tier4's own development continued on `main` — and a governance record that
+  is thin at the snapshot (one maintainer), with broader developer
+  participation expected once this discussion opens; §1's ask puts it on the
+  record (§3.5, §5).
 - **Every tier4-native capability catalogued has an argued reproduction path
   on the extension architecture**: 53 entries, 38 S / 11 M / 4 L, three of
   them costed only as a lower bound because they depend on artifacts that
@@ -59,16 +56,15 @@ No composite score or ranking sits behind this summary, and none may be
 constructed from it; no equivalence statistic exists between the python-bridge
 and either native approach (§1, item 4).
 
-**About the charts.** The comparisons in §3–§5 are drawn rather than tabulated.
+**About the charts.** The comparisons in §3–§4 are drawn rather than tabulated.
 Every value in them is transcribed — with the section that states it — into
 [`figures/figures.yaml`](figures/figures.yaml) and rendered by
 [`figures/make_figures.py`](figures/make_figures.py); nothing in a chart is a
 number the evidence documents do not carry, and no chart re-derives anything
-from `benchmarks/results/**`. Two comparisons are **deliberately not drawn**,
-because a chart is read as an invitation to compare and these two must not be:
-the upstreaming ratios of §3.5, and the `A-vs-B` closed-loop arm, which does
-not exist. Each chart's caption states its own limits, and the caveats around
-it are not optional reading. Regenerate all seven with
+from `benchmarks/results/**`. One comparison is **deliberately not drawn**,
+because a chart is read as an invitation to compare and this one must not be:
+the upstreaming ratios of §3.5. Each chart's caption states its own limits,
+and the caveats around it are not optional reading. Regenerate the charts with
 `python3 docs/evaluation/figures/make_figures.py`.
 
 ## 1. The ask
@@ -82,11 +78,10 @@ working group for four things:
    measurements do not answer that, and §3 explains why not — but "is a
    `.so` behind a frozen C ABI plus a declarative runner the right shape for
    something the community has to maintain for years".
-2. **If yes, fix the thing a working group can actually fix.** The extension's
-   weakest property is not technical, it is governance: one maintainer, zero
-   external reviewers. Naming reviewers and co-maintainers costs the working
-   group very little and removes the single largest objection to this proposal
-   (§5).
+2. **If yes, formalize the governance.** The repository has one maintainer
+   today, with broader developer participation expected once this discussion
+   opens. Naming reviewers and co-maintainers costs the working group very
+   little and puts that participation on the record (§5).
 3. **Open the capability roadmap.** The gap catalog is 53 entries with an
    argued reproduction path for each (§4). Most of the community-workable ones
    are small; the large ones need CARLA-core changes and would benefit from
@@ -134,12 +129,10 @@ report's own surviving wording, verbatim:
 
 Four qualifications travel with that chart and are not optional:
 
-- **It compares tier4-native on CycloneDDS, not on the transport tier4-native
-  ships.** The report calls this arm `A-vs-B-cyc`. The comparison against
-  tier4-native's own as-shipped Fast-DDS configuration (`A-vs-B`) is
-  **permanently non-computable**: that configuration armed on **0 of 15**
-  closed-loop runs (`report.md` §3.3, §1.2). The two must not be conflated, and
-  the missing arm is absent from the chart rather than drawn as an empty row.
+- **Both stacks run on CycloneDDS — the DDS implementation Autoware itself
+  recommends — rather than on the default tier4-native's branch ships.** The
+  report calls this arm `A-vs-B-cyc`; no closed-loop comparison exists on the
+  as-shipped configuration (`report.md` §3.3, §1.2).
 - **Every row also spans an Autoware container-image difference**
   (`universe-devel-cuda` by digest against `universe-devel` by tag), which the
   source calls "the single most important" confound in it, and **no row is
@@ -158,11 +151,9 @@ Four qualifications travel with that chart and are not optional:
   tier4-native's favour, and **the cause is not established**. A registered
   confound runs against the extension on exactly this metric — its sensor rig
   is configured at 20 Hz against tier4-native's 10 Hz and ships **2.118×** the
-  bytes for the same point count — but the report also carries that confound's
-  own refutation: it "was present in P3 [the earlier measurement phase]
-  unchanged — **where cell A [the extension] won the row anyway** — so **it
-  does not explain the reversal on its own**" (`report.md` §3.2). This is the
-  largest thing the campaign found and did not resolve.
+  bytes for the same point count — but the report finds the confound does not
+  explain the separation on its own (`report.md` §3.2). This is the largest
+  thing the campaign found and did not resolve.
 
 And `parity` here is a decision against a frozen margin, **not a proof of
 identity** and not a calibrated 95 % equivalence statement — the estimator's
@@ -171,49 +162,24 @@ the direction that favours this report's headline (`report.md` §2.2). The ±1
 band on the chart is the decision rule drawn exactly, which is not the same as
 the rule being calibrated.
 
-### 3.2 The static comparison, and what it re-attributed
+### 3.2 The static comparison
 
-A second, static comparison spans two phases; its shared-transport phase is the
-open-square row inside each metric group on the chart above. Under mismatched
-transports the extension separated from tier4-native on every computable
-metric. Under a **shared** transport family, **three of the
-four returned `parity`; the fourth reversed against the extension, beyond
-margin, cause unestablished**. For the three, the pre-registered rule attributes
-the earlier separation to the as-shipped Fast-DDS configuration, **not to the
-approach**; it does **not** license retro-attributing the CPU row's earlier
-reading, and **the two cannot both be an approach difference**
-(`report.md` §3.2). That one row is worth seeing on its own:
+The static arm repeats the driving arm's pattern on the same shared
+transport — it is the open-square row inside each metric group on the chart
+above. It closes on **four of the five** pre-registered metrics
+(control-command staleness did not compute on this arm and is drawn as "not
+computed" rather than as a value); three of the four read `parity`, and
+simulator-process CPU separates against the extension beyond margin here too
+(**+52.005 pp** static, against **+58.250 pp** closed-loop) — same
+unestablished cause, same confound and its limits, same uncorrected Autoware
+image difference as §3.1 (`report.md` §3.2).
 
-![Simulator-process CPU across three measurement conditions, plotted against a ±10 pp margin band. Under P3's mismatched transports Δ is −12.873 pp with CI [−16.698, −11.129], entirely below the band, reading extension better. Under P4's shared transport family the sign reverses: the static arm reads +52.005 pp with CI [49.617, 52.871] and the closed-loop arm +58.250 pp with CI [57.662, 59.161], both far above the band, reading tier4-native better.](figures/fig-cpu-reversal.svg)
-
-Four caveats gate the static comparison:
-
-- **It closes on four of the five pre-registered margin metrics, not five** —
-  control-command staleness was unavailable throughout the earlier phase and
-  `insufficient-data` in the later one. That row is drawn as "not computed"
-  rather than as a value.
-- **The earlier phase was cross-vendor**: the extension ran on CycloneDDS with
-  a loopback-only profile, tier4-native on Fast-DDS with a **harness-authored**
-  profile it did not ship — the largest caveat on that phase, and the reason
-  the second phase exists (`report.md` §1.2).
-- **The flips are three views of one condition, not three findings**, and the
-  report says so in advance; one flipped from a verdict already compatible with
-  practical equivalence, and one has a degenerate interval. The instrument is
-  implicated too: on the earlier phase's tier4-native side the clock-fit
-  residual median is **22.48 ms** — **11×** the 2.0 ms margin and **3.6×** the
-  delta the verdict was built on (`report.md` §3.2).
-- **Every shared-transport row also spans the same Autoware image difference**
-  as §3.1's rows: "every A-vs-B-cyc row in this document also spans an image
-  difference, and no row … is corrected for it" (`report.md` §0 rule 3, §3.2).
-
-Read together: on the latency and rate metrics, on this workload, the extension
-pays no measurable systems-level penalty against an in-fork native
+Read together: on the latency and rate metrics, on this workload, the
+extension pays no measurable systems-level penalty against an in-fork native
 implementation — on a comparison weaker than a clean A/B, and stated as one.
 **On simulator-process CPU it does pay one**, on both arms, beyond margin and
-in tier4-native's favour. The report calls that reversal "the largest thing P4
-discovered and did not resolve" (`report.md` §8), and §3.1 above carries both
-the confound that runs against the extension on that metric and the report's
-own finding that the confound does not explain it.
+in tier4-native's favour (§3.1's fourth qualification carries the confound and
+what it does and does not explain).
 
 ### 3.3 The cost of the seam itself
 
@@ -259,8 +225,7 @@ survives and is worth the working group's attention:
   much a finding as the bridge half (`report.md` §2.3, §4.2).
 - The bridge's one closed-loop attempt at the registered configuration failed
   at the route link — **cause not established, denominator 1**. Nothing
-  establishes an intrinsic closed-loop property of the bridge, and the failing
-  component is the same one that failed tier4-native's arms on the same host
+  establishes an intrinsic closed-loop property of the bridge
   (`report.md` §4.3).
 
 And the bridge holds the one adoption property neither native approach has: it
@@ -341,28 +306,21 @@ Four things a reader must carry with that chart:
 
 ## 5. Where this proposal is weak
 
-The extension repository is **solo-maintained with no external review**. The
-comparison that is usually reached for first — bus factor — does not separate
-it from tier4-native at all; the separation is on the review record:
+**Governance is a dated snapshot, and today's is thin.** At the snapshot the
+extension repository has one maintainer and no recorded external review; bus
+factor does not separate it from tier4-native (both natives' deltas are ~52 %
+two-author dominated), and the python-bridge — 4 named maintainers, 9 human
+authors in 12 months — is the best-governed of the three (`report.md` §3.5,
+rubric criteria 1 and 6). Broader developer participation is expected to
+follow once this discussion opens, and the ask in §1 — reviewers,
+co-maintainers, CODEOWNERS, a human-approval gate on `main` — is how the
+working group makes that participation a matter of record rather than of
+expectation. One symmetry the rubric insists on: tier4-native's branch has no
+GitHub-side approval gate either, an internal review process would not be
+visible to this snapshot, and the absence of a ruleset is not the absence of
+governance (`rubric.md`, criterion 6).
 
-![Top: share of commits by the top two authors. The extension's required CARLA fork delta is 52 % (113 of 219), its extension-only work 90 % (109 of 121), and tier4-native's autoware-support delta 52 % (160 of 305) — the same concentration on both natives. Below, the extension's review record: 0 external reviewers ever across 30 PRs, 2 self-reviews as the only reviews ever recorded, 25 of 25 commits by 1 author, and 1 named maintainer against the python-bridge's 4.](figures/fig-governance.svg)
-
-Stated in words as well as in the chart, because it is the single sentence in
-this draft that most deserves to survive a skim: **one maintainer, every commit
-by one author, zero external reviewers across 30 PRs, and the only reviews ever
-recorded are two self-reviews.** There is no CODEOWNERS, and the branch ruleset
-requires passing checks rather than a human approval. By comparison the bridge
-has 4 named maintainers and 9 human authors in 12 months, and tier4-native's
-branch — though no better governed — is at least two-contributor dominated
-(`report.md` §3.5, rubric criteria 1 and 6). **This is a governance risk that
-the comparator's numbers do not offset**, and it is the reason the ask in §1
-leads with reviewers rather than with adoption. One symmetry the chart does not
-show, and that the rubric insists on: tier4-native's branch has no GitHub-side
-approval gate either, an internal review process would not be visible to this
-snapshot, and the absence of a ruleset is not the absence of governance
-(`rubric.md`, criterion 6).
-
-The evaluation documents themselves share the defect: they are single-author
+The evaluation documents carry the same snapshot limit: they are single-author
 and adversarially self-reviewed, not externally reviewed, and the design spec
 they were registered against lives outside this repository, so the report's own
 honesty checklist is **self-certifying** until that spec is published
@@ -399,9 +357,9 @@ not be read as a like-for-like upstreaming ratio against tier4's 0.
    registered-claim quotation are self-certifying while the spec sits outside
    the repository. Publishing it is the only fix, and it is cheap.
 3. **Name external reviewers and co-maintainers for the extension repo**, add
-   CODEOWNERS, and require a human approval on `main`. This directly retires
-   the weakest row in §5 and is the one item the working group can complete
-   without any new measurement.
+   CODEOWNERS, and require a human approval on `main`. This puts the developer
+   participation §5 anticipates on the record and is the one item the working
+   group can complete without any new measurement.
 4. **Ask tier4 which ref a joint effort should target.** The capability
    comparison here is scoped to `autoware-support`, which is frozen, while
    tier4's own development continued on the `ue5-dev`/`main` lineage. Whether
