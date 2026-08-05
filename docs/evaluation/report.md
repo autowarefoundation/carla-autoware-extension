@@ -663,12 +663,22 @@ knife-edge verdict and a comfortable one read identically. As a fraction of
 margin, |CI bound nearest the margin| ÷ margin: static `one_hop_wall_ms`
 **92.5 %** (1.849/2.0); closed-loop `one_hop_wall_ms` **97.1 %** (1.942/2.0,
 §3.3); closed-loop `lidar_to_ndt_sim_ms` **51 %**; static `lidar_to_ndt_sim_ms`
-**31 %**. **Both `one_hop_wall_ms` parity verdicts would flip to
-`inconclusive` under a margin narrower than ≈ 1.95 ms** — a 2.5 % change in a
-threshold whose own derivation shows the _measured_ term never determined it
-(the pre-registered 2.0 floor bound instead; §2.1). No margin-sensitivity
-analysis was pre-registered and none is computed here; the fractions are
-arithmetic on the printed CIs.
+**31 %**. **Under a narrower margin neither `one_hop_wall_ms` row becomes
+`inconclusive` — the rule DECLARES tier4-native better on it.** Both CIs lie
+wholly above zero, so once the interval no longer fits inside the margin the
+`lo > 0` branch fires: `equivalence_decision` returns **`b_better`**, not
+`inconclusive` (`inconclusive` requires a CI that straddles the margin **and**
+contains zero — see the margin-blind-label bullet in §2.2). The two rows also
+have **different** thresholds, because each flips at its own CI's upper bound:
+the **closed-loop** row (CI [0.886, 1.942]) returns `b_better` at any margin
+**≤ ≈ 1.94 ms**, and the **static** row (CI [1.441, 1.849]) survives further,
+returning `b_better` only at a margin **≤ ≈ 1.85 ms**. So the closed-loop row
+turns on a **3 % change** in a threshold whose own derivation shows the
+_measured_ term never determined it (the pre-registered 2.0 floor bound
+instead; §2.1) — and it turns **against** C1(b), not into a decline-to-decide.
+No margin-sensitivity analysis was pre-registered and none is computed here;
+the thresholds are arithmetic on the printed CIs read against
+`stats.py:28-36`.
 
 **⚠ `achieved_rate_ratio`'s intervals are DEGENERATE at the reported
 resolution.** The P4 static row's CI is [0.001, 0.001] — zero width to three
@@ -676,9 +686,13 @@ decimals — and the closed-loop row's (§3.3) is [−0.000, 0.000], a point mas
 printed with a signed zero that advertises a precision the quantity does not
 have. A CI that collapses to a point at ≪ 1/20 of its 0.02 margin carries **no
 discriminating power**: its `parity` is arithmetically guaranteed rather than
-earned. It is therefore **uninformative, not corroborating**, and must not be
-counted alongside rows with real intervals — neither among the three static
-flips below nor among §3.3's "four of five metrics".
+earned. It is therefore **uninformative, not corroborating**. The two counts
+this document quotes from the tool's own output — the "three of four" static
+flips below and §3.3's "four of five metrics" — are printed **as the verdict
+tool produced them**, and this report does not silently renumber a filed
+result; but **neither count may be quoted without this caveat attached**,
+because on both the `achieved_rate_ratio` member contributes no evidence. Each
+site carries the pointer back here.
 
 **⚠ THE STATIC BRACKET CLOSES ON FOUR OF THE FIVE PRE-REGISTERED MARGIN
 METRICS, NOT FIVE.** `control_staleness_ms` is `insufficient-data` at n = 0/8
@@ -695,7 +709,10 @@ hypothesis exists and is untested (`p4-transport-sweep.md` §2.4).
 **What the bracket establishes, stated at the strength the data carries:**
 
 - **Three of the four computable P3 separations were transport-bound — but they
-  are THREE VIEWS OF ONE CONDITION, not three findings.** Under a shared RMW
+  are THREE VIEWS OF ONE CONDITION, not three findings** (the count is quoted as
+  the verdict tool printed it; one of the three, `achieved_rate_ratio`, has a
+  degenerate P4 interval and contributes no evidence — see the degenerate-CI
+  caveat above). Under a shared RMW
   (`A-vs-B-cyc`, static), `one_hop_wall_ms`, `lidar_to_ndt_sim_ms` and
   `achieved_rate_ratio` all return `parity`, where `A-vs-B` returned a
   separation outside the margin on every one. Per the rule pre-registered
@@ -806,11 +823,17 @@ needs either row to bear weight should treat both as weak, the closed-loop one
 more so (§7.1 P4-9; §3.2 carries the same table for the static arm and for P3).
 
 Second, **`one_hop_wall_ms`'s parity here is a knife-edge**: the CI upper bound
-1.942 sits at **97.1 % of its 2.0 ms margin**, and would return `inconclusive`
-under any margin below ≈ 1.95 ms — a 2.5 % change in a threshold the _measured_
-calibration never determined (§2.1, §3.2). `lidar_to_ndt_sim_ms` at 51 % of
-margin and `control_staleness_ms` at 14 % are not comparable in strength to it,
-and the flat table does not show that.
+1.942 sits at **97.1 % of its 2.0 ms margin**, and at any margin **≤ ≈ 1.94 ms**
+the rule returns **`b_better` — tier4-native better on this row**, not
+`inconclusive`: the CI lies wholly above zero, so the `lo > 0` branch fires as
+soon as the interval stops fitting inside the margin (§2.2's margin-blind-label
+bullet; `stats.py:28-36`). That is a **3 % change** in a threshold the
+_measured_ calibration never determined (§2.1, §3.2), and it moves this row
+**against** C1(b) rather than into a decline-to-decide. The static row is less
+exposed — its own CI upper bound is 1.849, so it stays `parity` down to
+≈ 1.85 ms (§3.2). `lidar_to_ndt_sim_ms` at 51 % of margin and
+`control_staleness_ms` at 14 % are not comparable in strength to either, and the
+flat table does not show that.
 
 Third, **`achieved_rate_ratio`'s CI is degenerate** — [−0.000, 0.000] is a point
 mass printed with a signed zero, ≪ 1/20 of its margin — so its `parity` is
@@ -828,7 +851,8 @@ shared transport family — **and across an uncorrected Autoware image
 difference** — the extension and tier4-native stacks are **within the
 pre-registered margins on four of five metrics and separated beyond margin on
 the fifth, in tier4-native's favour, for reasons this campaign did not
-establish.** Of those four, **one is a knife-edge at 97 % of its margin on a
+establish** (the count is quoted as the verdict tool printed it, and carries the
+degenerate-CI caveat of §3.2: one of the four contributes no evidence). Of those four, **one is a knife-edge at 97 % of its margin on a
 metric whose instrument residual is 27× that margin, and one is degenerate**, so
 the effective evidentiary weight is closer to **two well-supported parity rows
 than four**. That is a bracketed workload-envelope statement — it is **not** a
@@ -1150,7 +1174,14 @@ block; identically at `benchmarks/results/PROVENANCE.md` §9.3). It is a
 **one-flag defect at the seam**, and this campaign's own data shows it is not
 architectural: with that single flag flipped (`0001-lidar-is-dense.patch`, one
 line), the **same architecture, same CARLA, same container** yields
-**1.91 – 7.52 Hz** on cell E (§4.3) — a 20–70× recovery. The word
+**1.91 – 7.52 Hz** on cell E (§4.3). Stated as a statistic the pools support
+rather than as a multiplier they do not: the **pooled medians differ by ≈ 45×**
+(E0 **0.11 Hz** over `E0/run-002`, `003`, `004`, `007`, `008`; E **4.99 Hz** over
+`E/run-011`…`016`), and **the two ranges do not overlap — every cell-E run
+exceeds every cell-E0 run** (E min 1.91 Hz against E0 max 0.27 Hz). No paired
+design exists between the two arms, so no per-run recovery factor is computable;
+the earlier "20–70×" was derivable from neither pool (the extreme ratios span
+7.1× to 94×). The word
 "structurally" previously stood alone in that cell while this document uses
 "STRUCTURAL" 40 lines below to mean _argued from architecture rather than
 measured_; the two senses are different and the collision is removed here.
