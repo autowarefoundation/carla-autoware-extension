@@ -52,7 +52,13 @@ working group for four things:
 All three were measured or catalogued under one pre-registered protocol:
 metric definitions, equivalence margins, exclusion criteria and the ceiling
 evaluator were all committed **before the first measurement run existed**
-(`report.md` §2.1). Nothing below was chosen after seeing a result.
+(`report.md` §2.1). Stated exactly, because the report refuses the stronger
+reading: **that is a provenance fact, not a blinding one** — one author and a
+git DAG cannot show when a number was first seen — and the report records its
+own exceptions in place rather than claiming a clean sheet: one margin was
+frozen mid-campaign under an amendment rule that `margins.yaml` itself concedes
+"cannot both hold literally", and the rubric's value-filling commit edited a
+pre-registered direction paragraph (`report.md` §2.1).
 
 ## 3. What the evidence shows — and what it does not
 
@@ -106,10 +112,15 @@ the direction that favours this report's headline (`report.md` §2.2).
 ### 3.2 The static comparison, and what it re-attributed
 
 A second, static comparison spans two phases. Under mismatched transports the
-extension separated from tier4-native on every computable metric; under a
-**shared** transport family those separations returned `parity`. The
-pre-registered rule attributes the earlier separation to the as-shipped
-Fast-DDS configuration, **not to the approach** (`report.md` §3.2). Three
+extension separated from tier4-native on every computable metric. Under a
+**shared** transport family, **three of the four returned `parity`; the fourth
+reversed against the extension, beyond margin, cause unestablished** —
+simulator-process CPU, Δ **+52.005 pp** (CI [49.617, 52.871]) against a 10.0 pp
+margin, where the earlier phase had read **−12.873 pp** in the extension's
+favour. For the three, the pre-registered rule attributes the earlier
+separation to the as-shipped Fast-DDS configuration, **not to the approach**;
+it does **not** license retro-attributing the CPU row's earlier reading, and
+**the two cannot both be an approach difference** (`report.md` §3.2). Four
 caveats gate that:
 
 - **It closes on four of the five pre-registered margin metrics, not five** —
@@ -125,10 +136,18 @@ caveats gate that:
   implicated too: on the earlier phase's tier4-native side the clock-fit
   residual median is **22.48 ms** — **11×** the 2.0 ms margin and **3.6×** the
   delta the verdict was built on (`report.md` §3.2).
+- **Every shared-transport row also spans the same Autoware image difference**
+  as §3.1's rows: "every A-vs-B-cyc row in this document also spans an image
+  difference, and no row … is corrected for it" (`report.md` §0 rule 3, §3.2).
 
-Read together: on this workload the extension pays no measurable systems-level
-penalty against an in-fork native implementation — on a comparison weaker than
-a clean A/B, and stated as one.
+Read together: on the latency and rate metrics, on this workload, the extension
+pays no measurable systems-level penalty against an in-fork native
+implementation — on a comparison weaker than a clean A/B, and stated as one.
+**On simulator-process CPU it does pay one**, on both arms, beyond margin and
+in tier4-native's favour. The report calls that reversal "the largest thing P4
+discovered and did not resolve" (`report.md` §8), and §3.1 above carries both
+the confound that runs against the extension on that metric and the report's
+own finding that the confound does not explain it.
 
 ### 3.3 The cost of the seam itself
 
@@ -155,12 +174,16 @@ registered is **retracted as unmeasured**. One within-approach contrast
 survives and is worth the working group's attention:
 
 - As shipped, the bridge starves Autoware's NDT localization: **0.08–0.27 Hz**.
-  With **one flag flipped** — same architecture, same CARLA, same container —
-  the same measurement reads **1.91–7.52 Hz**; the pooled medians differ by
-  **≈ 45×** and the ranges do not overlap (`report.md` §4.2, §4.3). Every
-  as-shipped figure there is **optimistically biased**: three of the four runs
-  excluded from that pool are the cell's three worst, and the bias cannot be
-  estimated from the surviving pool.
+  With **both registered patches applied** — the one-line `is_dense` fix _plus_
+  a harmonized sensor rig and topic remap — the same measurement reads
+  **1.91–7.52 Hz** on the same architecture, CARLA and container; the pooled
+  medians differ by **≈ 45×** and the ranges do not overlap
+  (`report.md` §4.2, §4.3). Two caveats on that contrast: the patched arm's
+  **20 Hz target is the campaign's own comparability choice, not the bridge's
+  default — its authors ship 11** (`report.md` §4.3); and every as-shipped
+  figure is **optimistically biased**, three of the four runs excluded from that
+  pool being the cell's three worst, with the bias not estimable from the
+  surviving pool (`report.md` §4.2).
 - **The cause is a two-sided interop contract mismatch, not a bridge
   architecture property**: the bridge publishes `is_dense=False` (a valid,
   conservative PointCloud2 value) and Autoware's `crop_box_filter_self`
@@ -307,9 +330,13 @@ not be read as a like-for-like upstreaming ratio against tier4's 0.
    `autoware-support` is intended to be revived materially changes what the
    roadmap in §4 should be diffed against.
 5. **Fix the `is_dense` ⇄ `crop_box_filter_self` contract mismatch on the
-   Autoware side.** It is a two-sided seam defect, it costs the bridge the
-   ≈ 45× localization-cadence gap of §3.4 today, and repairing it helps
-   whichever path the community picks.
+   Autoware side.** It is a two-sided seam defect, it starves NDT on the
+   as-shipped bridge today (§3.4), and repairing it helps whichever path the
+   community picks. Note what §3.4's ≈ 45× is and is not: a contrast between
+   two **pooled medians** measured under different patch sets and a different
+   rate target — **no paired design exists between the arms, so no per-run
+   recovery factor is computable** (`report.md` §4.2). This step is not a
+   promise of one.
 6. **Scope the first roadmap slice in public**: the 8 extension-side entries
    are the community-workable ones; the seam entries (21 sensor-side, 10
    ROS-side) need CARLA-core PRs and should be planned against the upstream
