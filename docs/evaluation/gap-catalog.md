@@ -165,6 +165,28 @@ not because those branches are unusually large deltas from a shared trunk.
 Read those figures as "distance from the `autoware-support` baseline
 specifically", not "size of the change".
 
+**Added 2026-08-05 (adversarial re-review round), because the rubric and the
+report were quoting the `autoware-support` activity figures as a maintenance
+verdict on tier4-native the approach.** Which ref is stalled and which is
+active, measured in the same clone at the same moment, read-only:
+
+| ref                      | tip                                        | tip date       | commits in the 90 d before the rubric snapshot | distinct author emails, 12 mo |
+| ------------------------ | ------------------------------------------ | -------------- | ---------------------------------------------- | ----------------------------- |
+| `tier4/autoware-support` | `6315b856f8faf2118578322eb20a2b902a45a384` | **2026-04-08** | **0**                                          | 24                            |
+| `tier4/main` (repo HEAD) | `5642dfdd2fb5035f0435f4ce6a50d477800b6248` | **2026-07-07** | **205**                                        | 26                            |
+
+```console
+git rev-list --count --since=2026-05-07 tier4/autoware-support   # 0
+git rev-list --count --since=2026-05-07 tier4/main               # 205
+```
+
+So the stall is a property of **the `autoware-support` integration branch**,
+not of tier4's work: the development continued on the `ue5-dev` → `main`
+lineage that nine of the branches cataloged in §6 are already merged into
+(§6.0.2). Any sentence anywhere in this campaign that says tier4-native
+"stopped moving" must name `autoware-support` as its subject, and must not be
+read as a statement about the repository or the approach.
+
 ## 2. Spec-name → branch resolution
 
 All 10 capability names in the design spec's gap-analysis scope (§4) resolve
@@ -432,6 +454,17 @@ explicitly so the 53 classes are comparable rather than impressionistic):
   is effectively **zero** (§5.14, §5.15, §5.16, §5.21, §5.22 — the fork already
   carries the equivalent change; §6.11 — the defect is in a code path this
   architecture does not use).
+  **What S measures, and what it does not (added 2026-08-05, adversarial
+  re-review round).** S is a **code-volume** class. It does not price
+  compatibility cost, and two entries whose remaining work is a **C ABI version
+  bump** are S on volume alone: §5.9 (actual transmission gear) and §5.10
+  (actual light state) each need a new field in `CarlaRos2VehicleStatusView`
+  plus a host-side fill. That is a small diff and a **breaking change to the
+  frozen seam C1(c) trades on** — every consumer `.so` built against the old
+  view has to be rebuilt. A reader weighing "the frozen ABI is a stability
+  property" against "the remaining work is S" should read both entries with
+  this note: the two statements are consistent only because the class measures
+  lines, not the version-compatibility event.
 - **M** — one new component with its own lifecycle: a UE actor/sensor class, a
   tick or physics-thread callback, an RPC surface, a standalone node, or a
   multi-hundred-line client program.
@@ -704,6 +737,8 @@ covariance matrix` flags, where `GnssPosePublisher.cpp:85` writes a small
   claimed: the host must surface the actual gear, and the consumer must carry
   tier4's 25-constant CARLA-gear → `GearReport` mapping (`REVERSE_2` … `DRIVE_18`
   plus the `NONE` default), which `StatusPublishers` does not have today.
+  **The S here is code volume only** — the status-view field is an ABI version
+  bump; see §5.0.4's "What S measures, and what it does not".
 
 ### 5.10 Turn-indicator and hazard-light status value sources
 
@@ -725,7 +760,8 @@ covariance matrix` flags, where `GnssPosePublisher.cpp:85` writes a small
   gear (§5.9), the ego light state does **not** cross the C ABI — the status view
   has no light-state field — so reproducing tier4's actual-state semantics needs
   a new field in `CarlaRos2VehicleStatusView` plus a host-side fill, i.e. an ABI
-  version bump. That blocker is a property of **this** seam, not of CARLA:
+  version bump (**the S is code volume only — see §5.0.4's "What S measures, and
+  what it does not"**). That blocker is a property of **this** seam, not of CARLA:
   `vehicle.get_light_state()` already returns the same data to any client, and
   tier4's own sensor just reads `Vehicle->GetVehicleLightState()`. Under §5.0.3
   the entry is therefore **ROS-side** — a bridge or an in-tree native stack needs
@@ -735,7 +771,7 @@ covariance matrix` flags, where `GnssPosePublisher.cpp:85` writes a small
   loop, since neither implementation actuates the lights (§5.3), but it is a
   different quantity and is recorded as such.
 
-### 5.11 Per-frame ego ground-truth status stream (tier4's `sensor.other.vehicle_status`)
+### 5.11 Per-frame ego ground-truth status stream
 
 - What it does: a new UE `ASensor` subclass with its own actor definition
   (`sensor.other.vehicle_status`, one `speed_units` attribute), a
@@ -747,7 +783,14 @@ covariance matrix` flags, where `GnssPosePublisher.cpp:85` writes a small
   CARLA clients can also stream it, and an ego-only guard in
   `ProcessDataFromStatusSensor` that refuses to publish for a non-ego parent.
 - Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
-- Reproduction path: already-exists
+- Reproduction path: already-exists — **scoped to the per-frame ego
+  ground-truth stream this heading names. tier4's spawnable
+  `sensor.other.vehicle_status` blueprint and its configurable publish rate are
+  NOT reproduced; if either is required, that part is CARLA-core seam work at
+  M, not S** (see body; scope moved onto this line 2026-08-05, adversarial
+  re-review round, because the heading's old parenthetical and the
+  `already-exists` tally row together read as "tier4's vehicle-status sensor:
+  already exists")
 - Effort class: S
 - Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Autoware/Sensors/VehicleStatusSensor.{h,cpp}`,
   `LibCarla/source/carla/sensor/s11n/VehicleStatusSerializer.h`,
@@ -1939,11 +1982,15 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
   either way). The practical reproduction cost for this repository is
   nevertheless **zero**: the defect is in the acceleration-control component the
   extension deliberately does not use, and the Ackermann path it uses instead
-  passes steer through `ApplyVehicleAckermannControl`. Recorded because it is
-  useful evidence in the other direction — anyone arguing that tier4's
-  acceleration-integration actuation (§5.17) is more faithful than
-  `apply_ackermann_control` should know it shipped with a steering dropout
-  serious enough to need this fix.
+  passes steer through `ApplyVehicleAckermannControl`. The defect was **found
+  and fixed on tier4's own lineage before this snapshot** (merged on
+  `tier4/main`), and is recorded here because it bounds any comparison of the
+  acceleration-control path against `apply_ackermann_control` — not as an
+  argument against the capability. (Reworded 2026-08-05, adversarial re-review
+  round: the previous "anyone arguing … should know" clause deployed a fixed
+  bug as a debating point, which this catalog does not do for the extension's
+  own equivalent defects — §5.8's constant-zero `steering_status`, §5.20's
+  gyroscope sign disagreement — and so must not do here.)
 
 ### 6.12 lanelet2-driven traffic-light placement toolchain and JP signal assets
 
@@ -2404,11 +2451,19 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
   tree could be read (§6.0.1). It sits on upstream `ue5-dev`, not on
   `autoware-support`. A second copy of the same idea rides on the RGL lineage
   (`785594562 feat(Util/Docker): add Ubuntu 22.04 Docker dev environment for
-UE5`). Two things temper the maturity claim, both from the files themselves:
-  the Dockerfile's header says "Private use only — do not publish (UE5 EULA
-  restriction on redistribution)", and it installs
-  `@anthropic-ai/claude-code` and mounts `~/.claude` + `ANTHROPIC_API_KEY`,
-  i.e. it is one engineer's agent workstation as much as a shared dev container.
+UE5`). What tempers the maturity claim is scope, not team practice: the
+  container targets **building CARLA**, not running the Autoware consumer (see
+  the Verified-by note below), and its ancestry is unverifiable from the shallow
+  clone. (Reworded 2026-08-05, adversarial re-review round. The previous text
+  read two file facts as immaturity signals and neither is one: the Dockerfile's
+  "Private use only — do not publish (UE5 EULA restriction on redistribution)"
+  header is **licence compliance**, which is the correct thing to mark, and its
+  `@anthropic-ai/claude-code` install plus `~/.claude` / `ANTHROPIC_API_KEY`
+  mounts were read as "one engineer's agent workstation" — an editorial
+  judgement about how a named team works, made in a document whose own
+  repository is solo-authored by an engineer using the same tool. Both facts are
+  true, neither bears on the verdict, and the verdict — extension-side, S — is
+  unchanged.)
 - Reproduction path: extension-side work
 - Effort class: S
 - Verified by: `docker/{Dockerfile,docker-compose.yml,.env.example,README.md}`
@@ -2588,7 +2643,19 @@ whose only output is "looks fine" is not evidence.
   _straightforward_, _trivial_, _in principle_, _doable_, _easily_ and
   _presumably_ returns **no hit**. Every path names the mechanism — a specific
   ABI primitive, a runner module, a named file to change, or the named artifact
-  that is missing.
+  that is missing. **Three of those named missing artifacts exist in neither
+  tree and are not obtainable from this repository's side** (added 2026-08-05,
+  adversarial re-review round, so no downstream summary can compress this to
+  "none is unreachable"): §6.7's raw-UDP packet encoder lives in the **private**
+  `RobotecAI/RGL-extension-udp` — "the reproduction cost of this capability is
+  **unbounded** from this repository's side"; §6.3's Agnocast capability also
+  needs the `carla_agnocast_bridge` node, an Agnocast-enabled Autoware launch
+  and the Agnocast **kernel module**, "none of which exist in either tree"; and
+  §6.12's 35 JP signal `.uasset` files are of **unestablished
+  redistributability**. For these three the argued path is a **lower bound on
+  cost, conditional on access**, not a reachability class. (§6.4, the fourth L,
+  needs the third-party RGL SDK and toolchain, which is obtainable but also
+  outside both trees — §5.0.4's L definition states the shared reason.)
 - **Tallies.** §5.0.4's and §6.0.3's counts were recomputed from the entries
   themselves and match exactly, including the combined 53 / 14 / 8 / 21 / 10
   figures and the "18 of 25 versus 13 of 28" seam skew §6.0.3 draws its
@@ -2601,26 +2668,41 @@ An `already-exists` row read by tier4's authors costs more when wrong than an
 **extension** files it cites — the side that carries the overclaim risk — rather
 than against the tier4 side alone.
 
-| Entry                          | Re-checked against                                                                                                      | Outcome                                                                                                                                                                                                                                                                                            |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1 six status topics         | `StatusPublishers.cpp:47-77` (`StatusQos` = 0/0/1), `:79-133` (one shared stamp, `base_link` on `VelocityReport`)       | **stands** — topic names, types, QoS triple and stamping all confirmed present; tier4's own `AutowarePublisher.cpp:128-134` is RELIABLE / VOLATILE / KEEP_LAST-1, i.e. genuinely identical                                                                                                         |
-| §5.2 control subscriber        | `ControlSubscribers.cpp:42-61`, `:73-104`                                                                               | **stands** — same topic + type, `apply_ackermann_control`; both stated deviations confirmed (BEST_EFFORT `qos{1,0,1}`; speed + acceleration + jerk all forwarded)                                                                                                                                  |
-| §5.3 three command subscribers | `ControlSubscribers.cpp:112-143`, `ExtensionInit.cpp:92-96`                                                             | **stands** — all three subscribed, each cached in a relaxed atomic, none actuated, all three threaded into the status reports                                                                                                                                                                      |
-| §5.5 engage                    | `EngageStateMachine.cpp:49`, `.h:56-79`, `ExtensionInit.cpp:93`                                                         | **stands** — `/autoware/engage` confirmed as the subscribed topic, and `Mode()` genuinely drives `ControlModeReport.mode`                                                                                                                                                                          |
-| §5.6 GNSS pose                 | `GnssPosePublisher.cpp:30-35`, `:38-92`, `MgrsOffset.h:105-143`                                                         | **stands, one difference added** — topics, `PoseStamped`, 1 Hz decimation and the Y-flip rule all confirmed; the entry had recorded two differences from tier4 and missed a third (tier4's all-zero covariance versus the extension's small diagonal), now recorded                                |
-| §5.7 steering LUT              | `diff -u` of tier4's header against `control/AutowareSteeringCompensation.h`                                            | **stands, delta list completed** — table and interpolation byte-identical; the diff also adds two `using` re-exports the entry had not listed, now listed                                                                                                                                          |
-| §5.11 ego status stream        | `ExtensionInit.cpp:171-172`, `CarlaRos2Extension.h:37-72`                                                               | **stands, retitled** — the capability (a per-frame ego ground-truth stream) is reproduced, but the old heading named tier4's spawnable `sensor.other.vehicle_status`, which the body says is _not_ reproduced. Heading and verdict now claim the same thing                                        |
-| §5.20 IMU handedness           | fork `CarlaIMUPublisher.cpp` / `ImuMath.h`; ABI header (no IMU path in the `.so`)                                       | **stands** — scoped `needs prototype` on the gyroscope axis map already present and correctly bounded                                                                                                                                                                                              |
-| §5.23 `get_ego_spawn_points`   | `runner/__main__.py:296`                                                                                                | **stands** — the cited line is exactly `select_spawn_point(world.get_map().get_spawn_points(), args.spawn_index)`                                                                                                                                                                                  |
-| §5.25 sensor-kit spawn         | `runner/config/sensor_kit_calibration.yaml`, `sensors_calibration.yaml`, `runner/kit.py:147`, `runner/spawn.py:401-407` | **stands, count corrected** — data-driven composition and the off-centreline camera caveat confirmed; the kit file holds **13** sensor frames, not 15                                                                                                                                              |
-| §5.28 build/docs surface       | `README.md`, `docs/{prerequisites,running-e2e,architecture,nishishinjuku-map,e2e-report}.md`, `docker/compose.yaml`     | **stands** — every cited file exists on this branch                                                                                                                                                                                                                                                |
-| §6.1 CycloneDDS backend        | `docs/running-e2e.md:52`, `docs/g0-report.md:23`, `docs/e2e-report.md:58`, `docs/prerequisites.md:12`                   | **stands, maturity sharpened** — the `--rmw=cyclonedds` selection and the `rmw_cyclonedds_cpp` gate environment are all where the entry says; added that the two `ue5-dev`-lineage CycloneDDS branches are merged on `tier4/main`, so "experiment" applies only to `experiment/cyclonedds-support` |
-| §6.2 CycloneDDS generator      | `CarlaRos2Extension.h:104-107` (raw CDR incl. encapsulation header)                                                     | **stands** — the "designs the need away" framing is exactly what the ABI comment supports; the entry already refuses to claim the tool exists                                                                                                                                                      |
-| §6.10 turn/hazard echo         | `StatusPublishers.cpp:122-131`, `ControlSubscribers.cpp:122-143`; tier4 commit `f45eb4e3d`                              | **stands, ordering corrected** — the extension side is as described; tier4's precedence was stated backwards (it echoes the command whenever one has arrived and falls back to light state only before the first), now fixed. Verdict unaffected                                                   |
+| Entry                          | Re-checked against                                                                                                      | Outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §5.1 six status topics         | `StatusPublishers.cpp:47-77` (`StatusQos` = 0/0/1), `:79-133` (one shared stamp, `base_link` on `VelocityReport`)       | **stands** — topic names, types, QoS triple and stamping all confirmed present; tier4's own `AutowarePublisher.cpp:128-134` is RELIABLE / VOLATILE / KEEP_LAST-1, i.e. genuinely identical                                                                                                                                                                                                                                                                                                     |
+| §5.2 control subscriber        | `ControlSubscribers.cpp:42-61`, `:73-104`                                                                               | **stands** — same topic + type, `apply_ackermann_control`; both stated deviations confirmed (BEST_EFFORT `qos{1,0,1}`; speed + acceleration + jerk all forwarded)                                                                                                                                                                                                                                                                                                                              |
+| §5.3 three command subscribers | `ControlSubscribers.cpp:112-143`, `ExtensionInit.cpp:92-96`                                                             | **stands** — all three subscribed, each cached in a relaxed atomic, none actuated, all three threaded into the status reports                                                                                                                                                                                                                                                                                                                                                                  |
+| §5.5 engage                    | `EngageStateMachine.cpp:49`, `.h:56-79`, `ExtensionInit.cpp:93`                                                         | **stands** — `/autoware/engage` confirmed as the subscribed topic, and `Mode()` genuinely drives `ControlModeReport.mode`                                                                                                                                                                                                                                                                                                                                                                      |
+| §5.6 GNSS pose                 | `GnssPosePublisher.cpp:30-35`, `:38-92`, `MgrsOffset.h:105-143`                                                         | **stands, one difference added** — topics, `PoseStamped`, 1 Hz decimation and the Y-flip rule all confirmed; the entry had recorded two differences from tier4 and missed a third (tier4's all-zero covariance versus the extension's small diagonal), now recorded                                                                                                                                                                                                                            |
+| §5.7 steering LUT              | `diff -u` of tier4's header against `control/AutowareSteeringCompensation.h`                                            | **stands, delta list completed** — table and interpolation byte-identical; the diff also adds two `using` re-exports the entry had not listed, now listed                                                                                                                                                                                                                                                                                                                                      |
+| §5.11 ego status stream        | `ExtensionInit.cpp:171-172`, `CarlaRos2Extension.h:37-72`                                                               | **stands, retitled** — the capability (a per-frame ego ground-truth stream) is reproduced, but the old heading named tier4's spawnable `sensor.other.vehicle_status`, which the body says is _not_ reproduced. **Completed 2026-08-05** (adversarial re-review round): the retitle had only moved the blueprint name into a parenthetical, so the heading still named it; the parenthetical is now dropped and the scope moved onto the `Reproduction path` line, where the tally row reads it |
+| §5.20 IMU handedness           | fork `CarlaIMUPublisher.cpp` / `ImuMath.h`; ABI header (no IMU path in the `.so`)                                       | **stands** — scoped `needs prototype` on the gyroscope axis map already present and correctly bounded                                                                                                                                                                                                                                                                                                                                                                                          |
+| §5.23 `get_ego_spawn_points`   | `runner/__main__.py:296`                                                                                                | **stands** — the cited line is exactly `select_spawn_point(world.get_map().get_spawn_points(), args.spawn_index)`                                                                                                                                                                                                                                                                                                                                                                              |
+| §5.25 sensor-kit spawn         | `runner/config/sensor_kit_calibration.yaml`, `sensors_calibration.yaml`, `runner/kit.py:147`, `runner/spawn.py:401-407` | **stands, count corrected** — data-driven composition and the off-centreline camera caveat confirmed; the kit file holds **13** sensor frames, not 15                                                                                                                                                                                                                                                                                                                                          |
+| §5.28 build/docs surface       | `README.md`, `docs/{prerequisites,running-e2e,architecture,nishishinjuku-map,e2e-report}.md`, `docker/compose.yaml`     | **stands** — every cited file exists on this branch                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| §6.1 CycloneDDS backend        | `docs/running-e2e.md:52`, `docs/g0-report.md:23`, `docs/e2e-report.md:58`, `docs/prerequisites.md:12`                   | **stands, maturity sharpened** — the `--rmw=cyclonedds` selection and the `rmw_cyclonedds_cpp` gate environment are all where the entry says; added that the two `ue5-dev`-lineage CycloneDDS branches are merged on `tier4/main`, so "experiment" applies only to `experiment/cyclonedds-support`                                                                                                                                                                                             |
+| §6.2 CycloneDDS generator      | `CarlaRos2Extension.h:104-107` (raw CDR incl. encapsulation header)                                                     | **stands** — the "designs the need away" framing is exactly what the ABI comment supports; the entry already refuses to claim the tool exists                                                                                                                                                                                                                                                                                                                                                  |
+| §6.10 turn/hazard echo         | `StatusPublishers.cpp:122-131`, `ControlSubscribers.cpp:122-143`; tier4 commit `f45eb4e3d`                              | **stands, ordering corrected** — the extension side is as described; tier4's precedence was stated backwards (it echoes the command whenever one has arrived and falls back to light state only before the first), now fixed. Verdict unaffected                                                                                                                                                                                                                                               |
 
 **No `already-exists` verdict was overturned.** Four entries gained a missing
 fact (§5.6, §5.7, §5.25, §6.10), one was retitled to match its own body (§5.11),
 and one gained a maturity qualifier (§6.1).
+
+**What this pass did NOT cover, stated because the headline statistic depends
+on it (added 2026-08-05, adversarial re-review round).** This adversarial
+re-argument covered the **14 `already-exists` entries only** — 26 % of the 53.
+The other **39** entries (extension-side work, and both seam sub-labels) each
+received a **single** classification pass and no second reading. The
+§6.0.3 seam-skew statistic that §5 of the report calls "the single most
+decision-relevant fact in the catalog" — **18 of 25 side-branch entries against
+13 of 28 on main** — is computed **entirely from those 39**, i.e. from the half
+this pass deliberately did not re-argue, because the overclaim risk it was
+targeting lives on the `already-exists` side. "None was overturned" is therefore
+a statement about the 14, and must not be read as support for the 18/25-vs-13/28
+figure. No inter-rater or second-pass check exists for that figure; it is a
+single-analyst code-reading judgement, and the class definitions it rests on
+(§5.0.2, §5.0.3) are the only thing bounding it.
 
 ### 7.3 Effort-class review
 
