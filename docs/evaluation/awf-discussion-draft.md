@@ -15,6 +15,18 @@ together with the caveat `report.md` attaches to it, because several of the
 figures mean much less than they look like they mean. Where this draft and the
 report disagree, the report wins.
 
+**About the charts.** The comparisons in §3–§5 are drawn rather than tabulated.
+Every value in them is transcribed — with the section that states it — into
+[`figures/figures.yaml`](figures/figures.yaml) and rendered by
+[`figures/make_figures.py`](figures/make_figures.py); nothing in a chart is a
+number the evidence documents do not carry, and no chart re-derives anything
+from `benchmarks/results/**`. Two comparisons are **deliberately not drawn**,
+because a chart is read as an invitation to compare and these two must not be:
+the upstreaming ratios of §3.5, and the `A-vs-B` closed-loop arm, which does
+not exist. Each chart's caption states its own limits, and the caveats around
+it are not optional reading. Regenerate all seven with
+`python3 docs/evaluation/figures/make_figures.py`.
+
 ## 1. The ask
 
 There are three ways to connect CARLA to Autoware today, and no community
@@ -74,13 +86,16 @@ report's own surviving wording, verbatim:
 > separated beyond margin on the fifth, in tier4-native's favour, for reasons
 > this campaign did not establish** (`report.md` §3.3)
 
-Four qualifications travel with that sentence and are not optional:
+![Forest plot of the five pre-registered metrics on both arms. Each row shows Δ (extension − tier4-native) divided by that metric's own margin, with its 95 % confidence interval, against a shaded ±1-margin parity zone. On the closed-loop arm: one_hop_wall_ms, lidar_to_ndt_sim_ms, control_staleness_ms and achieved_rate_ratio all fall inside the zone and read parity, while carla_process_cpu_pct sits at about 5.8× its margin and reads tier4-native better. The static arm repeats the pattern, with control_staleness_ms not computed at n = 0/8 and carla_process_cpu_pct at about 5.2× its margin. Two rows are called out: closed-loop one_hop_wall_ms, whose CI upper bound reaches 0.971× the margin, and closed-loop achieved_rate_ratio, whose interval is degenerate.](figures/fig-equivalence-forest.svg)
+
+Four qualifications travel with that chart and are not optional:
 
 - **It compares tier4-native on CycloneDDS, not on the transport tier4-native
   ships.** The report calls this arm `A-vs-B-cyc`. The comparison against
   tier4-native's own as-shipped Fast-DDS configuration (`A-vs-B`) is
   **permanently non-computable**: that configuration armed on **0 of 15**
-  closed-loop runs (`report.md` §3.3, §1.2). The two must not be conflated.
+  closed-loop runs (`report.md` §3.3, §1.2). The two must not be conflated, and
+  the missing arm is absent from the chart rather than drawn as an empty row.
 - **Every row also spans an Autoware container-image difference**
   (`universe-devel-cuda` by digest against `universe-devel` by tag), which the
   source calls "the single most important" confound in it, and **no row is
@@ -92,10 +107,11 @@ Four qualifications travel with that sentence and are not optional:
   on a **3 %** change in a threshold the measured calibration never determined.
   Another has a degenerate confidence interval and contributes no evidence at
   all. The report's own reading: "the effective evidentiary weight is closer to
-  **two well-supported parity rows than four**" (`report.md` §3.3, §3.2).
-- **The fifth metric goes against the extension.** Simulator-process CPU
-  separates by **+58.250 pp** (CI [57.662, 59.161]) against a 10.0 pp margin,
-  in tier4-native's favour, and **the cause is not established**. A registered
+  **two well-supported parity rows than four**" (`report.md` §3.3, §3.2). The
+  chart marks both rows; it does not weight them, and a reader who counts rows
+  off it will over-read the result.
+- **The fifth metric goes against the extension**, beyond margin, in
+  tier4-native's favour, and **the cause is not established**. A registered
   confound runs against the extension on exactly this metric — its sensor rig
   is configured at 20 Hz against tier4-native's 10 Hz and ships **2.118×** the
   bytes for the same point count — but the report also carries that confound's
@@ -107,25 +123,31 @@ Four qualifications travel with that sentence and are not optional:
 And `parity` here is a decision against a frozen margin, **not a proof of
 identity** and not a calibrated 95 % equivalence statement — the estimator's
 interval coverage was never validated, and its expected failure mode runs in
-the direction that favours this report's headline (`report.md` §2.2).
+the direction that favours this report's headline (`report.md` §2.2). The ±1
+band on the chart is the decision rule drawn exactly, which is not the same as
+the rule being calibrated.
 
 ### 3.2 The static comparison, and what it re-attributed
 
-A second, static comparison spans two phases. Under mismatched transports the
-extension separated from tier4-native on every computable metric. Under a
-**shared** transport family, **three of the four returned `parity`; the fourth
-reversed against the extension, beyond margin, cause unestablished** —
-simulator-process CPU, Δ **+52.005 pp** (CI [49.617, 52.871]) against a 10.0 pp
-margin, where the earlier phase had read **−12.873 pp** in the extension's
-favour. For the three, the pre-registered rule attributes the earlier
-separation to the as-shipped Fast-DDS configuration, **not to the approach**;
-it does **not** license retro-attributing the CPU row's earlier reading, and
-**the two cannot both be an approach difference** (`report.md` §3.2). Four
-caveats gate that:
+A second, static comparison spans two phases; its shared-transport phase is the
+open-square row inside each metric group on the chart above. Under mismatched
+transports the extension separated from tier4-native on every computable
+metric. Under a **shared** transport family, **three of the
+four returned `parity`; the fourth reversed against the extension, beyond
+margin, cause unestablished**. For the three, the pre-registered rule attributes
+the earlier separation to the as-shipped Fast-DDS configuration, **not to the
+approach**; it does **not** license retro-attributing the CPU row's earlier
+reading, and **the two cannot both be an approach difference**
+(`report.md` §3.2). That one row is worth seeing on its own:
+
+![Simulator-process CPU across three measurement conditions, plotted against a ±10 pp margin band. Under P3's mismatched transports Δ is −12.873 pp with CI [−16.698, −11.129], entirely below the band, reading extension better. Under P4's shared transport family the sign reverses: the static arm reads +52.005 pp with CI [49.617, 52.871] and the closed-loop arm +58.250 pp with CI [57.662, 59.161], both far above the band, reading tier4-native better.](figures/fig-cpu-reversal.svg)
+
+Four caveats gate the static comparison:
 
 - **It closes on four of the five pre-registered margin metrics, not five** —
   control-command staleness was unavailable throughout the earlier phase and
-  `insufficient-data` in the later one.
+  `insufficient-data` in the later one. That row is drawn as "not computed"
+  rather than as a value.
 - **The earlier phase was cross-vendor**: the extension ran on CycloneDDS with
   a loopback-only profile, tier4-native on Fast-DDS with a **harness-authored**
   profile it did not ship — the largest caveat on that phase, and the reason
@@ -154,15 +176,16 @@ own finding that the confound does not explain it.
 The extension's defining choice is routing Autoware vocabulary through a frozen
 C ABI instead of compiling it into CARLA core. That seam was measured directly,
 both twins publishing an identical 921 908-byte cloud inside one CARLA process:
-**median +0.2784 ms, all five runs inside +0.2392…+0.2988 ms, positive in 5 of
-5** (`report.md` §3.1).
+
+![Left: five paired runs, each showing the in-core twin's p50 one-hop latency and the seam twin's, connected. The seam twin is slower in every run; the per-run Δ values are +0.2784, +0.2871, +0.2988, +0.2392 and +0.2647 ms. Right: those five deltas on their own axis, with the median at +0.2784 ms and the maximum at +0.2988 ms marked as the quotable ceiling.](figures/fig-seam-ceiling.svg)
 
 **That is an upper bound on the seam mechanism's share, not a point estimate** —
 a rule registered before the runs were collected — so quote **+0.2988 ms**
-where a ceiling is wanted. Against the claim as registered ("no measurable
-overhead") the honest reading is a downgrade: an overhead _was_ measured. What
-the data supports is that the seam's cost is **small and bounded, not zero**.
-The tails do not separate, and no claim is made about them at n = 5.
+where a ceiling is wanted, which is what the chart marks. Against the claim as
+registered ("no measurable overhead") the honest reading is a downgrade: an
+overhead _was_ measured. What the data supports is that the seam's cost is
+**small and bounded, not zero**. The tails do not separate, and no claim is made
+about them at n = 5.
 
 ### 3.4 The python-bridge
 
@@ -173,17 +196,18 @@ sweep — no cross-approach statistic, and the byte-layout argument the spec
 registered is **retracted as unmeasured**. One within-approach contrast
 survives and is worth the working group's attention:
 
-- As shipped, the bridge starves Autoware's NDT localization: **0.08–0.27 Hz**.
-  With **both registered patches applied** — the one-line `is_dense` fix _plus_
-  a harmonized sensor rig and topic remap — the same measurement reads
-  **1.91–7.52 Hz** on the same architecture, CARLA and container; the pooled
-  medians differ by **≈ 45×** and the ranges do not overlap
-  (`report.md` §4.2, §4.3). Two caveats on that contrast: the patched arm's
-  **20 Hz target is the campaign's own comparability choice, not the bridge's
-  default — its authors ship 11** (`report.md` §4.3); and every as-shipped
-  figure is **optimistically biased**, three of the four runs excluded from that
-  pool being the cell's three worst, with the bias not estimable from the
-  surviving pool (`report.md` §4.2).
+![NDT pose rate on a logarithmic axis. As shipped, cell E0 spans 0.08 to 0.27 Hz with a pooled median of 0.11 Hz. With both registered patches applied, cell E spans 1.91 to 7.52 Hz with a pooled median of 4.99 Hz. The two ranges do not overlap. Reference lines mark the bridge's own shipped 11 Hz target and the campaign's chosen 20 Hz comparability target, both far above either measured range.](figures/fig-bridge-ndt.svg)
+
+- As shipped, the bridge starves Autoware's NDT localization. With **both
+  registered patches applied** — the one-line `is_dense` fix _plus_ a harmonized
+  sensor rig and topic remap — the same measurement, on the same architecture,
+  CARLA and container, moves to the upper band: the pooled medians differ by
+  **≈ 45×** and the ranges do not overlap (`report.md` §4.2, §4.3). Two caveats
+  on that contrast: the patched arm's **20 Hz target is the campaign's own
+  comparability choice, not the bridge's default — its authors ship 11**
+  (`report.md` §4.3); and every as-shipped figure is **optimistically biased**,
+  three of the four runs excluded from that pool being the cell's three worst,
+  with the bias not estimable from the surviving pool (`report.md` §4.2).
 - **The cause is a two-sided interop contract mismatch, not a bridge
   architecture property**: the bridge publishes `is_dense=False` (a valid,
   conservative PointCloud2 value) and Autoware's `crop_box_filter_self`
@@ -202,11 +226,13 @@ tier4-native **No**, bridge **Yes**).
 
 ### 3.5 The structural comparison
 
-The extension carries **219** fork commits ahead of upstream CARLA plus **25**
-in its own repo; tier4-native carries **305**; the bridge carries **0**, being
-in-tree. Every figure here is a **dated snapshot over moving refs, not a
-regenerable number** (endpoint SHAs are pinned in the report). Two things that
-look like a comparison and are not:
+Each approach carries a different amount of code outside upstream CARLA:
+
+![Commits carried outside upstream CARLA. The extension carries a 219-commit delta in the CARLA fork it requires, plus 25 commits in its own repository. tier4-native carries 305 on its autoware-support branch. The python-bridge carries 0, being in-tree in autoware_universe.](figures/fig-fork-delta.svg)
+
+Every figure there is a **dated snapshot over moving refs, not a regenerable
+number** (endpoint SHAs are pinned in the report). Two things that look like a
+comparison and are not — and neither is charted, for that reason:
 
 - **The upstreaming figures are computed over different populations.** The
   extension fork's two dominant authors show **66 merged of 98 opened**
@@ -217,7 +243,9 @@ look like a comparison and are not:
   four named Robotec/tier4-specific delta authors and deliberately _excludes_
   shared-ancestor CARLA-community delta authors with large upstream histories
   (`glopezdiest` 82, `Blyron` 145) who also appear in the extension's own fork
-  delta. **No ordering between the two cells is supported** (`report.md` §3.5).
+  delta. **No ordering between the two cells is supported** (`report.md` §3.5),
+  which is exactly why they are left as prose: drawn as two bars they would
+  assert the ordering their source refuses.
 - **The tier4 branch this campaign measured is frozen; tier4's development is
   not.** The `autoware-support` integration branch is tipped 2026-04-08, **0**
   commits in the 90 days before the snapshot, CI fired once ever. In the same
@@ -239,51 +267,57 @@ runtime measurement backs any verdict in it** — and six entries carry a scoped
 `needs prototype` marker where that method reaches its edge (`gap-catalog.md`
 §5.0, §7.4).
 
-| class                              | main branch | side branches | total  |
-| ---------------------------------- | ----------- | ------------- | ------ |
-| already exists in the extension    | 11          | 3             | 14     |
-| extension-side work                | 4           | 4             | 8      |
-| CARLA-core seam work — sensor-side | 6           | 15            | 21     |
-| CARLA-core seam work — ROS-side    | 7           | 3             | 10     |
-| **entries**                        | **28**      | **25**        | **53** |
+![Two stacked bars over the 53 catalog entries. The integration branch's 28 entries split into 11 that already exist in the extension, 4 of extension-side work, 6 of CARLA-core sensor-side seam work and 7 of CARLA-core ROS-side seam work. The side branches' 25 entries split into 3, 4, 15 and 3 across the same classes — 18 of 25 on the seam, against 13 of 28 on the integration branch. Below, per-entry effort classes: the integration branch is 25 × S and 3 × M; the side branches are 13 × S, 8 × M and 4 × L.](figures/fig-capability-catalog.svg)
 
-Effort classes: main branch **25 × S, 3 × M**; side branches **13 × S, 8 × M,
-4 × L**. Four things a reader must carry with that table:
+Four things a reader must carry with that chart:
 
 - **A class is the remaining delta from this repository's side, not the size of
-  tier4's original change**, and classes are **per-entry, not cumulative**.
-  Five of the main-branch S entries are S _only because_ the extension's own
-  required CARLA fork independently re-implemented the same core change; two
-  more are S on code volume while their remaining work is a **C ABI version
-  bump**, a compatibility cost the class does not price. "89 % of tier4's
-  merged integration work is a small lift" is **not** what the table says
-  (`report.md` §5, `gap-catalog.md` §7.3, §5.0.4).
+  tier4's original change**, and classes are **per-entry, not cumulative** — the
+  bars are counts of entries, and their widths must not be added up into a
+  project size. Five of the main-branch S entries are S _only because_ the
+  extension's own required CARLA fork independently re-implemented the same core
+  change; two more are S on code volume while their remaining work is a **C ABI
+  version bump**, a compatibility cost the class does not price. "89 % of
+  tier4's merged integration work is a small lift" is **not** what the chart
+  says (`report.md` §5, `gap-catalog.md` §7.3, §5.0.4).
 - **Three entries depend on artifacts that exist in neither tree**, so their
   cost is a lower bound rather than a reachability class: a raw-UDP packet
   encoder that lives in a **private** repository of unestablished
   obtainability, an Agnocast capability needing a kernel module that exists in
   neither tree, and 35 Japanese signal `.uasset` files of unestablished
   redistributability (`report.md` §5, `gap-catalog.md` §7.1).
-- **The side-branch half skews far harder toward CARLA-core seam work —
-  18 of 25, against 13 of 28 on main** — i.e. the integration branch's
-  capabilities are largely ROS-layer and the side branches' largely are not.
-  **That statistic received no second pass** and rests on a single analyst's
-  code-reading judgement with no inter-rater check (`report.md` §5).
+- **The side-branch half skews far harder toward CARLA-core seam work** — i.e.
+  the integration branch's capabilities are largely ROS-layer and the side
+  branches' largely are not. **That statistic received no second pass** and
+  rests on a single analyst's code-reading judgement with no inter-rater check
+  (`report.md` §5).
 - The adversarial re-argument that found nothing overturned covered the
   **14 `already-exists` verdicts only** — the entries carrying the overclaim
   risk. The other 39 received one classification pass each (`report.md` §5).
 
 ## 5. Where this proposal is weak
 
-The extension repository is **solo-maintained with no external review**: one
-maintainer, every commit by one author, **zero external reviewers across
-30 PRs**, the only recorded reviews being two self-reviews, no CODEOWNERS, and
-a branch ruleset that requires passing checks rather than a human approval. By
-comparison the bridge has 4 named maintainers and 9 human authors in
-12 months, and tier4-native's branch — though no better governed — is at least
-two-contributor dominated (`report.md` §3.5, rubric criteria 1 and 6). **This
-is a governance risk that the comparator's numbers do not offset**, and it is
-the reason the ask in §1 leads with reviewers rather than with adoption.
+The extension repository is **solo-maintained with no external review**. The
+comparison that is usually reached for first — bus factor — does not separate
+it from tier4-native at all; the separation is on the review record:
+
+![Top: share of commits by the top two authors. The extension's required CARLA fork delta is 52 % (113 of 219), its extension-only work 90 % (109 of 121), and tier4-native's autoware-support delta 52 % (160 of 305) — the same concentration on both natives. Below, the extension's review record: 0 external reviewers ever across 30 PRs, 2 self-reviews as the only reviews ever recorded, 25 of 25 commits by 1 author, and 1 named maintainer against the python-bridge's 4.](figures/fig-governance.svg)
+
+Stated in words as well as in the chart, because it is the single sentence in
+this draft that most deserves to survive a skim: **one maintainer, every commit
+by one author, zero external reviewers across 30 PRs, and the only reviews ever
+recorded are two self-reviews.** There is no CODEOWNERS, and the branch ruleset
+requires passing checks rather than a human approval. By comparison the bridge
+has 4 named maintainers and 9 human authors in 12 months, and tier4-native's
+branch — though no better governed — is at least two-contributor dominated
+(`report.md` §3.5, rubric criteria 1 and 6). **This is a governance risk that
+the comparator's numbers do not offset**, and it is the reason the ask in §1
+leads with reviewers rather than with adoption. One symmetry the chart does not
+show, and that the rubric insists on: tier4-native's branch has no GitHub-side
+approval gate either, an internal review process would not be visible to this
+snapshot, and the absence of a ruleset is not the absence of governance
+(`rubric.md`, criterion 6).
+
 The evaluation documents themselves share the defect: they are single-author
 and adversarially self-reviewed, not externally reviewed, and the design spec
 they were registered against lives outside this repository, so the report's own

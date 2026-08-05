@@ -1,0 +1,269 @@
+# Figure data for docs/evaluation/awf-discussion-draft.md
+#
+# EVERY value below is transcribed from an evidence document in this directory
+# and carries the section that states it. The draft's figures are generated
+# from this file by `make_figures.py`; nothing in a rendered figure is a number
+# that does not appear here with a source.
+#
+# Transcription, not computation. This file does NOT re-derive anything from
+# benchmarks/results/**. The verdict tables it copies are themselves produced by
+# `benchmarks/scripts/duel_verdict.py` (report.md section 9, commands 2 and 3) and the
+# CAL-seam deltas by report.md section 9 command 4b. Re-deriving them here would
+# create a second, unregistered analysis path for numbers the campaign
+# pre-registered a single path for. To re-verify a value, run the report's own
+# command and diff against the `source:` line quoted here.
+#
+# Direction convention, carried from benchmarks/config/margins.yaml and repeated
+# on every figure that shows a delta: `delta = extension - tier4-native; lower is
+# better`. A POSITIVE delta therefore runs AGAINST the extension.
+#
+# Decision rule, from benchmarks/analysis/stats.py `equivalence_decision`, which the
+# forest figure encodes geometrically:
+#     parity     iff  -margin < ci_lo  and  ci_hi < margin
+#     a_better   iff  ci_hi < 0            (extension better)
+#     b_better   iff  ci_lo > 0            (tier4-native better)
+#     inconclusive otherwise
+
+meta:
+  direction: delta = extension - tier4-native; lower is better
+  direction_source: benchmarks/config/margins.yaml header; p4-transport-sweep.md 2.2
+  decision_rule_source: benchmarks/analysis/stats.py equivalence_decision
+
+# ---------------------------------------------------------------------------
+# fig-equivalence-forest -- draft 3.1 (closed-loop) and 3.2 (static)
+#
+# Both arms are A-vs-B-cyc. The A-vs-B closed-loop verdict, under cell B's own
+# registered transport, is permanently non-computable (B armed on 0 of 15
+# closed-loop runs) and is NOT on this figure.
+# ---------------------------------------------------------------------------
+equivalence:
+  source: report.md 3.3 (closed-loop) and 3.2 (static); raw tables p4-transport-sweep.md 2.5
+  caption_note: both arms A-vs-B-cyc; every row also spans an uncorrected Autoware image difference
+  metrics:
+    - key: one_hop_wall_ms
+      label: one_hop_wall_ms
+      unit: ms
+      margin: 2.0
+    - key: lidar_to_ndt_sim_ms
+      label: lidar_to_ndt_sim_ms
+      unit: ms
+      margin: 5.0
+    - key: control_staleness_ms
+      label: control_staleness_ms
+      unit: ms
+      margin: 10.0
+    - key: achieved_rate_ratio
+      label: achieved_rate_ratio
+      unit: ""
+      margin: 0.02
+    - key: carla_process_cpu_pct
+      label: carla_process_cpu_pct
+      unit: pp
+      margin: 10.0
+  arms:
+    - key: closed_loop
+      label: closed-loop arm
+      sublabel: A/run-026..035 vs B-cyc/run-012..021, n = 10/10
+      rows:
+        one_hop_wall_ms:
+          delta: 1.345
+          ci: [0.886, 1.942]
+          verdict: parity
+          note: "knife-edge: CI upper is 97.1 % of the margin"
+        lidar_to_ndt_sim_ms:
+          delta: 2.167
+          ci: [1.882, 2.553]
+          verdict: parity
+        control_staleness_ms:
+          delta: -0.789
+          ci: [-1.443, -0.288]
+          verdict: parity
+        achieved_rate_ratio:
+          delta: 0.000
+          ci: [-0.000, 0.000]
+          verdict: parity
+          note: degenerate interval - contributes no evidence
+        carla_process_cpu_pct:
+          delta: 58.250
+          ci: [57.662, 59.161]
+          verdict: b_better
+          note: cause not established
+    - key: static
+      label: static arm
+      sublabel: n = 10/10, except control_staleness_ms (0/8)
+      rows:
+        one_hop_wall_ms:
+          delta: 1.687
+          ci: [1.441, 1.849]
+          verdict: parity
+        lidar_to_ndt_sim_ms:
+          delta: 1.356
+          ci: [1.287, 1.553]
+          verdict: parity
+        control_staleness_ms:
+          verdict: insufficient_data
+          note: n = 0/8; no bootstrap CI computable
+        achieved_rate_ratio:
+          delta: 0.001
+          ci: [0.001, 0.001]
+          verdict: parity
+          note: degenerate interval
+        carla_process_cpu_pct:
+          delta: 52.005
+          ci: [49.617, 52.871]
+          verdict: b_better
+          note: cause not established
+
+# ---------------------------------------------------------------------------
+# fig-cpu-reversal -- draft 3.2
+#
+# The same metric, the same pair of approaches, three measurement conditions.
+# The pre-registered rule attributes the P3 -> P4 change on the three metrics
+# that returned parity to the transport, NOT to the approach. It does not
+# license retro-attributing this row, and this row and those three cannot both
+# be an approach difference.
+# ---------------------------------------------------------------------------
+cpu_reversal:
+  source: report.md 3.2 (comparison table); P3 row p3-baseline.md 4.1/4.2; P4 rows p4-transport-sweep.md 2.5
+  margin: 10.0
+  unit: pp
+  rows:
+    - label: P3 static
+      sublabel: mismatched transports (A CycloneDDS vs B Fast-DDS)
+      delta: -12.873
+      ci: [-16.698, -11.129]
+      verdict: a_better
+    - label: P4 static
+      sublabel: shared transport family (A-vs-B-cyc)
+      delta: 52.005
+      ci: [49.617, 52.871]
+      verdict: b_better
+    - label: P4 closed-loop
+      sublabel: shared transport family (A-vs-B-cyc)
+      delta: 58.250
+      ci: [57.662, 59.161]
+      verdict: b_better
+
+# ---------------------------------------------------------------------------
+# fig-seam-ceiling -- draft 3.3
+#
+# Both twins publish an identical 921 908-byte cloud inside ONE CARLA process,
+# so the delta is paired and within-run. The registered reading of this delta is
+# an UPPER BOUND on the seam mechanism's share, not a point estimate.
+# ---------------------------------------------------------------------------
+seam:
+  source: report.md 3.1 (CAL-seam run table); regeneration report.md 9 command 4b
+  unit: ms
+  ceiling: 0.2988
+  median: 0.2784
+  runs:
+    - { run: run-001, seam: 0.7242, in_core: 0.4458, delta: 0.2784, n: 508 / 506 }
+    - { run: run-002, seam: 0.7464, in_core: 0.4593, delta: 0.2871, n: 502 / 499 }
+    - { run: run-003, seam: 0.7447, in_core: 0.4460, delta: 0.2988, n: 507 / 506 }
+    - { run: run-004, seam: 0.7316, in_core: 0.4924, delta: 0.2392, n: 501 / 496 }
+    - { run: run-005, seam: 0.7634, in_core: 0.4987, delta: 0.2647, n: 505 / 497 }
+
+# ---------------------------------------------------------------------------
+# fig-bridge-ndt -- draft 3.4
+#
+# A WITHIN-approach contrast on the python-bridge, not a cross-approach one.
+# No paired design exists between the two arms, so no per-run recovery factor
+# is computable; the pooled-median ratio is the statistic the pools support.
+# ---------------------------------------------------------------------------
+bridge_ndt:
+  source: report.md 4.2 (E0), 4.3 (E); pooled medians report.md 4.2
+  topic: /localization/pose_estimator/pose_with_covariance
+  pooled_ratio: ~45x
+  arms:
+    - key: e0
+      label: as shipped (cell E0)
+      sublabel: 5 pooled runs; 3 of the 4 excluded were the cell's worst
+      lo: 0.08
+      hi: 0.27
+      median: 0.11
+      biased: true
+    - key: e
+      label: both registered patches (cell E)
+      sublabel: 6 pooled runs; is_dense fix + harmonized rig and remap
+      lo: 1.91
+      hi: 7.52
+      median: 4.99
+      biased: false
+  references:
+    - { value: 11.0, label: 11 Hz — the bridge's own shipped target, stagger: 0 }
+    - { value: 20.0, label: 20 Hz — the campaign's comparability choice, stagger: 1 }
+
+# ---------------------------------------------------------------------------
+# fig-fork-delta -- draft 3.5
+#
+# A dated snapshot over moving refs, not a regenerable number (endpoint SHAs
+# are pinned in the report). The upstreaming ratios in the same section are
+# deliberately NOT charted: they are computed over different populations and
+# the report states that no ordering between them is supported.
+# ---------------------------------------------------------------------------
+fork_delta:
+  source: report.md 3.5; rubric.md criteria 1 and 3
+  rows:
+    - label: extension
+      sublabel: required CARLA fork + its own repo
+      segments: [{ value: 219, kind: fork }, { value: 25, kind: repo }]
+    - label: tier4-native
+      sublabel: the autoware-support branch
+      segments: [{ value: 305, kind: fork }]
+    - label: python-bridge
+      sublabel: in-tree in autoware_universe
+      segments: [{ value: 0, kind: fork }]
+  segment_labels:
+    fork: CARLA fork delta
+    repo: the approach's own repository
+
+# ---------------------------------------------------------------------------
+# fig-capability-catalog -- draft 4
+#
+# Code reading at pinned SHAs. No running stack and no runtime measurement
+# backs any verdict in it. A class is the REMAINING delta from the extension's
+# side, not the size of tier4's original change, and classes are per-entry,
+# never cumulative.
+# ---------------------------------------------------------------------------
+capability:
+  source: gap-catalog.md; summarized report.md 5
+  classes:
+    - { label: already exists in the extension, main: 11, side: 3 }
+    - { label: extension-side work, main: 4, side: 4 }
+    - { label: CARLA-core seam — sensor-side, main: 6, side: 15 }
+    - { label: CARLA-core seam — ROS-side, main: 7, side: 3 }
+  effort:
+    - { label: integration branch, S: 25, M: 3, L: 0 }
+    - { label: side branches, S: 13, M: 8, L: 4 }
+  unpriced: 3 # entries depending on artifacts that exist in neither tree
+  second_pass_scope: 14 # already-exists verdicts, the only ones re-argued
+
+# ---------------------------------------------------------------------------
+# fig-governance -- draft 5
+#
+# Top-2-author share is the one governance statistic measured the same way on
+# both native cells, and it does NOT separate them. The extension's separation
+# is on the review record, which is why the figure carries both panels.
+# ---------------------------------------------------------------------------
+governance:
+  source: report.md 3.5; rubric.md criteria 1 and 6
+  concentration:
+    - { label: "extension: required CARLA fork delta", top2: 113, total: 219 }
+    - { label: "extension: extension-only work", top2: 109, total: 121 }
+    - { label: "tier4-native: autoware-support delta", top2: 160, total: 305 }
+  review_record:
+    prs_opened: 30
+    merged: 24
+    open: 5
+    closed_unmerged: 1
+    external_reviewers: 0
+    self_reviews: 2
+    commits: 25
+    commit_authors: 1
+  maintainers:
+    extension: 1
+    python_bridge: 4
+  # NOT charted as a pair with the extension: the bridge's "9 human authors" is a
+  # 12-month window and the extension's "1" is its whole life, so the two are not
+  # like-for-like. The bridge's 9 appears in the draft's prose instead.
+  bridge_human_authors_12mo: 9
