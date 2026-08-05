@@ -15,6 +15,50 @@ together with the caveat `report.md` attaches to it, because several of the
 figures mean much less than they look like they mean. Where this draft and the
 report disagree, the report wins.
 
+## Executive summary
+
+Six findings, each carrying its section pointer and its load-bearing caveat.
+Where this summary and the sections below disagree, the sections win.
+
+- **Measured head-to-head, extension versus tier4-native: with the transport
+  family shared, the two stacks drive within the pre-registered margins on
+  four of five metrics** — a bracketed workload-envelope statement, not an
+  equivalence proof, whose effective evidentiary weight is closer to two
+  well-supported parity rows than four, and every row of which spans an
+  uncorrected Autoware image difference (§3.1). The seam the extension is
+  built around was measured directly: at most **+0.2988 ms** per
+  0.9 MB point-cloud publish — small and bounded, not zero (§3.3).
+- **The one beyond-margin separation goes against the extension**:
+  simulator-process CPU, on both arms, in tier4-native's favour, cause not
+  established — the largest thing the campaign found and did not resolve
+  (§3.2).
+- **The comparison against tier4-native's as-shipped transport is permanently
+  non-computable**: that configuration armed on 0 of 15 closed-loop runs. The
+  defect and the earlier phase's apparent extension advantages are both bound
+  to the as-shipped Fast-DDS configuration on this host, not established as
+  intrinsic to the approach (§3.1, §3.2).
+- **The python-bridge's registered limits are not established**: no ceiling
+  measurement exists, no cross-approach statistic was computed, and its one
+  closed-loop attempt (denominator 1) is unattributed. Its as-shipped NDT
+  starvation is a one-flag, two-sided seam defect, not an architecture
+  property — and it is the only approach of the three that runs against an
+  official CARLA release binary (§3.4).
+- **The separations that survive the caveats are structural, not measured**:
+  unmerged deltas of 219 (+25) versus 305 versus 0 commits (a dated snapshot),
+  an actively upstreamed fork against a frozen integration branch — while
+  tier4's own development continued on `main` — and the extension's weakest
+  property, one maintainer with zero external reviewers, which is the thing
+  this draft asks the working group to fix (§3.5, §5).
+- **Every tier4-native capability catalogued has an argued reproduction path
+  on the extension architecture**: 53 entries, 38 S / 11 M / 4 L, three of
+  them costed only as a lower bound because they depend on artifacts that
+  exist in neither tree; code reading at pinned SHAs, not runtime measurement
+  (§4).
+
+No composite score or ranking sits behind this summary, and none may be
+constructed from it; no equivalence statistic exists between the python-bridge
+and either native approach (§1, item 4).
+
 **About the charts.** The comparisons in §3–§5 are drawn rather than tabulated.
 Every value in them is transcribed — with the section that states it — into
 [`figures/figures.yaml`](figures/figures.yaml) and rendered by
