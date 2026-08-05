@@ -238,6 +238,16 @@ field-for-field.
 
 ### 5.0 How the capabilities were enumerated
 
+**Method, stated once for the whole document:** every verdict in §5 and §6 is
+argued from **code reading of both local trees**, exactly as §3's method
+prescribes. No entry is backed by a live `ros2 topic echo`, a running stack or a
+runtime measurement, and none should be quoted as if it were — where a claim
+would have needed one, the entry carries a scoped **needs prototype** marker
+naming the sub-claim (six such markers exist: §5.14, §5.20, §6.7, §6.9, §6.12,
+§6.17). The extension-side maturity that _is_ live-verified (the G0–G3 gate
+evidence in `docs/e2e-report.md`) is cited as evidence inside entries, but the
+reproduction-path and effort verdicts themselves are code-derived.
+
 Per the task's Step 1, four sources were read end to end, and every distinct
 user-facing capability found in any of them got an entry:
 
@@ -358,12 +368,27 @@ every such entry below, applied mechanically rather than argued case by case:
 > **ROS-side**, because a different integration approach could already reach
 > the datum today.
 
-The test is applied against the _client API surface at the pinned SHA_, and each
-entry names the specific API that decided it (for example
-`vehicle.get_light_state()` for §5.10, `LidarMeasurement.get_point_count()` for
-§5.14) or records that the grep found none (§5.9). Three consequences worth
-stating up front, because they flip labels a case-by-case reading would get
-wrong:
+The test is applied against the _client API surface at the pinned SHA_. **How
+much audit trail each entry carries differs between the two halves of this
+document, and the difference is stated rather than glossed:**
+
+- In **§6**, 17 of the 18 seam entries name the specific API that decided the
+  label or record that the grep found none; the exception is §6.8, which is an
+  increment on §6.7 and inherits its determination.
+- In **§5**, only 5 of the 13 seam entries do — §5.8
+  (`vehicle.get_control().steer` + `WheelPhysicsControl.max_steer_angle`), §5.9
+  (grep found no `GetVehicleCurrentGear` binding), §5.10
+  (`vehicle.get_light_state()`), §5.14 (`LidarMeasurement.channels` /
+  `.get_point_count()`) and §5.19 (`carla.IMUMeasurement`). The other eight
+  (§5.12, §5.13, §5.15, §5.16, §5.17, §5.21, §5.22, §5.24) argue the label from
+  the nature of the artifact — a UE asset, a new sensor class, a topic-name map,
+  a per-endpoint QoS profile, a physics component, a DDS participant, a TF gate,
+  a cook manifest — without naming a deciding API call. Those labels were
+  re-checked and stand; what they lack is the one-line citation the five above
+  carry, so read them as argued rather than as grep-backed.
+
+Three consequences worth stating up front, because they flip labels a
+case-by-case reading would get wrong:
 
 - An RPC is **not** automatically ROS-side. §5.17 ships an RPC pair, but the
   capability is the UE physics component behind it, which no client API can
@@ -388,6 +413,32 @@ wrong:
 | extension-side work                | 4     | §5.4, §5.18, §5.26, §5.27                                             |
 | CARLA-core seam work — sensor-side | 6     | §5.9, §5.12, §5.13, §5.17, §5.19, §5.24                               |
 | CARLA-core seam work — ROS-side    | 7     | §5.8, §5.10, §5.14, §5.15, §5.16, §5.21, §5.22                        |
+
+**What S / M / L mean here** (§3's taxonomy names the classes but does not
+define them; the scale below is the one both halves were classed on, stated
+explicitly so the 53 classes are comparable rather than impressionistic):
+
+- **S** — a bounded change with no new subsystem: a field, a flag, a mapping
+  table, a config line, a script, or an already-written change that only needs
+  adopting. S is the floor, so it also absorbs the entries whose remaining cost
+  is effectively **zero** (§5.14, §5.15, §5.16, §5.21, §5.22 — the fork already
+  carries the equivalent change; §6.11 — the defect is in a code path this
+  architecture does not use).
+- **M** — one new component with its own lifecycle: a UE actor/sensor class, a
+  tick or physics-thread callback, an RPC surface, a standalone node, or a
+  multi-hundred-line client program.
+- **L** — the in-tree code is the smaller half: the capability also needs
+  artifacts that exist in neither tree (a third-party SDK and toolchain, a
+  private repository, a kernel module, licensed art, an editor workflow).
+
+Two conventions the classes are read under. First, an effort class is the
+**remaining delta from this repository's side**, not the size of tier4's
+original change — where the sibling CARLA fork already carries an equivalent
+core change, or where a prerequisite entry supplies the bulk, the class reflects
+what is left and the entry names the dependency (§5.14, §5.16, §6.8 state this
+in so many words). Second, classes are **per-entry and not cumulative**: §6.5,
+§6.6 and §6.8 each presuppose §6.4 or §6.7, and stacking them is the reader's
+job, not the table's.
 
 Effort: 25 × S, 3 × M (§5.12, §5.13, §5.17). No entry carries an overall
 `needs prototype` verdict; two entries carry a **scoped** `needs prototype`
@@ -529,11 +580,16 @@ total.
   `extension/include/carla/autoware/geo/MgrsOffset.h` (extension). The extension
   publishes `/sensing/gnss/pose` and `/sensing/gnss/pose_with_covariance` with
   the same single-Y-negation handedness rule and a per-map offset, decimated to
-  1 Hz. Two differences worth recording: tier4's first topic carries a bare
+  1 Hz. Three differences worth recording: tier4's first topic carries a bare
   unstamped `geometry_msgs/Pose` where the extension publishes `PoseStamped`
-  (which is what Autoware's `/sensing/gnss/pose` expects); and tier4 takes the
+  (which is what Autoware's `/sensing/gnss/pose` expects); tier4 takes the
   pose from a spawned GNSS actor's world transform, where the extension
-  synthesizes it from the ego transform in the status view.
+  synthesizes it from the ego transform in the status view; and the covariance
+  differs — tier4 ships the all-zero matrix its own `// TODO: Add some
+covariance matrix` flags, where `GnssPosePublisher.cpp:85` writes a small
+  diagonal (0.1 m on x/y/z, 0.05 rad on roll/pitch/yaw, zero off-diagonal). An
+  all-zero covariance is the more consequential of the three for a consumer that
+  weights the pose, so it is recorded here rather than left implicit.
 
 ### 5.7 Steering-compensation lookup table
 
@@ -552,8 +608,11 @@ total.
   `extension/src/publishers/StatusPublishers.cpp` (extension). A `diff -u` of the
   two headers shows the table and the interpolation logic are **identical** —
   the only changes are the namespace (`carla::ros2` → `carla::autoware`), an
-  explicit `<tuple>` include, and added comments including a provenance note
-  citing this exact pinned SHA. The extension applies the inverse on the inbound
+  explicit `<tuple>` include, two `using` re-exports that lift
+  `GetSteeringInput` / `GetSteeringOutput` from the inner
+  `autoware_steering_compensation` namespace to `carla::autoware` scope for the
+  callers and tests, and added comments including a provenance note citing this
+  exact pinned SHA. The extension applies the inverse on the inbound
   path exactly as tier4 does; it does **not** apply the forward map on the
   outbound `SteeringReport` (see §5.8, where that value is a stub anyway).
 
@@ -608,7 +667,7 @@ total.
   (`ProcessDataFromStatusSensor` gear switch),
   `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Autoware/Sensors/VehicleStatusSensor.cpp:129`
   (`GetVehicleCurrentGear()`),
-  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Vehicle/CarlaWheeledVehicle.cpp:267-270`
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Vehicle/CarlaWheeledVehicle.cpp:276-278`
   (`return BaseMovementComponent->GetVehicleCurrentGear();`) (tier4);
   `extension/src/publishers/StatusPublishers.cpp`,
   `extension/src/ExtensionInit.cpp`,
@@ -668,7 +727,7 @@ total.
   loop, since neither implementation actuates the lights (§5.3), but it is a
   different quantity and is recorded as such.
 
-### 5.11 `sensor.other.vehicle_status`: a spawnable ego-status sensor
+### 5.11 Per-frame ego ground-truth status stream (tier4's `sensor.other.vehicle_status`)
 
 - What it does: a new UE `ASensor` subclass with its own actor definition
   (`sensor.other.vehicle_status`, one `speed_units` attribute), a
@@ -688,9 +747,12 @@ total.
   `LibCarla/source/carla/ros2/ROS2.cpp` (tier4);
   `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
   (`CARLA_ROS2_SENSOR_VEHICLE_STATUS`, `CarlaRos2VehicleStatusView`),
-  `extension/src/ExtensionInit.cpp` (extension). The _capability_ — a per-frame
-  ego ground-truth stream feeding the Autoware reports — is exactly the
-  extension's one registered observer, and the field sets overlap almost
+  `extension/src/ExtensionInit.cpp` (extension). **The verdict is scoped to the
+  capability this heading names, not to the sensor class:** what already exists
+  is the per-frame ego ground-truth stream feeding the Autoware reports, which
+  is exactly the extension's one registered observer
+  (`ExtensionInit.cpp` registers `CARLA_ROS2_SENSOR_VEHICLE_STATUS` and nothing
+  else), and the field sets overlap almost
   entirely. Both take velocities from the vehicle actor, not from the attach
   point, so there is no rear-axle-vs-origin discrepancy between them. Two things
   the extension does **not** reproduce, neither of which any current consumer in
@@ -960,7 +1022,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   `publishers/ImuMath.h` read in full. IMU data never crosses the C ABI in
   either stack — the sensor publishes natively — and this fix changes the
   measurement itself, so every consumer (including a bridge reading
-  `carla.IMUMeasurement`) sees it: sensor-side by the §5.0.2 rule, and core work
+  `carla.IMUMeasurement`) sees it: sensor-side by the §5.0.3 rule, and core work
   by construction. **Scope of the "complementary" claim:** tier4's accelerometer
   bootstrap and gravity sign were not found anywhere in the fork's IMU commit,
   so _those two changes specifically_ are complementary to the fork's work, not
@@ -1140,9 +1202,11 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   `runner/config/sensors_calibration.yaml`, `runner/__main__.py` (extension).
   The runner does the same job data-driven rather than hardcoded: it parses the
   two calibration YAMLs extracted from the Autoware container
-  (`base_link → sensor_kit_base_link` and `sensor_kit_base_link →` each of 15
-  sensor frames, including `velodyne_top_base_link`, `gnss_link`,
-  `tamagawa/imu_link` and the traffic-light cameras) and composes them in
+  (`base_link → sensor_kit_base_link` plus `base_link → velodyne_rear_base_link`
+  from `sensors_calibration.yaml`, and `sensor_kit_base_link →` each of **13**
+  sensor frames from `sensor_kit_calibration.yaml` — `camera0`–`camera5`, the
+  two traffic-light cameras, `velodyne_top/left/right_base_link`, `gnss_link`
+  and `tamagawa/imu_link`) and composes them in
   `kit.sensor_in_base_link`. LiDAR geometry is parameterized on the command line
   (`--lidar-channels`, `--lidar-pps`, `--lidar-rotation-hz`, `--lidar-range`)
   rather than fixed to VLP16. One documented gap on the extension side:
@@ -1270,8 +1334,9 @@ diff is silently unaccounted for.
 
 Every entry below cites a pinned SHA from §1.1 and follows §3's entry template
 field-for-field, with the seam sub-label decided by §5.0.3's rule applied
-mechanically (each seam entry names the client API that decided it, or records
-that the grep found none). Where a side branch extends or fixes a capability
+mechanically (17 of the 18 seam entries below name the client API that decided
+it or record that the grep found none; §6.8 is the exception and inherits §6.7's
+determination — see §5.0.3's audit-trail note). Where a side branch extends or fixes a capability
 already cataloged for `tier4/autoware-support`, the entry cross-references the
 §5 entry rather than restating it.
 
@@ -1348,15 +1413,23 @@ against the repository's actual default branch, `git rev-list --count
 tier4/main..tier4/<branch>` is **0** for `feature/lanelet2-traffic-light`,
 `feature/lidar-udp-raw-packet`, `feature/pandar128e4x-highres-udp`,
 `feature/rgl-on-ue5-dev-autoware-integration`, `feature/vehicle-plot`,
-`feature/vehicle-simulation` and `feature/vehicle-sim-package` — every one of
+`feature/vehicle-simulation`, `feature/vehicle-sim-package`,
+`feature/ue5-dev-cyclonedds-support` and `feature/ue5-dev-autoware-integration`
+— every one of
 them is already **merged into `tier4/main`** (whose tip is byte-identical to
-`feature/vehicle-sim-package`'s, §1.3). Only these are genuinely unmerged
+`feature/vehicle-sim-package`'s, §1.3). The last two are worth calling out
+separately: both are †-marked in §1.1 because their ancestry against
+`tier4/autoware-support` could not be resolved from the shallow clone, yet
+`git rev-list --count tier4/main..tier4/feature/ue5-dev-{cyclonedds-support,autoware-integration}`
+is **0** for each, so their merged status is established even though their
+"commits ahead" figure is not. Only these are genuinely unmerged
 anywhere: `experiment/cyclonedds-support` (263 ahead of `main`),
 `feature/agnocast-integration` (220), `feature/autoware-v2i-publisher` (8),
 `feature/rgl-distance-culling-multisensor` (7), `fix/rgl-ring-id-0based` (1),
 `fix/largemap-editor-rebase` (1), `fix/traffic-light-freeze` (1),
 `fix/traffic-light-controller-null-check` (1), `fix/carlaserver-enum-typo` (1),
-and the †-marked branches whose ancestry cannot be verified at all. Each entry's
+and the _remaining_ †-marked branches whose ancestry cannot be verified at all
+(the two named above excepted — they are settled). Each entry's
 **Maturity evidence** field states which of the two it is, because "on a side
 branch" and "shipped on the default branch" are very different maturity claims
 to put in front of the branches' own authors.
@@ -1408,7 +1481,10 @@ capabilities are largely ROS-layer, the side branches' largely are not.
   (`add default QoS values to TopicConfig to fix CycloneDDS writer creation`).
   A second, later implementation of the same idea for the `ue5-dev` lineage
   exists on `tier4/feature/ue5-dev-cyclonedds-support` @ `011032e97` and is an
-  ancestor of `tier4/feature/ue5-dev-autoware-integration` @ `16a71014`.
+  ancestor of `tier4/feature/ue5-dev-autoware-integration` @ `16a71014`. Those
+  two are **merged into `tier4/main`** (0 ahead of it, §6.0.2), so the
+  experimental framing applies to `experiment/cyclonedds-support` only — the
+  `ue5-dev`-lineage CycloneDDS work is shipped on tier4's default branch.
 - Reproduction path: already-exists
 - Effort class: S
 - Verified by: `LibCarla/source/carla/ros2/dds/DDSPublisherImpl.h`,
@@ -1577,7 +1653,7 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
 
 ### 6.5 RGL real-sensor model presets and scan geometry
 
-- What it does: `PythonAPI/rgl/lidar_models/` is a preset library for 15 real
+- What it does: `PythonAPI/rgl/lidar_models/` is a preset library for 13 real
   LiDAR products — `VelodyneVLP16/VLP32C/VLS128`, `HesaiPandar40P`,
   `HesaiPandarQT`, `HesaiPandarXT32`, `HesaiQT128C2X`, `HesaiPandar128E4X` (+ a
   high-resolution variant), `HesaiAT128E2X`, `OusterOS1_64`, `SickMRS6000`,
@@ -1600,8 +1676,10 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
   `5642dfdd2fb5035f0435f4ce6a50d477800b6248` = `tier4/main`'s tip, i.e. shipped.
 - Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
 - Effort class: M
-- Verified by: `PythonAPI/rgl/lidar_models/__init__.py` and the 15 model
-  modules, `PythonAPI/rgl/tests/test_regression.py`,
+- Verified by: `PythonAPI/rgl/lidar_models/__init__.py` and the 13 model
+  modules (a `git ls-tree -r` of that directory at the pinned tip returns 14
+  files, one of which is `__init__.py`),
+  `PythonAPI/rgl/tests/test_regression.py`,
   `Unreal/CarlaUnreal/Plugins/CarlaRGL/Source/CarlaRGL/RGLBackendImpl.cpp`
   (the ray-emission order and `SweepCenterOffset` handling),
   `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/LidarDescription.h`
@@ -1665,7 +1743,7 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
   PandarQT, XT32, QT128 and Pandar128 — so a production ROS 2 driver
   (`tier4/nebula`) consumes the simulated stream unchanged, with no CARLA-aware
   code anywhere in the pipeline. tier4's own tree carries the CARLA-side half:
-  nine `rgl_udp_*` blueprint attributes (`enabled`, `source_ip`, `dest_ip`,
+  seven `rgl_udp_*` blueprint attributes (`enabled`, `source_ip`, `dest_ip`,
   `dest_port`, `hesai_enable_udp_sequence`, `hesai_blockage_detection`,
   `hesai_pandar_driver_compat`) plus a `horizontal_start_angle` sweep-window
   offset on `LidarDescription`, a `RGLUdpExtensionShim.h` that `dlsym`s
@@ -1816,8 +1894,12 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
   `turn_indicators_cmd` / `hazard_lights_cmd` bytes, and notes that the echo "is
   arguably the more useful signal for a closed loop, since neither
   implementation actuates the lights". This branch adopts exactly that. Two
-  small deltas remain, neither requiring core work: tier4 echoes only when the
-  actual-state path is unavailable on this lineage, and it introduces
+  small deltas remain, neither requiring core work: tier4's precedence runs the
+  other way round from a fallback — it echoes the command **whenever one has
+  been received** (the command switch runs first and sets a
+  `..._set_from_command` flag; the vehicle-light-state decode is reached only
+  when that flag is unset, i.e. before the first command, exactly as the commit
+  message says) — and it introduces
   `PeekMessage()` to avoid stealing the control loop's handshake, where the
   extension caches each command byte atomically for the same reason. Read this
   entry as evidence that the design question is settled the same way on both
@@ -1825,7 +1907,7 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
 
 ### 6.11 Acceleration-control steering dropout fix
 
-- What it does: one line plus a five-line comment in
+- What it does: one line of code plus a four-line explanatory comment in
   `ACarlaWheeledVehicle::ApplyVehicleAccelerationControl` — also assign
   `DesiredSteer = Steer`, because `FlushVehicleControl` derives the applied
   steer from `DesiredSteer` and overwrites `ControlToApply.Steer` with it, so
@@ -2079,7 +2161,8 @@ FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active
   as Autoware expects, and `ROS2.cpp`'s per-camera-type `TopicConfig` sets
   `cam_config.suffix = "/image_raw"` at all seven construction sites.
 - Maturity evidence: branch `tier4/feature/ue5-dev-autoware-integration` @
-  `16a71014425f6751dc5b21229402c6038e6244a9`, commit `680d0d764` — not
+  `16a71014425f6751dc5b21229402c6038e6244a9`, commit `680d0d764` — **merged
+  into `tier4/main`** (0 ahead, §6.0.2), not
   spec-named as a branch, but the design spec's C3 paragraph names "camera
   topic-suffix/QoS override" as one of its pre-classified examples. **A
   correction to the spec's framing:** the capability is not side-branch work at
@@ -2366,9 +2449,12 @@ UE5`). Two things temper the maturity claim, both from the files themselves:
   `RglSetup.sh`, and the branch log of
   `tier4/feature/rgl-on-ue5-dev-autoware-integration` (tier4);
   `docs/prerequisites.md`, `docs/running-e2e.md`, `scripts/e2e/run_e2e.sh`
-  (extension). No CARLA source is involved — these are shell/CMake build
-  utilities — so the verdict is extension-side by the §5.0.2 rule even though
-  the files would live in the CARLA fork rather than in this repository.
+  (extension). No CARLA **C++** source is involved — the artifacts are shell and
+  CMake build utilities (`RglSetup.sh`, `Util/BuildDependencyShare`,
+  `InstallPrerequisites.sh`, `Unreal/Package/Compress.cmake`), which do live in
+  the CARLA repository but change nothing the simulator compiles or runs — so
+  the verdict is extension-side by the §5.0.2 rule even though
+  the files would land in the CARLA fork rather than in this repository.
   Recorded because build-time cost is a real adoption factor for a
   two-repository build path (§5.28), not because the extension architecture
   interacts with it.
@@ -2426,7 +2512,11 @@ UE5`). Two things temper the maturity claim, both from the files themselves:
   `world.get_random_location_from_navigation()`
   (`PythonAPI/carla/src/World.cpp:310`), samples the mesh but does not expose
   it. Like §6.24, its bearing on this comparison is small and is stated
-  as such: no gate in this repository spawns pedestrians.
+  as such: no gate in this repository spawns pedestrians. **The S is a lower
+  bound**, on the same footing as §6.3's and §6.7's: it is inferred from a
+  four-file inventory of two small classes, not from reading them, so it can
+  only move upward if the sources turn out to carry more than their names
+  suggest.
 
 ### 6.26 Coverage map
 
@@ -2434,31 +2524,138 @@ Every inventoried side branch, and the entry (or non-entry) that accounts for
 it. Branches marked _not a capability_ are listed in the same table so nothing
 in §1.1's candidate pool is silently unaccounted for.
 
-| Branch (from §1.1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tier4/experiment/cyclonedds-support`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | §6.1, §6.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `tier4/feature/ue5-dev-cyclonedds-support`, `tier4/feature/ue5-dev-autoware-integration`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §6.1 (evidence), §6.17                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `tier4/feature/agnocast-integration`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | §6.3                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `tier4/feature/rgl-on-ue5-dev-autoware-integration`, `tier4/feature/rgl-support`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | §6.4 (the latter as the superseded lineage), §6.23                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `tier4/feature/rgl-distance-culling-multisensor`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | §6.6                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `tier4/fix/rgl-ring-id-0based`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | §6.5                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `tier4/feature/lidar-udp-raw-packet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | §6.5, §6.7, §6.9, §6.10, §6.11 (this branch carries five distinct capabilities, only one named by the spec)                                                                                                                                                                                                                                                                                                                                                               |
-| `tier4/feature/pandar128e4x-highres-udp`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §6.8                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `tier4/feature/lanelet2-traffic-light`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | §6.12, §6.13, §6.14                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `tier4/feature/autoware-v2i-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | §6.15                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/fix/traffic-light-controller-null-check`, `tier4/fix/traffic-light-freeze`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | §6.16                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/feature/ros2-async-publish-queue`, `tier4/feature/ros2-async-camera-publish`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | §6.18                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/feature/sensor-timing-instrumentation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | §6.19                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/feature/vehicle-simulation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.20, §6.21                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `tier4/feature/vehicle-plot`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | §6.21                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/feature/vehicle-sim-package`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | §6.5 (its own delta above `pandar128e4x-highres-udp` is the azimuth-major ray-order fix and the Hesai preset re-sync); otherwise identical to `tier4/main` (§1.3)                                                                                                                                                                                                                                                                                                         |
-| `tier4/feature/docker-dev-env`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | §6.22                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/feature/build-dependency-share-tool`, `tier4/feature/pigz-zstd-compression`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.23                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/fix/largemap-editor-rebase`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.24                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/test/navmesh-scanner`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | §6.25                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/feature/override-steering-curve` (spec: steering-lut)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | _no §6 entry_ — already merged into `tier4/autoware-support` (0 ahead, ancestry verified in §2) and cataloged as §5.7, where a `diff -u` shows the extension's vendored copy is **identical** to tier4's apart from the namespace, an added `<tuple>` include and a provenance comment. Verified again here by file presence: `extension/include/carla/autoware/control/AutowareSteeringCompensation.h` exists on this branch. The spec's "already vendored" is confirmed |
-| `tier4/feature/gnss-pose-publish`, `tier4/feature/pose-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | _no §6 entry_ — both already merged into the baseline (0 ahead) and cataloged as §5.6                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tier4/reference/pose-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | _not a capability_ — earlier unmerged draft superseded by `feature/pose-publisher` (§2)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `tier4/fix/carlaserver-enum-typo`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | _not a capability_ — a 4-line `ECarlaServerResponse` spelling fix that unbreaks the build on its lineage                                                                                                                                                                                                                                                                                                                                                                  |
-| `tier4/shinjuku-test-map`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | _not a capability_ — tip subject is `Remove Autoware Game Mode debug cast`; a `git ls-tree` of the tip filtered for `shinjuku` returns 0 paths, so nothing map-specific is on it                                                                                                                                                                                                                                                                                          |
-| `tier4/main`, `tier4/ue5-dev`, `tier4/sync/upstream-ue5-dev-2026042*`, `tier4/patch/*`, `tier4/wc/add-cmake-preset`, `tier4/refactor/qos-settings`, `tier4/feature/{autoware-demo-ros-configuration,autoware-plugin,autoware-publishers,autoware-subscriber,autoware-subscribers,publish-report-data,ros-domain-id,time-scale,topic-name,vehicle-topic-support}`, `tier4/fix/{autoware-publishers-frame-id,dark-camera-sensor,gnss-null-check,imu-delta-time,incorrect-steering-angle-normalization,nishishinjuku-map-cook-path,ros-types,status-publish-stamp,steering,transform-names}` | _not side-branch capabilities_ — every one is either 0 commits ahead of `tier4/autoware-support` (i.e. already merged and therefore covered by §5), a lineage/sync/baseline pointer, or a superseded precursor of a merged capability. §5.15 (`ros_topic_name`), §5.16 (QoS), §5.21 (`ROS_DOMAIN_ID`), §5.19/§5.20 (IMU) and §5.8 (steering) are the merged forms of the like-named branches                                                                              |
+| Branch (from §1.1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tier4/experiment/cyclonedds-support`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | §6.1, §6.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `tier4/feature/ue5-dev-cyclonedds-support`, `tier4/feature/ue5-dev-autoware-integration`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | §6.1 (evidence), §6.17                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `tier4/feature/agnocast-integration`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | §6.3                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/feature/rgl-on-ue5-dev-autoware-integration`, `tier4/feature/rgl-support`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | §6.4 (the latter as the superseded lineage), §6.23                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tier4/feature/rgl-distance-culling-multisensor`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | §6.6                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/fix/rgl-ring-id-0based`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | §6.5                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/feature/lidar-udp-raw-packet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | §6.5, §6.7, §6.9, §6.10, §6.11 (this branch carries five distinct capabilities, only one named by the spec)                                                                                                                                                                                                                                                                                                                                                               |
+| `tier4/feature/pandar128e4x-highres-udp`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | §6.8                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/feature/lanelet2-traffic-light`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | §6.12, §6.13, §6.14                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tier4/feature/autoware-v2i-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | §6.15                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/fix/traffic-light-controller-null-check`, `tier4/fix/traffic-light-freeze`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | §6.16                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/ros2-async-publish-queue`, `tier4/feature/ros2-async-camera-publish`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §6.18                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/sensor-timing-instrumentation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.19                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/vehicle-simulation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | §6.20, §6.21                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `tier4/feature/vehicle-plot`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | §6.21                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/vehicle-sim-package`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §6.5 (its own delta above `pandar128e4x-highres-udp` is the azimuth-major ray-order fix and the Hesai preset re-sync); otherwise identical to `tier4/main` (§1.3)                                                                                                                                                                                                                                                                                                         |
+| `tier4/feature/docker-dev-env`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | §6.22                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/build-dependency-share-tool`, `tier4/feature/pigz-zstd-compression`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | §6.23                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/fix/largemap-editor-rebase`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | §6.24                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/test/navmesh-scanner`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | §6.25                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/override-steering-curve` (spec: steering-lut)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | _no §6 entry_ — already merged into `tier4/autoware-support` (0 ahead, ancestry verified in §2) and cataloged as §5.7, where a `diff -u` shows the extension's vendored copy is **identical** to tier4's apart from the namespace, an added `<tuple>` include and a provenance comment. Verified again here by file presence: `extension/include/carla/autoware/control/AutowareSteeringCompensation.h` exists on this branch. The spec's "already vendored" is confirmed |
+| `tier4/feature/gnss-pose-publish`, `tier4/feature/pose-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | _no §6 entry_ — both already merged into the baseline (0 ahead) and cataloged as §5.6                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/reference/pose-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | _not a capability_ — earlier unmerged draft superseded by `feature/pose-publisher` (§2)                                                                                                                                                                                                                                                                                                                                                                                   |
+| `tier4/fix/carlaserver-enum-typo`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | _not a capability_ — a 4-line `ECarlaServerResponse` spelling fix that unbreaks the build on its lineage                                                                                                                                                                                                                                                                                                                                                                  |
+| `tier4/shinjuku-test-map`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | _not a capability_ — tip subject is `Remove Autoware Game Mode debug cast`; a `git ls-tree` of the tip filtered for `shinjuku` returns 0 paths, so nothing map-specific is on it                                                                                                                                                                                                                                                                                          |
+| `tier4/main`, `tier4/ue5-dev`, `tier4/sync/*` (both `upstream-ue5-dev-20260421` and `upstream-ue5-dev-20260522`), `tier4/patch/*`, `tier4/wc/add-cmake-preset`, `tier4/refactor/qos-settings`, `tier4/feature/{autoware-demo-ros-configuration,autoware-plugin,autoware-publishers,autoware-subscriber,autoware-subscribers,publish-report-data,ros-domain-id,time-scale,topic-name,vehicle-topic-support}`, `tier4/fix/{autoware-publishers-frame-id,dark-camera-sensor,gnss-null-check,imu-delta-time,incorrect-steering-angle-normalization,nishishinjuku-map-cook-path,ros-types,status-publish-stamp,steering,transform-names}` | _not side-branch capabilities_ — every one is either 0 commits ahead of `tier4/autoware-support` (i.e. already merged and therefore covered by §5), a lineage/sync/baseline pointer, or a superseded precursor of a merged capability. §5.15 (`ros_topic_name`), §5.16 (QoS), §5.21 (`ROS_DOMAIN_ID`), §5.19/§5.20 (IMU) and §5.8 (steering) are the merged forms of the like-named branches                                                                              |
+
+## 7. Completeness and effort-class audit
+
+This section is the record of the catalog's own quality gate, run over §5 and §6
+after both were written. It exists because this repository's convention is that
+a gate report states what was checked, what changed and what stood — an audit
+whose only output is "looks fine" is not evidence.
+
+### 7.1 Coverage
+
+- **Branch pool.** All **65** `tier4/*` branches in §1.1 are accounted for:
+  `tier4/autoware-support` is the baseline §5 catalogs in full, and §6.26
+  disposes of the other **64** — **28** through a capability entry (or an
+  explicit cross-reference to the §5 entry that already covers it) and **36**
+  through a _not a capability_ / _not side-branch capabilities_ row. Checked
+  mechanically (every §1.1 branch name matched against §6.26's rows, with the
+  brace and glob forms expanded), not by eye. **One gap was found and fixed:**
+  §6.26's `tier4/sync/upstream-ue5-dev-2026042*` glob silently excluded
+  `tier4/sync/upstream-ue5-dev-20260522`, the one branch in the pool that no row
+  matched; the row now reads `tier4/sync/*` and names both branches.
+- **Entry fields.** All **53** capability entries (§5.1–§5.28, §6.1–§6.25) carry
+  all five template fields. Zero omissions. The two coverage maps (§5.29, §6.26)
+  are tables, not entries, and are excluded by construction.
+- **Reproduction paths.** No entry argues a path with a bare assertion of
+  possibility: a grep of the whole document for _possible_, _feasible_,
+  _straightforward_, _trivial_, _in principle_, _doable_, _easily_ and
+  _presumably_ returns **no hit**. Every path names the mechanism — a specific
+  ABI primitive, a runner module, a named file to change, or the named artifact
+  that is missing.
+- **Tallies.** §5.0.4's and §6.0.3's counts were recomputed from the entries
+  themselves and match exactly, including the combined 53 / 14 / 8 / 21 / 10
+  figures and the "18 of 25 versus 13 of 28" seam skew §6.0.3 draws its
+  conclusion from.
+
+### 7.2 Adversarial pass over the `already-exists` verdicts
+
+An `already-exists` row read by tier4's authors costs more when wrong than an
+`extension-side work, M` row does, so each of the 14 was re-argued against the
+**extension** files it cites — the side that carries the overclaim risk — rather
+than against the tier4 side alone.
+
+| Entry                          | Re-checked against                                                                                                      | Outcome                                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §5.1 six status topics         | `StatusPublishers.cpp:47-77` (`StatusQos` = 0/0/1), `:79-133` (one shared stamp, `base_link` on `VelocityReport`)       | **stands** — topic names, types, QoS triple and stamping all confirmed present; tier4's own `AutowarePublisher.cpp:128-134` is RELIABLE / VOLATILE / KEEP_LAST-1, i.e. genuinely identical                                                                                                         |
+| §5.2 control subscriber        | `ControlSubscribers.cpp:42-61`, `:73-104`                                                                               | **stands** — same topic + type, `apply_ackermann_control`; both stated deviations confirmed (BEST_EFFORT `qos{1,0,1}`; speed + acceleration + jerk all forwarded)                                                                                                                                  |
+| §5.3 three command subscribers | `ControlSubscribers.cpp:112-143`, `ExtensionInit.cpp:92-96`                                                             | **stands** — all three subscribed, each cached in a relaxed atomic, none actuated, all three threaded into the status reports                                                                                                                                                                      |
+| §5.5 engage                    | `EngageStateMachine.cpp:49`, `.h:56-79`, `ExtensionInit.cpp:93`                                                         | **stands** — `/autoware/engage` confirmed as the subscribed topic, and `Mode()` genuinely drives `ControlModeReport.mode`                                                                                                                                                                          |
+| §5.6 GNSS pose                 | `GnssPosePublisher.cpp:30-35`, `:38-92`, `MgrsOffset.h:105-143`                                                         | **stands, one difference added** — topics, `PoseStamped`, 1 Hz decimation and the Y-flip rule all confirmed; the entry had recorded two differences from tier4 and missed a third (tier4's all-zero covariance versus the extension's small diagonal), now recorded                                |
+| §5.7 steering LUT              | `diff -u` of tier4's header against `control/AutowareSteeringCompensation.h`                                            | **stands, delta list completed** — table and interpolation byte-identical; the diff also adds two `using` re-exports the entry had not listed, now listed                                                                                                                                          |
+| §5.11 ego status stream        | `ExtensionInit.cpp:171-172`, `CarlaRos2Extension.h:37-72`                                                               | **stands, retitled** — the capability (a per-frame ego ground-truth stream) is reproduced, but the old heading named tier4's spawnable `sensor.other.vehicle_status`, which the body says is _not_ reproduced. Heading and verdict now claim the same thing                                        |
+| §5.20 IMU handedness           | fork `CarlaIMUPublisher.cpp` / `ImuMath.h`; ABI header (no IMU path in the `.so`)                                       | **stands** — scoped `needs prototype` on the gyroscope axis map already present and correctly bounded                                                                                                                                                                                              |
+| §5.23 `get_ego_spawn_points`   | `runner/__main__.py:296`                                                                                                | **stands** — the cited line is exactly `select_spawn_point(world.get_map().get_spawn_points(), args.spawn_index)`                                                                                                                                                                                  |
+| §5.25 sensor-kit spawn         | `runner/config/sensor_kit_calibration.yaml`, `sensors_calibration.yaml`, `runner/kit.py:147`, `runner/spawn.py:401-407` | **stands, count corrected** — data-driven composition and the off-centreline camera caveat confirmed; the kit file holds **13** sensor frames, not 15                                                                                                                                              |
+| §5.28 build/docs surface       | `README.md`, `docs/{prerequisites,running-e2e,architecture,nishishinjuku-map,e2e-report}.md`, `docker/compose.yaml`     | **stands** — every cited file exists on this branch                                                                                                                                                                                                                                                |
+| §6.1 CycloneDDS backend        | `docs/running-e2e.md:52`, `docs/g0-report.md:23`, `docs/e2e-report.md:58`, `docs/prerequisites.md:12`                   | **stands, maturity sharpened** — the `--rmw=cyclonedds` selection and the `rmw_cyclonedds_cpp` gate environment are all where the entry says; added that the two `ue5-dev`-lineage CycloneDDS branches are merged on `tier4/main`, so "experiment" applies only to `experiment/cyclonedds-support` |
+| §6.2 CycloneDDS generator      | `CarlaRos2Extension.h:104-107` (raw CDR incl. encapsulation header)                                                     | **stands** — the "designs the need away" framing is exactly what the ABI comment supports; the entry already refuses to claim the tool exists                                                                                                                                                      |
+| §6.10 turn/hazard echo         | `StatusPublishers.cpp:122-131`, `ControlSubscribers.cpp:122-143`; tier4 commit `f45eb4e3d`                              | **stands, ordering corrected** — the extension side is as described; tier4's precedence was stated backwards (it echoes the command whenever one has arrived and falls back to light state only before the first), now fixed. Verdict unaffected                                                   |
+
+**No `already-exists` verdict was overturned.** Four entries gained a missing
+fact (§5.6, §5.7, §5.25, §6.10), one was retitled to match its own body (§5.11),
+and one gained a maturity qualifier (§6.1).
+
+### 7.3 Effort-class review
+
+The classes were reviewed for internal consistency across comparable entries,
+not re-estimated from scratch. Three findings, all resolved by making an implicit
+convention explicit rather than by moving entries between classes:
+
+- **The scale was never defined.** §3's taxonomy names S / M / L; nothing said
+  what they meant, so 53 classes were being read against an unstated ruler.
+  §5.0.4 now defines them, and states the two conventions the entries were
+  actually written under: a class is the **remaining delta from this
+  repository's side** (which is why §5.14, §5.15, §5.16, §5.21 and §5.22 are S —
+  the sibling fork already carries the equivalent core change), and classes are
+  **per-entry, not cumulative** (§6.5, §6.6 and §6.8 each presuppose §6.4 or
+  §6.7 and say so).
+- **Consistency across the two halves holds where it matters.** The comparisons
+  most likely to embarrass the document all agree: a new spawnable sensor class
+  is M on both sides (§5.13 GNSS blueprint, §6.9 substep IMU — and §5.11 costs
+  its own unreproduced spawnable half at "M, not S"); a UE vehicle component
+  plus RPC surface is M on both sides (§5.17, §6.20); and all four L entries
+  (§6.3, §6.4, §6.7, §6.12) are L for the same stated reason — the in-tree code
+  is the smaller half and the capability needs artifacts that exist in neither
+  tree. No entry was re-classed, because no entry's own evidence contradicted
+  its class.
+- **S absorbs a wide range, including zero.** §6.11's remaining cost is stated
+  as literally zero and it is still S, because S is the floor. That is now said
+  in §5.0.4 rather than left for a reader to notice. One class was tightened:
+  §6.25's S rested on a four-file `git ls-tree` inventory with the sources
+  unread, so it is now marked a **lower bound**, matching how §6.3 and §6.7
+  already qualify theirs.
+
+One accounting asymmetry is recorded rather than resolved, because both sides
+disclose their basis and neither is wrong on its own terms: **§5.24** classes the
+Nishi-Shinjuku map at S for the packaging manifest line while stating that the
+map content is untracked and therefore unassessable, whereas **§6.12** classes
+the traffic-light toolchain at L partly _because_ it costs in the binary assets.
+A reader comparing the two should know they are measured on different bases.
+
+### 7.4 Method limits carried forward
+
+Nothing in this audit re-opens the limits §1.2, §1.3, §5.0.1 and §6.0.1 already
+disclose (shallow-clone merge-base failures, the `autoware-support`-versus-`main`
+baseline, the branch-point substitute for `upstream/ue5-dev`, the per-branch
+diff mechanics). They stand as written. The audit's own limit is the same one
+§5.0 now states for the whole document: this is code reading on both trees, and
+the six scoped `needs prototype` markers are where that method reaches its edge.
