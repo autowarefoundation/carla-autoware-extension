@@ -395,6 +395,12 @@ marker on a named sub-claim while their overall verdict stands — §5.14 (wheth
 the two `PointXYZIRCAEDT` implementations agree field-for-field) and §5.20
 (whether the two IMU gyroscope axis maps agree).
 
+These counts cover **`tier4/autoware-support` only**. The side-branch entries
+are tallied separately in §6.0.3, which also carries the combined whole-catalog
+totals (53 entries: 14 already-exists, 8 extension-side work, 21
+seam/sensor-side, 10 seam/ROS-side). Do not read the 28 above as the document's
+total.
+
 ---
 
 ### 5.1 Autoware vehicle-status report publishers (six `/vehicle/status/*` topics)
@@ -1259,3 +1265,1159 @@ diff is silently unaccounted for.
 | `Sensor/SceneCaptureSensor.{h,cpp}` (header +60/−136 with 28 `UFUNCTION` declarations removed and 0 added; `.cpp` +74/−288)                                                              | _not a capability_ — measured as a net **removal** of Blueprint-callable post-process accessors relative to the branch point, with no replacement added on this branch. Whether that is deliberate scoping or a lost hunk from one of the `patch/autoware-support-sync-upstream-*` merges was not determined; recorded as an unexplained delta rather than guessed at |
 | `.gitignore` (Rider/Perforce entries)                                                                                                                                                    | _not a capability_                                                                                                                                                                                                                                                                                                                                                    |
 | `ros2/listeners/SubscriberListenerBase.*`, `ROS2CallbackData.h` variant widening                                                                                                         | _internal plumbing for_ §5.2–§5.5, §5.17                                                                                                                                                                                                                                                                                                                              |
+
+## 6. Capability catalog: tier4 side branches
+
+Every entry below cites a pinned SHA from §1.1 and follows §3's entry template
+field-for-field, with the seam sub-label decided by §5.0.3's rule applied
+mechanically (each seam entry names the client API that decided it, or records
+that the grep found none). Where a side branch extends or fixes a capability
+already cataloged for `tier4/autoware-support`, the entry cross-references the
+§5 entry rather than restating it.
+
+### 6.0 How the side branches were read
+
+Per this task's Step 1 the intended command is
+`git diff tier4/autoware-support...tier4/<branch> --stat`. It was usable
+unchanged for only 2 of the branches below. §6.0.1 records, per branch, what was
+actually run and why — a fallback is never silently substituted.
+
+#### 6.0.1 Per-branch diff mechanics
+
+Two distinct failure modes made the three-dot form unusable:
+
+- **Shallow-clone merge-base failure (§1.2).** For the branches marked † in
+  §1.1, `git merge-base` resolves nothing and the branch tip's own parent is not
+  in the clone (`git rev-parse <tip>^` → `unknown revision`), so neither
+  `A...B` nor `<tip>^..<tip>` exists. Fallback: two-dot `git diff
+tier4/autoware-support <tip>` plus `git ls-tree` file inventories.
+- **Wrong-baseline three-dot (§1.3).** For every branch on the `tier4/main`
+  lineage, `git merge-base tier4/autoware-support tier4/<branch>` is
+  `a40939fd5f3f5f41c1d43e6a862bdc2b98752e29` — i.e. `tier4/ue5-dev`, the branch
+  point, not a shared trunk. The three-dot diff therefore _succeeds_ and returns
+  the entire 136–349-commit `ue5-dev`→branch delta, of which the branch's own
+  change is a small fraction. Fallback: diff from the branch's own fork point in
+  that lineage — `git merge-base tier4/main tier4/<branch>` where the branch is
+  ahead of `main`, otherwise the commit below the branch's first topic-scoped
+  commit in `git log --oneline a40939fd..tier4/<branch>`.
+
+| Branch                                              | Mechanic used                                                                              | Isolated delta                           | Limit                                                                                                                                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tier4/experiment/cyclonedds-support`               | **three-dot as instructed** (merge-base `27583999d`)                                       | 447 files, +17 820 / −7 159              | none                                                                                                                                                                                      |
+| `tier4/feature/agnocast-integration`                | **three-dot as instructed** (merge-base `27583999d`)                                       | 14 files, +792                           | none                                                                                                                                                                                      |
+| `tier4/feature/ros2-async-publish-queue`            | two-dot vs `tier4/autoware-support` (†: no merge base, parent absent)                      | 9 files, +344 / −315                     | the `README.md` half of that stat is lineage drift, not the capability                                                                                                                    |
+| `tier4/feature/ros2-async-camera-publish`           | two-dot vs `tier4/autoware-support` (†)                                                    | 10 files, +384 / −346                    | as above                                                                                                                                                                                  |
+| `tier4/feature/sensor-timing-instrumentation`       | two-dot vs `tier4/autoware-support` (†)                                                    | 4 files, +189 / −296                     | as above                                                                                                                                                                                  |
+| `tier4/feature/docker-dev-env`                      | two-dot vs `tier4/autoware-support` (†) + `git ls-tree -- docker` + `git show <tip>`       | `docker/` only: 5 files, +307            | the two-dot's 185-file / −19 660 figure is the whole Autoware stack being _absent_ (this branch sits on upstream `ue5-dev`), not a change                                                 |
+| `tier4/feature/lanelet2-traffic-light`              | two-dot from fork point `583f9238e` (below the first `lanelet2_traffic_light` commit)      | 127 files, +7 021 (35 of them `.uasset`) | binary assets counted, not inspected                                                                                                                                                      |
+| `tier4/feature/autoware-v2i-publisher`              | two-dot from `git merge-base tier4/main` = `a23011c20`                                     | 10 files, +707                           | none                                                                                                                                                                                      |
+| `tier4/feature/lidar-udp-raw-packet`                | two-dot from fork point `3d90d023d` (the last `origin/main` merge below the topic commits) | 42 files, +3 384 / −128                  | the range also re-carries the rebased culling/ring-id commits (§6.5, §6.6), attributed to their own branches                                                                              |
+| `tier4/feature/pandar128e4x-highres-udp`            | two-dot from `04d0a44c6` (its merge of `lidar-udp-raw-packet`)                             | 7 files, +223 / −15                      | none                                                                                                                                                                                      |
+| `tier4/feature/rgl-distance-culling-multisensor`    | two-dot from `git merge-base tier4/main` = `893a8e22f`                                     | 6 files, +534 / −36                      | none                                                                                                                                                                                      |
+| `tier4/fix/rgl-ring-id-0based`                      | two-dot from `git merge-base tier4/main` = `bb8009f96`                                     | 12 files, +91 / −66                      | none                                                                                                                                                                                      |
+| `tier4/feature/rgl-on-ue5-dev-autoware-integration` | **no isolating base exists** — read by `git ls-tree` inventory + `git show <blob>`         | 46 RGL-named paths at the tip            | its 141 commits interleave RGL work with two upstream syncs and a traffic-light merge; no range isolates the RGL change. Recorded as a limit, not worked around                           |
+| `tier4/feature/vehicle-simulation`                  | two-dot from `93d920f57` (its parent branch tip)                                           | 15 files, +1 644 / −63                   | none                                                                                                                                                                                      |
+| `tier4/feature/vehicle-plot`                        | two-dot from `893a8e22f`                                                                   | 1 file, +657                             | none                                                                                                                                                                                      |
+| `tier4/fix/largemap-editor-rebase`                  | `git show --stat <tip>` (1 commit ahead of `main`, parent present)                         | 2 files, +28                             | none                                                                                                                                                                                      |
+| `tier4/fix/traffic-light-freeze`                    | `git show --stat <tip>`                                                                    | 1 file, +9 / −15                         | none                                                                                                                                                                                      |
+| `tier4/fix/traffic-light-controller-null-check`     | `git show --stat <tip>`                                                                    | 1 file, +12 / −2                         | none                                                                                                                                                                                      |
+| `tier4/fix/carlaserver-enum-typo`                   | `git show --stat <tip>`                                                                    | 1 file, +4 / −4                          | none                                                                                                                                                                                      |
+| `tier4/feature/pigz-zstd-compression`               | `git ls-tree` + commit subject only (†, lineage-dominated two-dot)                         | not separable                            | the same work is readable on the RGL branch (`bc2ce9afa`, `5e06661ea`) and in `README_RGL.md`; read there instead                                                                         |
+| `tier4/feature/build-dependency-share-tool`         | `git ls-tree` + commit subject only (†)                                                    | not separable                            | as above (`995ab1eae`, `8713d80eb`, `52906f293`)                                                                                                                                          |
+| `tier4/test/navmesh-scanner`                        | `git ls-tree` + commit subject only (†)                                                    | 4 named files                            | no diff was obtainable; entry describes the files present, not a delta                                                                                                                    |
+| `tier4/feature/rgl-support`                         | `git ls-tree` + commit subject only (†)                                                    | 5 named files                            | as above; superseded lineage (§2), folded into §6.4 rather than given its own entry                                                                                                       |
+| `tier4/shinjuku-test-map`                           | `git ls-tree` + commit subject only (†)                                                    | none found                               | tip subject is `Remove Autoware Game Mode debug cast`; a `git ls-tree` of the tip filtered for `shinjuku` returns **0 paths**. No capability found; recorded in §6.26 as not-a-capability |
+
+#### 6.0.2 What "unmerged" means for these branches
+
+The design spec calls these "the major unmerged side branches". That is true
+**only relative to the instructed `tier4/autoware-support` baseline**. Measured
+against the repository's actual default branch, `git rev-list --count
+tier4/main..tier4/<branch>` is **0** for `feature/lanelet2-traffic-light`,
+`feature/lidar-udp-raw-packet`, `feature/pandar128e4x-highres-udp`,
+`feature/rgl-on-ue5-dev-autoware-integration`, `feature/vehicle-plot`,
+`feature/vehicle-simulation` and `feature/vehicle-sim-package` — every one of
+them is already **merged into `tier4/main`** (whose tip is byte-identical to
+`feature/vehicle-sim-package`'s, §1.3). Only these are genuinely unmerged
+anywhere: `experiment/cyclonedds-support` (263 ahead of `main`),
+`feature/agnocast-integration` (220), `feature/autoware-v2i-publisher` (8),
+`feature/rgl-distance-culling-multisensor` (7), `fix/rgl-ring-id-0based` (1),
+`fix/largemap-editor-rebase` (1), `fix/traffic-light-freeze` (1),
+`fix/traffic-light-controller-null-check` (1), `fix/carlaserver-enum-typo` (1),
+and the †-marked branches whose ancestry cannot be verified at all. Each entry's
+**Maturity evidence** field states which of the two it is, because "on a side
+branch" and "shipped on the default branch" are very different maturity claims
+to put in front of the branches' own authors.
+
+#### 6.0.3 Verdict tally
+
+25 capability entries (§6.1–§6.25); §6.26 is the coverage map, not an entry.
+
+| Class                              | Count | Entries                                                                                           |
+| ---------------------------------- | ----- | ------------------------------------------------------------------------------------------------- |
+| already-exists                     | 3     | §6.1, §6.2, §6.10                                                                                 |
+| extension-side work                | 4     | §6.15, §6.21, §6.22, §6.23                                                                        |
+| CARLA-core seam work — sensor-side | 15    | §6.4, §6.5, §6.6, §6.7, §6.8, §6.9, §6.11, §6.12, §6.13, §6.14, §6.16, §6.19, §6.20, §6.24, §6.25 |
+| CARLA-core seam work — ROS-side    | 3     | §6.3, §6.17, §6.18                                                                                |
+
+Effort: 13 × S, 8 × M, 4 × L (§6.3, §6.4, §6.7, §6.12). No entry carries an
+overall `needs prototype` verdict; three carry a **scoped** `needs prototype`
+marker on a named sub-claim while the overall verdict stands — §6.7 (whether the
+private RGL UDP extension is obtainable at all), §6.9 (whether the substep IMU's
+axis map agrees with the fork's) and §6.12 (whether the untracked JP signal
+assets are redistributable).
+
+**Combined with §5.0.4**, the whole catalog is 53 entries: 14 already-exists,
+8 extension-side work, 21 seam/sensor-side, 10 seam/ROS-side. The side-branch
+half skews far harder toward CARLA-core seam work (18 of 25, vs 13 of 28 on
+main), which is the single most decision-relevant fact in this section: main's
+capabilities are largely ROS-layer, the side branches' largely are not.
+
+---
+
+### 6.1 DDS vendor abstraction with a CycloneDDS backend
+
+- What it does: splits every ROS 2 endpoint into a vendor-neutral
+  `dds/DDSPublisherImpl.h` / `dds/DDSSubscriberImpl.h` interface plus two
+  complete backends — `dds/fastdds/` (factory, listeners, type registry, 23
+  publishers, 4 subscribers) and `dds/cyclonedds/` (the same set again, plus
+  `CycloneDDSConversions.hpp` and `CycloneDDSTypeRegistry`) — selected at
+  **configure time** by a new `CARLA_DDS_VENDOR` CMake cache variable
+  (`FastDDS` default, `CycloneDDS` alternative), threaded through
+  `CarlaSetup.sh --dds-vendor=`, and resolved at link time by a
+  `Carla.Build.cs` that probes for `libddsc.so` vs `libfastrtps.so` and adds
+  whichever is present. `Docs/ros2_native.md` gains a "DDS Vendor Selection"
+  section.
+- Maturity evidence: branch `tier4/experiment/cyclonedds-support` @
+  `ab8cc46349c54090acaad58a9785659f37122cbe` — genuinely unmerged (263 commits
+  ahead of `tier4/main`); the tip commit is still a fix
+  (`add default QoS values to TopicConfig to fix CycloneDDS writer creation`).
+  A second, later implementation of the same idea for the `ue5-dev` lineage
+  exists on `tier4/feature/ue5-dev-cyclonedds-support` @ `011032e97` and is an
+  ancestor of `tier4/feature/ue5-dev-autoware-integration` @ `16a71014`.
+- Reproduction path: already-exists
+- Effort class: S
+- Verified by: `LibCarla/source/carla/ros2/dds/DDSPublisherImpl.h`,
+  `.../dds/cyclonedds/{CycloneDDSFactory.cpp,CycloneDDSTypeRegistry.{h,cpp},CycloneDDSPublisherImpl.{h,cpp}}`,
+  `.../dds/fastdds/FastDDSFactory.cpp`, `CMake/Options.cmake`, `CarlaSetup.sh`,
+  `Docs/ros2_native.md`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Carla.Build.cs` (tier4, three-dot
+  diff read in full); the fork's
+  `LibCarla/source/carla/ros2/middleware/{Middleware.h,ActiveMiddleware.{h,cpp},MiddlewareFactory.h,MiddlewareConfig.h}`
+  and `middleware/{fastdds,cyclonedds,zenoh}/` read in full from
+  `~/src/carla-autoware-integration` at `feat/autoware-seminative-phase-b`;
+  `docs/prerequisites.md` (the `#9807–#9816` middleware-abstraction row),
+  `docs/running-e2e.md` (`--ros2 --rmw=cyclonedds`), `docs/g0-report.md` and
+  `docs/e2e-report.md` (`rmw_cyclonedds_cpp` in the pinned gate environment)
+  (extension). **The spec's pre-classification is confirmed, and the fork is a
+  strict superset on three axes**, each verified by reading rather than assumed:
+  it carries a third backend (Zenoh); selection is a **runtime** argument
+  (`ROS2::Enable(bool, Middleware, int domain_id)` fed by `--rmw=`, with
+  `SetActiveMiddleware` / `GetActiveMiddleware` exported DDS-free across the
+  shared-library boundary) where tier4's is compile-time-exclusive; and the
+  whole G0–G3 evidence chain was recorded over CycloneDDS, so this is a run
+  capability rather than a branch claim. The one thing tier4 has that the fork
+  does not is a `Carla.Build.cs` that auto-detects the installed vendor —
+  irrelevant once selection is runtime.
+
+### 6.2 CycloneDDS publisher/type code generator
+
+- What it does: `tools/generate_cyclonedds_publishers.py` (637 lines)
+  mechanically emits the CycloneDDS twin of each FastDDS publisher and the
+  matching IDL-derived type support, so the 23-publisher × 2-vendor matrix in
+  §6.1 does not have to be hand-maintained. The branch's own history shows the
+  generator being re-run and its output hand-patched several times
+  (`chore(ros2): regenerate CycloneDDS files with header comments, re-apply
+manual fixes`, `fix(tools): fix sed quoting in type generation script,
+regenerate types`, `fix(ros2): add missing string backing stores to 5
+CycloneDDS publishers`, `fix(ros2): normalize DDS wire format type names in
+FastDDS TypeRegistry`).
+- Maturity evidence: branch `tier4/experiment/cyclonedds-support` @
+  `ab8cc46349c54090acaad58a9785659f37122cbe` (unmerged)
+- Reproduction path: already-exists
+- Effort class: S
+- Verified by: `tools/generate_cyclonedds_publishers.py`,
+  `LibCarla/source/carla/ros2/dds/cyclonedds/publishers/` (23 generated files)
+  and the branch's commit log (tier4); the fork's
+  `LibCarla/source/carla/ros2/middleware/fastdds/GenericCdrPubSubType.h`,
+  `middleware/cyclonedds/CycloneDDSSertype.{h,cpp}` and
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
+  (`create_publisher` / `publish` take a **raw CDR buffer**, encapsulation header
+  included) (extension). Recorded as a separate entry from §6.1 because it is a
+  separate artifact, but the honest framing is that the fork **designs the need
+  away** rather than reproducing the tool: because both fork backends serialize
+  an opaque CDR blob with a per-type name and hash, one publisher
+  implementation serves every message type and there is no per-type file to
+  generate. So no work remains to have the capability (CycloneDDS endpoints for
+  every Autoware type) — but this repository has no counterpart to the
+  _generator_, and would need one if it ever adopted tier4's IDL-typed endpoint
+  style. Read the verdict as "the end is already reached", not "the tool
+  exists".
+
+### 6.3 Agnocast zero-copy shared-memory sensor transport
+
+- What it does: adds `LibCarla/source/carla/ros2/agnocast/` — a POSIX shared
+  memory protocol (`ShmProtocol.h`: cache-line-aligned `ShmHeader` /
+  `SlotMetadata`, a 3-slot triple buffer, a 64-entry
+  `/carla_agnocast_registry` segment mapping sensor id → segment name, all with
+  `static_assert`ed layouts), a `ShmWriter` that creates one segment per sensor
+  (10 MiB for LiDAR, 3840×2160×4 for RGB camera) and a `TripleBufferWriter`,
+  and a `SensorRegistryWriter` / `SensorRegistryReader` pair. `ROS2::Enable`
+  lazily brings up the writer; `ProcessDataFromCamera` and
+  `ProcessDataFromLidar` then **skip the FastDDS `Publish()` entirely** and
+  write the pixel/point payload into shared memory instead. Gated behind a new
+  `ENABLE_AGNOCAST` CMake option (hard-errors without `ENABLE_ROS2`), linking
+  `rt`. `PythonAPI/examples/autoware_demo_with_agnocast.py` wraps
+  `autoware_demo.py` and inspects `/dev/shm` for the registry.
+- Maturity evidence: branch `tier4/feature/agnocast-integration` @
+  `cb6539a45d8a826467d237d1ab9fa28881b31ab3` — genuinely unmerged (220 commits
+  ahead of `tier4/main`). The consuming half is **not in this repository**: a
+  `git ls-tree -r | grep -i agnocast` at the tip returns only the seven files
+  above, and the demo script's own instructions require
+  `ros2 launch carla_agnocast_bridge carla_agnocast_bridge.launch.xml` plus
+  `ENABLE_AGNOCAST=1 ros2 launch autoware_launch …` from outside the tree. The
+  branch history also records the design oscillating
+  (`feat: skip FastDDS publish … when Agnocast enabled` → `revert: re-enable
+FastDDS publish … alongside Agnocast` → `feat: skip … when Agnocast active`),
+  and the tip is `chore: remove debug fprintf, add null checks`.
+- Reproduction path: CARLA-core seam work (ROS-side)
+- Effort class: L
+- Verified by: `LibCarla/source/carla/ros2/agnocast/{ShmProtocol.h,ShmWriter.{h,cpp},SensorRegistry.{h,cpp},TripleBuffer.h}`,
+  `LibCarla/source/carla/ros2/{ROS2.cpp,ROS2.h}` (the `EnableAgnocast` hook and
+  the two `#if defined(ENABLE_AGNOCAST) if (!_agnocast_enabled)` publish gates),
+  `CMake/Options.cmake`, `CMakeLists.txt`,
+  `Ros2Native/LibCarlaRos2Native/CMakeLists.txt`,
+  `PythonAPI/examples/autoware_demo_with_agnocast.py` (tier4, three-dot diff read
+  in full); `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
+  (extension). Camera and LiDAR payloads never cross the C ABI — the extension's
+  only registered observer is `VEHICLE_STATUS` (§5.0.2) — and the shm write
+  replaces a publish call **inside** `ROS2::ProcessDataFrom*`, so no `.so`-side
+  path exists at any effort. **ROS-side** under §5.0.3, on
+  `PythonAPI/carla/src/Sensor.cpp:26` (`.def("listen", &SubscribeToStream)`):
+  the underlying data — image pixels, LiDAR points — is already delivered to any
+  CARLA client through the existing sensor stream, and what tier4 changes is
+  only _how it reaches the consumer_, which is exactly the ROS-side case. The
+  honest caveat that the rule does not capture: the _performance property_
+  (zero-copy, no serialization, no DDS hop) is precisely what a `listen()`-based
+  bridge cannot have, since it has already paid a copy over the streaming
+  socket. L rather than M because the CARLA half (792 lines) is the smaller
+  half: a usable capability also needs the `carla_agnocast_bridge` node, an
+  Agnocast-enabled Autoware launch, and the Agnocast kernel module, none of
+  which exist in either tree.
+
+### 6.4 RGL GPU ray-traced LiDAR sensor (`sensor.lidar.rgl`)
+
+- What it does: integrates RobotecAI's `RobotecGPULidar` as a second LiDAR
+  implementation. `ARGLLidar` is a new `ASensor` subclass (not a
+  `ARayCastSemanticLidar` subclass) registered as `sensor.lidar.rgl`, whose
+  `PostPhysTick` drives an RGL/OptiX compute graph instead of UE line traces
+  while keeping the stock `LidarData` → `LidarSerializer` → stream output path;
+  all RGL calls go through an `IRGLBackend` interface so the `UCLASS` compiles
+  without RGL present. A separate `CarlaRGL` UE plugin holds the implementation
+  (`RGLBackendImpl`, `RGLSceneManager` for registering UE geometry into the RGL
+  scene, `RGLDynLoader` for `dlopen`/`dlsym` of `libRobotecGPULidar.so`,
+  `RGLCoordinateUtils`) plus a `RclcppBridge` ExternalProject built with the
+  **system** compiler against `/opt/ros/humble` to arbitrate rclcpp/DDS domain
+  ownership between CARLA and RGL's own ROS 2 publisher. `RglSetup.sh` is a
+  three-step `prepare` / `CarlaSetup.sh` / `build` workflow that clones and
+  builds RGL and its colcon extensions, verifies CUDA + OptiX 7.2 + ROS 2
+  Humble + `patchelf`, and carries three stale-artifact detectors that wipe
+  relocated CMake/colcon caches. A `bRglRos2Active` flag lets RGL publish the
+  point cloud itself and suppresses CARLA's own ROS 2 publish; viewport point
+  drawing is controllable by three blueprint attributes. `README_RGL.md` (235
+  lines) documents the whole flow.
+- Maturity evidence: branch `tier4/feature/rgl-on-ue5-dev-autoware-integration`
+  @ `93d920f571e28b11c4a8bc895d060e4fb83563b6` — **merged into `tier4/main`**
+  (0 commits ahead of it), i.e. shipped on the default branch, not an
+  experiment. `tier4/feature/rgl-support` @ `19b5eae7d` is a separate, earlier
+  and architecturally distinct attempt (a native
+  `Carla/RGL/RGLSceneManager.cpp` + `Sensor/RGLLidar.cpp` with no `CarlaRGL`
+  plugin and no `RglSetup.sh`) that is not an ancestor of this branch (§2); it
+  is folded here rather than given its own entry because it is a superseded
+  implementation of the same capability.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: L
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/RGLLidar.{h,cpp}`,
+  `.../Carla/Source/Carla/RGL/IRGLBackend.{h,cpp}`,
+  `Unreal/CarlaUnreal/Plugins/CarlaRGL/Source/CarlaRGL/{RGLBackendImpl.{h,cpp},RGLSceneManager.{h,cpp},RGLDynLoader.{h,cpp},RGLCoordinateUtils.h,CarlaRGLModule.{h,cpp},CarlaRGL.Build.cs}`,
+  `.../CarlaRGL/ThirdParty/RclcppBridge/{RclcppBridge.{h,cpp},CMakeLists.txt}`,
+  `RglSetup.sh`, `README_RGL.md`, `PythonAPI/examples/rgl_test_autoware_demo.py`
+  (tier4, read at the pinned tip by `git ls-tree` inventory + `git show`, see
+  §6.0.1's recorded limit — no commit range isolates this work);
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h`,
+  `runner/spawn.py` (`sensor.lidar.ray_cast` only; a repository-wide grep for
+  `rgl` finds exactly one hit, `benchmarks/patches/tier4-native/README.md:158`,
+  which records that RGL is _not_ on `tier4/autoware-support`) (extension). A
+  new UE sensor class, a new UE plugin, an OptiX/CUDA dependency and a
+  scene-registration path into a third-party ray tracer are all upstream of the
+  C ABI by construction; no `.so` can install them. **Sensor-side** under
+  §5.0.3: a grep of `PythonAPI/carla/src/`, `LibCarla/source/carla/client/` and
+  `LibCarla/source/carla/rpc/` at the pinned SHA finds **no** client API through
+  which GPU-ray-traced returns are obtainable — the measurement does not exist
+  outside CARLA core, so a bridge, an in-tree native stack and this extension
+  would each need the identical core change. L is driven by the out-of-CARLA
+  surface as much as by the in-tree code: OptiX SDK 7.2, a CUDA toolchain, a
+  `develop`-branch RGL clone, colcon-built RGL extensions and a bespoke
+  rclcpp bridge library are all build-environment prerequisites this repository
+  does not have today.
+
+### 6.5 RGL real-sensor model presets and scan geometry
+
+- What it does: `PythonAPI/rgl/lidar_models/` is a preset library for 15 real
+  LiDAR products — `VelodyneVLP16/VLP32C/VLS128`, `HesaiPandar40P`,
+  `HesaiPandarQT`, `HesaiPandarXT32`, `HesaiQT128C2X`, `HesaiPandar128E4X` (+ a
+  high-resolution variant), `HesaiAT128E2X`, `OusterOS1_64`, `SickMRS6000`,
+  a range meter — each giving per-channel elevation angles, azimuth offsets,
+  ring ids and firing patterns, applied to the `sensor.lidar.rgl` blueprint
+  through an `apply_preset(bp, model, …)` entry point. Two correctness passes
+  ride on top: `fix/rgl-ring-id-0based` renumbers every preset's `ring_ids` from
+  1-based to 0-based channel indexing (11 preset files, plus a regression test),
+  and `feature/vehicle-sim-package` later re-emits rays in azimuth-major rather
+  than channel-major order and re-syncs the Hesai presets to the verified
+  wire geometry. A `PythonAPI/rgl/tests/` harness (`test_regression.py`,
+  `test_preset_visual.py`, `test_special_firing.py`, `test_benchmark.py`,
+  `compare_lidar_topics.py`, `measure_lidar_rate.py`) pins the results.
+- Maturity evidence: `tier4/fix/rgl-ring-id-0based` @
+  `fbbc380567870f8180c48c0a0ebdc84996b5d781` is 1 commit ahead of `tier4/main`
+  (genuinely unmerged, though the same change appears rebased as `ab013745a` on
+  `tier4/feature/lidar-udp-raw-packet`, which **is** merged into `main`); the
+  preset library itself and the azimuth-major fix are on
+  `tier4/feature/vehicle-sim-package` @
+  `5642dfdd2fb5035f0435f4ce6a50d477800b6248` = `tier4/main`'s tip, i.e. shipped.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: M
+- Verified by: `PythonAPI/rgl/lidar_models/__init__.py` and the 15 model
+  modules, `PythonAPI/rgl/tests/test_regression.py`,
+  `Unreal/CarlaUnreal/Plugins/CarlaRGL/Source/CarlaRGL/RGLBackendImpl.cpp`
+  (the ray-emission order and `SweepCenterOffset` handling),
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/LidarDescription.h`
+  (tier4; `fix/rgl-ring-id-0based` and `feature/lidar-udp-raw-packet` isolated
+  per §6.0.1); `runner/spawn.py` (`--lidar-channels` / `--lidar-pps` /
+  `--lidar-rotation-hz` / `--lidar-range`, i.e. a uniform-FOV ray-cast LiDAR
+  parameterized by four scalars — no per-channel elevation table exists),
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension).
+  Classed on the dominant blocker exactly as §5.13 was: the preset _tables_ are
+  pure client-side Python and a `runner/` module could hold them at S, but there
+  is nothing for them to configure without §6.4, and the ray-order and
+  sweep-offset halves are inside `RGLBackendImpl.cpp`. **Sensor-side** under
+  §5.0.3: the nearest existing client API is the stock ray-cast LiDAR blueprint
+  (`Channels` / `UpperFovLimit` / `LowerFovLimit` / `PointsPerSecond` /
+  `RotationFrequency` / `HorizontalFov` — the complete geometry surface of
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/LidarDescription.h`),
+  which can only express an evenly subdivided FOV — the per-channel angle table
+  a real product has is obtainable through no client API, so every integration
+  approach needs the same core change. Worth flagging for the comparison: §5.14
+  notes that tier4's `PointXYZIRCAEDT` publisher **synthesizes** per-channel
+  elevations by even FOV subdivision; this branch is where the real tables
+  finally arrive, which makes §5.14's synthesized values a stopgap in tier4's
+  own eyes.
+
+### 6.6 RGL distance-culled dynamic scene registration
+
+- What it does: cuts RGL's VRAM footprint by registering into the RGL scene only
+  the UE geometry within a radius of the sensor, re-evaluated as the world
+  moves, rather than the whole level once. `RGLSceneManager` (296 changed lines in the `.cpp`, 68 in the header) gains
+  the distance-culling state machine and, in a second commit, support for **several
+  spatially separated sensors** sharing one RGL scene (the union of their
+  neighbourhoods, not one sensor's), a guard against removing scene entries
+  whose UE component key has already been destroyed, and a
+  `test_multisensor_culling.sh` regression harness with a no-culling baseline
+  run last for comparison.
+- Maturity evidence: branch `tier4/feature/rgl-distance-culling-multisensor` @
+  `254fa617db11b6c33eb2157a0f7881260d2a85bc` — 7 commits ahead of `tier4/main`,
+  i.e. genuinely unmerged; the same first two commits appear rebased
+  (`7db5c1b52`, `fc99fc2cf`) on `tier4/feature/lidar-udp-raw-packet`, which is
+  merged.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: M
+- Verified by: `Unreal/CarlaUnreal/Plugins/CarlaRGL/Source/CarlaRGL/RGLSceneManager.{h,cpp}`
+  (the substantive change),
+  `.../CarlaRGL/Source/CarlaRGL/RGLBackendImpl.cpp`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp`,
+  `PythonAPI/rgl/tests/test_multisensor_culling.sh`,
+  `PythonAPI/examples/rgl_test_autoware_demo.py` (tier4, isolated from
+  `893a8e22f` per §6.0.1); `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
+  (extension). Depends entirely on §6.4 — there is no RGL scene to cull without
+  it. **Sensor-side** under §5.0.3: the datum is which UE meshes are resident in
+  a third-party ray tracer's scene, exposed through no client API (the grep in
+  §6.4 applies unchanged). Recorded separately from §6.4 because it is the one
+  RGL capability that is still unmerged on tier4's own default branch, which
+  makes it the least safe of the RGL family to describe as shipped.
+
+### 6.7 Raw-UDP LiDAR packet emission in real driver wire formats
+
+- What it does: makes a `sensor.lidar.rgl` emit **UDP packets in the on-the-wire
+  format of the real product** — Velodyne Legacy (1206 B), Hesai Standard,
+  PandarQT, XT32, QT128 and Pandar128 — so a production ROS 2 driver
+  (`tier4/nebula`) consumes the simulated stream unchanged, with no CARLA-aware
+  code anywhere in the pipeline. tier4's own tree carries the CARLA-side half:
+  nine `rgl_udp_*` blueprint attributes (`enabled`, `source_ip`, `dest_ip`,
+  `dest_port`, `hesai_enable_udp_sequence`, `hesai_blockage_detection`,
+  `hesai_pandar_driver_compat`) plus a `horizontal_start_angle` sweep-window
+  offset on `LidarDescription`, a `RGLUdpExtensionShim.h` that `dlsym`s
+  `rgl_node_points_udp_publish` / `rgl_get_extension_info` and disables itself
+  with a warning when absent, a UDP branch appended to the RGL compute graph, a
+  per-model `return_mode` whitelist mirrored from AWSIM's
+  `LidarUdpPublisher.cs`, an `apply_preset(..., udp_publish={...})` extension,
+  and a two-phase verification suite (`test_udp_raw_packets.py`: eight-model
+  smoke, a VLP16 packet-structure deep decode, a start-angle end-to-end check;
+  `test_phase2_nebula_e2e.py`, 641 lines: launch Nebula in `udp_only` mode,
+  decode its `PointCloud2`, check ring counts and ranges per model).
+- Maturity evidence: branch `tier4/feature/lidar-udp-raw-packet` @
+  `6437fbcc51fca6bdc5d35dbd8ec51cdd8e1c1a18` — **merged into `tier4/main`**
+  (0 ahead), with end-to-end verification against the production driver
+  documented in `Docs/rgl/phase2_nebula_e2e.md`. The strongest maturity evidence
+  of any entry in §6.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: L
+- Verified by: `Docs/rgl/udp_raw_packets.md`, `Docs/rgl/phase2_nebula_e2e.md`,
+  `Unreal/CarlaUnreal/Plugins/CarlaRGL/Source/CarlaRGL/{RGLUdpExtensionShim.h,RGLBackendImpl.{h,cpp},RGLDynLoader.cpp}`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/LidarDescription.h`,
+  `.../Carla/Actor/ActorBlueprintFunctionLibrary.{h,cpp}`,
+  `PythonAPI/rgl/lidar_models/__init__.py`,
+  `PythonAPI/rgl/tests/{test_udp_raw_packets.py,test_phase2_nebula_e2e.py}`
+  (tier4, isolated from `3d90d023d` per §6.0.1);
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h`,
+  `runner/spawn.py` (extension). Nothing about this is reachable from the `.so`:
+  the packets are emitted by a compute-graph node inside the RGL library, from
+  data that never enters the ABI, on a socket CARLA owns. **Sensor-side** under
+  §5.0.3, on the same grep as §6.4 — no client API returns a
+  product-wire-format packet, and the whole point of the capability is that the
+  consumer is a driver that has never heard of CARLA, which is as
+  approach-agnostic as a capability gets. L, and stacked on §6.4's L.
+- **needs prototype** — scoped sub-claim only; the seam / sensor-side / L
+  verdict above stands. The packet **encoder itself is not in either tree**:
+  `Docs/rgl/udp_raw_packets.md` states it lives in
+  `RobotecAI/RGL-extension-udp`, a **private** repository requiring an SSH key
+  with read access, cloned by `RglSetup.sh --with-udp` (the same mechanism as
+  the also-private `--with-weather` extension). Whether that extension is
+  obtainable, and under what licence, could not be established from either tree
+  and is not guessed at here. Until it is, the reproduction cost of this
+  capability is unbounded from this repository's side, and the L above should be
+  read as "at least L, conditional on access".
+
+### 6.8 Pandar128E4X high-resolution UDP mode and Hesai driver-compat default
+
+- What it does: extends §6.7 with the Hesai Pandar128E4X's high-resolution
+  operating mode — a `HesaiPandar128E4XHighRes` preset wired to RGL's
+  `RGL_UDP_HIGH_RESOLUTION_MODE`, added to the Phase-2 Nebula end-to-end matrix
+  — and flips `hesai_ros_driver_compat` to default **ON** for Hesai models,
+  which changes the effective Hesai sweep start from 0° to −90°
+  (`docs(rgl): flag changed default — Hesai sweep start now -90deg`). A
+  `test_apply_preset_compat.py` covers the True+Hesai and False+non-Hesai rows.
+- Maturity evidence: branch `tier4/feature/pandar128e4x-highres-udp` @
+  `25c2ca59ebab77dbaf8accbce842c1271184535d` — **merged into `tier4/main`**
+  (0 ahead).
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Docs/rgl/udp_raw_packets.md`, `Docs/rgl/phase2_nebula_e2e.md`,
+  `PythonAPI/rgl/lidar_models/__init__.py`,
+  `PythonAPI/rgl/lidar_models/hesai_pandar128e4x_highres.py`,
+  `PythonAPI/rgl/tests/test_apply_preset_compat.py`,
+  `Unreal/CarlaUnreal/Plugins/CarlaRGL/Source/CarlaRGL/{RGLBackendImpl.cpp,RGLUdpExtensionShim.h}`
+  (tier4, isolated from `04d0a44c6` per §6.0.1);
+  `runner/spawn.py` (extension). Cross-references §6.7: this is a 223-line
+  increment on that capability, so S is the _remaining_ delta once §6.7 exists,
+  not a standalone cost. It is recorded as its own entry only because the design
+  spec names `pandar128e4x-highres-udp` as a separate capability. The
+  changed-default note matters for anyone comparing point clouds across the two
+  stacks and is reproduced here rather than left in the branch.
+
+### 6.9 `sensor.other.imu_highprecision`: physics-substep IMU with per-sample stamps
+
+- What it does: a new IMU blueprint that publishes **once per Chaos physics
+  substep** instead of once per frame. `AInertialMeasurementUnitHighPrecision`
+  subclasses the stock IMU, registers an `FIMUSubstepCallback`
+  (`Chaos::TSimCallbackObject`, `PostIntegrate`) against the vehicle's
+  `FSingleParticlePhysicsProxy` to capture body kinematics on the physics
+  thread, and computes gyro by quaternion finite difference and accelerometer by
+  second position derivative per substep, each carrying its own timestamp
+  offset. A `substep_mode` attribute selects `Auto` / `Substep` / `Upsample`,
+  and `output_rate_hz` (default 200) drives a zero-order-hold fallback that
+  emits N copies of the frame-rate value when no physics proxy is available.
+  Publishing needs a new `ROS2::ProcessDataFromIMUStamped` overload that
+  back-dates each sample from the frame stamp; `SensorRegistry` gains an
+  `imu_highprecision` entry appended **at the end** so the wire type ids stay
+  additive. A `PythonAPI/examples/imu_highprecision_check.py` verifies the rate.
+- Maturity evidence: branch `tier4/feature/lidar-udp-raw-packet` @
+  `6437fbcc51fca6bdc5d35dbd8ec51cdd8e1c1a18` — **merged into `tier4/main`**
+  (0 ahead). Not spec-named; found by reading the branch's commit range rather
+  than its name (`7b67c41cf`, `a21224efb`, `d686895b6`, `1a71c6efb`).
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: M
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/InertialMeasurementUnitHighPrecision.{h,cpp}`,
+  `.../Carla/Sensor/IMUSubstepCallback.{h,cpp}`,
+  `.../Carla/Sensor/InertialMeasurementUnit.h`,
+  `.../Carla/Actor/ActorBlueprintFunctionLibrary.{h,cpp}`,
+  `LibCarla/source/carla/ros2/{ROS2.h,ROS2.cpp}` (`ProcessDataFromIMUStamped`),
+  `LibCarla/source/carla/sensor/SensorRegistry.h`,
+  `PythonAPI/examples/imu_highprecision_check.py` (tier4, isolated from
+  `3d90d023d` per §6.0.1); `runner/spawn.py` (the IMU is a stock
+  `sensor.other.imu` spawned natively at the kit's `tamagawa/imu_link`),
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (the
+  `CARLA_ROS2_SENSOR_IMU` kind is reserved but unregistered — the same finding
+  as §5.19) (extension). **Sensor-side** under §5.0.3: the datum is the vehicle
+  body's kinematics sampled between frames, and a grep of
+  `PythonAPI/carla/src/`, `LibCarla/source/carla/client/` and
+  `LibCarla/source/carla/rpc/` at the pinned SHA finds **no** sub-frame
+  kinematics accessor — the nearest client API,
+  `carla.IMUMeasurement` via `sensor.listen()`, is delivered once per frame by
+  construction, so no integration approach can synthesize substep samples
+  without this core change. M rather than S because the substep path is a Chaos
+  physics-thread callback, not a tick hook.
+- **needs prototype** — scoped sub-claim only; the seam / sensor-side / M
+  verdict above stands. Whether this sensor's axis convention agrees with the
+  fork's was **not** established. §5.20 already records that tier4's ROS-layer
+  gyroscope flip `(x, −y, −z)` and the fork's `(−x, y, −z)` disagree and that
+  code reading cannot adjudicate them; this sensor computes its gyro by a
+  different method again (quaternion finite difference on the physics thread,
+  not a Chaos angular-velocity read), so its numbers were not compared
+  field-for-field against either. Treat "tier4 has a high-rate IMU" as a claim
+  about the capability, not about sign agreement.
+
+### 6.10 Turn-indicator and hazard-light command echo as vehicle status
+
+- What it does: adds `AutowareController::GetTurnIndicatorCommand()` /
+  `GetHazardLightsCommand()`, backed by a new `PeekMessage()` on the subscriber
+  reader that samples the last received command **without** clearing the
+  changed-flag the control loop uses, and feeds those values back out as
+  `TurnIndicatorsReport` / `HazardLightsReport`. The commit comment states the
+  rationale explicitly: "CARLA does not actuate the ego blinker from these
+  commands, so they are echoed back as vehicle status to keep the Autoware
+  feedback loop closed (the planner consumes the status)."
+- Maturity evidence: branch `tier4/feature/lidar-udp-raw-packet` @
+  `6437fbcc51fca6bdc5d35dbd8ec51cdd8e1c1a18` — **merged into `tier4/main`**
+  (0 ahead); commit `f45eb4e3d`.
+- Reproduction path: already-exists
+- Effort class: S
+- Verified by: `LibCarla/source/carla/ros2/subscribers/AutowareController.h`,
+  `LibCarla/source/carla/ros2/dds/cyclonedds/subscribers/AutowareController.cpp`
+  (tier4, isolated from `3d90d023d` per §6.0.1);
+  `extension/src/publishers/StatusPublishers.cpp`,
+  `extension/src/subscribers/ControlSubscribers.cpp` (extension). This is the
+  one place in the whole catalog where a tier4 side branch **converges on
+  behaviour this repository already had**: §5.10 records that
+  `tier4/autoware-support` decodes the ego's _actual_ light state from the
+  status sensor while the extension echoes the commanded
+  `turn_indicators_cmd` / `hazard_lights_cmd` bytes, and notes that the echo "is
+  arguably the more useful signal for a closed loop, since neither
+  implementation actuates the lights". This branch adopts exactly that. Two
+  small deltas remain, neither requiring core work: tier4 echoes only when the
+  actual-state path is unavailable on this lineage, and it introduces
+  `PeekMessage()` to avoid stealing the control loop's handshake, where the
+  extension caches each command byte atomically for the same reason. Read this
+  entry as evidence that the design question is settled the same way on both
+  sides, not as a gap.
+
+### 6.11 Acceleration-control steering dropout fix
+
+- What it does: one line plus a five-line comment in
+  `ACarlaWheeledVehicle::ApplyVehicleAccelerationControl` — also assign
+  `DesiredSteer = Steer`, because `FlushVehicleControl` derives the applied
+  steer from `DesiredSteer` and overwrites `ControlToApply.Steer` with it, so
+  the acceleration-control path was dropping the Autoware steer command entirely
+  and "the vehicle drives straight (no turn)".
+- Maturity evidence: branch `tier4/feature/lidar-udp-raw-packet` @
+  `6437fbcc51fca6bdc5d35dbd8ec51cdd8e1c1a18` — **merged into `tier4/main`**
+  (0 ahead); commit `ab7926231`.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Vehicle/CarlaWheeledVehicle.cpp`
+  (tier4, isolated from `3d90d023d` per §6.0.1);
+  `extension/src/subscribers/ControlSubscribers.cpp`,
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
+  (`apply_ackermann_control` is the extension's only actuation primitive)
+  (extension). It is seam work by the same argument as §5.17 — a UE vehicle
+  component's input flushing, which no `.so` can reach — and **sensor-side**
+  under §5.0.3 because the affected quantity is the physical steer the vehicle
+  applies, produced by no client API (`vehicle.get_control().steer`, cited at
+  §5.8, returns the _commanded_ value and would report the un-dropped command
+  either way). The practical reproduction cost for this repository is
+  nevertheless **zero**: the defect is in the acceleration-control component the
+  extension deliberately does not use, and the Ackermann path it uses instead
+  passes steer through `ApplyVehicleAckermannControl`. Recorded because it is
+  useful evidence in the other direction — anyone arguing that tier4's
+  acceleration-integration actuation (§5.17) is more faithful than
+  `apply_ackermann_control` should know it shipped with a steering dropout
+  serious enough to need this fix.
+
+### 6.12 lanelet2-driven traffic-light placement toolchain and JP signal assets
+
+- What it does: builds Japanese traffic signals into a UE level **from the same
+  lanelet2 `.osm` Autoware navigates by**, so signal ids match between simulator
+  and planner. `PythonAPI/util/lanelet2_traffic_light/` (74 files) is a layered
+  package: a `corelib` with a lanelet2 OSM parser (nodes, ways, regulatory
+  elements, `light_bulbs`, optional `ele` elevation), an MGRS transform, a pose
+  estimator, a traffic-light IR, a JP signal profile, a way-id resolver and an
+  OSM feedback writer that allocates ids for pedestrian signals missing from the
+  source map; and a `frontend_editor` that runs inside the UE editor — a
+  blueprint factory, arrow/LED material setup, mesh transplant and cleanup, snap
+  targeting with Pole/Ground exclusion, subtype splitting into vehicle/pedestrian
+  controllers, group deduplication, label naming (`TLV_`/`TLP_`), a save-level
+  resolver and a `run_placement` orchestrator surfaced as an Editor Utility
+  Widget. 35 `.uasset` JP signal assets under a new
+  `Unreal/CarlaUnreal/Plugins/T4/Content/` plugin content root (arrow textures,
+  LED dot materials, lens meshes, vehicle and pedestrian traffic-light
+  blueprints) plus a `DefaultGame.ini` cook entry for an Odaiba map, an
+  `init_unreal.py` editor-menu hook, and 25 pytest modules covering the
+  pure-Python layer.
+- Maturity evidence: branch `tier4/feature/lanelet2-traffic-light` @
+  `2dbe5a6c25b7984059b072a2ab70ae2ce34737a5` — **merged into `tier4/main`**
+  (0 ahead). Imported from a separate tier4 repository
+  (`feat: import lanelet2_traffic_light package from tier4/odaiba-carla`) and
+  developed over ~110 commits.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: L
+- Verified by: `PythonAPI/util/lanelet2_traffic_light/` (the full 74-file
+  inventory via `git diff --name-only 583f9238e..`, with
+  `corelib/parser/lanelet2_parser.py`, `corelib/geometry/mgrs_transform.py`,
+  `frontend_editor/editor_placer.py` and `README.md` read),
+  `Unreal/CarlaUnreal/Content/Python/init_unreal.py`,
+  `Unreal/CarlaUnreal/Config/DefaultGame.ini`,
+  `Unreal/CarlaUnreal/Plugins/T4/Content/{Lanelet2TrafficLight,TrafficLightSample/VehicleTrafficLight,TrafficLightSample/PedestrianTrafficLight}/*.uasset`
+  (tier4, isolated from `583f9238e` per §6.0.1);
+  `docs/nishishinjuku-map.md`, `runner/__main__.py` (`--map`), a
+  repository-wide grep for `lanelet2_traffic_light` returning no hit
+  (extension). This is level authoring, not integration code: it runs in the UE
+  editor, writes `.umap` content and ships binary assets. **Sensor-side** under
+  §5.0.3 for the same reason §5.12 (the MGRS geo-reference asset) is: what a
+  level contains is a world-authoring property that a bridge, an in-tree native
+  stack and this extension would each consume identically, and no client API
+  places actors into a cooked level. L: the toolchain is the smaller half — the
+  capability also needs the JP signal art, a map whose lanelet2 source has
+  matching regulatory elements, and an editor workflow this repository has no
+  counterpart to.
+- **needs prototype** — scoped sub-claim only; the seam / sensor-side / L
+  verdict above stands. §5.24 records that
+  `git ls-tree -r tier4/autoware-support -- Unreal/CarlaUnreal/Content` returns
+  **0 files**, i.e. the Nishi-Shinjuku map content is untracked. That is _not_
+  true here — these 35 `.uasset` files **are** tracked — but they were counted,
+  not opened, and whether they are redistributable (they are JP signal art of
+  unstated provenance, imported from `tier4/odaiba-carla`) could not be
+  established from the tree. Anyone costing a reproduction should resolve that
+  before assuming the assets come with the code.
+
+### 6.13 Traffic-light arrow-state API
+
+- What it does: gives CARLA traffic lights a directional-arrow state alongside
+  the stock red/yellow/green. `carla::rpc::TrafficLightArrowState` defines a
+  frozen 32-bit `(colour × direction)` bitmask — 8 directions
+  (Left, Straight, Right, UpLeft, UpRight, Down, DownLeft, DownRight) × 3 colour
+  rows + 7 user bits — with the layout documented as never-renumberable because
+  baked map content stamps the bits. `ATrafficLightBase` gains `ArrowState` and
+  `ArrowCapabilities` `UPROPERTY`s (the latter recording which arrow faces
+  physically exist on the mesh, so `requested & ~capabilities` is the set that
+  cannot light), `Set/GetArrowState`, `GetArrowCapabilities`, and an
+  `OnArrowStateChanged` `BlueprintImplementableEvent` mirroring the existing
+  state-changed event. Three RPCs (`set_traffic_light_arrow_state`,
+  `get_traffic_light_arrow_state`, `get_traffic_light_arrow_capabilities`) are
+  threaded through `FCarlaActor`, `carla::client::TrafficLight` and the Python
+  API as `set_arrow_state` / `get_arrow_state` / `get_arrow_capabilities` plus a
+  32-value `carla.TrafficLightArrow` enum.
+- Maturity evidence: branch `tier4/feature/lanelet2-traffic-light` @
+  `2dbe5a6c25b7984059b072a2ab70ae2ce34737a5` — **merged into `tier4/main`**
+  (0 ahead)
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: M
+- Verified by: `LibCarla/source/carla/rpc/TrafficLightArrowState.h`,
+  `LibCarla/source/carla/client/TrafficLight.{h,cpp}`,
+  `LibCarla/source/carla/client/detail/{Client.h,Client.cpp,Simulator.h}`,
+  `PythonAPI/carla/src/Actor.cpp`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightBase.{h,cpp}`,
+  `.../Carla/Actor/CarlaActor.{h,cpp}`, `.../Carla/Server/CarlaServer.cpp`
+  (tier4, isolated from `583f9238e` per §6.0.1);
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (the ABI has no
+  traffic-light surface at all — the only inbound observer is
+  `VEHICLE_STATUS`), `runner/spawn.py` (extension). **Sensor-side** under
+  §5.0.3, and this is the case §5.0.3's first consequence bullet warns about
+  in reverse: it ships an RPC, but the RPC is not the capability. Reading
+  `LibCarla/source/carla/client/TrafficLight.h` at the pinned baseline SHA, the
+  complete client surface is `SetState` / `GetState` / `Set|GetGreenTime` /
+  `Yellow` / `Red` / `GetElapsedTime` / `Freeze` / `IsFrozen` / `GetPoleIndex` /
+  `ResetGroup` — **no arrow accessor of any kind**, and the underlying datum is
+  a `UPROPERTY` on a UE actor that does not exist until this branch adds it, so
+  a Python bridge would need the identical core change. M rather than S because
+  the bitmask is a wire contract that must be frozen before any map content is
+  baked against it, and because `ArrowCapabilities` has to be stamped by the
+  placement toolchain (§6.12) to be meaningful.
+
+### 6.14 Level-placed actor `key:value` tags as client actor attributes
+
+- What it does: 12 lines in `UCarlaEpisode::InitializeAtBeginPlay` that split
+  each level-placed traffic sign's UE `Actor->Tags` on `:` and add every
+  well-formed pair to the `FActorDescription::Variations` map, so a tag written
+  in the editor as `lanelet2_id:1412` or `signal_kind:vehicle` surfaces to any
+  CARLA client as `actor.attributes["lanelet2_id"]`. This is the mechanism that
+  makes level-authored identity (§6.12's placer stamps the tags) reachable
+  without a bespoke RPC, and it is what `carla_v2i` (§6.15) and
+  `t4_signal_utils.py` key off.
+- Maturity evidence: branch `tier4/feature/lanelet2-traffic-light` @
+  `2dbe5a6c25b7984059b072a2ab70ae2ce34737a5` — **merged into `tier4/main`**
+  (0 ahead)
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Game/CarlaEpisode.cpp`
+  (the `InitializeAtBeginPlay` tag loop),
+  `PythonAPI/util/lanelet2_traffic_light/frontend_editor/editor_placer.py:713`
+  (which documents stamping `lanelet2_id:<sign_id>` /
+  `signal_kind:<vehicle|pedestrian>`),
+  `PythonAPI/examples/t4_signal_utils.py` (tier4, isolated from `583f9238e` per
+  §6.0.1); `runner/spawn.py`,
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension).
+  **Sensor-side** under §5.0.3, decided by a grep that found nothing: searching
+  `CarlaServer.cpp`, `Unreal/.../Carla/Actor/`,
+  `LibCarla/source/carla/client/` and `PythonAPI/carla/src/` at the pinned
+  baseline SHA for `Actor->Tags` / `GetActorTags` / `actor_tags` returns **no**
+  binding — the only tag-like client property is `semantic_tags`
+  (`PythonAPI/carla/src/Actor.cpp:104`), which carries
+  `rpc::CityObjectLabel` segmentation labels, an unrelated quantity. UE actor
+  tags on level-placed actors are therefore visible to no integration approach
+  today, so all three need the same core change. Recorded separately from §6.12
+  because it is a **generic** mechanism with no lanelet2 content in it, and is
+  by far the cheapest single upstreamable piece of the traffic-light family.
+
+### 6.15 V2I traffic-signal publisher (`carla_v2i`)
+
+- What it does: a standalone rclpy node (`python3 -m carla_v2i --osm-path …`)
+  that publishes CARLA's live traffic-light states as
+  `autoware_perception_msgs/TrafficLightGroupArray` on `/v2x/traffic_signals` at
+  10 Hz, RELIABLE / VOLATILE / KEEP_LAST(1), so Autoware obeys signals through
+  `autoware_traffic_light_arbiter`'s `external_traffic_signals` input with no
+  camera recognition. A pure `conversion.py` maps CARLA state + arrow mask +
+  vehicle/pedestrian kind onto `TrafficLightElement` colour/shape/status triples
+  (mirroring AWSIM's `V2IRos2Publisher`, including reporting pedestrian yellow as
+  green-flashing), builds the lanelet2 relation → way grouping from the `.osm`,
+  and asserts at startup that its mirrored message constants still match the
+  installed `autoware_perception_msgs`. The node reads CARLA on a background
+  thread (a full sweep of ~120 lights costs ~1 s of sequential RPC, far over the
+  100 ms publish period), supports an ego-radius filter, skips the arrow RPC for
+  pedestrian lights, and — in the last three commits — emits
+  `PredictedTrafficLightState` entries for CARLA-cycled lights from
+  `get_elapsed_time` / `get_green_time` / `get_yellow_time` / `get_red_time`. A
+  `verify_topic.py` is the topic-level verification gate.
+- Maturity evidence: branch `tier4/feature/autoware-v2i-publisher` @
+  `1ab5fecd532979fbafda137f6c2fc120c6e72f37` — genuinely unmerged (8 commits
+  ahead of `tier4/main`); the tip is a "verify-gate freeze note".
+- Reproduction path: extension-side work
+- Effort class: M
+- Verified by: `PythonAPI/util/carla_v2i/{README.md,node.py,conversion.py,verify_topic.py,tests/test_conversion.py}`
+  (tier4, isolated from `a23011c20` per §6.0.1);
+  `benchmarks/injector/dummy_perception.py`,
+  `benchmarks/injector/gen_tl_groups.py`, `tests/e2e/test_dummy_perception.py`,
+  `tests/benchmarks/test_tl_groups.py`, `docker/compose.yaml` (extension).
+  **The spec's pre-classification (V2I publisher = extension-side work) is
+  confirmed for the node itself, and it is cheaper than the spec implies**:
+  nothing here touches the C ABI at all — it is an out-of-process rclpy client,
+  the same shape as the runner. This repository is further along than a blank
+  sheet: `dummy_perception.py` already publishes `TrafficLightGroupArray` with
+  `TrafficLightElement` colour/shape/status fields, and `gen_tl_groups.py`
+  already extracts group ids from the lanelet2 `.osm` by exactly the same rule
+  (`type=regulatory_element` + `subtype=traffic_light` relations). The delta is
+  real but bounded: read live CARLA state instead of forcing GREEN, publish on
+  `/v2x/traffic_signals` instead of
+  `/perception/traffic_light_recognition/traffic_signals`, add the relation→way
+  grouping and the prediction. **Two hard preconditions the spec does not
+  mention, both verified by code reading**: the node discovers lights by
+  `actor.attributes.get("lanelet2_id")`, which is empty on any build without
+  §6.14 + §6.12 — the dict is then empty and nothing is ever published — and it
+  calls `actor.get_arrow_state()` unconditionally for vehicle lights inside a
+  `except RuntimeError` block that would **not** catch the `AttributeError` a
+  build without §6.13 raises. So M covers the node on a CARLA that already has
+  §6.12–§6.14; without them the arrow half is unreachable and only circle
+  states could be published, after replacing the discovery key.
+
+### 6.16 Traffic-light subsystem robustness fixes
+
+- What it does: two independent guards in the UE traffic-light subsystem.
+  `fix/traffic-light-controller-null-check` guards
+  `UTrafficLightController`'s cycle against a null `UTrafficLightComponent`
+  (12 added lines), and `fix/traffic-light-freeze` makes
+  `ATrafficLightManager::freeze_all_traffic_lights` iterate only the groups it
+  actually owns so dynamically spawned groups are skipped rather than
+  dereferenced (a net simplification, +9 / −15).
+- Maturity evidence: branches `tier4/fix/traffic-light-controller-null-check` @
+  `28ead4191bbbb7df1f8f6b9acd13db48f4b34020` and
+  `tier4/fix/traffic-light-freeze` @ `87936f3c585b13a568ec67c0cf3d4a4ba01fa167`
+  — each 1 commit ahead of `tier4/main`, i.e. genuinely unmerged; both fork from
+  the same `583f9238e` lineage point.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Traffic/TrafficLightController.cpp`,
+  `.../Carla/Traffic/TrafficLightManager.cpp` (tier4, `git show --stat` +
+  `git show` per §6.0.1); `runner/spawn.py`,
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension).
+  **Sensor-side** under §5.0.3: the fixed behaviour is UE traffic-light
+  actor/component lifetime, and the relevant client APIs
+  (`world.freeze_all_traffic_lights()` at `PythonAPI/carla/src/World.cpp:335`,
+  `carla.TrafficLight.freeze()` at `LibCarla/source/carla/client/TrafficLight.h:54`) are the _callers_ that
+  trigger the crash, not a route to the datum — every integration approach that
+  spawns traffic lights dynamically hits the same defect. Grouped into one entry
+  because they are the same subsystem and the same class of defect; recorded at
+  all because a crash guard in a path this repository's dummy-perception feed
+  substitutes for (§6.15) is exactly the kind of thing that looks free until a
+  campaign spawns a light.
+
+### 6.17 Camera image topic-suffix override on the CycloneDDS publisher family
+
+- What it does: makes the camera image sub-topic suffix configurable rather than
+  a hardcoded `"/image"` — every camera publisher takes
+  `_impl->_config.suffix` when non-empty, so a caller can select `/image_raw`
+  as Autoware expects, and `ROS2.cpp`'s per-camera-type `TopicConfig` sets
+  `cam_config.suffix = "/image_raw"` at all seven construction sites.
+- Maturity evidence: branch `tier4/feature/ue5-dev-autoware-integration` @
+  `16a71014425f6751dc5b21229402c6038e6244a9`, commit `680d0d764` — not
+  spec-named as a branch, but the design spec's C3 paragraph names "camera
+  topic-suffix/QoS override" as one of its pre-classified examples. **A
+  correction to the spec's framing:** the capability is not side-branch work at
+  all on the FastDDS side — `git grep 'image_raw' tier4/autoware-support`
+  returns `LibCarla/source/carla/ros2/ROS2.cpp:594` (`config.suffix =
+"/image_raw"`) and `:604` (`/camera_info`), so it is **already merged on
+  `tier4/autoware-support`** and is part of what §5.16 catalogs. `680d0d764` is
+  the port of that same mechanism to this lineage's CycloneDDS publisher family.
+- Reproduction path: CARLA-core seam work (ROS-side)
+- Effort class: S
+- Verified by: `LibCarla/source/carla/ros2/dds/cyclonedds/publishers/Carla{RGB,Depth,SS,IS,Normals,OpticalFlow,DVS}CameraPublisher.cpp`,
+  `LibCarla/source/carla/ros2/dds/cyclonedds/ROS2.cpp` (the seven
+  `cam_config.suffix = "/image_raw"` sites),
+  `LibCarla/source/carla/ros2/data_types.h`,
+  and `tier4/autoware-support`'s `LibCarla/source/carla/ros2/ROS2.cpp:594,604`
+  - `publishers/CarlaRGBCameraPublisher.cpp:97,150` (tier4, via `git show
+680d0d764` and `git grep` at both SHAs); the fork's
+    `LibCarla/source/carla/ros2/publishers/CarlaCameraPublisher.cpp:37,40`
+    (`_impl_image->Init(GetBaseTopicName() + "/image", …)` — the suffix is a
+    **string literal**, with no `has_override` escape of the kind
+    `ROS2.cpp:660-675` gives the DVS/radar/point-cloud family), and
+    `runner/spawn.py:415` (`camera_topic()` →
+    `/sensing/camera/camera<N>/image_raw`, set as both `ros_topic_name` and
+    `ros_name`) (extension). **This is a live, verified gap, not a hypothetical**:
+    because the fork appends `"/image"` unconditionally, the runner's
+    `ros_topic_name` override yields
+    `/sensing/camera/camera<N>/image_raw/image` — the base name is overridable,
+    the suffix is not, and no combination of blueprint attributes produces
+    Autoware's expected topic. `runner/spawn.py`'s own docstring records that the
+    M4 camera arm treats "topic names as-emitted" and so never checked. **ROS-side**
+    under §5.0.3, on `PythonAPI/carla/src/Sensor.cpp:26`
+    (`.def("listen", &SubscribeToStream)`): the image is already delivered to any
+    client, and what is missing is only the topic name it is published under —
+    the textbook ROS-side case, and one a bridge solves for free. S: the fork
+    change is the same one-line shape as tier4's, at seven sites.
+    Cross-references §5.15 (per-actor `ros_topic_name`, which the fork already
+    has) and §5.16 (the `TopicConfig` this suffix rides in).
+
+### 6.18 Off-game-thread ROS 2 publish queue
+
+- What it does: `ROS2PublishQueue` is a single-worker task queue that drains
+  `std::function<void()>` publish lambdas off the UE game thread, with an
+  `Enqueue` for sensors where every sample matters and an `EnqueueLatest` that
+  discards pending work for sensors where only the freshest frame does. A second
+  branch applies it to the camera path specifically ("offload camera ROS2
+  publish to dedicated worker thread"). `ROS2.cpp` starts and drains the queue;
+  `LidarData.h` / `SemanticLidarData.h` gain the copy affordances the lambdas
+  need to own their captured payloads.
+- Maturity evidence: branches `tier4/feature/ros2-async-publish-queue` @
+  `2da85dbfabdde8242fa7915f16488083071aded0` and
+  `tier4/feature/ros2-async-camera-publish` @
+  `83533bc142a49bf4e482954b12bc67da2866051c` — both †-marked in §1.1, so their
+  ancestry could not be verified at all (§1.2); each is a single commit dated
+  2026-04-01, not spec-named, found by the branch scan. Treat as an experiment,
+  not a shipped capability: no test, no doc, and no evidence in either tree that
+  it was measured.
+- Reproduction path: CARLA-core seam work (ROS-side)
+- Effort class: M
+- Verified by: `LibCarla/source/carla/ros2/ROS2PublishQueue.h` (read in full),
+  `LibCarla/source/carla/ros2/{ROS2.cpp,ROS2.h}`,
+  `LibCarla/source/carla/sensor/data/{LidarData.h,SemanticLidarData.h}`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/Sensor.h` (tier4, two-dot
+  per §6.0.1); `extension/include/carla/ros2/extension/CarlaRos2Extension.h`,
+  `benchmarks/` and `docs/e2e-report.md` (the G3 cadence gate, 19.96/19.94 Hz)
+  (extension). Sensor publishing is entirely core-side, so no `.so` path exists;
+  the extension's own endpoints publish from whichever thread calls
+  `publish()`, and moving _those_ off the caller would be extension-side, but
+  that is not this capability. **ROS-side** under §5.0.3, on
+  `PythonAPI/carla/src/Sensor.cpp:26` (`.def("listen", …)`): the datum is
+  unchanged sensor data and what moves is only the thread it reaches the
+  consumer on — and a bridge already publishes from its own process, so it has
+  the property for free, which is exactly what "a different integration approach
+  could already reach the datum today" means. M rather than S because the
+  correctness burden (lambda-owned payloads, shutdown draining, and the
+  latest-wins policy per sensor type) is where the work is, not the 109-line
+  header.
+
+### 6.19 Sensor-pipeline stage timing instrumentation
+
+- What it does: brackets the sensor send path with
+  `std::chrono::high_resolution_clock` and prints per-stage millisecond timings
+  to stderr — `ASceneCaptureSensor::PostPhysTick` reports
+  `CaptureScene: %.1fms` around `EnqueueRenderSceneImmediate()`, and
+  `FAsyncDataStream`'s send helper in `Sensor.h` reports
+  `SendDataToClient: serialize=… ros2=… stream=… total=…` around the
+  serialization, ROS 2 publish and streaming stages separately, with a further
+  probe in `ImageUtil.cpp`.
+- Maturity evidence: branch `tier4/feature/sensor-timing-instrumentation` @
+  `0203ee13080aefac6ae905e708aebccc5def98eb` — †-marked in §1.1 (ancestry
+  unverifiable, §1.2), a single commit dated 2026-04-01, not spec-named. This is
+  explicitly a debugging patch, not a feature: raw `fprintf(stderr, …)` on every
+  frame of every sensor, no flag, no sampling, no aggregation, and its own
+  commit subject says "for sensor pipeline debugging".
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/Sensor.h`,
+  `.../Carla/Sensor/SceneCaptureSensor.cpp`, `.../Carla/Sensor/ImageUtil.cpp`
+  (tier4, two-dot per §6.0.1); `benchmarks/`, `tests/benchmarks/`,
+  `docs/e2e-report.md` (extension). **Sensor-side** under §5.0.3, decided by a
+  grep that found nothing: the datum is the wall-clock cost of stages _inside_
+  CARLA's sensor pipeline, and no client API returns it —
+  `world.get_snapshot().timestamp` gives frame boundaries, not the serialize /
+  ROS 2 / stream split. Any approach wanting this split needs the same core
+  probes. Recorded honestly rather than dressed up: this repository measures the
+  same territory from outside with a committed harness (`benchmarks/`, the G3
+  cadence gate) rather than from inside, which answers a different question, and
+  nothing in the extension architecture forbids adding these probes to a fork
+  build if a campaign ever needs them.
+
+### 6.20 Actuator dynamics: jerk limits, first-order lag, steer-rate limit
+
+- What it does: gives the ego a configurable actuator model on top of §5.17's
+  acceleration control. Four new RPCs —
+  `set_actor_constant_acceleration_jerk_limit(pos, neg)`,
+  `set_actor_constant_acceleration_first_order_lag_tau(tau)`,
+  `set_vehicle_steer_rate_limit(rate)` and
+  `set_vehicle_steer_first_order_lag_tau(tau)` — thread through
+  `carla::client::Actor` / `Vehicle`, the Python API
+  (`set_constant_acceleration_jerk_limit`,
+  `set_constant_acceleration_first_order_lag_tau`, `set_steer_rate_limit`,
+  `set_steer_first_order_lag_tau`) and into `UVehicleAccelerationControl` and
+  `ACarlaWheeledVehicle`, where the commanded acceleration is rate-limited by
+  asymmetric positive/negative jerk bounds and lagged by a first-order filter,
+  and the steer output is likewise rate-limited and lagged. Each parameter
+  disables itself at `<= 0`.
+- Maturity evidence: branch `tier4/feature/vehicle-simulation` @
+  `98d821be867409bf7825ae73b344bd7da37cb9d7` — **merged into `tier4/main`**
+  (0 ahead). Not spec-named; found by the branch scan.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: M
+- Verified by: `LibCarla/source/carla/client/{Actor.h,Actor.cpp,Vehicle.h,Vehicle.cpp,detail/Client.{h,cpp},detail/Simulator.h}`,
+  `PythonAPI/carla/src/Actor.cpp`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp`
+  (the four new `BIND_SYNC` blocks),
+  `.../Carla/Vehicle/{CarlaWheeledVehicle.{h,cpp},VehicleAccelerationControl.{h,cpp}}`
+  (tier4, isolated from `93d920f57` per §6.0.1);
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
+  (`apply_ackermann_control`, `CarlaRos2AckermannPod`),
+  `extension/src/subscribers/ControlSubscribers.cpp` (extension). Same argument
+  as §5.17: the extension's only actuation primitive routes into CARLA's
+  existing Ackermann controller, and a `.so` cannot install a UE tick behaviour
+  or an RPC. **Sensor-side** under §5.0.3, decided by a grep that found nothing:
+  `git grep -i 'jerk_limit\|first_order_lag\|steer_rate_limit'` at the pinned
+  baseline SHA returns **no** hit anywhere, and the nearest existing client API,
+  `apply_ackermann_controller_settings()` /
+  `carla.AckermannControllerSettings` (`PythonAPI/carla/src/Actor.cpp:200-201`,
+  `Control.cpp:325+`), carries PID gains only — no jerk bound, no lag constant,
+  no steer-rate limit. The physical response is produced inside the vehicle
+  component, so every approach needs the same core change. One honest partial
+  overlap: `extension/src/subscribers/ControlSubscribers.cpp:48` already
+  forwards Autoware's `longitudinal.jerk` into `CarlaRos2AckermannPod`, and
+  CARLA's stock Ackermann controller applies its own accel/jerk limits — but
+  that is a **target-tracking** limit inside a controller, not the actuator
+  model this entry describes, and the source comment already flags the
+  difference as "a tuning watch-point".
+
+### 6.21 Vehicle-model characterization and plotting scripts
+
+- What it does: `PythonAPI/examples/vehicle_simulation.py` (1 178 lines) drives
+  scripted longitudinal and lateral manoeuvres against the §6.20 knobs and
+  records the response; `PythonAPI/examples/vehicle_acceleration_control_plot.py`
+  (657 lines, on `tier4/feature/vehicle-plot`) renders acceleration-control
+  step responses so a tuning change can be read off a chart rather than a log.
+  Together they are the calibration loop for §6.20 and for §5.17's acceleration
+  actuation.
+- Maturity evidence: branches `tier4/feature/vehicle-simulation` @
+  `98d821be867409bf7825ae73b344bd7da37cb9d7` and `tier4/feature/vehicle-plot` @
+  `61883b59eca4fc3db63d72d66f7e2e0f1ae5381d` — **both merged into `tier4/main`**
+  (0 ahead). Neither is spec-named.
+- Reproduction path: extension-side work
+- Effort class: M
+- Verified by: `PythonAPI/examples/vehicle_simulation.py`,
+  `PythonAPI/examples/vehicle_acceleration_control_plot.py` (tier4, isolated
+  from `93d920f57` and `893a8e22f` respectively per §6.0.1);
+  `benchmarks/`, `runner/loop.py`, `runner/__main__.py`,
+  `docs/e2e-report.md` (extension). Both scripts are ordinary CARLA Python
+  clients — no core change, no ABI involvement — so they sit exactly where the
+  runner does. This repository has a substantial measurement harness already
+  (`benchmarks/`, the committed G1–G3 evidence in `docs/e2e-report.md`), but it
+  measures **stack-level** outcomes (localization error, closed-loop deviation,
+  topic cadence), not **vehicle-model step response**; a repository-wide grep
+  finds no acceleration or steer step-response instrument. M rather than S for
+  the volume (1 835 lines across the two) and because the useful half of what
+  they measure is the §6.20 parameters, which do not exist here — against
+  `apply_ackermann_control` alone the scripts would characterize CARLA's stock
+  controller instead, which is a different (still useful) experiment.
+
+### 6.22 Containerized CARLA/UE5 build environment
+
+- What it does: a `docker/` directory holding a GPU-enabled development
+  container for **building** CARLA — `nvidia/cuda:12.8.0-devel-ubuntu22.04` with
+  the UE5 build dependencies (cmake/ninja/clang/lld, SDL2, Vulkan, OpenMP,
+  `xdg-user-dirs`), ROS 2 Humble base, a UID/GID-matched non-root user for bind
+  mounts, and a `docker-compose.yml` that reserves all NVIDIA GPUs, mounts a
+  single `WORK_PATH` **at the same absolute path inside the container** so
+  symlinks created by the host setup scripts still resolve, exposes CARLA's
+  2000–2002 and 1985 in bridge mode, and switches to `network_mode: host` for
+  ROS 2 multicast discovery via one `.env` variable. A 134-line `README.md`
+  documents the first-time setup and the in-container configure/build/package
+  commands.
+- Maturity evidence: branch `tier4/feature/docker-dev-env` @
+  `89c44284c0e07ed9cf7cde110572a0b0b31a7183` — †-marked in §1.1: ancestry
+  unverifiable and the tip's own parent is absent from the clone, so only the
+  tree could be read (§6.0.1). It sits on upstream `ue5-dev`, not on
+  `autoware-support`. A second copy of the same idea rides on the RGL lineage
+  (`785594562 feat(Util/Docker): add Ubuntu 22.04 Docker dev environment for
+UE5`). Two things temper the maturity claim, both from the files themselves:
+  the Dockerfile's header says "Private use only — do not publish (UE5 EULA
+  restriction on redistribution)", and it installs
+  `@anthropic-ai/claude-code` and mounts `~/.claude` + `ANTHROPIC_API_KEY`,
+  i.e. it is one engineer's agent workstation as much as a shared dev container.
+- Reproduction path: extension-side work
+- Effort class: S
+- Verified by: `docker/{Dockerfile,docker-compose.yml,.env.example,README.md}`
+  read in full at the pinned tip (tier4); `docker/compose.yaml`,
+  `docker/env.sh`, `docker/cyclonedds.xml`, `docs/prerequisites.md`,
+  `docs/running-e2e.md`, and `find . -name 'Dockerfile*'` returning **no hit**
+  (extension). **A partial divergence from the spec's pre-classification**,
+  which lists "docker bring-up" among its already-exists examples. The two
+  `docker/` directories solve opposite ends of the stack: this repository's runs
+  the **Autoware consumer** (`ghcr.io/autowarefoundation/autoware:universe-devel`,
+  host networking, the shared CycloneDDS profile, the map bundles) and is
+  mature; tier4's builds **CARLA itself**, which this repository does on the
+  host per `docs/prerequisites.md` and has no container for. So the
+  already-exists half is real but is not this capability. It is nonetheless
+  extension-side, not seam work: a Dockerfile plus a compose file is repository
+  tooling with no CARLA source change, and S is honest — the hard part (the
+  same-absolute-path mount rule for symlink compatibility, the bridge/host
+  network switch) is already written down above and is a day's work to adapt.
+
+### 6.23 Shared build-dependency staging and parallel package compression
+
+- What it does: two build-tooling capabilities that ride the RGL lineage.
+  `Util/BuildDependencyShare` (originally `Util/BuildShare`) lets several
+  developers or several checkouts share one built dependency tree — a
+  `build-share.conf`, a `check-update` mode that works without the config, and
+  update checks for RGL and its extensions — and `CARLA_PACKAGE_COMPRESSION`
+  makes the package target's compressor selectable (`pigz` parallel gzip as the
+  new default, `zstd` via `pzstd`, `gzip` for compatibility), both auto-detecting
+  CPU count, with `InstallPrerequisites.sh` and `Unreal/Package/Compress.cmake`
+  updated to match.
+- Maturity evidence: branches `tier4/feature/build-dependency-share-tool` @
+  `fdbf018d29329b26977bd5530ad8c72b9b495bab` and
+  `tier4/feature/pigz-zstd-compression` @
+  `b16cc5dbab516cfe6cc9fc69d9d4344d093b16ab` — both †-marked in §1.1 (ancestry
+  unverifiable, and their two-dot diffs are dominated by lineage difference, so
+  neither was separable; §6.0.1). Both were read instead on
+  `tier4/feature/rgl-on-ue5-dev-autoware-integration` @ `93d920f57`, where the
+  same work appears as `995ab1eae` / `3a6e68ad7` / `8713d80eb` / `52906f293` /
+  `9743a1e68` and `5e06661ea` / `bc2ce9afa`, and where `README_RGL.md`
+  documents the compression matrix — that branch is **merged into `tier4/main`**,
+  so the capability is shipped even though these two branches' own status is
+  unverifiable.
+- Reproduction path: extension-side work
+- Effort class: S
+- Verified by: `README_RGL.md` ("Package compression" section, read in full),
+  `RglSetup.sh`, and the branch log of
+  `tier4/feature/rgl-on-ue5-dev-autoware-integration` (tier4);
+  `docs/prerequisites.md`, `docs/running-e2e.md`, `scripts/e2e/run_e2e.sh`
+  (extension). No CARLA source is involved — these are shell/CMake build
+  utilities — so the verdict is extension-side by the §5.0.2 rule even though
+  the files would live in the CARLA fork rather than in this repository.
+  Recorded because build-time cost is a real adoption factor for a
+  two-repository build path (§5.28), not because the extension architecture
+  interacts with it.
+
+### 6.24 Large-map origin rebase in the editor viewport
+
+- What it does: 27 lines in `ALargeMapManager` that rebase the streaming world
+  origin to the **editor viewport camera** when not in PIE, so a large map's
+  tiles load around whatever the author is looking at instead of only around a
+  running ego. Without it, inspecting a distant part of a large map in the editor
+  shows unloaded tiles.
+- Maturity evidence: branch `tier4/fix/largemap-editor-rebase` @
+  `32a3b2edcce27fb31b9e6a55afa7a3293c95235c` — 1 commit ahead of `tier4/main`,
+  i.e. genuinely unmerged. Not spec-named. A rebased copy (`d22c37295`) rides on
+  `tier4/feature/lidar-udp-raw-packet`, which **is** merged.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/MapGen/LargeMapManager.{h,cpp}`
+  (tier4, `git show` per §6.0.1); `docs/nishishinjuku-map.md`,
+  `runner/__main__.py` (extension). **Sensor-side** under §5.0.3, decided by a grep
+  that found nothing: a search of `PythonAPI/carla/src/` and
+  `LibCarla/source/carla/client/World.h` at the pinned baseline SHA for
+  `map_origin` / `large_map` returns **no** client-facing accessor — the only
+  hit anywhere is the internal `detail::EpisodeState::_map_origin`
+  (`LibCarla/source/carla/client/detail/EpisodeState.h:111`), a read-only
+  observation inside LibCarla that is not exported to Python. In any case the
+  behaviour is editor-only, i.e. outside every client's reach by construction. Its relevance
+  to this comparison is limited and is stated as such: this repository's live
+  gates run against packaged/editor builds of a single Nishi-Shinjuku level and
+  never author a large map, so the practical reproduction demand is currently
+  zero — it is catalogued because it is an inventoried unmerged branch, not
+  because it blocks anything here.
+
+### 6.25 NavMesh map scanner game mode
+
+- What it does: a standalone `ANavMeshScannerGameMode` plus `UNavMeshMapScanner`
+  that walk a level's navigation mesh — the tooling side of validating that a
+  map's walkable surface is complete before pedestrians are spawned on it.
+- Maturity evidence: branch `tier4/test/navmesh-scanner` @
+  `590ce22deb3a8a5fb01327273351f05bf667e8dd` — †-marked in §1.1, ancestry
+  unverifiable and no diff obtainable (§6.0.1); the tip subject is
+  `Add scanner to root` and the branch is under `test/`, so treat it as a
+  scratch investigation rather than a delivered capability. Not spec-named.
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Effort class: S
+- Verified by: `Unreal/CarlaUnreal/Source/CarlaUnreal/{Public,Private}/{NavMeshMapScanner.{h,cpp},NavMeshScannerGameMode.{h,cpp}}`
+  (tier4 — **file inventory only**, via `git ls-tree`; no diff was obtainable
+  and the sources were not read line by line, which is recorded here rather than
+  papered over); `runner/spawn.py`,
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension).
+  **Sensor-side** under §5.0.3: a `AGameModeBase` subclass is installed by the
+  UE project, not by any client, and a grep of `LibCarla/source/carla/client/`
+  and `PythonAPI/carla/src/` at the pinned baseline SHA finds **no** navmesh
+  accessor of any kind — the nearest client surface,
+  `world.get_random_location_from_navigation()`
+  (`PythonAPI/carla/src/World.cpp:310`), samples the mesh but does not expose
+  it. Like §6.24, its bearing on this comparison is small and is stated
+  as such: no gate in this repository spawns pedestrians.
+
+### 6.26 Coverage map
+
+Every inventoried side branch, and the entry (or non-entry) that accounts for
+it. Branches marked _not a capability_ are listed in the same table so nothing
+in §1.1's candidate pool is silently unaccounted for.
+
+| Branch (from §1.1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tier4/experiment/cyclonedds-support`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | §6.1, §6.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `tier4/feature/ue5-dev-cyclonedds-support`, `tier4/feature/ue5-dev-autoware-integration`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §6.1 (evidence), §6.17                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `tier4/feature/agnocast-integration`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | §6.3                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/feature/rgl-on-ue5-dev-autoware-integration`, `tier4/feature/rgl-support`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | §6.4 (the latter as the superseded lineage), §6.23                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tier4/feature/rgl-distance-culling-multisensor`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | §6.6                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/fix/rgl-ring-id-0based`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | §6.5                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/feature/lidar-udp-raw-packet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | §6.5, §6.7, §6.9, §6.10, §6.11 (this branch carries five distinct capabilities, only one named by the spec)                                                                                                                                                                                                                                                                                                                                                               |
+| `tier4/feature/pandar128e4x-highres-udp`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | §6.8                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tier4/feature/lanelet2-traffic-light`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | §6.12, §6.13, §6.14                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tier4/feature/autoware-v2i-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | §6.15                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/fix/traffic-light-controller-null-check`, `tier4/fix/traffic-light-freeze`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | §6.16                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/ros2-async-publish-queue`, `tier4/feature/ros2-async-camera-publish`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | §6.18                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/sensor-timing-instrumentation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | §6.19                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/vehicle-simulation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.20, §6.21                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `tier4/feature/vehicle-plot`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | §6.21                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/vehicle-sim-package`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | §6.5 (its own delta above `pandar128e4x-highres-udp` is the azimuth-major ray-order fix and the Hesai preset re-sync); otherwise identical to `tier4/main` (§1.3)                                                                                                                                                                                                                                                                                                         |
+| `tier4/feature/docker-dev-env`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | §6.22                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/build-dependency-share-tool`, `tier4/feature/pigz-zstd-compression`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.23                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/fix/largemap-editor-rebase`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | §6.24                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/test/navmesh-scanner`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | §6.25                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/feature/override-steering-curve` (spec: steering-lut)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | _no §6 entry_ — already merged into `tier4/autoware-support` (0 ahead, ancestry verified in §2) and cataloged as §5.7, where a `diff -u` shows the extension's vendored copy is **identical** to tier4's apart from the namespace, an added `<tuple>` include and a provenance comment. Verified again here by file presence: `extension/include/carla/autoware/control/AutowareSteeringCompensation.h` exists on this branch. The spec's "already vendored" is confirmed |
+| `tier4/feature/gnss-pose-publish`, `tier4/feature/pose-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | _no §6 entry_ — both already merged into the baseline (0 ahead) and cataloged as §5.6                                                                                                                                                                                                                                                                                                                                                                                     |
+| `tier4/reference/pose-publisher`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | _not a capability_ — earlier unmerged draft superseded by `feature/pose-publisher` (§2)                                                                                                                                                                                                                                                                                                                                                                                   |
+| `tier4/fix/carlaserver-enum-typo`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | _not a capability_ — a 4-line `ECarlaServerResponse` spelling fix that unbreaks the build on its lineage                                                                                                                                                                                                                                                                                                                                                                  |
+| `tier4/shinjuku-test-map`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | _not a capability_ — tip subject is `Remove Autoware Game Mode debug cast`; a `git ls-tree` of the tip filtered for `shinjuku` returns 0 paths, so nothing map-specific is on it                                                                                                                                                                                                                                                                                          |
+| `tier4/main`, `tier4/ue5-dev`, `tier4/sync/upstream-ue5-dev-2026042*`, `tier4/patch/*`, `tier4/wc/add-cmake-preset`, `tier4/refactor/qos-settings`, `tier4/feature/{autoware-demo-ros-configuration,autoware-plugin,autoware-publishers,autoware-subscriber,autoware-subscribers,publish-report-data,ros-domain-id,time-scale,topic-name,vehicle-topic-support}`, `tier4/fix/{autoware-publishers-frame-id,dark-camera-sensor,gnss-null-check,imu-delta-time,incorrect-steering-angle-normalization,nishishinjuku-map-cook-path,ros-types,status-publish-stamp,steering,transform-names}` | _not side-branch capabilities_ — every one is either 0 commits ahead of `tier4/autoware-support` (i.e. already merged and therefore covered by §5), a lineage/sync/baseline pointer, or a superseded precursor of a merged capability. §5.15 (`ros_topic_name`), §5.16 (QoS), §5.21 (`ROS_DOMAIN_ID`), §5.19/§5.20 (IMU) and §5.8 (steering) are the merged forms of the like-named branches                                                                              |
