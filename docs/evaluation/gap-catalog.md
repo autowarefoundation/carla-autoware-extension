@@ -218,6 +218,14 @@ template:
 - Verified by: <files read> | needs prototype
 ```
 
+The blank line between the heading and the first field is **enforced by this
+repository's `prettier` pre-commit hook**, which formats fenced `markdown`
+blocks and inserts it; removing it by hand does not survive a commit (verified
+by editing it out and re-running the hook three times — it is re-inserted every
+time). The plan's source template has no such line. This is a formatter
+artifact of quoting the template inside a markdown document, not a deviation
+from it, and the entries themselves are unaffected.
+
 ## 4. Working list of branches to catalog
 
 Task 2 catalogs `tier4/autoware-support` (main). Task 3 catalogs the
@@ -2659,3 +2667,14 @@ baseline, the branch-point substitute for `upstream/ue5-dev`, the per-branch
 diff mechanics). They stand as written. The audit's own limit is the same one
 §5.0 now states for the whole document: this is code reading on both trees, and
 the six scoped `needs prototype` markers are where that method reaches its edge.
+
+**One correction to the audit's own record.** The audit commit claimed it had
+removed the blank line between `### <capability>` and `- What it does:` in §3's
+template block, to match the plan's source template verbatim. **That claim was
+wrong and the fix never landed**: the edit was made, but the `prettier`
+pre-commit hook re-inserted the line before the commit, netting to no change —
+the committed diff touches nothing in §3. Re-tested deliberately afterwards
+(edit out, run the hook, inspect: re-inserted, three times out of three), so the
+line is formatter-mandated rather than an oversight. §3 now says so at the
+template block. Recorded here because an evidence document that misreports its
+own fixes is worth less than one that admits the miss.
