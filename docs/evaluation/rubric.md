@@ -3,20 +3,28 @@
 **Pre-registered 2026-08-04, before any metric was retrieved.** This document
 exists in two halves, committed in two separate commits, in this order:
 
-1. **This commit** — the criterion list, each criterion's direction, and
-   **empty value cells**. No metric, count, date, or link appears below this
-   line as of this commit.
-2. A later commit, `docs(evaluation): rubric evidence snapshot`, which fills
-   the value cells using `scripts/evaluation/rubric_snapshot.sh` and records
-   the retrieval date + links.
+1. `docs(evaluation): pre-register acceptance rubric criteria` — the
+   criterion list, each criterion's direction, and empty value cells. Zero
+   metrics existed in the repository at that commit.
+2. **This commit**, `docs(evaluation): rubric evidence snapshot` — fills the
+   value cells below by running `scripts/evaluation/rubric_snapshot.sh` and
+   records the retrieval date + links.
 
-The ordering is the point: the criteria and their directions are locked
-before anyone looks at a single GitHub API response or `git rev-list`
-count, so no criterion can be added, dropped, or re-directioned after the
+The ordering is the point: the criteria and their directions were locked
+before anyone looked at a single GitHub API response or `git rev-list`
+count, so no criterion could be added, dropped, or re-directioned after the
 fact to favor a particular approach's numbers. If a criterion is found
 missing after the pre-registration commit, it is added in a **follow-up**
 commit with a note explaining why — the pre-registration commit itself is
 never rewritten.
+
+**Retrieved 2026-08-05T02:13 UTC**, by running
+`bash scripts/evaluation/rubric_snapshot.sh` from this repo's root. Every
+value cell below cites the command (reproduced in that script) or the URL a
+cell's manual observation came from. Where the fresh snapshot's numbers
+differ from a number the design spec quoted at spec-writing time
+(2026-07-27), both are given — see the per-criterion notes and
+"Known outcomes checked against this snapshot" below.
 
 ## No composite score
 
@@ -33,19 +41,18 @@ asked for.
 
 ## The three approaches
 
-| Label            | Approach                                                                                                                                        | Repo                                                                                         |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **Extension**    | This repo's out-of-tree C-ABI extension `.so` + declarative runner, against a CARLA fork carrying the native-ROS-2 patch set this repo requires | `autowarefoundation/carla-autoware-extension` (+ required fork, see Criterion 3)             |
-| **tier4-native** | tier4's in-fork native ROS 2/DDS integration, built directly into a CARLA UE5 fork                                                              | `tier4/carla-autoware-native`                                                                |
-| **Bridge**       | The in-tree `autoware_carla_interface`, a Python bridge node against an upstream CARLA release binary                                           | Autoware's own repos (exact path confirmed in the evidence snapshot commit) + upstream CARLA |
+| Label            | Approach                                                                                                                                        | Repo                                                                                                                                                                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Extension**    | This repo's out-of-tree C-ABI extension `.so` + declarative runner, against a CARLA fork carrying the native-ROS-2 patch set this repo requires | [`autowarefoundation/carla-autoware-extension`](https://github.com/autowarefoundation/carla-autoware-extension) (+ required fork, see Criterion 3)                                                                                                   |
+| **tier4-native** | tier4's in-fork native ROS 2/DDS integration, built directly into a CARLA UE5 fork                                                              | [`tier4/carla-autoware-native`](https://github.com/tier4/carla-autoware-native), branch [`autoware-support`](https://github.com/tier4/carla-autoware-native/tree/autoware-support)                                                                   |
+| **Bridge**       | `autoware_carla_interface`, an in-tree Python bridge node against an upstream CARLA release binary                                              | [`autowarefoundation/autoware_universe`](https://github.com/autowarefoundation/autoware_universe), path [`simulator/autoware_carla_interface`](https://github.com/autowarefoundation/autoware_universe/tree/main/simulator/autoware_carla_interface) |
 
 ## Criteria
 
 Each row states the criterion, the **direction** (which value a reader
 concerned with community acceptance would generally read as more favorable —
-recorded for transparency, not to be summed into a score), and then one
-empty value cell per approach. Value cells are filled only in the evidence
-snapshot commit.
+recorded for transparency, not to be summed into a score), and the value
+cells, each traceable to a command or a linked observation.
 
 ### 1. Governance / ownership
 
@@ -54,9 +61,9 @@ as lower long-term risk than a single company's fork or a single
 unaffiliated individual's repo, but this is a qualitative judgment, not a
 ranking — record the actual ownership structure for each.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                                                                                                                         | tier4-native                                                                                                                                                                                                                                                                                                                                 | Bridge                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repo hosted under the `autowarefoundation` GitHub org, but with no CODEOWNERS file and a `main` ruleset that requires only passing status checks (`cpp-tests`, `pytest`, `pre-commit`), not a human approving review (`gh api repos/autowarefoundation/carla-autoware-extension/rulesets`). In practice, ownership sits with the sole author. The required fork lives on a personal account (`youtalk/carla`), no org governance. | Owned by tier4 (a single company, Tier IV Inc.), a hard fork of `carla-simulator/carla`. A repo-wide ruleset requires 1 approving review + a CODEOWNER, but the `.github/CODEOWNERS` file is inherited **verbatim** from upstream CARLA (`* @carla-simulator/codeowners-carla`) — it names an upstream CARLA team, not a tier4-specific one. | Lives inside `autowarefoundation/autoware_universe`, the flagship AWF monorepo under AWF project-steering-committee governance; the package's own `.github/CODEOWNERS` line names 4 maintainers (3 `@tier4.jp` + 1 external `gmail.com`), matching `package.xml`. |
 
 ### 2. Who must accept it
 
@@ -64,18 +71,26 @@ ranking — record the actual ownership structure for each.
 AWF maintainer team, a single company, upstream CARLA maintainers, etc.)
 currently gates or would gate adoption of each approach.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                              | tier4-native                                                                                                                                                                                     | Bridge                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CI green only (`required_status_checks` ruleset) — no required human approval configured on `main`. All 30 PRs to date self-merged by the sole author. | 1 approving CODEOWNER review + passing checks, enforced repo-wide via a ruleset (`ref_name.include` contains `~ALL`) — nominally the upstream-CARLA-inherited CODEOWNERS team (see Criterion 1). | `autoware_universe`'s `main - approval` ruleset: `required_approving_review_count=1`, `require_code_owner_review=true` — for this path, one of the 4 named maintainers must approve. |
 
 ### 3. Total unmerged artifact set a user must install
 
 **Direction:** lower is more favorable — a smaller unmerged footprint is
 less for an adopter to build, trust, and maintain outside upstream.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | tier4-native                                                                                                                                                                                                                                  | Bridge                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **219 commits** ahead of `upstream/ue5-dev` on `feat/autoware-seminative-phase-b` (`git rev-list --count upstream/ue5-dev..feat/autoware-seminative-phase-b`, run in `~/src/carla-autoware-integration`) **+ this repo's own 25 commits** on `main`. The design spec quoted **216** at spec-writing time (2026-07-27) — the fresh count is **219**, +3, consistent with the 3 P4-transport-sweep-era commits visible at the head of the delta's log (`docs(ros2): pre-register the CAL-seam publish-order confound...`, `fix(ros2): publish the CAL-seam twins adjacent...`, `feat(ros2): add env-gated bench in-core cloud publisher...`) landing on the fork between spec-writing and this snapshot. Both numbers are reported per this task's instruction: the spec's is a snapshot from spec-writing time, this snapshot's is the current truth. | **305 commits** ahead of `upstream/ue5-dev` on `tier4/autoware-support` (`git rev-list --count upstream/ue5-dev..tier4/autoware-support`, run in `~/src/carla-autoware-native`) — matches the design spec's quoted **305** exactly; no drift. | **0** — quoted explicitly. In-tree in `autoware_universe`'s own `main`; nothing to fork or build outside upstream (see Criterion 5). |
+
+**Note on fork lineage (bonus finding, not a rubric cell):** the extension's
+fork is **not** built on top of tier4's fork (`git merge-base --is-ancestor
+tier4/autoware-support feat/autoware-seminative-phase-b` → `NO`); the two
+share an older common ancestor. The commits unique to the extension's
+branch relative to `tier4/autoware-support` are **121** (`git rev-list
+--count tier4/autoware-support..feat/autoware-seminative-phase-b`) — see
+Criterion 6 for why this matters for bus factor.
 
 ### 4. Upstreamed ratio
 
@@ -83,9 +98,9 @@ less for an adopter to build, trust, and maintain outside upstream.
 required changes that have already landed in an upstream (CARLA or
 Autoware) `main`/default branch, out of the total changes it depends on.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | tier4-native                                                                                                                                                                                                                                                         | Bridge                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| PR-count proxy (not a SHA-exact map onto the 219-commit delta): [`youtalk`](https://github.com/youtalk)'s PRs to `carla-simulator/carla` — 23 merged / 12 closed-unmerged / 6 open of 41 total; [`JArmandoAnaya`](https://github.com/JArmandoAnaya)'s (2nd fork contributor) — 38 merged / 12 open / 0 closed-unmerged of 50 total. Combined **61 merged of 91 opened ≈ 67%**. The spec's named mitigation chain [`#9743`–`#9758`](https://github.com/carla-simulator/carla/pull/9743) is confirmed on a full recheck of all 16 numbers in that inclusive range: 11 exist as PRs — the 8-part `JArmandoAnaya` `[1/8]`…`[8/8]` ROS2 pipeline (all MERGED: `#9743`, `#9745`, `#9746`, `#9748`, `#9751`, `#9756`, `#9757`, `#9758`) plus `youtalk`'s unrelated-topic [`#9744`](https://github.com/carla-simulator/carla/pull/9744) and [`#9749`](https://github.com/carla-simulator/carla/pull/9749) (both MERGED) plus one unrelated PR by a third author, `#9750` (CLOSED, unmerged); the remaining 5 numbers (`#9747`, `#9752`–`#9755`) don't exist as PRs in that repo at all (number-sequence gaps, not evidence against the claim). | **0** — no PR found in `carla-simulator/carla` from any of the delta's actual authors (`mateusz.palczuk@robotec.ai`, `wojciech.czerski@robotec.ai`, `ikuto.hosokawa@tier4.jp`, …); text search for `"tier4"` / `"robotec"` across that repo's PRs returns zero hits. | N/A — it **is** the upstream (in-tree in `autoware_universe`'s own default branch; no separate upstreaming step exists). |
 
 ### 5. Runs against an official upstream CARLA release binary (yes/no)
 
@@ -94,9 +109,9 @@ because it is the single largest real-world adoption differentiator: an
 approach a user can run against a stock release download has a categorically
 lower adoption bar than one requiring a multi-hour UE5 fork build.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                               | tier4-native                                                                                                                                        | Bridge                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No.** Requires building the CARLA fork's UE5.5 source tree from scratch — the fork _is_ the artifact. | **No.** Same UE5.5 fork source build ([`autoware-support` README](https://github.com/tier4/carla-autoware-native/blob/autoware-support/README.md)). | **Yes.** Installs a stock CARLA 0.9.15 release binary + a prebuilt ROS 2 Humble communication package (pip/egg from [`gezp/carla_ros`](https://github.com/gezp/carla_ros/releases/tag/carla-0.9.15-ubuntu-22.04)), per the [bridge README](https://github.com/autowarefoundation/autoware_universe/blob/main/simulator/autoware_carla_interface/README.md). |
 
 ### 6. Maintainer count and bus factor
 
@@ -104,32 +119,32 @@ lower adoption bar than one requiring a multi-hour UE5 fork build.
 favorable — fewer people whose absence would stall the project is higher
 risk.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | tier4-native                                                                                                                                                                                                                                                                                                                                                             | Bridge                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **This repo: 1** (solo, `youtalk`; 25/25 commits, 0 external reviewers across all 30 PRs to date — 24 merged, 5 open, 1 closed-unmerged, all authored by `youtalk`, the only reviewer ever recorded being `youtalk` themself (self-review on 2 PRs) — `gh pr list --repo autowarefoundation/carla-autoware-extension --state all --json author,mergedAt,state,reviews`). **Required fork's 219-commit delta:** dominated by 2 authors, Yutaka Kondo (66) + Jesus Armando Anaya (47) = 113/219 ≈ 52%, plus ~30 more contributing 1–20 commits each. Most of those smaller contributors' names **also appear in tier4-native's own delta** (Blyron, MarcelPiNacy-CVC, Luis Poveda Cano, glopezdiest, AinaRoca, …) — a 98-commit range shared between `upstream/ue5-dev` and the two forks' common ancestor that neither team originated (general un-upstreamed CARLA-community commits). The genuinely **extension-only** work (`tier4/autoware-support..feat/autoware-seminative-phase-b`, 121 commits) is 90% two people: Kondo (63) + Anaya (46) = 109/121. | Dominated by 2 Robotec.ai contractor engineers — Mateusz Palczuk (98) + Wojciech Czerski (62) = 160/305 ≈ 52% — with tier4's own named employee, HOSOKAWA Ikuto (14 + 2 aliased = 16 commits), a **minority** contributor to the branch bearing tier4's name. Bus factor for the branch's day-to-day work looks concentrated in 2 external contractors, not tier4 staff. | **4 named maintainers** in `package.xml`/`CODEOWNERS` (3 `@tier4.jp` + 1 external `gmail.com`). Path-scoped commit history (42 lifetime commits since 2024-07-19) shows **10 distinct author logins in the last 12 months**, one of which (`awf-autoware-bot[bot]`) is an automation account — 9 human authors. |
 
 ### 7. Activity — 90-day commits, lifetime commits, and distinct contributors in the last 12 months
 
 **Direction:** higher is generally more favorable, **except** that a young
 repo can post high 90-day/12-month activity purely by having no history to
 average against. **The extension row is annotated "repo created
-2026-07-20"** for exactly this reason — a 7-day-old hyperactive repo must not
-win an activity metric by construction, and any reader comparing this row
-across approaches must read the annotation before drawing a conclusion from
-the numbers.
+2026-07-20"** for exactly this reason — a 7-day-old (16-day-old at this
+snapshot) hyperactive repo must not win an activity metric by construction,
+and any reader comparing this row across approaches must read the
+annotation before drawing a conclusion from the numbers.
 
-| Extension (repo created 2026-07-20) | tier4-native | Bridge |
-| ----------------------------------- | ------------ | ------ |
-|                                     |              |        |
+| Extension (repo created 2026-07-20)                                                                                                                                                                                                                                                                          | tier4-native                                                                                                                                                                                                                                                                                                                                                                             | Bridge (path-scoped, `simulator/autoware_carla_interface`)                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **This repo:** 25 lifetime commits = 25 in the past 90 days (repo is 16 days old at snapshot time) = **1** distinct contributor in 12 months. **Required fork delta:** 219 lifetime, **100** in the past 90 days, **24** distinct author emails in the past 12 months (shared-ancestor caveat: Criterion 6). | **305 lifetime**, **0** commits in the past 90 days (`tier4/autoware-support`'s own tip is `6315b856f` dated **2026-04-08** — about 4 months stale as of this snapshot, not merely "~2026-05" as the spec estimated), **24** distinct author emails in the past 12 months (a trailing tail on a branch that has stopped moving; see Criterion 9 for the CI-silence that goes with this). | **42 lifetime** commits (earliest 2024-07-19, latest 2026-07-24), **8** in the past 90 days, **10** distinct author logins in 12 months (9 human + `awf-autoware-bot[bot]`). |
 
 ### 8. Install complexity (steps, build hours, disk)
 
 **Direction:** lower is more favorable — fewer manual steps, less build
 time, less disk footprint to get from zero to a running stack.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | tier4-native                                                                                                                                                                                                                                                                                                                                         | Bridge                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required fork shares the **same** UE5.5-source-build cost floor as tier4-native (not separately documented in this repo, since that build lives in the sibling fork repo). The extension `.so` itself builds in well under a minute (`cmake`+`ninja`, plain C++, no UE toolchain — see `ci.yaml`'s `cpp-tests` job). ~6 top-level bring-up steps documented in [`docs/running-e2e.md`](https://github.com/autowarefoundation/carla-autoware-extension/blob/main/docs/running-e2e.md) (build → container up + bootstrap → CARLA+extension+runner → Autoware → RViz → arm). | **~300 GB free disk**; **3–4 hours** to build Unreal Engine from source, plus **up to 1 hour** for the first editor build (both figures verbatim from the [`autoware-support` README](https://github.com/tier4/carla-autoware-native/blob/autoware-support/README.md)); ~5 install-script steps + separately install ROS 2 Humble + Autoware 0.45.1. | No CARLA source build at all: download a stock CARLA 0.9.15 release binary + pip-install a prebuilt ROS 2 Humble communication package + fetch/reshape Lanelet2 map assets + a normal `colcon build` of one package. ~5–6 steps, no multi-hour build, no unusual disk footprint (per the [bridge README](https://github.com/autowarefoundation/autoware_universe/blob/main/simulator/autoware_carla_interface/README.md); no hours/disk figure is stated there because none is needed). |
 
 ### 9. Automated test/CI coverage of the integration path
 
@@ -137,9 +152,13 @@ time, less disk footprint to get from zero to a running stack.
 exercises the CARLA↔Autoware integration path (not just a generic build) is
 stronger evidence of ongoing correctness than CI that doesn't touch it.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                                                         | tier4-native                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Bridge                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One workflow, [`ci.yaml`](https://github.com/autowarefoundation/carla-autoware-extension/blob/main/.github/workflows/ci.yaml): `cpp-tests` builds+links the extension `.so` against ROS 2 Jazzy and runs its gtest suite + checks the exported `carla_ros2_extension_init` ABI symbol; `pytest` runs the Python runner's tests. No live CARLA+Autoware run in CI. | All 6 CI workflows target `ue5-dev` (push/PR) or are `workflow_dispatch`-only placeholders ([`ue5_pr.yml`](https://github.com/tier4/carla-autoware-native/blob/main/.github/workflows/ue5_pr.yml) triggers on PRs into `ue5-dev`, not `autoware-support`). **The only CI run ever recorded on `autoware-support`** (`gh api repos/tier4/carla-autoware-native/actions/runs?branch=autoware-support`) is a single Dependabot-style "pip … Jinja2 - Update" event, 2025-09-15 — zero real build/test runs have ever validated the native-integration branch itself. | `autoware_universe`'s repo-wide [`build-and-test-differential.yaml`](https://github.com/autowarefoundation/autoware_universe/blob/main/.github/workflows/build-and-test-differential.yaml) builds any PR-touched package including this one, but the package has no `test/` directory and its `CMakeLists.txt` explicitly disables `ament_cmake_flake8` under `BUILD_TESTING` — CI here means "does it build + pass generic ament lint," not a functional or simulator-backed test. |
+
+**None of the three approaches runs a live CARLA+Autoware simulator loop in
+CI** — this repo's own live-stack gates (G0–G3, `docs/e2e-report.md`) are run
+manually per `docs/running-e2e.md`, not on every PR.
 
 ### 10. License
 
@@ -147,9 +166,11 @@ stronger evidence of ongoing correctness than CI that doesn't touch it.
 ships under and whether it is compatible with the other two / with upstream
 CARLA and Autoware licensing.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                          | tier4-native                                                         | Bridge                                                                      |
+| ---------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Apache License 2.0 (repo license). | MIT (repo license; inherited from upstream CARLA's own MIT license). | Apache License 2.0 (`package.xml` + `autoware_universe` host-repo license). |
+
+All three are permissive and mutually compatible.
 
 ### 11. Documentation quality
 
@@ -158,28 +179,88 @@ qualitative judgment (presence of install guide, architecture doc,
 troubleshooting record, etc.), recorded with links to what was found, not a
 numeric score.
 
-| Extension | tier4-native | Bridge |
-| --------- | ------------ | ------ |
-|           |              |        |
+| Extension                                                                                                                                                                                                                                                                                                                | tier4-native                                                                                                                                                                                                                                                                                                      | Bridge                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8 dedicated docs under [`docs/`](https://github.com/autowarefoundation/carla-autoware-extension/tree/main/docs) (~130 KB combined): `architecture.md`, `e2e-report.md`, `environment.md`, `g0-report.md`, `mgrs-handedness.md`, `nishishinjuku-map.md`, `prerequisites.md`, `running-e2e.md`, plus the top-level README. | One 349-line [`autoware-support` branch README](https://github.com/tier4/carla-autoware-native/blob/autoware-support/README.md) (install guide + demo instructions); the repo's `Docs/` directory (ReadTheDocs source) carries **zero** autoware-specific files — it's the plain upstream CARLA doc site content. | One 301-line [README](https://github.com/autowarefoundation/autoware_universe/blob/main/simulator/autoware_carla_interface/README.md) + a `docs/images` folder (illustrations only) + an auto-generated `CHANGELOG.rst`; no separate architecture/troubleshooting doc. |
 
-## Known outcomes the evidence snapshot must check
+## Known outcomes checked against this snapshot
 
 The design spec (`2026-07-27-three-approach-evaluation-design.md`,
-"Community-acceptance rubric" section) states expected outcomes ahead of the
-snapshot for several rows above (governance/ownership, unmerged artifact
-set, activity). The evidence-snapshot commit is required to check each of
-those expectations against live data and, for each, either confirm it
-verbatim, correct it, or mark it unverifiable-with-link — it does not get to
-silently inherit the spec's wording. Nothing from the spec's expected
-outcomes is transcribed into this pre-registration commit: doing so here
-would risk the value cells above being filled to match a preview instead of
-independently retrieved evidence.
+"Community-acceptance rubric" section) stated these expected outcomes ahead
+of the snapshot. Each is checked below against live data: confirmed
+verbatim, corrected, or marked unverifiable-with-link.
+
+**Extension — "solo-authored with zero external reviewers so far... requires
+an unmerged fork (mitigation: the staged upstream PR pipeline, #9743–#9758
+already merged)."** CONFIRMED for the repo itself, with a scope
+clarification: every commit and every PR on `autowarefoundation/carla-autoware-extension`
+since its creation is authored by `youtalk`, and the only "reviews" in the
+PR history are two self-reviews (`#8`, `#12`) — zero external reviewers,
+exactly as claimed (`gh pr list --repo autowarefoundation/carla-autoware-extension --json author,reviews`).
+The required fork is more collaborative than "solo" might suggest read in
+isolation — see Criterion 6 — but that is additive detail about the fork,
+not a contradiction of the claim about the repo and its review process. The
+mitigation PR pipeline is CONFIRMED: of the 16 numbers in `#9743`–`#9758`,
+the 8 that belong to `JArmandoAnaya`'s staged pipeline are all MERGED, plus
+`youtalk`'s unrelated-topic `#9744` and `#9749` (also MERGED) — see
+Criterion 4 for the full number-by-number recheck, including the 5 numbers
+that are gaps (not PRs at all) and the 1 (`#9750`) that is an unrelated
+third author's closed, unmerged PR.
+
+**Bridge — "version-locked to 0.9.15 with the 0.10 direction contested
+(four opened-and-closed PRs, then draft #13077 pivoting to SplatSim)."**
+The 0.9.15 version lock is CONFIRMED verbatim (the bridge README's own
+"Supported Environment" table still lists `carla: 0.9.15` as of this
+snapshot). The PR count and #13077's state are CORRECTED:
+
+- Fresh search finds **five**, not four, PRs explicitly mentioning CARLA
+  0.10 by the same author (`hakuturu583`), all opened-and-closed, none
+  merged: [`#13048`](https://github.com/autowarefoundation/autoware_universe/pull/13048),
+  [`#13049`](https://github.com/autowarefoundation/autoware_universe/pull/13049),
+  [`#13051`](https://github.com/autowarefoundation/autoware_universe/pull/13051),
+  [`#13052`](https://github.com/autowarefoundation/autoware_universe/pull/13052),
+  [`#13060`](https://github.com/autowarefoundation/autoware_universe/pull/13060).
+- [`#13077`](https://github.com/autowarefoundation/autoware_universe/pull/13077)
+  ("add SplatSim v1.2.0 gRPC rendering integration") was a draft when the
+  spec was written (created 2026-07-27, the same day) but has **since been
+  closed** (2026-07-29), unmerged — it is no longer an open draft as of
+  this snapshot.
+- A further successor, [`#13089`](https://github.com/autowarefoundation/autoware_universe/pull/13089)
+  ("add SplatSim gRPC rendering integration"), opened the same day #13077
+  closed (2026-07-29) and is the PR **currently open** as of this snapshot
+  — and unlike all five of its predecessors, it is **not** marked draft.
+
+  So the freshly-counted "0.10 direction" chain is: 5 closed 0.10-labeled
+  PRs → 1 closed SplatSim-pivot PR (`#13077`) → 1 currently-open, non-draft
+  SplatSim PR (`#13089`). None of the six PRs found have been merged; CARLA
+  0.10 support itself has not landed.
+
+**tier4-native — "issues disabled, zero forks, no upstreaming, stalled
+sync."** CONFIRMED, and the staleness is sharper than the spec's estimate:
+
+- `has_issues: false` CONFIRMED (`open_issues_count: 7` in the same API
+  response is not a contradiction — GitHub counts open PRs in that field
+  even when Issues is disabled).
+- `forks_count: 0` CONFIRMED.
+- No upstreaming CONFIRMED: zero PRs to `carla-simulator/carla` found from
+  any of the delta's actual authors; a text search for `"tier4"` /
+  `"robotec"` across that repo's PRs returns zero hits (Criterion 4).
+- Stalled sync CONFIRMED and SHARPENED: the spec estimated the sync
+  stalled "~2026-05"; this snapshot finds `tier4/autoware-support`'s own
+  tip commit dated **2026-04-08**, with **zero** commits landed on the
+  branch in the 90 days before this snapshot, and its CI having fired
+  exactly **once**, ever, on that branch — a dependency-bump automation
+  event (2025-09-15), never a real build/test (Criteria 7 and 9).
 
 ## Reproducing this snapshot
 
-`scripts/evaluation/rubric_snapshot.sh` (added in the evidence-snapshot
-commit) contains the exact `gh api` / `git` command that fills every cell
-above. Re-run it to refresh the snapshot; re-running it does **not**
-authorize editing the criterion list or directions above without a
-follow-up commit that explains the change — see the note at the top of this
-document.
+`scripts/evaluation/rubric_snapshot.sh` contains the exact `gh api` / `git`
+command that produced every value above. Re-run it
+(`bash scripts/evaluation/rubric_snapshot.sh`) to refresh the snapshot;
+re-running it does **not** authorize editing the criterion list or
+directions above without a follow-up commit that explains the change — see
+the note at the top of this document. The script requires `gh` to be
+authenticated and, for the fork-delta and bus-factor cells, the two local
+sibling clones CLAUDE.md documents (`~/src/carla-autoware-integration`,
+`~/src/carla-autoware-native`); if a clone isn't present, that section
+prints a `SKIP` line rather than failing the whole snapshot.
