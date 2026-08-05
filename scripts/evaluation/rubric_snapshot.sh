@@ -27,23 +27,60 @@
 # isolates tier4's own delta from CARLA's inherited history. The same
 # reasoning applies to the extension's required fork delta.
 #
+# THIS SCRIPT DOES NOT REGENERATE A FILED FIGURE -- read this before trusting
+# a re-run against rubric.md's numbers. Unlike everything under
+# benchmarks/analysis/, its output is a DATED SNAPSHOT of moving state:
+#   (a) every non-clone cell is a live `gh api` / `gh search prs` against
+#       GitHub at the moment of the run (PR counts, ruleset ids, actions/runs
+#       totals, the bridge's path-scoped commit list -- all move);
+#   (b) SINCE_90D / SINCE_365D below are computed from the RUN DATE, so every
+#       "N in 90 days" cell is a function of when you run this;
+#   (c) the two local clones' branches are moving refs.
+# For (c) the script now prints `git rev-parse` for BOTH endpoints beside every
+# `rev-list --count`, so a re-run is comparable to the SHAs rubric.md pins in
+# Criteria 3 and 6 ("Appendix: snapshot audit trail"). For (a) and (b) there is
+# no remedy but the run date -- REDIRECT THIS SCRIPT AND COMMIT THE LOG:
+#   bash scripts/evaluation/rubric_snapshot.sh > /tmp/rubric-snapshot.log 2>&1
+# rubric.md's audit-trail appendix exists because the 2026-08-05T02:13 UTC run
+# was NOT captured that way and cannot be reconstructed.
+#
 # PREREQUISITES:
 #   - `gh` authenticated (gh auth status) with no special scopes beyond
 #     public repo read.
-#   - Two LOCAL git clones, read-only for this script's purposes, whose
-#     paths CLAUDE.md documents as this repo's sibling repos:
+#   - Two LOCAL git clones. This script is READ-ONLY against them by default:
+#     it never fetches unless you pass --fetch (see below), because fetching
+#     the very refs whose counts you are reporting MUTATES the repositories
+#     the numbers are computed over -- `fetch --prune` in particular deletes
+#     remote-tracking refs and is not idempotent with respect to what was
+#     there before. That is the same class of defect as an analysis script
+#     rewriting results/; it just happens outside this repo.
 #       EXT_FORK_CLONE   (default ~/src/carla-autoware-integration), on
 #                        branch feat/autoware-seminative-phase-b
 #       TIER4_FORK_CLONE (default ~/src/carla-autoware-native), with the
-#                        `tier4` and `upstream` remotes fetched
-#     Both are git worktrees sharing one shallow clone's .git in this
-#     operator's setup (`~/src/carla`); any independent clone with the same
-#     branches and remotes fetched reproduces the same rev-list counts.
-#     If a clone is missing, its section prints a SKIP line and the rest of
-#     the snapshot still runs -- see CLAUDE.md "Sibling repos".
+#                        `tier4` and `upstream` remotes already fetched
+#     Both paths are documented HERE (they were previously documented only in
+#     an untracked CLAUDE.md, i.e. a pointer to one operator's machine). In
+#     that operator's setup both are git worktrees sharing one shallow clone's
+#     .git (`~/src/carla`); any independent clone with the same branches and
+#     remotes present reproduces the same rev-list counts -- EXCEPT the bonus
+#     check below, which additionally needs $TIER4_FORK_BRANCH to resolve
+#     INSIDE $EXT_FORK_CLONE and now says so by name instead of falling
+#     through silently.
+#     If a clone is missing, its section prints a loud MISSING line and the
+#     rest of the snapshot still runs. The script still exits 0 in that case,
+#     so ALWAYS grep the transcript for "MISSING" before transcribing values:
+#     a skipped clone silently removes Criteria 3, 6 and 7's fork halves.
 #
-# USAGE: bash scripts/evaluation/rubric_snapshot.sh
+# USAGE: bash scripts/evaluation/rubric_snapshot.sh [--fetch]
 set -euo pipefail
+
+DO_FETCH=0
+for arg in "$@"; do
+  case "$arg" in
+    --fetch) DO_FETCH=1 ;;
+    *) echo "unknown argument: $arg (usage: $0 [--fetch])" >&2; exit 2 ;;
+  esac
+done
 
 EXT_REPO="autowarefoundation/carla-autoware-extension"
 TIER4_REPO="tier4/carla-autoware-native"
@@ -54,6 +91,9 @@ EXT_FORK_CLONE="${EXT_FORK_CLONE:-$HOME/src/carla-autoware-integration}"
 EXT_FORK_BRANCH="${EXT_FORK_BRANCH:-feat/autoware-seminative-phase-b}"
 TIER4_FORK_CLONE="${TIER4_FORK_CLONE:-$HOME/src/carla-autoware-native}"
 TIER4_FORK_BRANCH="${TIER4_FORK_BRANCH:-tier4/autoware-support}"
+# The repo's ACTUAL default branch, queried alongside autoware-support so the
+# activity cells can name which ref is stalled and which is active.
+TIER4_MAIN_BRANCH="${TIER4_MAIN_BRANCH:-tier4/main}"
 UPSTREAM_BASE="${UPSTREAM_BASE:-upstream/ue5-dev}"
 
 NOW_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -61,6 +101,30 @@ SINCE_90D="$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 SINCE_365D="$(date -u -d '365 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 
 hdr() { printf '\n=== %s ===\n' "$1"; }
+
+# Every rev-list --count in this script goes through this helper, so no count
+# is ever printed without both of its endpoints resolved to a SHA. Fix-round-2
+# finding: rubric.md quoted 219 / 305 / 121 against MOVING refs that the script
+# itself fetched before counting, so not even an operator holding both clones
+# could confirm a number after the fact.
+count_range() {
+  local clone="$1" base="$2" head="$3"
+  echo "git rev-list --count $base..$head"
+  echo "  $base = $(git -C "$clone" rev-parse "$base" 2>/dev/null || echo '(unresolvable)')"
+  echo "  $head = $(git -C "$clone" rev-parse "$head" 2>/dev/null || echo '(unresolvable)')"
+  git -C "$clone" rev-list --count "$base..$head"
+}
+
+# Opt-in only. See the PREREQUISITES note on why fetching is not the default.
+maybe_fetch() {
+  local clone="$1"; shift
+  if [ "$DO_FETCH" -eq 1 ]; then
+    echo "(--fetch: git -C $clone fetch $*)"
+    git -C "$clone" fetch "$@" --quiet || true
+  else
+    echo "(no fetch -- refs are read as-is; pass --fetch to refresh them first)"
+  fi
+}
 
 # gh search prs is CAP-SILENT: it returns exactly --limit results with no
 # indication a real total was truncated to fit. Fix-round-1 finding: the
@@ -132,6 +196,16 @@ gh api "repos/$TIER4_REPO/rulesets" --jq '.[] | (.id|tostring) + " " + .name + "
 hdr "Criteria 1-2 -- tier4-native: EFFECTIVE rules on autoware-support itself (authoritative -- not a ruleset chased by name)"
 echo "gh api repos/$TIER4_REPO/rules/branches/autoware-support"
 gh api "repos/$TIER4_REPO/rules/branches/autoware-support" --jq '[.[].type]'
+# Fix-round-2 finding: printing only the rule TYPES establishes that those rule
+# types are configured, NOT that the branch is frozen for the people who
+# maintain it -- a ruleset's bypass_actors list can exempt an org/team/app
+# entirely. rubric.md Criterion 2 now scopes the word "frozen" accordingly.
+# Enumerated here so the scope is measured rather than assumed:
+echo "-- bypass actors per ruleset that reaches this branch (empty list == no exemptions) --"
+for rs in $(gh api "repos/$TIER4_REPO/rules/branches/autoware-support" --jq '[.[].ruleset_id] | unique | .[]'); do
+  echo "-- ruleset $rs --"
+  gh api "repos/$TIER4_REPO/rulesets/$rs" --jq '.name, ([.bypass_actors[]? | {actor_type, actor_id, bypass_mode}])' || echo "(ruleset $rs not readable with this token)"
+done
 echo "(expect: creation, update, deletion, non_fast_forward -- i.e. the branch is FROZEN"
 echo " against updates/deletion/force-push, but NO pull_request rule reaches it, so no"
 echo " approving-review gate applies here despite the repo having a ruleset elsewhere that"
@@ -153,21 +227,50 @@ gh api "repos/$BRIDGE_REPO/contents/.github/CODEOWNERS" --jq '.content' | base64
 # ---------------------------------------------------------------------------
 hdr "Criterion 3 -- tier4-native fork delta (spec quotes 305)"
 if [ -d "$TIER4_FORK_CLONE" ]; then
-  git -C "$TIER4_FORK_CLONE" fetch tier4 --prune --quiet || true
-  git -C "$TIER4_FORK_CLONE" fetch upstream ue5-dev --quiet || true
-  echo "git rev-list --count $UPSTREAM_BASE..$TIER4_FORK_BRANCH"
-  git -C "$TIER4_FORK_CLONE" rev-list --count "$UPSTREAM_BASE..$TIER4_FORK_BRANCH"
+  maybe_fetch "$TIER4_FORK_CLONE" tier4 --prune
+  maybe_fetch "$TIER4_FORK_CLONE" upstream ue5-dev
+  count_range "$TIER4_FORK_CLONE" "$UPSTREAM_BASE" "$TIER4_FORK_BRANCH"
 else
-  echo "SKIP: TIER4_FORK_CLONE not found at $TIER4_FORK_CLONE -- see CLAUDE.md Sibling repos"
+  echo "MISSING: TIER4_FORK_CLONE not found at $TIER4_FORK_CLONE -- Criteria 3, 6 and 7's tier4 fork halves are ABSENT from this transcript"
+fi
+
+# Fix-round-2 finding (2026-08-05): scoping the CAPABILITY comparison to
+# autoware-support is correct -- it is the branch the benchmark's cell B builds
+# -- but scoping the ACTIVITY/MAINTENANCE verdict to it and publishing "stopped
+# moving" about tier4-native the approach is not: tier4/main is the repo's
+# actual default branch, is 349 commits ahead of autoware-support, and carries
+# 205 commits inside the same 90-day window this snapshot reports as 0. This
+# block exists so the branch-vs-approach distinction is MEASURED, not argued.
+hdr "Criterion 3/7 -- tier4/main (the repo's DEFAULT branch), for the branch-vs-approach distinction"
+if [ -d "$TIER4_FORK_CLONE" ]; then
+  echo "-- repo HEAD branch per the remote --"
+  git -C "$TIER4_FORK_CLONE" remote show tier4 2>/dev/null | grep -i 'HEAD branch' || echo "(remote show unavailable; tier4/main assumed)"
+  count_range "$TIER4_FORK_CLONE" "$UPSTREAM_BASE" "$TIER4_MAIN_BRANCH"
+  count_range "$TIER4_FORK_CLONE" "$TIER4_FORK_BRANCH" "$TIER4_MAIN_BRANCH"
+  echo "-- tips --"
+  git -C "$TIER4_FORK_CLONE" log -1 --format='%H %ci  autoware-support' "$TIER4_FORK_BRANCH"
+  git -C "$TIER4_FORK_CLONE" log -1 --format='%H %ci  main' "$TIER4_MAIN_BRANCH"
+  echo "-- 90-day commits: autoware-support, then main (the pair the rubric must print together) --"
+  git -C "$TIER4_FORK_CLONE" rev-list --count --since="90 days ago" "$TIER4_FORK_BRANCH"
+  git -C "$TIER4_FORK_CLONE" rev-list --count --since="90 days ago" "$TIER4_MAIN_BRANCH"
+  echo "-- 12-month distinct author emails on main (machine-produced) --"
+  git -C "$TIER4_FORK_CLONE" log --since="365 days ago" "$TIER4_MAIN_BRANCH" --format='%ae' | sort -u | wc -l
+  echo "-- is autoware-support an ancestor of main? --"
+  if git -C "$TIER4_FORK_CLONE" merge-base --is-ancestor "$TIER4_FORK_BRANCH" "$TIER4_MAIN_BRANCH"; then
+    echo "YES"
+  else
+    echo "NO -- the two diverged; main was fast-forwarded from the ue5-dev lineage (gap-catalog.md 1.3)"
+  fi
+else
+  echo "MISSING: TIER4_FORK_CLONE not found -- the branch-vs-approach check is ABSENT from this transcript"
 fi
 
 hdr "Criterion 3 -- Extension's required fork delta (spec quotes 216)"
 if [ -d "$EXT_FORK_CLONE" ]; then
-  git -C "$EXT_FORK_CLONE" fetch upstream ue5-dev --quiet || true
-  echo "git rev-list --count $UPSTREAM_BASE..$EXT_FORK_BRANCH"
-  git -C "$EXT_FORK_CLONE" rev-list --count "$UPSTREAM_BASE..$EXT_FORK_BRANCH"
+  maybe_fetch "$EXT_FORK_CLONE" upstream ue5-dev
+  count_range "$EXT_FORK_CLONE" "$UPSTREAM_BASE" "$EXT_FORK_BRANCH"
 else
-  echo "SKIP: EXT_FORK_CLONE not found at $EXT_FORK_CLONE -- see CLAUDE.md Sibling repos"
+  echo "MISSING: EXT_FORK_CLONE not found at $EXT_FORK_CLONE -- Criteria 3, 6 and 7's extension fork halves are ABSENT from this transcript"
 fi
 
 hdr "Criterion 3 -- Extension repo's own commit count (the '+ this repo' half of the artifact set)"
@@ -177,19 +280,29 @@ hdr "Criterion 3 -- Bridge's unmerged artifact set (spec quotes 0, quoted explic
 echo "MANUAL OBSERVATION: the bridge ships inside $BRIDGE_REPO at $BRIDGE_PATH and installs"
 echo "against an official CARLA release binary (see Criterion 5) -- there is no fork to build."
 
+# NAMED PRECONDITION (fix round 2): this check reads $TIER4_FORK_BRANCH inside
+# $EXT_FORK_CLONE. The old code did a refspec-less `fetch <path>` first, which
+# writes FETCH_HEAD and NOT that ref -- so the ref only ever existed here in the
+# operator's shared-.git worktree arrangement, and on an independent clone both
+# lines fell through behind `2>/dev/null` and silently dropped the 121-commit
+# figure that Criteria 3 and 6 both quote. Now it is checked and named.
 hdr "Bonus reproducibility check -- is either fork built on top of the other's delta?"
-if [ -d "$EXT_FORK_CLONE" ]; then
-  git -C "$EXT_FORK_CLONE" fetch "$TIER4_FORK_CLONE" 2>/dev/null || true
+if [ ! -d "$EXT_FORK_CLONE" ]; then
+  echo "MISSING: EXT_FORK_CLONE not found -- bonus check ABSENT from this transcript"
+elif ! git -C "$EXT_FORK_CLONE" rev-parse --verify --quiet "$TIER4_FORK_BRANCH" >/dev/null; then
+  echo "SKIP (precondition unmet): $TIER4_FORK_BRANCH does not resolve inside $EXT_FORK_CLONE."
+  echo "  This check needs BOTH forks' refs in ONE clone. Add the tier4 remote and fetch it:"
+  echo "    git -C $EXT_FORK_CLONE remote add tier4 https://github.com/tier4/carla-autoware-native.git && git -C $EXT_FORK_CLONE fetch tier4"
+  echo "  Until then rubric.md's 121-commit extension-only figure is NOT reproduced by this run."
+else
   echo "git merge-base --is-ancestor $TIER4_FORK_BRANCH $EXT_FORK_BRANCH"
-  if git -C "$EXT_FORK_CLONE" merge-base --is-ancestor "$TIER4_FORK_BRANCH" "$EXT_FORK_BRANCH" 2>/dev/null; then
+  if git -C "$EXT_FORK_CLONE" merge-base --is-ancestor "$TIER4_FORK_BRANCH" "$EXT_FORK_BRANCH"; then
     echo "YES -- tier4/autoware-support is an ancestor of the extension's fork branch"
   else
     echo "NO -- the two forks share an older common ancestor, not a direct lineage"
   fi
-  echo "git rev-list --count $TIER4_FORK_BRANCH..$EXT_FORK_BRANCH (extension-only work if tier4 were an ancestor; still a useful upper bound otherwise)"
-  git -C "$EXT_FORK_CLONE" rev-list --count "$TIER4_FORK_BRANCH..$EXT_FORK_BRANCH" 2>/dev/null || echo "(remote ref unavailable in this clone; skip)"
-else
-  echo "SKIP: EXT_FORK_CLONE not found"
+  echo "(extension-only work if tier4 were an ancestor; still a useful upper bound otherwise)"
+  count_range "$EXT_FORK_CLONE" "$TIER4_FORK_BRANCH" "$EXT_FORK_BRANCH"
 fi
 
 # ---------------------------------------------------------------------------
@@ -278,7 +391,7 @@ if [ -d "$TIER4_FORK_CLONE" ]; then
   echo "-- last commit date on tier4/autoware-support itself (staleness check; CI-coverage check is under Criterion 9) --"
   git -C "$TIER4_FORK_CLONE" log -1 --format='%H %ci' "$TIER4_FORK_BRANCH"
 else
-  echo "SKIP: TIER4_FORK_CLONE not found"
+  echo "MISSING: TIER4_FORK_CLONE not found -- this section is ABSENT from the transcript"
 fi
 
 hdr "Criteria 6-7 -- Extension's required fork delta (upstream/ue5-dev..feat/autoware-seminative-phase-b): bus factor + activity"
@@ -292,7 +405,7 @@ if [ -d "$EXT_FORK_CLONE" ]; then
   echo "-- count of the above (machine-produced -- do not hand-count the printed list; fix-round-1 finding: a hand-count of this exact list previously miscounted 24 instead of 25) --"
   git -C "$EXT_FORK_CLONE" log --since="365 days ago" "$UPSTREAM_BASE..$EXT_FORK_BRANCH" --format='%ae' | sort -u | wc -l
 else
-  echo "SKIP: EXT_FORK_CLONE not found"
+  echo "MISSING: EXT_FORK_CLONE not found -- this section is ABSENT from the transcript"
 fi
 
 hdr "Criteria 6-7 -- Bridge ($BRIDGE_PATH, path-scoped -- NOT autoware_universe-wide)"
@@ -368,3 +481,8 @@ hdr "Snapshot complete"
 echo "Transcribe the values above into docs/evaluation/rubric.md's value cells,"
 echo "under a retrieval date of $NOW_UTC, each with the link this script printed"
 echo "or the repo/PR URL the gh call resolved."
+echo
+echo "BEFORE TRANSCRIBING: grep this transcript for 'MISSING' -- a skipped clone"
+echo "removes Criteria 3, 6 and 7's fork halves without failing the run."
+echo "AND: commit the transcript. rubric.md's audit-trail appendix exists only"
+echo "because the 2026-08-05T02:13 UTC run's stdout was never captured."
