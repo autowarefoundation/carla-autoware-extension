@@ -259,7 +259,7 @@ The whole-tree delta over the same range is **180 files, +19 660 / −1 198**,
 distributed as: `LibCarla/source/carla/ros2` 127 files, the Carla UE plugin 33,
 `LibCarla/source/carla/client` 7, `LibCarla/source/carla/sensor` 4, `PythonAPI`
 4, and 5 top-level config / ignore / README files (127 + 33 + 7 + 4 + 4 + 5 =
-180). §5.28 tabulates which entry covers each of those areas, so the "100 %
+180). §5.29 tabulates which entry covers each of those areas, so the "100 %
 coverage of main" bar is auditable rather than asserted.
 
 #### 5.0.1 The `ue5-dev` diff: what was actually comparable
@@ -342,6 +342,59 @@ branches read read-only from the shared object store) already carries an
 equivalent core change, the entry says so and the effort class reflects the
 _remaining_ work, not the work already done.
 
+#### 5.0.3 The seam sub-label rule
+
+§3's taxonomy asks every `CARLA-core seam work` entry to be labelled
+**sensor-side (approach-agnostic)** or **ROS-side**. One rule decides it for
+every such entry below, applied mechanically rather than argued case by case:
+
+> **Is the underlying datum already obtainable through an existing CARLA
+> client/actor API?** If **no** — the measurement, asset or physical behaviour
+> does not exist outside CARLA core, so a Python bridge, an in-tree native
+> ROS 2 stack and this out-of-tree extension would each need the _same_ core
+> change — the entry is **sensor-side (approach-agnostic)**. If **yes** — the
+> world already produces it and what is missing is only how it reaches a
+> consumer (topic name, QoS, TF gating, an RPC, an ABI field) — the entry is
+> **ROS-side**, because a different integration approach could already reach
+> the datum today.
+
+The test is applied against the _client API surface at the pinned SHA_, and each
+entry names the specific API that decided it (for example
+`vehicle.get_light_state()` for §5.10, `LidarMeasurement.get_point_count()` for
+§5.14) or records that the grep found none (§5.9). Three consequences worth
+stating up front, because they flip labels a case-by-case reading would get
+wrong:
+
+- An RPC is **not** automatically ROS-side. §5.17 ships an RPC pair, but the
+  capability is the UE physics component behind it, which no client API can
+  install — sensor-side. §5.23, by contrast, ships an RPC whose payload is
+  already returned by an existing upstream RPC, so it is not even seam work.
+- A change inside `LibCarla/source/carla/ros2` is **not** automatically
+  ROS-side, and one outside it is not automatically sensor-side. §5.19 lives in
+  the UE sensor and is sensor-side; §5.20 lives in the ROS publisher and is not
+  seam work at all; §5.14 lives in the ROS publisher and is ROS-side.
+- "Approach-agnostic" is a claim about _other_ integration approaches, not about
+  this one. §5.10's blocker is an ABI field this architecture lacks — a property
+  of this seam, not of CARLA — so it is ROS-side even though the extension
+  cannot fix it without a version bump.
+
+#### 5.0.4 Verdict tally
+
+28 capability entries (§5.1–§5.28); §5.29 is the coverage map, not an entry.
+
+| Class                              | Count | Entries                                                               |
+| ---------------------------------- | ----- | --------------------------------------------------------------------- |
+| already-exists                     | 11    | §5.1, §5.2, §5.3, §5.5, §5.6, §5.7, §5.11, §5.20, §5.23, §5.25, §5.28 |
+| extension-side work                | 4     | §5.4, §5.18, §5.26, §5.27                                             |
+| CARLA-core seam work — sensor-side | 6     | §5.9, §5.12, §5.13, §5.17, §5.19, §5.24                               |
+| CARLA-core seam work — ROS-side    | 7     | §5.8, §5.10, §5.14, §5.15, §5.16, §5.21, §5.22                        |
+
+Effort: 25 × S, 3 × M (§5.12, §5.13, §5.17). No entry carries an overall
+`needs prototype` verdict; two entries carry a **scoped** `needs prototype`
+marker on a named sub-claim while their overall verdict stands — §5.14 (whether
+the two `PointXYZIRCAEDT` implementations agree field-for-field) and §5.20
+(whether the two IMU gyroscope axis maps agree).
+
 ---
 
 ### 5.1 Autoware vehicle-status report publishers (six `/vehicle/status/*` topics)
@@ -364,9 +417,13 @@ _remaining_ work, not the work already done.
   The extension publishes the identical six topic names and message types at the
   identical QoS triple (`StatusQos()` → reliability 0 / durability 0 / depth 1),
   with the same `base_link` frame on `VelocityReport` and the same
-  one-stamp-for-all-six discipline. Per-field value provenance differs on three
-  of the six and is cataloged separately in §5.8, §5.9 and §5.10 rather than
-  folded into this verdict.
+  one-stamp-for-all-six discipline. Per-field value provenance differs on **five
+  of the six** — only `VelocityReport` matches outright (both take body-frame
+  longitudinal / lateral velocity and yaw rate from the vehicle actor) — and is
+  cataloged separately across §5.8 (control mode, steering), §5.9 (gear) and
+  §5.10 (turn indicators, hazard lights) rather than folded into this verdict.
+  Read this entry as "the topics, types, QoS and stamping are reproduced", not
+  "the values agree".
 
 ### 5.2 Autoware control-command subscriber and ego actuation
 
@@ -504,11 +561,14 @@ _remaining_ work, not the work already done.
   _commanded_ normalized steer scaled by the vehicle's max steer angle, not a
   measured wheel angle.
 - Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
-- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Reproduction path: CARLA-core seam work (ROS-side)
 - Effort class: S
 - Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Autoware/Sensors/VehicleStatusSensor.cpp`
   (`CollectAndStream`), `LibCarla/source/carla/ros2/ROS2.cpp`
-  (`ProcessDataFromStatusSensor`) (tier4);
+  (`ProcessDataFromStatusSensor`), `PythonAPI/carla/src/Actor.cpp:191`
+  (`.def("get_control", &cc::Vehicle::GetControl)`) and
+  `PythonAPI/carla/src/Control.cpp:421`
+  (`max_steer_angle` on `WheelPhysicsControl`) (tier4);
   `extension/src/publishers/StatusPublishers.cpp`,
   `extension/src/engage/EngageStateMachine.h`,
   `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension); plus
@@ -521,9 +581,13 @@ _remaining_ work, not the work already done.
   UE5/Chaos ("@CARLAUE5 ToDo") so it returns 0.0 — the fork's own source comment
   says so. The extension therefore publishes a constant-zero
   `/vehicle/status/steering_status` today. tier4 side-steps the same engine stub
-  by using the commanded-steer proxy above; adopting that proxy is a small
-  change **inside the host**, not in the `.so`, which is why this is classed as
-  seam work rather than extension-side.
+  by using the commanded-steer proxy above; adopting that proxy is a small change
+  **inside the host**, not in the `.so`, which is why this is seam work rather
+  than extension-side. **ROS-side** under §5.0.3: both inputs to tier4's proxy
+  are already on the client API (`vehicle.get_control().steer` and
+  `get_physics_control().wheels[i].max_steer_angle`), so a bridge could publish
+  the identical value today with no core change — what is missing here is only
+  the ABI field's fill, which is a property of this seam.
 
 ### 5.9 Gear-status value source
 
@@ -532,20 +596,41 @@ _remaining_ work, not the work already done.
   `VehicleStatusData::gear`) onto the 25 `GearReport` constants, defaulting to
   `Gear::NONE` for out-of-range values.
 - Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
-- Reproduction path: already-exists
+- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
 - Effort class: S
 - Verified by: `LibCarla/source/carla/ros2/ROS2.cpp`
   (`ProcessDataFromStatusSensor` gear switch),
-  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Autoware/Sensors/VehicleStatusSensor.cpp`
-  (tier4); `extension/src/publishers/StatusPublishers.cpp`,
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Autoware/Sensors/VehicleStatusSensor.cpp:129`
+  (`GetVehicleCurrentGear()`),
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Vehicle/CarlaWheeledVehicle.cpp:267-270`
+  (`return BaseMovementComponent->GetVehicleCurrentGear();`) (tier4);
+  `extension/src/publishers/StatusPublishers.cpp`,
   `extension/src/ExtensionInit.cpp`,
-  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension). The
-  actual-gear value already crosses the ABI as
-  `CarlaRos2VehicleStatusView::gear`; the extension currently ignores that field
-  and echoes the **commanded** gear from `/control/command/gear_cmd` instead
-  (`in.gear = st->control.CachedGear()`). Switching to the tier4 semantics is a
-  one-line change in `StatusPublishers::OnVehicleStatus` with no ABI or core
-  change — hence already-exists, S, not seam work.
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension); plus
+  the fork's fill chain, read in full in `~/src/carla-autoware-integration` at
+  `feat/autoware-seminative-phase-b`:
+  `Game/CarlaEngine.cpp:575-597` (`View->GetVehicleControl(VehicleControl)` →
+  `ProcessDataFromVehicle`), `Vehicle/CarlaWheeledVehicle.h:106-110`
+  (`GetVehicleControl()` → `return LastAppliedControl;`),
+  `Vehicle/CarlaWheeledVehicle.cpp:305` (`LastAppliedControl = InputControl.Control;`)
+  and `LibCarla/source/carla/ros2/ROS2.cpp:1247` (`control.gear`).
+  **Correction to an earlier draft of this entry**, which claimed the actual
+  gear "already crosses the ABI as `CarlaRos2VehicleStatusView::gear`". It does
+  not. That field is filled from `LastAppliedControl.Gear`, i.e. the **commanded**
+  gear — the same quantity the extension's `/control/command/gear_cmd` cache
+  already holds. So the extension echoes a commanded value on _both_ legs, and
+  tier4's actual-transmission-gear semantics are not reachable from the `.so` at
+  all: they need a host-side fill change, structurally identical to §5.10. A grep
+  of `CarlaServer.cpp`, `PythonAPI/carla/src/`, `LibCarla/source/carla/client/`
+  and `LibCarla/source/carla/rpc/` at the pinned SHA finds **no** binding for
+  `GetVehicleCurrentGear` — unlike light state (§5.10), the transmission's actual
+  gear is exposed to no client at all, so under §5.0.3 this is **sensor-side**,
+  not ROS-side: a bridge would need the same core change. (This is the one place
+  this fix round diverges from the review's suggested sub-label, on that grep.)
+  The remaining work is also more than the "one-line change" the earlier draft
+  claimed: the host must surface the actual gear, and the consumer must carry
+  tier4's 25-constant CARLA-gear → `GearReport` mapping (`REVERSE_2` … `DRIVE_18`
+  plus the `NONE` default), which `StatusPublishers` does not have today.
 
 ### 5.10 Turn-indicator and hazard-light status value sources
 
@@ -555,19 +640,27 @@ _remaining_ work, not the work already done.
   `TurnIndicatorsReport` / `HazardLightsReport`, logging an error if both
   blinkers are simultaneously set.
 - Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
-- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Reproduction path: CARLA-core seam work (ROS-side)
 - Effort class: S
 - Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Autoware/Sensors/VehicleStatusSensor.cpp`,
   `LibCarla/source/carla/ros2/ROS2.cpp` (`ProcessDataFromStatusSensor` turn-mask
-  decode) (tier4); `extension/src/publishers/StatusPublishers.cpp`,
-  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension).
-  Unlike gear (§5.9), the ego light state does **not** cross the C ABI — the
-  status view has no light-state field — so reproducing tier4's actual-state
-  semantics needs a new field in `CarlaRos2VehicleStatusView` plus a host-side
-  fill, i.e. an ABI version bump. The extension's present behaviour (echo the
-  commanded `turn_indicators_cmd` / `hazard_lights_cmd` bytes) is arguably the
-  more useful signal for a closed loop, since neither implementation actuates
-  the lights (§5.3), but it is a different quantity and is recorded as such.
+  decode), `PythonAPI/carla/src/Actor.cpp:197`
+  (`.def("get_light_state", CONST_CALL_WITHOUT_GIL(cc::Vehicle, GetLightState))`)
+  and `LibCarla/source/carla/client/Vehicle.h:101` (tier4);
+  `extension/src/publishers/StatusPublishers.cpp`,
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (extension). Like
+  gear (§5.9), the ego light state does **not** cross the C ABI — the status view
+  has no light-state field — so reproducing tier4's actual-state semantics needs
+  a new field in `CarlaRos2VehicleStatusView` plus a host-side fill, i.e. an ABI
+  version bump. That blocker is a property of **this** seam, not of CARLA:
+  `vehicle.get_light_state()` already returns the same data to any client, and
+  tier4's own sensor just reads `Vehicle->GetVehicleLightState()`. Under §5.0.3
+  the entry is therefore **ROS-side** — a bridge or an in-tree native stack needs
+  no core change here, which is exactly what distinguishes it from §5.9. The
+  extension's present behaviour (echo the commanded `turn_indicators_cmd` /
+  `hazard_lights_cmd` bytes) is arguably the more useful signal for a closed
+  loop, since neither implementation actuates the lights (§5.3), but it is a
+  different quantity and is recorded as such.
 
 ### 5.11 `sensor.other.vehicle_status`: a spawnable ego-status sensor
 
@@ -681,25 +774,39 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   polar fields computed from the Cartesian ones. A compile-time
   `sizeof(PointEx) != offset` check guards the packed layout.
 - Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
-- Reproduction path: CARLA-core seam work (sensor-side (approach-agnostic))
+- Reproduction path: CARLA-core seam work (ROS-side)
 - Effort class: S
 - Verified by: `LibCarla/source/carla/ros2/publishers/CarlaLidarPublisher.{h,cpp}`,
   `LibCarla/source/carla/ros2/ROS2.cpp`,
-  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/RayCastLidar.cpp`
-  (tier4); `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
+  `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Sensor/RayCastLidar.cpp`,
+  `PythonAPI/carla/src/SensorData.cpp:426,428` and
+  `LibCarla/source/carla/sensor/data/LidarMeasurement.h:47,54`
+  (`LidarMeasurement.channels` / `.get_point_count(channel)`) (tier4);
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h`
   (`CARLA_ROS2_SENSOR_LIDAR_EXT`), `runner/spawn.py`
   (`ros2_extended_lidar` in `_REQUIRED_NATIVE_ATTRS`), and the sibling fork
   commit `0bd4d84c3` (`min/5-extended-lidar`,
   "feat(ros2): opt-in 10-float PointXYZIRCAEDT LiDAR layout") read via
   `git show --stat`. The point cloud is published by CARLA core, never by the
   `.so`, so no extension-side path exists — the ABI reserves a `LIDAR_EXT`
-  observer kind but the extension registers only `VEHICLE_STATUS`. The effort is
-  S rather than M only because the fork already carries an equivalent core
-  change, gated behind a per-actor `ros2_extended_lidar` blueprint attribute
-  (tier4's is unconditional for every ray-cast LiDAR) and with the derived
-  fields in a dedicated `ExtendedLidarPoint.h` plus a `test_ros2_extended_lidar`
-  unit test. The two implementations were compared by file inventory and commit
-  subject, not field-by-field for numerical agreement.
+  observer kind but the extension registers only `VEHICLE_STATUS`. **ROS-side**
+  under §5.0.3, not sensor-side: every input the layout needs is already on the
+  client API (the per-channel point counts and channel count above, plus the
+  blueprint's own FOV attributes), so a bridge could synthesize the identical
+  ten-field cloud in userspace — the core change is specific to the in-core
+  publishing path. The effort is S rather than M only because the fork already
+  carries an equivalent core change, gated behind a per-actor
+  `ros2_extended_lidar` blueprint attribute (tier4's is unconditional for every
+  ray-cast LiDAR) and with the derived fields in a dedicated
+  `ExtendedLidarPoint.h` plus a `test_ros2_extended_lidar` unit test.
+- **needs prototype** — scoped sub-claim only; the seam / ROS-side / S verdict
+  above stands. The two `PointXYZIRCAEDT` implementations were compared by file
+  inventory and commit subject, **not** field-by-field: whether they agree
+  numerically (field order and offsets, the `azimuth` / `elevation` /
+  `distance` / `time_stamp` derivations, and in particular tier4's even-subdivision
+  vertical-angle synthesis versus whatever `ExtendedLidarPoint.h` computes) was
+  not established, and cannot be from a stat-level comparison. Treat "the fork
+  already has this" as a claim about the capability, not about wire equivalence.
 
 ### 5.15 Per-actor `ros_topic_name` override
 
@@ -842,16 +949,54 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   `CARLA_ROS2_SENSOR_IMU` kind is reserved but unregistered), `runner/spawn.py`
   (the IMU is spawned as a native CARLA sensor publishing on its own),
   and fork commit `610b08f31` (`min/7-imu-sensor-frame`) /
-  `ae166d80d` (`autoware/11-imu-sensor-frame`) via `git show --stat`. IMU data
-  never crosses the C ABI in either stack — the sensor publishes natively — so
-  any correction is core work by construction. The fork carries a **different**
-  IMU correction (sensor-frame emission with REP-103 handedness, plus
-  `test_imu_axes`), which the extension repository's own operational notes
-  identify as load-bearing for the live gates. tier4's accelerometer bootstrap
-  and gravity sign were not found in the fork's IMU commit; the two fixes are
-  complementary, not duplicates, and merging them was not attempted here.
+  `ae166d80d` (`autoware/11-imu-sensor-frame`) via `git show --stat`, plus the
+  fork's `LibCarla/source/carla/ros2/publishers/CarlaIMUPublisher.cpp` and
+  `publishers/ImuMath.h` read in full. IMU data never crosses the C ABI in
+  either stack — the sensor publishes natively — and this fix changes the
+  measurement itself, so every consumer (including a bridge reading
+  `carla.IMUMeasurement`) sees it: sensor-side by the §5.0.2 rule, and core work
+  by construction. **Scope of the "complementary" claim:** tier4's accelerometer
+  bootstrap and gravity sign were not found anywhere in the fork's IMU commit,
+  so _those two changes specifically_ are complementary to the fork's work, not
+  duplicates. That is **not** true of tier4's IMU work as a whole — its
+  ROS-layer REP-103 handedness flip is cataloged separately in §5.20 and **is**
+  duplicated by the fork. Merging the accelerometer half was not attempted here.
 
-### 5.20 `ROS_DOMAIN_ID` support
+### 5.20 IMU ROS-layer REP-103 handedness correction
+
+- What it does: flips three components in the ROS publisher rather than in the
+  sensor — `CarlaIMUPublisher::SetData` writes `linear_acceleration.y(-ay)`,
+  `gyroscope.y(-gy)` and `gyroscope.z(-gz)`, with the inline comment
+  `// Invert pitch and yaw to match ROS`. This is a distinct change from §5.19:
+  it is applied on the publishing path only, so a non-ROS CARLA client reading
+  `carla.IMUMeasurement` still receives the unflipped UE components.
+- Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
+- Reproduction path: already-exists
+- Effort class: S
+- Verified by: `LibCarla/source/carla/ros2/publishers/CarlaIMUPublisher.{h,cpp}`
+  (tier4, three-dot diff read in full); the fork's
+  `LibCarla/source/carla/ros2/publishers/CarlaIMUPublisher.cpp` (lines 54–70)
+  and `LibCarla/source/carla/ros2/publishers/ImuMath.h`, both read in full from
+  `~/src/carla-autoware-integration` at `feat/autoware-seminative-phase-b`;
+  `extension/include/carla/ros2/extension/CarlaRos2Extension.h` (no IMU path
+  runs through the `.so`). The fork applies the equivalent conversion at the
+  same point in the pipeline, factored into named helpers `LinearUEToRos` /
+  `AngularUEToRos` and pinned by `test_imu_axes.cpp`, so having the capability
+  needs no new work.
+- **needs prototype** — scoped sub-claim only; the already-exists / S verdict
+  above stands. The two implementations do **not** apply the same axis map to
+  the gyroscope, and code reading cannot say which is right. tier4 flips Y and Z
+  (`(x, -y, -z)`); the fork flips X and Z (`(-x, y, -z)`), arguing in
+  `ImuMath.h` that angular velocity is a pseudovector and therefore transforms
+  as `det(M)·M = -M` under the `diag(1, -1, 1)` handedness map, and citing a
+  live G2 closed-loop crash from getting it wrong. The linear-acceleration half
+  **does** agree exactly (`(x, -y, z)` on both sides). Adjudicating the
+  gyroscope map needs a measurement against a known mounting — plausibly the two
+  are reconciled by tier4's flip-mounted `tamagawa/imu_link`
+  (`roll = yaw = π` in `autoware_demo.py`) — and no such measurement was taken
+  here. Do not read this entry as "the two agree".
+
+### 5.21 `ROS_DOMAIN_ID` support
 
 - What it does: `ROS2::ObtainDomainId()` parses `$ROS_DOMAIN_ID` with
   `std::from_chars`, rejecting negatives, overflow and trailing garbage, and the
@@ -873,7 +1018,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   variable alone). Nothing here is reachable from the `.so`: DDS participants for
   extension endpoints are created by the host.
 
-### 5.21 TF-publishing suppression
+### 5.22 TF-publishing suppression
 
 - What it does: a world-global `set_publish_tf` / `get_publish_tf` RPC pair
   gating every `CarlaTransformPublisher` emission in `ROS2.cpp` behind
@@ -897,7 +1042,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   `git show --stat`. The TF publishers live in core, upstream of the ABI; the
   fork already implements the identical RPC.
 
-### 5.22 `get_ego_spawn_points` RPC
+### 5.23 `get_ego_spawn_points` RPC
 
 - What it does: a `get_ego_spawn_points` RPC returning
   `UCarlaEpisode::GetRecommendedSpawnPoints()` — the _game mode's_ stored spawn
@@ -907,22 +1052,41 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   `autoware_demo.py` calls it with an `AttributeError` fallback to
   `world.get_map().get_spawn_points()` for stock CARLA packages.
 - Maturity evidence: merged (main @ `6315b856f8faf2118578322eb20a2b902a45a384`)
-- Reproduction path: CARLA-core seam work (ROS-side)
+- Reproduction path: already-exists
 - Effort class: S
-- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp`,
+- Verified by: `Unreal/CarlaUnreal/Plugins/Carla/Source/Carla/Server/CarlaServer.cpp`
+  (both the new `get_ego_spawn_points` at :760-763 **and** the pre-existing
+  upstream `get_map_info` at :513-523, which fills `cr::MapInfo` from the very
+  same `Episode->GetRecommendedSpawnPoints()` call),
+  `LibCarla/source/carla/client/Map.h:50-52`
+  (`GetRecommendedSpawnPoints()` → `_description.recommended_spawn_points`),
+  `LibCarla/source/carla/client/Map.cpp:30-34` (the `Map` is constructed **from**
+  that `rpc::MapInfo`), `LibCarla/source/carla/client/detail/Client.cpp:205-206`
+  (`GetMapInfo()` → `"get_map_info"`),
+  `LibCarla/source/carla/client/detail/Simulator.cpp:161`,
+  `PythonAPI/carla/src/Map.cpp:134`
+  (`get_spawn_points` → `Map::GetRecommendedSpawnPoints`),
   `LibCarla/source/carla/client/{World.h,World.cpp,detail/Client.h,detail/Client.cpp}`,
   `PythonAPI/carla/src/World.cpp`, `PythonAPI/examples/autoware_demo.py` (tier4);
-  `runner/__main__.py` (`--initial-pose` and `--spawn-index` arguments) and
-  `runner/spawn.py` (extension). The extension's runner sidesteps the RPC by
-  taking an explicit initial pose or an index into the map's own spawn points —
-  which is why all live gates in this repository pass an explicit
-  `--initial-pose`. That is a workaround, not a reproduction: the level-authored
-  spawn points tier4 exposes are not reachable from the client without this RPC.
-  It is a `CarlaServer` binding, so no `.so`-side path exists. Labelled ROS-side
-  in the §3 taxonomy's binary sense (a core API-surface change, not a
-  sensor-rendering one).
+  `runner/__main__.py:296`
+  (`select_spawn_point(world.get_map().get_spawn_points(), args.spawn_index)`)
+  and `runner/spawn.py` (extension).
+  **Correction to an earlier draft of this entry**, which asserted that "the
+  level-authored spawn points tier4 exposes are not reachable from the client
+  without this RPC". Tracing the call chain above shows the opposite:
+  `world.get_map().get_spawn_points()` is served out of `rpc::MapInfo`, which the
+  **pre-existing upstream** `get_map_info` RPC already fills from
+  `Episode->GetRecommendedSpawnPoints()` — byte-identical to what
+  `get_ego_spawn_points` returns. tier4's RPC is therefore a convenience
+  duplicate of an API surface that already exists, and this repository's runner
+  is already calling the equivalent one at `runner/__main__.py:296`. Reclassified
+  from CARLA-core seam work (ROS-side) to already-exists, S. The one behavioural
+  difference left: the client-side `Map` is cached and refreshed only when
+  `Simulator::ShouldUpdateMap` fires, so `get_ego_spawn_points` is a live query
+  where `get_spawn_points()` may serve a cached list — irrelevant for a
+  spawn-time read, and not a capability gap.
 
-### 5.23 Nishi-Shinjuku map packaging entry
+### 5.24 Nishi-Shinjuku map packaging entry
 
 - What it does: adds `+MapsToCook=(FilePath="/Game/Carla/Maps/NishishinjukuMap")`
   to `DefaultGame.ini`, so the Nishi-Shinjuku level is cooked into
@@ -947,7 +1111,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   (`ca6e1994c`) carries the loader side. Recorded as a distinct entry because it
   is the one place tier4's tree names the map.
 
-### 5.24 Declarative Autoware sensor-kit spawn
+### 5.25 Declarative Autoware sensor-kit spawn
 
 - What it does: `autoware_demo.py` spawns a Lexus-RX450h-equivalent AWSIM kit on
   a `vehicle.lincoln.mkz` ego: a `util.actor.empty` `base_link` at the rear-axle
@@ -981,7 +1145,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   Y-flip for off-centre sensors — that affects the M4 camera load arm only, not
   the G1–G3 gates.
 
-### 5.25 Client-side simulation pacing and world controls
+### 5.26 Client-side simulation pacing and world controls
 
 - What it does: `autoware_demo.py`'s `TimeStepData` / `apply_world_settings` /
   `run_sync_simulation_loop` provide, from one CLI: synchronous mode with a
@@ -1008,7 +1172,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   list-maps conveniences are genuinely absent. All of them are pure PythonAPI
   calls with no core or ABI dependency, hence extension-side S.
 
-### 5.26 Traffic-light camera post-process profile
+### 5.27 Traffic-light camera post-process profile
 
 - What it does: `autoware_demo.py` ships a 40-key `AUTOWARE_POSTPROCESS_SETTINGS`
   dict (motion blur, auto-exposure, local exposure, shutter/ISO, depth of field,
@@ -1032,7 +1196,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   writing the same JSON from the runner and adding one blueprint attribute; the
   attribute and the loader already exist in any ue5-dev-derived build.
 
-### 5.27 Build and documentation surface
+### 5.28 Build and documentation surface
 
 - What it does: (a) `CMakePresets.json` rewrites the hidden base preset to build
   into a single `Build/` directory with `ENABLE_ROS2=ON` and
@@ -1059,7 +1223,7 @@ elevation, distance, time_stamp` — instead of the stock four floats.
   one), which `docs/prerequisites.md` pins explicitly. That is a property of the
   out-of-tree architecture, not a documentation gap.
 
-### 5.28 Coverage map
+### 5.29 Coverage map
 
 Every changed area of the pinned three-dot diff, and the entry that covers it.
 Areas marked _not a capability_ are listed in the same table so nothing in the
@@ -1073,11 +1237,12 @@ diff is silently unaccounted for.
 | `ros2/AutowareSteeringCompensation.h`                                                                                                                                                    | §5.7                                                                                                                                                                                                                                                                                                                                                                  |
 | `ros2/types/*` (64 added files = 16 new Autoware/tier4/geometry message types), `ros2/util/conversions.hpp`                                                                              | §5.1–§5.6 (message layer)                                                                                                                                                                                                                                                                                                                                             |
 | `ros2/publishers/CarlaLidarPublisher.*`, `Sensor/RayCastLidar.cpp`                                                                                                                       | §5.14                                                                                                                                                                                                                                                                                                                                                                 |
+| `ros2/publishers/CarlaIMUPublisher.*` (the three sign flips in `SetData`)                                                                                                                | §5.20                                                                                                                                                                                                                                                                                                                                                                 |
 | `ros2/publishers/CarlaPublisher.h`, `subscribers/CarlaSubscriber.h`, `ROS2.{h,cpp}` topic-name maps                                                                                      | §5.15                                                                                                                                                                                                                                                                                                                                                                 |
-| `ros2/data_types.h`, per-publisher `Init(TopicConfig)` churn                                                                                                                             | §5.16                                                                                                                                                                                                                                                                                                                                                                 |
-| `ros2/ROS2.cpp` `ObtainDomainId`                                                                                                                                                         | §5.20                                                                                                                                                                                                                                                                                                                                                                 |
-| `ros2/ROS2.cpp` `_publish_tf` gates, `client/World.*`, `CarlaServer.cpp` TF RPCs                                                                                                         | §5.21                                                                                                                                                                                                                                                                                                                                                                 |
-| `CarlaServer.cpp` `get_ego_spawn_points`, `client/World::GetEgoSpawnPoints`                                                                                                              | §5.22                                                                                                                                                                                                                                                                                                                                                                 |
+| `ros2/data_types.h`, per-publisher `Init(TopicConfig)` churn (the QoS/domain/suffix half of every publisher, including `CarlaIMUPublisher`)                                              | §5.16                                                                                                                                                                                                                                                                                                                                                                 |
+| `ros2/ROS2.cpp` `ObtainDomainId`                                                                                                                                                         | §5.21                                                                                                                                                                                                                                                                                                                                                                 |
+| `ros2/ROS2.cpp` `_publish_tf` gates, `client/World.*`, `CarlaServer.cpp` TF RPCs                                                                                                         | §5.22                                                                                                                                                                                                                                                                                                                                                                 |
+| `CarlaServer.cpp` `get_ego_spawn_points`, `client/World::GetEgoSpawnPoints`                                                                                                              | §5.23                                                                                                                                                                                                                                                                                                                                                                 |
 | `Autoware/Data/*`, `Autoware/Game/*`, `Game/CarlaGameModeBase.*`, `Game/CarlaEpisode.*`, `DefaultEngine.ini`                                                                             | §5.12                                                                                                                                                                                                                                                                                                                                                                 |
 | `Autoware/Sensors/AutowareGnssSensor.*`, `Actor/ActorBlueprintFunctionLibrary.*` GNSS defs                                                                                               | §5.13                                                                                                                                                                                                                                                                                                                                                                 |
 | `Autoware/Sensors/VehicleStatusSensor.*`, `sensor/s11n/VehicleStatusSerializer.*`, `sensor/SensorRegistry.h`, `sensor/data/VehicleStatusEvent.h`                                         | §5.11                                                                                                                                                                                                                                                                                                                                                                 |
@@ -1085,12 +1250,12 @@ diff is silently unaccounted for.
 | `Actor/ActorROS2Handler.*` `FlattenSteeringCurve`, `Actor/ActorDispatcher.cpp` ego hook                                                                                                  | §5.18                                                                                                                                                                                                                                                                                                                                                                 |
 | `Sensor/InertialMeasurementUnit.*`                                                                                                                                                       | §5.19                                                                                                                                                                                                                                                                                                                                                                 |
 | `Sensor/GnssSensor.cpp` (world-transform argument)                                                                                                                                       | §5.6, §5.13                                                                                                                                                                                                                                                                                                                                                           |
-| `DefaultGame.ini` `+MapsToCook`                                                                                                                                                          | §5.23                                                                                                                                                                                                                                                                                                                                                                 |
-| `PythonAPI/examples/autoware_demo.py` sensor kit                                                                                                                                         | §5.24                                                                                                                                                                                                                                                                                                                                                                 |
-| `PythonAPI/examples/autoware_demo.py` pacing/world controls, `PythonAPI/carla/src/World.cpp`                                                                                             | §5.25, §5.21                                                                                                                                                                                                                                                                                                                                                          |
-| `PythonAPI/examples/autoware_demo.py` post-process profile                                                                                                                               | §5.26                                                                                                                                                                                                                                                                                                                                                                 |
-| `CMakePresets.json`, `README.md`                                                                                                                                                         | §5.27                                                                                                                                                                                                                                                                                                                                                                 |
-| `PythonAPI/examples/ros2/ros2_native.py` `--disable-tf`                                                                                                                                  | §5.21 (evidence)                                                                                                                                                                                                                                                                                                                                                      |
+| `DefaultGame.ini` `+MapsToCook`                                                                                                                                                          | §5.24                                                                                                                                                                                                                                                                                                                                                                 |
+| `PythonAPI/examples/autoware_demo.py` sensor kit                                                                                                                                         | §5.25                                                                                                                                                                                                                                                                                                                                                                 |
+| `PythonAPI/examples/autoware_demo.py` pacing/world controls, `PythonAPI/carla/src/World.cpp`                                                                                             | §5.26, §5.22                                                                                                                                                                                                                                                                                                                                                          |
+| `PythonAPI/examples/autoware_demo.py` post-process profile                                                                                                                               | §5.27                                                                                                                                                                                                                                                                                                                                                                 |
+| `CMakePresets.json`, `README.md`                                                                                                                                                         | §5.28                                                                                                                                                                                                                                                                                                                                                                 |
+| `PythonAPI/examples/ros2/ros2_native.py` `--disable-tf`                                                                                                                                  | §5.22 (evidence)                                                                                                                                                                                                                                                                                                                                                      |
 | `Sensor/SceneCaptureSensor.{h,cpp}` (header +60/−136 with 28 `UFUNCTION` declarations removed and 0 added; `.cpp` +74/−288)                                                              | _not a capability_ — measured as a net **removal** of Blueprint-callable post-process accessors relative to the branch point, with no replacement added on this branch. Whether that is deliberate scoping or a lost hunk from one of the `patch/autoware-support-sync-upstream-*` merges was not determined; recorded as an unexplained delta rather than guessed at |
 | `.gitignore` (Rider/Perforce entries)                                                                                                                                                    | _not a capability_                                                                                                                                                                                                                                                                                                                                                    |
 | `ros2/listeners/SubscriberListenerBase.*`, `ROS2CallbackData.h` variant widening                                                                                                         | _internal plumbing for_ §5.2–§5.5, §5.17                                                                                                                                                                                                                                                                                                                              |
