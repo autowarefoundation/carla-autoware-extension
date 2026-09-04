@@ -1,3 +1,5 @@
+> **Superseded (2026-09):** describes the out-of-tree extension design. CARLA `ue58-dev` carries the Autoware layer in-tree; current work is recorded under `docs/ue58/`.
+
 # Environment record
 
 Captured while bringing up the Autoware container for the

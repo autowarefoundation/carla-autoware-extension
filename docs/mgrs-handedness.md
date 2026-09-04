@@ -1,3 +1,5 @@
+> **Superseded (2026-09):** describes the out-of-tree extension design. CARLA `ue58-dev` carries the Autoware layer in-tree; current work is recorded under `docs/ue58/`.
+
 # CARLA-world <-> MGRS-local transform
 
 Evidence for the integration's #1 coordinate risk: the handedness / Y-flip and unit

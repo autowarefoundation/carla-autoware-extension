@@ -27,6 +27,11 @@ utilities, and the `analyze` QC harness.
 
 ## Ego geometry reconciliation (live 2026-07-21)
 
+> Historical record from the out-of-tree extension/runner era (`runner/spawn.py`,
+> `verify_editor_artifact.sh`); both are gone (see `docs/ue58/`). Kept for the ego
+> geometry findings below (spawn point, vehicle blueprint, base_link placement),
+> which are still accurate.
+
 Live measurement on `NishishinjukuMap` (headless `UnrealEditor ... -game -nosound`, CARLA
 0.10 / UE5 Chaos, the fork's integration branch; Python API only, no
 `-ros2` — a stale editor `.so` is acceptable for a non-ROS2 measurement, so
@@ -125,3 +130,10 @@ The editor was stopped by SIGTERM to the recorded PID (never `pkill`/`pgrep -f`)
 shutdown-time SIGSEGV (Chaos teardown) core-dumps _after_ the measurement has completed and
 printed all results — benign to the measurement, but recorded as a live-run watch item
 (distinct from the boot-time "Signal 11 caught" UnrealTraceServer artifact).
+
+## Phase 3 use
+
+`scripts/e2e/run_gates.sh` and the gate scripts it drives take this map's origin as
+`--map-origin "81655.73,50137.43,42.49998"` — the same converter offset recorded above
+(`NISHISHINJUKU_ORIGIN` in `scripts/e2e/map_frame.py`). Omit `--map-origin` entirely for a
+Local-projector map such as Town10HD.

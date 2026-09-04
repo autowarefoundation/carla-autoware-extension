@@ -1,3 +1,5 @@
+> **Superseded (2026-09):** describes the out-of-tree extension design. CARLA `ue58-dev` carries the Autoware layer in-tree; current work is recorded under `docs/ue58/`.
+
 # G0 interop gate report
 
 Gate **G0** for the CARLA native-DDS -> Autoware ROS 2 interop: prove that

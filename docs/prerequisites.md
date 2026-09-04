@@ -1,3 +1,5 @@
+> **Superseded (2026-09):** describes the out-of-tree extension design. CARLA `ue58-dev` carries the Autoware layer in-tree; current work is recorded under `docs/ue58/`.
+
 # Prerequisites
 
 Everything in this repository is verified against a specific CARLA `ue5-dev` build that stacks pull requests **not yet merged upstream**. This page pins that build and the container-side setup; it is the single place these pins live.

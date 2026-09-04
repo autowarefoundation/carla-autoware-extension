@@ -1,3 +1,5 @@
+> **Superseded (2026-09):** describes the out-of-tree extension design. CARLA `ue58-dev` carries the Autoware layer in-tree; current work is recorded under `docs/ue58/`.
+
 # Semi-native Autoware support — architecture proposal
 
 This document describes the proposed architecture for running Autoware against CARLA `ue5-dev`'s native ROS 2 (DDS) publishers with no bridge in the data path. It condenses the design the verification assets in this repository were built against; the CARLA-core pieces are proposals for upstream `carla-simulator/carla` PRs, not shipped code.

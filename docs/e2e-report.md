@@ -1,3 +1,5 @@
+> **Superseded (2026-09):** describes the out-of-tree extension design. CARLA `ue58-dev` carries the Autoware layer in-tree; current work is recorded under `docs/ue58/`.
+
 # E2E gate report (Autoware semi-native, Nishi-Shinjuku)
 
 This report records the live E2E gate campaign for the CARLA native-DDS <-> Autoware
