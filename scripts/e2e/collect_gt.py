@@ -95,16 +95,7 @@ def find_ego(world, attempts: int = 100, delay_s: float = 0.1, sleep=time.sleep)
     raise RuntimeError("no ego actor found after warm-up retries")
 
 
-def main(argv: list[str] | None = None, world_factory=None) -> int:
-    """Parse argv, collect a sample series, write it to ``--out``.
-
-    ``world_factory`` is a test seam: a zero-arg callable returning a
-    ``carla.World``-shaped object (must provide ``wait_for_tick`` and
-    ``get_actors``). Left as ``None`` (the CLI default), it lazily imports
-    ``carla`` and connects to ``--host``/``--port``, preserving the import
-    discipline documented at module level. Tests inject a fake world here
-    instead of needing a live simulator.
-    """
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="CARLA ground-truth series collector")
     p.add_argument("--window", type=float, required=True, help="collection window, seconds")
     p.add_argument("--out", required=True, help="output file (one row per sample)")
@@ -129,14 +120,9 @@ def main(argv: list[str] | None = None, world_factory=None) -> int:
 
     origin = parse_origin(args.map_origin)
 
-    if world_factory is None:
+    import carla
 
-        def world_factory():
-            import carla
-
-            return carla.Client(args.host, args.port).get_world()
-
-    world = world_factory()
+    world = carla.Client(args.host, args.port).get_world()
     try:
         world.wait_for_tick(10.0)  # sync mode: a cold client sees an empty snapshot until ticked
     except RuntimeError:

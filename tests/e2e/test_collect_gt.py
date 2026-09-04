@@ -2,10 +2,15 @@
 
 Pure-Python only: the module lazy-imports ``carla`` inside ``main()``, so these
 tests collect and run under a bare ``python3 -m pytest`` with no CARLA egg,
-which is how CI runs it.
+which is how CI runs it. The ``main()`` tests below exploit that same lazy
+import as their seam: they install a fake module at ``sys.modules["carla"]``
+before calling ``main()``, so ``import carla`` inside it resolves to the
+fake instead of touching a live simulator, with no change to production code.
 """
 
 import math
+import sys
+import types
 
 from scripts.e2e import collect_gt as gt
 from scripts.e2e.map_frame import NISHISHINJUKU_ORIGIN
@@ -75,7 +80,7 @@ def test_find_ego_returns_role_ego_and_retries():
     assert gt.find_ego(_World([_Actor("hero"), ego]), attempts=1, sleep=lambda s: None) is ego
 
 
-# --- main() coverage: no live simulator, injected via the world_factory seam. ---
+# --- main() coverage: no live simulator, injected via sys.modules["carla"]. ---
 
 
 class _Loc:
@@ -109,13 +114,37 @@ class _MainWorld(_World):
         return None
 
 
-def test_main_g1_style_invocation_writes_base_link_gt_rows(tmp_path):
+class _FakeClient:
+    def __init__(self, world, host, port):
+        self._world = world
+        self.host = host
+        self.port = port
+
+    def get_world(self):
+        return self._world
+
+
+def _install_fake_carla(monkeypatch, world):
+    """Stand in for the real ``carla`` module at the point ``main()`` imports it.
+
+    ``main()`` does a lazy, function-local ``import carla`` (for the pure-pytest
+    import discipline documented at module level), which means
+    ``sys.modules["carla"]`` is already a working seam -- no production code
+    needs to change to make ``main()`` testable without a live simulator.
+    """
+    fake_carla = types.ModuleType("carla")
+    fake_carla.Client = lambda host, port: _FakeClient(world, host, port)
+    monkeypatch.setitem(sys.modules, "carla", fake_carla)
+
+
+def test_main_g1_style_invocation_writes_base_link_gt_rows(tmp_path, monkeypatch):
     # Mirrors Task 15's G1 invocation shape with ORIGIN unset (flag omitted):
     #   collect_gt --window "$WIN" --out "$OUT/g1_gt.txt" --port "$PORT"
     out = tmp_path / "g1_gt.txt"
     ego = _EgoActor(50.0, 30.0, 0.0)  # base_link (48.575, 30) -> map (48.575, -30)
+    _install_fake_carla(monkeypatch, _MainWorld([ego]))
     argv = ["--window", "0.02", "--out", str(out), "--port", "1"]
-    rc = gt.main(argv, world_factory=lambda: _MainWorld([ego]))
+    rc = gt.main(argv)
     assert rc == 0
     lines = out.read_text().strip().splitlines()
     assert lines
@@ -124,13 +153,14 @@ def test_main_g1_style_invocation_writes_base_link_gt_rows(tmp_path):
     assert (round(float(mx_str), 3), round(float(my_str), 3)) == (48.575, -30.0)
 
 
-def test_main_g2_style_invocation_writes_goal_distance_rows(tmp_path):
+def test_main_g2_style_invocation_writes_goal_distance_rows(tmp_path, monkeypatch):
     # Mirrors Task 15's G2 invocation shape with ORIGIN set:
     #   collect_gt --window "$WIN" --out "$OUT/g2_dist.txt" --port "$PORT" \
     #       --goal "$GX" "$GY" --map-origin "$ORIGIN"
     # Same ego pose/origin/goal as the double-application regression test above.
     out = tmp_path / "g2_dist.txt"
     ego = _EgoActor(50.0, 30.0, 0.0)
+    _install_fake_carla(monkeypatch, _MainWorld([ego]))
     argv = [
         "--window",
         "0.02",
@@ -144,7 +174,7 @@ def test_main_g2_style_invocation_writes_goal_distance_rows(tmp_path):
         "--map-origin",
         "1000,2000,0",
     ]
-    rc = gt.main(argv, world_factory=lambda: _MainWorld([ego]))
+    rc = gt.main(argv)
     assert rc == 0
     lines = out.read_text().strip().splitlines()
     assert lines
