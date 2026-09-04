@@ -1,0 +1,33 @@
+actors before tick: 0
+tick frame 1622
+actors after tick: 31
+  31 sensor.other.vehicle_status None parent= 26
+  30 sensor.other.autoware_gnss default parent= 27
+  29 sensor.other.imu default parent= 25
+  28 sensor.lidar.ray_cast front parent= 27
+  27 util.actor.empty default parent= 26
+  26 util.actor.empty default parent= 25
+  25 vehicle.lincoln.mkz ego parent= None
+  24 traffic.unknown None parent= None
+  23 traffic.yield None parent= None
+  22 traffic.traffic_light None parent= None
+  21 traffic.traffic_light None parent= None
+  20 traffic.traffic_light None parent= None
+  19 traffic.traffic_light None parent= None
+  18 traffic.traffic_light None parent= None
+  17 traffic.traffic_light None parent= None
+  16 traffic.traffic_light None parent= None
+  15 traffic.traffic_light None parent= None
+  14 traffic.traffic_light None parent= None
+  13 traffic.traffic_light None parent= None
+  12 traffic.traffic_light None parent= None
+  11 traffic.traffic_light None parent= None
+  10 traffic.traffic_light None parent= None
+  9 traffic.traffic_light None parent= None
+  8 traffic.traffic_light None parent= None
+  7 traffic.unknown None parent= None
+  6 traffic.unknown None parent= None
+  5 traffic.yield None parent= None
+  4 traffic.stop None parent= None
+  3 traffic.stop None parent= None
+  2 traffic.stop None parent= None

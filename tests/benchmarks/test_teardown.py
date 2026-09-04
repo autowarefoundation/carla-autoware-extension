@@ -52,6 +52,7 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -195,6 +196,29 @@ def _alive(pid: int) -> bool:
 
 def _start_stub(tmp_path: Path, name: str) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, "-c", STUB_SRC])
+
+
+def _start_reaped_stub(tmp_path: Path, name: str) -> subprocess.Popen:
+    """`_start_stub`, plus a background thread blocked in `Popen.wait()` so
+    the child is reaped within a fraction of a second of actually dying,
+    instead of lingering as a zombie for the rest of the test.
+
+    This matters because `kill(pid, 0)` -- what teardown.sh's `stop_pid`
+    polls in its TERM_WAIT_S=30 wait loop -- succeeds against an unreaped
+    zombie exactly as it does against a live process; only a fully reaped
+    PID makes it fail. Measured directly (2026-08-03, fix round 1): with no
+    reaper, `kill -0` on a zombie still returns 0 after the process has
+    genuinely exited, and `test_tree_stop_runs_before_the_demo_is_stopped`
+    (which does not reap its stub until its own `finally` block) pays the
+    full 30.18s TERM_WAIT_S wait as a result. A test pinning THREE
+    sequential host-pid stops at that cost would run 60-90s+; the reaper
+    thread (verified: `kill -0` starts failing ~0.2s after real exit once a
+    thread is parked in `.wait()`) keeps this file's new real-subprocess
+    pins in the same few-seconds-per-test range as its existing ones.
+    """
+    proc = _start_stub(tmp_path, name)
+    threading.Thread(target=proc.wait, daemon=True).start()
+    return proc
 
 
 def _start_delayed_exec_stub(delay_s: float) -> subprocess.Popen:
@@ -1031,6 +1055,175 @@ def test_launch_autoware_sh_sidecar_settles_on_the_post_exec_cmdline(tmp_path, p
         proc.wait(timeout=5)
 
 
+# --- Task 3 (P4 spec 1f): GT collector stops AFTER the observer -----------
+#
+# Fix round 1 (2026-08-03): this section originally held one test,
+# `test_gt_collector_stops_after_the_observer`, built entirely from
+# `text.index()` comparisons over teardown.sh's SOURCE. Review caught that
+# this collides with the module docstring's binding rule above (a
+# substring/text-scan assertion is not a pin -- Task 17b finding F5's
+# precedent: two wiring assertions that both still passed with the call
+# site commented out). This pin has the identical defect: if
+# `stop_pid "${GT_PID:-}" "gt collector"` were commented out rather than
+# removed, the literal still appears exactly once in the file, so every
+# `.count() == 1` guard and every `text.index()` ordering assertion below
+# would still pass while the runtime call no longer executes.
+#
+# Replaced with two real-subprocess pins, one per GT-collector-stop
+# mechanism (see teardown.sh's own item-3 header comment for why both
+# moved together): the first runs teardown.sh against REAL background
+# processes standing in for WATCHDOG_PID/GT_PID/SAMPLER_PID and reads the
+# ordering off teardown's OWN stdout, which `say()` only emits when the
+# corresponding `stop_pid` call actually executes; the second runs it
+# against the `fake_docker` stand-in and reads the ordering off the REAL
+# docker call log, which only gains an entry when the corresponding
+# `docker` invocation actually executes. Neither can pass with its call
+# site merely commented out -- there would be nothing to read.
+
+
+def test_gt_collector_host_pid_stops_after_the_observer(tmp_path, fake_docker):
+    """The host-side half of the GT-collector-stop mechanism (`stop_pid
+    "${GT_PID:-}" "gt collector"`) -- the REAL kill for cells A/B/B-cyc
+    (extension.sh, tier4-native.sh: GT_OUT_DIR is the run dir, never
+    "/out", so the container-side pkill fallback covered by
+    `test_gt_collector_container_pkill_stops_after_the_observer` below
+    never fires for them) -- must stop AFTER the observer's SIGINT+flush
+    wait.
+
+    README finding -- benchmarks/README.md's heading `#### 1. The static arm's
+    windowed M2 reconciliation charges a teardown-ordering gap to the
+    publisher`, under `### Cell A's bench-harness control (Task 15b)`. Cited
+    by HEADING, not by line: this citation read `benchmarks/README.md :3793`
+    until 2026-08-04, by which point that README's own growth during P4 had
+    moved the finding several hundred lines and nothing had noticed. A line
+    pin into maintained prose is a citation with an expiry date; a heading is
+    not:
+    `window.static_window` sets the window's upper bound to
+    `clock_wall.max()` (the observer's LAST /clock sample, flushed only
+    once teardown SIGINTs it -- run.sh step 6: "teardown sends SIGINT, and
+    only rclcpp's own handler makes spin() return so the CSV buffers
+    flush"). The OLD order stopped the GT collector (writes
+    publisher_counts.json) BEFORE that SIGINT, ending the publisher series
+    ~1.051 s before the window's real top on `results/A/run-001`,
+    fabricating `publisher_drop_rate = 0.0213` on a publisher that dropped
+    nothing (984 expected, 963 published; predicted 21-tick deficit ==
+    observed 21). Inherited by all ten P3 static pairs, cell A and cell B
+    alike.
+
+    Real-subprocess design: three `_start_reaped_stub` processes stand in
+    for WATCHDOG_PID/GT_PID/SAMPLER_PID (reaped promptly so teardown's
+    `kill -0` polling sees them die in about a second, not TERM_WAIT_S=30 --
+    see `_start_reaped_stub`'s own docstring for why an unreaped stub would
+    make this test 60-90s+ instead). `fake_docker` stands in for the
+    observer container. `stop_pid` and `stop_container` both BLOCK (poll
+    until confirmed dead, or timed out) before returning, and this stretch
+    of teardown.sh is flat, unconditional bash with no backgrounding, so
+    the order `say()` lines land in real stdout is real execution order.
+    """
+    run_dir = tmp_path / "run"
+    observer_name = "bench-observer-task3-host"
+    fake_docker.env["BENCH_OBSERVER_CONTAINER"] = observer_name
+    fake_docker.set_existing(observer_name)
+
+    # APPROACH="extension", no AW_CONTAINER/GT_OUT_DIR="/out": the real cell
+    # shape this defect was measured on. Both stop_pid and stop_container
+    # run unconditionally, ahead of the LAUNCH_ENV_PRESENT check, but
+    # launch.env is still written (matching a real run) so AW_CONTAINER's
+    # absence here is a deliberate "container-side path does not apply"
+    # choice, not an oversight.
+    _write_launch_env(run_dir, APPROACH="extension")
+
+    watchdog_proc = _start_reaped_stub(tmp_path, "watchdog")
+    gt_proc = _start_reaped_stub(tmp_path, "gt")
+    sampler_proc = _start_reaped_stub(tmp_path, "sampler")
+    try:
+        (run_dir / "host_pids.env").write_text(
+            f"SAMPLER_PID={sampler_proc.pid}\n"
+            f"GT_PID={gt_proc.pid}\n"
+            f"WATCHDOG_PID={watchdog_proc.pid}\n"
+        )
+
+        result = run_teardown(run_dir, fake_docker.env)
+        assert result.returncode == 0, result.stderr
+
+        out = result.stdout
+        watchdog_say = f"SIGTERM clock watchdog (pid {watchdog_proc.pid})"
+        observer_say = f"SIGINT container {observer_name}"
+        gt_say = f"SIGTERM gt collector (pid {gt_proc.pid})"
+        sampler_say = f"SIGTERM resource sampler (pid {sampler_proc.pid})"
+        for line in (watchdog_say, observer_say, gt_say, sampler_say):
+            assert line in out, f"expected real stop line missing from stdout: {line!r}\n{out}"
+
+        assert out.index(watchdog_say) < out.index(observer_say), (
+            "the clock watchdog must stop FIRST -- its stall detection reads "
+            "clock.csv growth, which only stops once the observer does"
+        )
+        assert out.index(observer_say) < out.index(gt_say), (
+            "GT_PID must stop AFTER the observer -- moving it back before the "
+            "observer reintroduces the README's fabricated publisher_drop_rate"
+        )
+        assert out.index(gt_say) < out.index(sampler_say), (
+            "the resource sampler must still stop LAST"
+        )
+
+        # And it really happened, not just a printed claim: stop_pid blocks
+        # on confirmed death before returning, so all three stand-ins are
+        # actually gone by the time teardown.sh exits.
+        assert not _alive(watchdog_proc.pid)
+        assert not _alive(gt_proc.pid)
+        assert not _alive(sampler_proc.pid)
+    finally:
+        for p in (watchdog_proc, gt_proc, sampler_proc):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+
+def test_gt_collector_container_pkill_stops_after_the_observer(tmp_path, fake_docker):
+    """The container-side half of the GT-collector-stop mechanism (`docker
+    exec $AW_CONTAINER pkill -TERM -f benchmarks.scripts.collect_gt`) --
+    the REAL kill for bridge cells (python-bridge.sh: GT_OUT_DIR=="/out",
+    so the host-side `stop_pid "${GT_PID:-}"` above is a no-op there; a
+    `docker exec` client PID is not the in-container collector) -- must
+    also stop AFTER the observer's SIGINT, for the identical README reason
+    covered by `test_gt_collector_host_pid_stops_after_the_observer` above.
+
+    No real processes needed here: both stops in this mechanism are `docker`
+    invocations, so the REAL docker call log (`fake_docker.calls()`, which
+    only gains an entry when teardown.sh's own `docker ...` line actually
+    runs) is enough to pin the ordering without a source-text scan.
+    """
+    run_dir = tmp_path / "run"
+    observer_name = "bench-observer-task3-container"
+    fake_docker.env["BENCH_OBSERVER_CONTAINER"] = observer_name
+    fake_docker.set_existing(observer_name, CONTAINER)
+
+    _write_launch_env(
+        run_dir,
+        APPROACH="python-bridge",
+        AW_CONTAINER=CONTAINER,
+        AW_COMPOSE="",
+        GT_OUT_DIR="/out",
+    )
+
+    result = run_teardown(run_dir, fake_docker.env)
+    assert result.returncode == 0, result.stderr
+
+    calls = fake_docker.calls()
+    kill_indices = [i for i, c in enumerate(calls) if c[:1] == ["kill"] and observer_name in c]
+    pkill_indices = [
+        i
+        for i, c in enumerate(calls)
+        if c[:1] == ["exec"] and "pkill" in c and "benchmarks.scripts.collect_gt" in c
+    ]
+    assert kill_indices, f"the observer's docker kill -s INT was never called: {calls}"
+    assert pkill_indices, f"the container-side collect_gt pkill fallback was never called: {calls}"
+    assert max(kill_indices) < min(pkill_indices), (
+        "the container-side collect_gt pkill fallback must stop AFTER the "
+        f"observer's SIGINT, for the same README reason: {calls}"
+    )
+
+
 def test_launch_autoware_sh_sidecar_write_is_best_effort(tmp_path):
     """launch_autoware.sh's own best-effort pin, matching D2's requirement
     ("never allowed to fail the launch") the way
@@ -1048,3 +1241,250 @@ def test_launch_autoware_sh_sidecar_write_is_best_effort(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert not Path(f"{pidfile}.cmd").exists() or Path(f"{pidfile}.cmd").read_text() == ""
+
+
+# --- P4 Task 7: the ablation arm's baseline client stops before the sim -----
+
+# Stand-in for the simulator (CARLA_PID_FILE): on SIGTERM it records whether
+# the ablation client's pid is STILL ALIVE at that instant, then exits. That
+# marker is the whole ordering observation -- it can only read "dead" if
+# teardown really stopped the client first.
+ORDER_PROBE_SRC = """
+import os, signal, sys, time
+
+other = int(os.environ["PROBE_OTHER_PID"])
+marker = os.environ["PROBE_MARKER"]
+
+
+def _on_term(signum, frame):
+    try:
+        os.kill(other, 0)
+        state = "alive"
+    except OSError:
+        state = "dead"
+    with open(marker, "w") as f:
+        f.write(state)
+    sys.exit(0)
+
+
+signal.signal(signal.SIGTERM, _on_term)
+while True:
+    time.sleep(0.05)
+"""
+
+
+def test_ablation_client_is_stopped_before_the_simulator(tmp_path):
+    """The M4 ablation arm's baseline client (raycast_baseline.py) is that
+    arm's world tick authority, so teardown must stop it BEFORE the simulator
+    -- a CARLA client left ticking a dead server hangs on actor destroy.
+
+    Real code path, real processes: the stand-in "simulator" reports, from its
+    own SIGTERM handler, whether the client was still alive when teardown got
+    to it. Commenting out teardown.sh's `stop_pidfile "${ABLATION_PID_FILE:-}"`
+    makes this read "alive" and fail -- a text scan of the file would not.
+    """
+    run_dir = tmp_path / "run"
+    marker = tmp_path / "order-marker.txt"
+    client = _start_reaped_stub(tmp_path, "raycast-baseline")
+    sim = subprocess.Popen(
+        [sys.executable, "-c", ORDER_PROBE_SRC],
+        env={**os.environ, "PROBE_OTHER_PID": str(client.pid), "PROBE_MARKER": str(marker)},
+    )
+    threading.Thread(target=sim.wait, daemon=True).start()
+    try:
+        client_pidfile = tmp_path / "raycast_baseline.pid"
+        client_pidfile.write_text(str(client.pid))
+        sim_pidfile = tmp_path / "carla.pid"
+        sim_pidfile.write_text(str(sim.pid))
+        # APPROACH=extension so the case branch below reaches CARLA_PID_FILE;
+        # AW_CONTAINER/AW_COMPOSE/CARLA_TREE stay empty so no docker call and
+        # no editor pgrep sweep is reachable from this test at all.
+        env = {
+            "APPROACH": "extension",
+            "AW_CONTAINER": "",
+            "AW_COMPOSE": "",
+            "CARLA_TREE": "",
+            "ABLATION_PID_FILE": str(client_pidfile),
+            "CARLA_PID_FILE": str(sim_pidfile),
+        }
+        _write_launch_env(run_dir, **env)
+
+        result = run_teardown(run_dir, {**os.environ, **env})
+
+        assert result.returncode == 0, result.stderr
+        assert marker.exists(), "the simulator stand-in was never signalled"
+        assert marker.read_text().strip() == "dead", (
+            "the ablation baseline client was still alive when the simulator was "
+            "stopped: a client left ticking a dead server hangs on actor destroy"
+        )
+        assert _wait_until(lambda: not _alive(client.pid))
+        assert not client_pidfile.exists()
+    finally:
+        for p in (client, sim):
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=5)
+
+
+def test_teardown_without_an_ablation_pid_file_is_unchanged(tmp_path):
+    """Every non-ablation arm leaves ABLATION_PID_FILE unset, and the new stop
+    must then be a true no-op rather than a new failure mode: the simulator is
+    still stopped and teardown still exits 0."""
+    run_dir = tmp_path / "run"
+    sim = _start_reaped_stub(tmp_path, "carla")
+    try:
+        sim_pidfile = tmp_path / "carla.pid"
+        sim_pidfile.write_text(str(sim.pid))
+        env = {
+            "APPROACH": "extension",
+            "AW_CONTAINER": "",
+            "AW_COMPOSE": "",
+            "CARLA_TREE": "",
+            "CARLA_PID_FILE": str(sim_pidfile),
+        }
+        _write_launch_env(run_dir, **env)
+
+        result = run_teardown(run_dir, {**os.environ, **env})
+
+        assert result.returncode == 0, result.stderr
+        assert "raycast baseline client" not in result.stdout
+        assert _wait_until(lambda: not _alive(sim.pid))
+    finally:
+        if sim.poll() is None:
+            sim.kill()
+        sim.wait(timeout=5)
+
+
+# --- P4 Task 10 fix round: the editor-log capture -------------------------
+#
+# WHY THESE EXIST. The first CAL-seam collection (results/CAL-seam/run-001..005,
+# PROVENANCE 12) found a per-run publish gap on `/bench/incore_cloud` that it
+# could not attribute, because the only place the in-core twin reports a skip is
+# carla::log_error -> std::cerr (BenchIncoreCloudPublisher.cpp:281,299) -- the
+# EDITOR's stderr -- and on the run_e2e.sh launch path nothing copied that stream
+# into the run directory. teardown.sh now files it as carla-editor.log.
+#
+# Per this file's binding rule, none of the three below asserts on source text
+# for the WIRING: the two behavioural ones run the real teardown.sh and check a
+# real file appearing (or not appearing) with real content. The third pins a
+# cross-file literal, which is the one thing only a text comparison can pin, and
+# says so.
+
+
+def _editor_log_env(run_dir: Path, editor_log: Path | None) -> dict:
+    """A minimal extension-family launch.env with no simulator to stop, so the
+    only thing teardown.sh can do here is the log copy under test."""
+    kv = {
+        "APPROACH": "extension",
+        "AW_CONTAINER": "",
+        "AW_COMPOSE": "",
+        "CARLA_TREE": "",
+        "CARLA_PID_FILE": "",
+    }
+    if editor_log is not None:
+        kv["EDITOR_LOG"] = str(editor_log)
+    _write_launch_env(run_dir, **kv)
+    return kv
+
+
+def _seed_manifest(run_dir: Path) -> Path:
+    """run.sh writes manifest.json at step 4, before the launcher boots
+    anything, so it is teardown.sh's reference for 'written by this run'."""
+    manifest = run_dir / "manifest.json"
+    manifest.write_text("{}")
+    return manifest
+
+
+def test_editor_log_is_filed_into_the_run_dir_when_fresher_than_the_manifest(tmp_path):
+    """The real-effect pin: a run whose editor log was written AFTER the
+    manifest gets that log filed as carla-editor.log, with its content intact.
+
+    Content, not just existence: a zero-byte or truncated copy would satisfy an
+    existence check while retaining none of the diagnostics the capture exists
+    for."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _seed_manifest(run_dir)
+
+    editor_log = tmp_path / "carla-e2e.log"
+    body = "ERROR: CAL-seam: BlobPublish FAILED on /bench/incore_cloud\nLogInit: Display: x\n"
+    editor_log.write_text(body)
+    os.utime(editor_log, (time.time() + 10, time.time() + 10))
+
+    env = _editor_log_env(run_dir, editor_log)
+    result = run_teardown(run_dir, {**os.environ, **env})
+
+    assert result.returncode == 0, result.stderr
+    filed = run_dir / "carla-editor.log"
+    assert filed.is_file(), f"carla-editor.log was not filed; teardown said: {result.stdout}"
+    assert filed.read_text() == body
+
+
+def test_stale_editor_log_is_NOT_filed(tmp_path):
+    """The guard that makes the capture trustworthy rather than merely present.
+
+    EDITOR_LOG is a fixed /tmp path that outlives the run that wrote it, so a
+    run whose editor never wrote one must not inherit the PREVIOUS run's log --
+    that would file another run's evidence under this run's directory, which is
+    worse than the gap the capture closes."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest = _seed_manifest(run_dir)
+
+    editor_log = tmp_path / "carla-e2e.log"
+    editor_log.write_text("ERROR: CAL-seam: BlobPublish FAILED on /bench/incore_cloud\n")
+    # Older than the manifest == left behind by an earlier run.
+    old = time.time() - 3600
+    os.utime(editor_log, (old, old))
+    now = time.time()
+    os.utime(manifest, (now, now))
+
+    env = _editor_log_env(run_dir, editor_log)
+    result = run_teardown(run_dir, {**os.environ, **env})
+
+    assert result.returncode == 0, result.stderr
+    assert not (run_dir / "carla-editor.log").exists(), (
+        "a stale editor log was filed as if this run had produced it"
+    )
+    assert "NOT saving" in result.stdout
+
+
+def test_no_editor_log_declared_files_nothing_and_is_not_an_error(tmp_path):
+    """The launchers that start the editor themselves (cells/tier4-native.sh,
+    cells/extension.sh's ablation arm) already redirect it into the run
+    directory and leave EDITOR_LOG unset. That must be a silent no-op, not a
+    failure and not a copy."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _seed_manifest(run_dir)
+
+    env = _editor_log_env(run_dir, None)
+    result = run_teardown(run_dir, {**os.environ, **env})
+
+    assert result.returncode == 0, result.stderr
+    assert not (run_dir / "carla-editor.log").exists()
+
+
+def test_launcher_editor_log_path_matches_run_e2e_sh(tmp_path):
+    """Cross-file literal pin, and deliberately the ONE text assertion here.
+
+    The path is a constant duplicated in three files: scripts/e2e/run_e2e.sh
+    decides where the editor's output goes, and the two launchers that delegate
+    the editor to it must name the same file or teardown.sh copies nothing (or,
+    worse, something else). No behavioural test can catch that drift without
+    booting a real editor, so it is pinned as the literal it is. The WIRING is
+    pinned behaviourally by the three tests above."""
+    log_line = [
+        ln
+        for ln in (REPO / "scripts" / "e2e" / "run_e2e.sh").read_text().splitlines()
+        if ln.startswith("LOG=")
+    ]
+    assert len(log_line) == 1, f"expected exactly one LOG= in run_e2e.sh, got {log_line}"
+    editor_log_path = log_line[0].split("=", 1)[1].strip().strip('"')
+
+    for launcher in ("calibration.sh", "extension.sh"):
+        text = (REPO / "benchmarks" / "cells" / launcher).read_text()
+        assert f'EDITOR_LOG="{editor_log_path}"' in text, (
+            f"{launcher} does not declare EDITOR_LOG={editor_log_path!r}; "
+            "it has drifted from run_e2e.sh and teardown.sh would file the wrong file"
+        )

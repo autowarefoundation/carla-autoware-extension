@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Cell launcher: approach `tier4-native` (cells B, B-hf, B45, D).
+# Cell launcher: approach `tier4-native` (cells B, B-hf, B45, D, B-cyc -- the
+# last registered 2026-08-03, Task 4 of the P4 transport-sweep plan, as the
+# SAME family under a different DDS transport; nothing in this file's boot
+# sequence is transport-specific, so it needed no code change here, only the
+# registration in config/cells.yaml and the transport resolution in run.sh /
+# cells/tier4_autoware.sh).
 #
 #   bash benchmarks/cells/tier4-native.sh plan   # resolve + validate, no boot
 #   bash benchmarks/cells/tier4-native.sh up     # plan, then boot + wait ready
@@ -95,13 +100,62 @@ if [ ! -x "$GT_PYTHON" ] || ! "$GT_PYTHON" -c "import carla" >/dev/null 2>&1; th
   or point BENCH_GT_PYTHON at an interpreter that already has it."
 fi
 
+# The M4 sweep's ABLATION arm (cells.yaml `sweep_arms`): the identical LiDAR
+# rig with PUBLISHING DISABLED, so the sweep can decompose
+# `transport cost = total - baseline`. On this family that is the editor boot
+# below MINUS the Autoware half -- no container, no autoware_demo.py -- with
+# benchmarks/scripts/raycast_baseline.py taking the demo's place as the world's
+# only client and only tick authority.
+#
+# THE SENTENCE BELOW IS SUPERSEDED (2026-08-03, corrected by the P4
+# whole-branch review). It is the arm's PRE-FIX definition and it states the
+# opposite of what the code does; a later fix updated the code and the inner
+# comments and left this header standing. That matters more than an ordinary
+# stale comment: an analyst writing the wrap from this block would state a
+# baseline definition that is not the one measured, and the two readings
+# disagree on a real question -- whether `total - baseline` is credited with
+# the DDS participant's existence. Kept verbatim because it is the reasoning
+# the arm was designed under, and because in a campaign whose confound record
+# IS the deliverable, seeing what changed is how the answer stays legible.
+#
+#   SUPERSEDED: "The editor invocation itself, including `--ros2`, is
+#   unchanged: the arm ablates the SENSOR's emission (no ros_* attributes, no
+#   enable_for_ros), not the server's transport layer, so `total - baseline`
+#   isolates publishing rather than also crediting the DDS participant's
+#   existence."
+#
+# WHAT THE CODE DOES. `--ros2` is DROPPED on the ablation arm: see `ROS2_ARGS`
+# further down, emptied for exactly this arm, and the MEASURED 2026-08-03 note
+# beside it, which calls dropping the flag "the arm's central mechanism". The
+# superseded reading was refuted by measurement rather than by argument -- with
+# `--ros2` the editor ADVERTISES `/carla/<vehicle>/ray_cast2/point_cloud` for a
+# rig spawned with no ros_* attributes and no enable_for_ros(), so ablating the
+# sensor's attributes does NOT disable publishing, and the same boot emits
+# /clock at 19.959 Hz into the very clock.csv this arm's client has to write.
+#
+# So `total - baseline` DOES also credit the DDS participant's existence, and
+# that is now deliberate rather than a tolerated error: a DDS participant
+# standing publishers up is transport cost, which belongs on the `total` side
+# of the decomposition, not inside the baseline. The direction is disclosed
+# where the arm's reading rules live, benchmarks/scripts/raycast_baseline.py's
+# module docstring -- dropping the layer can only make the baseline SMALLER, so
+# `T - B` grows, and it grows TOWARD the quantity of interest rather than past
+# it, because the old form was subtracting transport from transport.
+BENCH_ARM_IS_ABLATION=0
+[ "$BENCH_ARM" = "ablation" ] && BENCH_ARM_IS_ABLATION=1
+
 # The Autoware half (Task 13). Still checked, not assumed: an overridden or
 # deleted hook must fail here, in `plan`, and not after CARLA has booted.
+# Skipped on the ablation arm, which never runs it: refusing a run over a hook
+# it does not use would be a false refusal of exactly the kind this campaign
+# has now recorded six times.
 TIER4_DEMO="${BENCH_TIER4_DEMO:-$BENCH_REPO/benchmarks/cells/tier4_autoware.sh}"
-[ -x "$TIER4_DEMO" ] || [ -f "$TIER4_DEMO" ] ||
-  fail "BENCH_TIER4_DEMO=$TIER4_DEMO is not a file (the default is
+if [ "$BENCH_ARM_IS_ABLATION" = "0" ]; then
+  [ -x "$TIER4_DEMO" ] || [ -f "$TIER4_DEMO" ] ||
+    fail "BENCH_TIER4_DEMO=$TIER4_DEMO is not a file (the default is
   benchmarks/cells/tier4_autoware.sh, which runs the fork's patched
   autoware_demo.py plus the Autoware container)"
+fi
 
 # Patch 0003 gives the demo the sensor flags a sweep class needs
 # (--lidar-channels/--lidar-pps/--lidar-rotation-hz/--lidar-range plus the
@@ -120,11 +174,212 @@ TIER4_DEMO="${BENCH_TIER4_DEMO:-$BENCH_REPO/benchmarks/cells/tier4_autoware.sh}"
 # measurement rather than an out-of-scope one. Relevant to the pre-registered
 # 32ch step-up branch (config/cells.yaml, sweep_classes): taking it needs no
 # config edit, but it does need these arguments supplied by hand.
+#
+# OWNED 2026-08-03 (Task 6, P4 spec 1e): the two paragraphs above are kept
+# as the strike-history record -- "NO owner"/"permanent" read historically,
+# not currently, now that the mapping below exists. The pre-registered
+# 32ch step-up branch this second paragraph names is
+# benchmarks/README.md's own "per cell, if no vlp16 ceiling disjunct
+# fires, the 32ch class executes mechanically; 128ch stays struck on
+# either branch".
+#
+# Class id -> sensor arguments, derived HERE (registered 2026-08-03, P4
+# spec 1e -- the residue of struck Task 26, now owned). Explicit env still
+# wins; an id with no mapping still refuses, because an unmapped class
+# would file a run under the WRONG workload label (a false measurement,
+# not an out-of-scope one). Rotation frequency stays at each family's
+# registered contract; a class pins channels + points_per_second only
+# (cells.yaml sweep_classes).
 if [ -n "${BENCH_CLASS_ID:-}" ] && [ -z "${BENCH_TIER4_SWEEP_ARGS:-}" ]; then
-  fail "--class $BENCH_CLASS_ID needs the tier4-side sensor arguments spelled
-  out: patch 0003's flags exist, but nothing maps a class id onto them yet.
-  Supply BENCH_TIER4_SWEEP_ARGS explicitly (e.g. --lidar-channels 128
-  --lidar-pps 4600000)."
+  case "$BENCH_CLASS_ID" in
+    vlp16) BENCH_TIER4_SWEEP_ARGS="--lidar-channels 16 --lidar-pps 288000" ;;
+    32ch)  BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000" ;;
+    *) fail "--class $BENCH_CLASS_ID has no registered sensor-argument
+    mapping (vlp16 and 32ch are registered; 128ch is struck on either
+    branch)" ;;
+  esac
+  # EXPORTED, and this is load-bearing rather than tidiness. THIS LAUNCHER
+  # HAS TWO CONSUMERS OF THE VALUE, IN DIFFERENT PROCESSES:
+  #
+  #   - the ABLATION arm expands it in THIS process, in the
+  #     `raycast_baseline` invocation below, so a plain assignment reaches it;
+  #   - the MEASURED arms spawn `bash "$TIER4_DEMO"` at the bottom of this
+  #     file through an explicit prefix-assignment whitelist, and
+  #     cells/tier4_autoware.sh expands `${BENCH_TIER4_SWEEP_ARGS:-}` in that
+  #     CHILD.
+  #
+  # WHAT BROKE WHEN IT WAS NOT EXPORTED (P4 Task 15 review finding C1, fixed
+  # 2026-08-04). This was a plain, unexported assignment and the whitelist
+  # does not carry it, so on every MEASURED tier4-native run the child
+  # expanded it to empty and the patched demo fell back to its own defaults,
+  # `--lidar-channels 16 --lidar-pps 288000`
+  # (patches/tier4-native/0003-autoware-demo-params.patch) -- which IS the
+  # vlp16 class. Six B-cyc runs requested at `--class 32ch` therefore booted
+  # a vlp16 rig and were filed under a manifest stamped `class_id: "32ch"`
+  # (results/B-cyc/run-031..036, now excluded `harness:<this commit>`;
+  # PROVENANCE sec 27). The three ablation runs of the same batch were
+  # unaffected, because of the in-process consumer above -- which is exactly
+  # why the ablation-side `raycast_baseline.json` rig read-back passed while
+  # the measured arms were wrong.
+  #
+  # WHY EXPORT AND NOT A THIRTEENTH WHITELIST ENTRY. That whitelist is a
+  # deliberate, documented cell-contract surface -- it states exactly what
+  # crosses into the demo -- and widening it would leave the two consumers
+  # reading two different resolutions of the same class id, which is the
+  # shape of the defect rather than its fix. `export` makes both consumers
+  # read ONE resolution, at the one place it is derived.
+  #
+  # An operator-supplied BENCH_TIER4_SWEEP_ARGS skips this block entirely
+  # and needs no export: it arrives in this launcher's ENVIRONMENT (run.sh
+  # spawns the launcher as a child), so it is exported already, by
+  # definition, and is inherited by the demo unchanged.
+  #
+  # PINNED at the process boundary, not in-process:
+  # tests/benchmarks/test_sweep_args.py's
+  # `test_tier4_derived_sweep_args_reach_a_plain_child_process` and
+  # `test_tier4_spawned_demo_sees_the_derived_sweep_args`. Every earlier test
+  # in that file read the variable back in the SAME shell, which is why they
+  # were all green while six runs were being mislabelled. Delete this
+  # `export` and both of those go red; nothing else in the suite moves.
+  export BENCH_TIER4_SWEEP_ARGS
+fi
+
+# --------------------------------------------------------------------------
+# ablation arm: resolve everything the baseline client needs, in `plan`, so a
+# missing interpreter dependency or an unregistered tick target refuses BEFORE
+# a 2-5 minute editor boot is paid for.
+# --------------------------------------------------------------------------
+ABLATION_PID_FILE="$BENCH_RUN_DIR/raycast_baseline.pid"
+ABLATION_LOG="$BENCH_RUN_DIR/raycast_baseline.log"
+ABLATION_TICK_HZ=""
+ABLATION_SPAWN_ARGS=""
+# The tier4 rig's LiDAR mount, MEASURED -- relative to the ego actor, in the
+# six-number spelling raycast_baseline.py's `--mount` takes (location x y z m,
+# then rotation roll pitch yaw deg).
+#
+# WHY THIS EXISTS AT ALL. Without `--mount` the client falls back to
+# `raycast_baseline.default_mount()`, which composes the committed
+# `awsim_labs_sensor_kit` calibration. That is EXACT for `--rig extension` and
+# an ESTIMATE for `--rig tier4`, whose real chain lives in the fork's own
+# `autoware_demo.py` (ego -> base_link -> sensor_kit -> lidar) and is not
+# committed here. That docstring's plan of record was to read the spawned
+# actor's transform live on cell B-cyc's first MEASURED run and feed it back
+# through this seam; PROVENANCE sec 14.5 is that measurement and this line is
+# the wiring it asked for.
+#
+# THE ESTIMATE IT REPLACES WAS WRONG BY 1.397071 m IN x, not by the
+# centimetres the docstring argued for: the whole discrepancy is the tier4
+# rig's extra `base_link` anchor actor (-1.39706787 m, the same offset this
+# launcher's own anchor check prints), and the rotation is EXACTLY the
+# committed kit's. Ray COUNT is set by the sweep class, so a wrong mount
+# cannot change the ray budget -- but per-ray cost tracks traced distance and
+# what each ray terminates on, so a 1.4 m displacement moves the very quantity
+# `T - B` subtracts, and it moves it silently: the run completes and scores.
+#
+# TRANSCRIBED from benchmarks/evidence/p4-task11-bringup/b-cyc-lidar-mount.log
+# (which prints the line in this exact spelling), so it gets the same treatment
+# TIER4_LIDAR_ATTRIBUTES' `sensor_tick` gets -- pinned by a unit test against
+# that filed capture rather than trusted.
+#
+# SCOPE, justified by APPROACH rather than by a cell list (corrected
+# 2026-08-04, Task 14 review M6 -- the first draft named only B and B-cyc and a
+# reader checking that enumeration would find it incomplete). This constant
+# applies to every cell this launcher serves, i.e. every `approach:
+# tier4-native` cell: B, B-cyc, D, B-hf and B45. One fork tree, one launcher,
+# one rig, and a pose measured RELATIVE TO THE EGO ACTOR, which no per-cell
+# knob moves -- B-cyc differs from B only in DDS transport, and D/B-hf/B45 only
+# in tick rate, message set and world. Naming the approach cannot go stale the
+# next time a cell is registered; enumerating cells would. D, B-hf and B45 are
+# all `dropped: owner-time-budget-2026-07-30`, so the inheritance is dormant
+# today -- but it is CORRECT, not merely harmless, if any of them is un-dropped.
+#
+# BENCH_ABLATION_MOUNT overrides it, so a re-measurement needs no code change.
+# A malformed override is not caught here: it reaches the client's own
+# argparse, which exits non-zero, which this launcher reports as "the raycast
+# baseline client exited during bring-up (see $ABLATION_LOG)". Loud, but paid
+# for after the editor boot.
+TIER4_ABLATION_MOUNT="-0.497071 0.000002 2.000000 0.859670 -0.053676 -88.156119"
+# A CAP on the client's tick loop, not the scoring window (run.sh step 10 owns
+# that). It bounds how long an orphaned client can tick a server nobody watches.
+ABLATION_DURATION_S="${BENCH_ABLATION_DURATION_S:-600}"
+ABLATION_READY_S=120
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  # $GT_PYTHON is already the interpreter whose `carla` matches THIS fork's
+  # server (checked by import above). Checked again by importing the module it
+  # will actually run: raycast_baseline pulls in runner.kit/loop/spawn and yaml.
+  PYTHONPATH="$BENCH_REPO" "$GT_PYTHON" -c \
+    "import benchmarks.scripts.raycast_baseline" >/dev/null 2>&1 ||
+    fail "$GT_PYTHON cannot import benchmarks.scripts.raycast_baseline (the
+  ablation client). It needs this repo on PYTHONPATH plus PyYAML; see the
+  tier4 venv recipe above and add the missing dependency to it."
+
+  # sweep_verdict.py scores paced and ablation at the SAME paced tick target,
+  # so the client's fixed delta is the cell's REGISTERED metrics.tick_hz --
+  # read from cells.yaml here, never a literal; a null binding refuses.
+  ABLATION_TICK_HZ="$(BENCH_CELL="$BENCH_CELL" PYTHONPATH="$BENCH_REPO" python3 - <<'PY'
+import os
+
+from benchmarks.scripts.cell_info import load_cells_doc, metrics_for
+
+cell = os.environ["BENCH_CELL"]
+tick_hz = metrics_for(load_cells_doc(), cell)["tick_hz"]
+if tick_hz is None:
+    raise SystemExit(
+        f"metrics.tick_hz is not registered (null) for cell {cell}: the ablation arm "
+        "cannot pick a tick target the campaign has not pre-registered"
+    )
+print(tick_hz)
+PY
+  )" || fail "could not resolve the registered tick target for cell $BENCH_CELL"
+
+  # Spawn pose from the committed route file, in the SAME two spellings
+  # cells/tier4_autoware.sh derives for the patched demo (--spawn-pose x y z 0
+  # 0 yaw_deg, else --spawn-index N) -- raycast_baseline.py accepts both, so
+  # the ablation arm starts the rig where the measured arm starts it. The
+  # derivation is duplicated rather than sourced because tier4_autoware.sh is
+  # the whole Autoware launch, which this arm exists not to run; the two must
+  # be changed together. That obligation is now ENFORCED rather than merely
+  # stated (2026-08-04): tests/benchmarks/test_raycast_baseline.py runs this
+  # snippet, tier4_autoware.sh's, and cells/extension.sh's against a route file
+  # carrying BOTH keys and requires all three to pick the POSE. extension.sh
+  # picked the index until that date -- see its own comment for what the
+  # divergence would have cost the measurand.
+  ABLATION_SPAWN_ARGS="$(BENCH_ROUTE_FILE="$BENCH_ROUTE_FILE" python3 - <<'PY'
+import os
+
+import yaml
+
+route = yaml.safe_load(open(os.environ["BENCH_ROUTE_FILE"]))
+index = route.get("spawn_index")
+pose = route.get("spawn_pose")
+if pose:
+    print(f"--spawn-pose {pose['x']} {pose['y']} {pose['z']} 0 0 {pose['yaw_deg']}")
+elif index is not None:
+    print(f"--spawn-index {int(index)}")
+else:
+    raise SystemExit("route file has neither spawn_pose nor spawn_index")
+PY
+  )" || fail "could not derive the spawn pose from $BENCH_ROUTE_FILE"
+fi
+
+# The four harness switches the ablation arm flips; each one is acted on
+# directly by run.sh. ARM_ENABLED=0 -> step 9 reports "(nothing to arm for this
+# cell)" and skips the post-engage control_cmd probe. INJECTOR_ENABLED=0 ->
+# step 8 has no Autoware container to docker-exec into (it would exclude the
+# run gate:injector-failed). GT_ENABLED=0 -> no second CARLA client competing
+# with the very measurement this arm isolates, and step 15's smoke drops its
+# gt.csv assertion. GT_COUNT_LIDAR=0 -> publisher_counts.json stays ABSENT,
+# which sweep_verdict.py reads as "not measurable"; a file-backed 0 would fire
+# the ceiling's publisher disjunct on a run that never intended to publish.
+LAUNCH_GT_ENABLED=1
+LAUNCH_GT_COUNT_LIDAR=1
+LAUNCH_INJECTOR_ENABLED=1
+LAUNCH_ARM_ENABLED=1
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  LAUNCH_GT_ENABLED=0
+  LAUNCH_GT_COUNT_LIDAR=0
+  LAUNCH_INJECTOR_ENABLED=0
+  LAUNCH_ARM_ENABLED=0
 fi
 
 cat >"$BENCH_LAUNCH_ENV" <<EOF
@@ -142,12 +397,12 @@ AW_CONTAINER="$AW_CONTAINER"
 AW_EXEC="docker exec -e ROS_DOMAIN_ID=0 $AW_CONTAINER"
 AW_SETUP="source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0"
 AW_COMPOSE=""
-GT_ENABLED="1"
+GT_ENABLED="$LAUNCH_GT_ENABLED"
 GT_CMD="env PYTHONPATH=$BENCH_REPO $GT_PYTHON -m benchmarks.scripts.collect_gt"
 GT_OUT_DIR="$BENCH_RUN_DIR"
-GT_COUNT_LIDAR="1"
-INJECTOR_ENABLED="1"
-ARM_ENABLED="1"
+GT_COUNT_LIDAR="$LAUNCH_GT_COUNT_LIDAR"
+INJECTOR_ENABLED="$LAUNCH_INJECTOR_ENABLED"
+ARM_ENABLED="$LAUNCH_ARM_ENABLED"
 EXTRA_CONTAINERS=""
 TIER4_DEMO="$TIER4_DEMO"
 # Declared for teardown.sh, which stops the demo BEFORE the editor: the demo
@@ -156,6 +411,18 @@ TIER4_DEMO="$TIER4_DEMO"
 # through the up step still leaves teardown something to stop.
 TIER4_DEMO_PID_FILE="$TIER4_DEMO_PID_FILE"
 EOF
+
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  # Same contract as TIER4_DEMO_PID_FILE above, for the process that REPLACES
+  # the demo on this arm: teardown.sh stops it before the editor, because it is
+  # the world's tick authority and a client left ticking a dead server hangs on
+  # actor destroy.
+  cat >>"$BENCH_LAUNCH_ENV" <<EOF
+ABLATION_PID_FILE="$ABLATION_PID_FILE"
+ABLATION_LOG="$ABLATION_LOG"
+ABLATION_TICK_HZ="$ABLATION_TICK_HZ"
+EOF
+fi
 
 if [ "$MODE" = "plan" ]; then exit 0; fi
 [ "$MODE" = "up" ] || fail "unknown mode $MODE (expected plan|up)"
@@ -177,9 +444,25 @@ mkdir -p "$BENCH_RUN_DIR"
 # domain 123 while every container of this harness lands on 0: the stack
 # starts, looks healthy, and not one topic is ever discovered. That is Task
 # 9's measured matrix row 7. `env` execs in place, so $! is still the
-# editor's own PID and the PID-file contract below is unchanged.
+# editor's own PID and the PID-file contract below is unchanged. On the
+# ablation arm the pin is a no-op (no ROS 2 layer runs); it is kept anyway.
+#
+# `--ros2` is DROPPED on the ablation arm, and that is the arm's central
+# mechanism rather than an optimisation. MEASURED 2026-08-03 on the extension
+# fork (the same native ROS 2 layer; bring-up probe through the matched
+# Humble/cyclonedds instrument): WITH `--ros2` the editor EMITS /clock at
+# 19.959 Hz with no runner attached -- which would make bench_observer an
+# active, per-row-flushed writer to the very clock.csv this arm's client has to
+# write -- and it ADVERTISES `/carla/<vehicle>/ray_cast2/point_cloud` for a rig
+# spawned with no ros_* attributes and no enable_for_ros(), i.e. dropping the
+# attributes alone does NOT disable publishing. WITHOUT the flag the same
+# instrument sees no CARLA topic at all. See
+# benchmarks/scripts/raycast_baseline.py's module docstring for the evidence
+# and for why a smaller baseline still leaves `T - B` a lower bound.
+ROS2_ARGS=(--ros2)
+[ "$BENCH_ARM_IS_ABLATION" = "1" ] && ROS2_ARGS=()
 nohup env ROS_DOMAIN_ID=0 "$EDITOR" "$UPROJECT" "$BENCH_MAP" \
-  -game --ros2 "-carla-rpc-port=$BENCH_RPC_PORT" \
+  -game ${ROS2_ARGS[@]+"${ROS2_ARGS[@]}"} "-carla-rpc-port=$BENCH_RPC_PORT" \
   -RenderOffScreen -nosound >"$LAUNCH_LOG" 2>&1 &
 echo $! >"$CARLA_PID_FILE"
 
@@ -199,6 +482,50 @@ while :; do
   sleep 5
 done
 echo "OK: tier4 CARLA up on port $BENCH_RPC_PORT"
+
+# The ablation arm stops here on the Autoware side and starts the
+# publish-disabled baseline client in the demo's place.
+if [ "$BENCH_ARM_IS_ABLATION" = "1" ]; then
+  # $BENCH_TIER4_SWEEP_ARGS is the class mapping resolved above
+  # (--lidar-channels/--lidar-pps, the patched demo's own flag names) and
+  # $ABLATION_SPAWN_ARGS the route's spawn in the demo's spelling;
+  # raycast_baseline.py accepts both verbatim, so neither is re-derived here.
+  # All three are deliberately word-split: resolved multi-flag strings, not
+  # single arguments.
+  #
+  # The mount is resolved HERE rather than beside the constant so this
+  # statement group carries the whole seam -- constant, override, flag -- and
+  # a unit test can run it and read the client's argv back.
+  ABLATION_MOUNT_ARGS="--mount ${BENCH_ABLATION_MOUNT:-$TIER4_ABLATION_MOUNT}"
+  # shellcheck disable=SC2086
+  nohup env PYTHONPATH="$BENCH_REPO" "$GT_PYTHON" -m benchmarks.scripts.raycast_baseline \
+    --host localhost --port "$BENCH_RPC_PORT" --rig tier4 \
+    --class-id "${BENCH_CLASS_ID:-}" --tick-hz "$ABLATION_TICK_HZ" \
+    --duration-s "$ABLATION_DURATION_S" --out-dir "$BENCH_RUN_DIR" \
+    $ABLATION_SPAWN_ARGS ${BENCH_TIER4_SWEEP_ARGS:-} $ABLATION_MOUNT_ARGS \
+    >"$ABLATION_LOG" 2>&1 &
+  echo $! >"$ABLATION_PID_FILE"
+
+  # Readiness is the FILE, not the process: nothing publishes /clock on this
+  # arm, so this client is clock.csv's only writer -- and run.sh step 7's
+  # watchdog starts judging the run by that file within 30 s. Two data rows
+  # also clears fit_sim_wall_affine's ">= 2 paired samples", which the step-15
+  # smoke needs.
+  echo "waiting up to ${ABLATION_READY_S}s for the baseline client to tick (log: $ABLATION_LOG)"
+  deadline=$((SECONDS + ABLATION_READY_S))
+  until [ "$(wc -l <"$BENCH_RUN_DIR/clock.csv" 2>/dev/null || echo 0)" -ge 3 ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      fail "the raycast baseline client wrote no clock.csv rows within
+  ${ABLATION_READY_S}s (see $ABLATION_LOG)"
+    fi
+    if ! kill -0 "$(cat "$ABLATION_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+      fail "the raycast baseline client exited during bring-up (see $ABLATION_LOG)"
+    fi
+    sleep 2
+  done
+  echo "OK: publish-disabled baseline ticking at ${ABLATION_TICK_HZ} Hz (no Autoware: ablation arm)"
+  exit 0
+fi
 
 # Autoware, via Task 13's launch script. Reached only when BENCH_TIER4_DEMO
 # was supplied (plan refuses otherwise), so this is a hook, not a stub: it

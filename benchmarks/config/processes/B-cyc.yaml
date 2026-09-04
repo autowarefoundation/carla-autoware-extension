@@ -1,0 +1,84 @@
+# M3 process map for cell B-cyc (tier4-native approach, Town10HD_Opt, the
+# row-11 cyclonedds transport).
+#
+# REGISTERED 2026-08-03 (Task 4, P4 transport-sweep plan) as a byte-for-byte
+# COPY of cell B's own processes/B.yaml (below, unmodified except for this
+# header): the process placement M3 measures is a property of the fork tree
+# and the launcher, not of the DDS transport, so it is identical between B
+# and B-cyc. See config/cells.yaml's B-cyc entry for the transport
+# derivation.
+#
+# THAT CLAIM WAS TRUE WHEN WRITTEN, BECAME FALSE AT MERGE, AND IS TRUE AGAIN
+# (2026-08-03, P4 whole-branch review, blockers B1/B2). It is kept above
+# verbatim rather than reworded, and this is what happened underneath it. Task
+# 4 copied B.yaml in one lane while, in a parallel lane, Task 7 added the
+# `raycast-baseline` entry to B.yaml (the M4 ablation arm's client). Both lanes
+# merged cleanly and textually, so nothing announced that the copy no longer
+# matched its original -- the header still said "byte-for-byte" while B.yaml
+# had gained an entry this file lacked. The consequence was not cosmetic: with
+# no `raycast-baseline` label, B-cyc's ablation client would have been sampled
+# by NOTHING and reported a flat 0.0% CPU instead of failing loudly, which is
+# the exact defect ordered fixed for A and B "before any GPU-hours" and is the
+# whole quantity the ablation arm exists to measure. The entry is restored
+# below, copied from processes/B.yaml with its comment intact, and the two
+# bodies are byte-identical again from `processes:` down.
+#
+# KEEPING IT TRUE is a standing obligation, not a one-off: any future edit to
+# processes/B.yaml's body must be mirrored here in the same commit. The claim
+# above is the contract; `diff <(sed -n '/^processes:/,$p' B.yaml)
+# <(sed -n '/^processes:/,$p' B-cyc.yaml)` is how to check it.
+#
+# Grounded in benchmarks/patches/tier4-native/README.md's verified boot
+# smoke ("Boot smoke" section) and docker/compose.yaml. Like cell A,
+# this runs the shared engine's UnrealEditor in -game mode -- there is
+# no packaged Shipping binary in this campaign for either UE5 tree.
+processes:
+  # UnrealEditor -game, tier4-native fork tree (pins.yaml
+  # tier4_carla_fork.path = ~/src/carla-autoware-native). The README's
+  # verified invocation:
+  #   .../UnrealEditor ~/src/carla-autoware-native/Unreal/CarlaUnreal/
+  #     CarlaUnreal.uproject Town10HD_Opt -game --ros2 -carla-rpc-port=... \
+  #     -RenderOffScreen -nosound
+  # The tree-path segment disambiguates from the extension fork, which
+  # uses the identical uproject filename in a sibling tree (see A.yaml).
+  - label: carla-server
+    pattern: carla-autoware-native/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  # No separate host-side "runner": the tier4 fork's own
+  # autoware_carla_interface (pulled in by simulator_type:=carla) spawns
+  # the ego and drives the bridge loop as a ROS node INSIDE the
+  # "autoware" container -- its cost is captured by that entry below,
+  # not by a host process. (Contrast cell A, where the extension's
+  # ego-spawn tool is a separate host-side python3 -m runner process.)
+  #
+  # PARTIALLY re-grounded in Task 8. benchmarks/cells/tier4-native.sh
+  # writes INJECTOR_ENABLED=1 and AW_CONTAINER=autoware into launch.env,
+  # and run.sh's step 8 docker-execs dummy_perception into that
+  # container -- so both entries below are what the orchestrator will
+  # address. What is still NOT grounded is the container itself: the
+  # tier4 Autoware stack is launched by Task 13's script (the
+  # BENCH_TIER4_DEMO hook), which is handed BENCH_AW_CONTAINER=autoware
+  # but has not been written. If Task 13 lands with a different name,
+  # correct BOTH this file and the launcher's AW_CONTAINER together.
+  # The M4 ABLATION arm's publish-disabled baseline client
+  # (benchmarks/scripts/raycast_baseline.py), started by
+  # cells/tier4-native.sh's ablation branch IN PLACE OF autoware_demo.py --
+  # on that arm it is this cell's only client and its tick authority. It runs
+  # as `nohup env PYTHONPATH=<repo> <venv>/python3 -m
+  # benchmarks.scripts.raycast_baseline ...`; `env` execs in place, so the
+  # module path is on the surviving process's own cmdline and `pgrep -f`
+  # matches it. Without this entry the arm's only client is sampled by nothing
+  # and the raycast cost it exists to measure is recorded nowhere.
+  #
+  # Unlike cell A there is no host-side `runner` entry to sit opposite it (see
+  # the note above: this family's ego spawner is a ROS node inside the
+  # container), so on every NON-ablation run this label reports 0.0% --
+  # sample_pattern_entry's zero row for a pattern that matches no PIDs. That is
+  # expected, and it is written down for the same reason as in A.yaml: a 0.0%
+  # row on an ABLATION run is a finding, not the normal state.
+  - { label: raycast-baseline, pattern: benchmarks.scripts.raycast_baseline }
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  # See A.yaml's "observer" entry: RE-GROUNDED in Task 8 --
+  # benchmarks/run.sh step 6 creates `--name bench-observer` for every
+  # cell, this one included.
+  - { label: observer, container: bench-observer }

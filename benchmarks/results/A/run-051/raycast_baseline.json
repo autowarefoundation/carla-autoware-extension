@@ -1,0 +1,38 @@
+{
+  "attributes": {
+    "channels": "32",
+    "points_per_second": "1200000",
+    "range": "120.0",
+    "rotation_frequency": "10",
+    "sensor_tick": "0.05"
+  },
+  "class_id": "32ch",
+  "clock_header_reasserts": 1,
+  "clock_rows_written": 2911,
+  "clock_stand_down_reason": "",
+  "clock_stood_down": false,
+  "clock_toctou_repairs": 0,
+  "duration_cap_s": 600.0,
+  "ego_blueprint": "vehicle.lincoln.mkz",
+  "ended_system_ns": 1785851986231154313,
+  "fixed_delta_s": 0.05,
+  "lidar_blueprint": "sensor.lidar.ray_cast",
+  "mount_location_m": [
+    0.9,
+    0.0,
+    2.0
+  ],
+  "mount_rotation_deg": [
+    0.8596703279023998,
+    -0.05367618110798624,
+    -88.1561187736481
+  ],
+  "mount_source": "default_mount()",
+  "rig": "extension",
+  "sensor_callbacks": 2913,
+  "sim_span_ns": 145500002168,
+  "started_system_ns": 1785851840235379238,
+  "stopped_by_signal": true,
+  "tick_hz": 20.0,
+  "ticks": 2911
+}

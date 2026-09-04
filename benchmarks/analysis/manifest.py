@@ -127,6 +127,86 @@ class RunManifest:
     # through the one path this field exists to close.
     duel_admissible: bool = False
 
+    # WHICH duel a `duel_admissible=True` run pools into (Amendment
+    # 2026-08-03, Task 2 of the P4 transport-sweep plan). `duel_admissible`
+    # answers "is this run duel data at all?"; this answers the separate
+    # question "which duel's admission pool does it belong to?" -- two
+    # fields for two questions, same rationale as `duel_admissible`'s own
+    # comment above. Without it, a verdict over a NEW pairing (e.g. P4's
+    # (A, B-cyc)) would silently pull the OLD pairing's admissible runs
+    # (P3's (A, B) pool, filed under the same cell-A directory) into its
+    # count -- mixing runs from a different transport arm and a different,
+    # non-interleaved partner cell into an equivalence verdict that never
+    # measured them together.
+    #
+    # Convention (enforced by scripts/duel.sh, which is the only caller
+    # that ever passes a non-empty value): `f"{cell_a}+{cell_b}"`, in the
+    # SAME left-to-right order the two cells were given to duel.sh, so
+    # both cells in a pair stamp the identical string and a verdict's own
+    # `f"{cell_a_id}+{cell_b_id}"` lookup (duel_verdict.py) matches it
+    # without normalising order.
+    #
+    # DEFAULT "" -- matching `duel_admissible`'s own fail-closed direction:
+    # this is also the value every manifest filed before this field
+    # existed reads as (load_manifest supplies the dataclass default when
+    # the key is absent from the JSON). The pool rule's own legacy clause
+    # (duel_verdict.py's `_walk_cell_runs`) treats "" as belonging to the
+    # (A, B) pool specifically -- and ONLY (A, B) -- so the already-filed
+    # P3 verdict keeps reproducing byte-for-byte without a single filed
+    # manifest being rewritten.
+    #
+    # Validated as a real str below, not merely present: the same
+    # rationale as `duel_admissible`'s bool check -- a hand-edited or
+    # externally-generated manifest must not be able to smuggle a
+    # non-string value past validate() and into the `==` pool-membership
+    # comparison _walk_cell_runs makes.
+    duel_id: str = ""
+
+    # WHICH SWEEP CLASS's point a sweep-arm run measures (Amendment
+    # 2026-08-04, Task C2 of the P4 transport-sweep plan). `arm` answers
+    # "which sweep arm is this?" (paced / unpaced / ablation); this answers
+    # the separate question "which sweep class's workload was it collected
+    # under?" -- two fields for two questions, the same rationale
+    # `duel_admissible` / `duel_id` above already make, and the same shape:
+    # `duel_id` partitions DUEL admission pools, this partitions SWEEP
+    # scoring pools.
+    #
+    # Without it, `sweep_verdict.py <cell> --class <id>` renders EVERY
+    # sweep-arm run under the cell whatever class it was collected under:
+    # `--class` was validated against cells.yaml (cell_info.merge's typo
+    # guard) and printed in the table heading, but filtered nothing, so
+    # `sweep_verdict.py A --class 32ch` printed Task 14's eighteen vlp16 rows
+    # under a "class 32ch" heading -- demonstrated live. run.sh files duel
+    # arms and sweep arms alike into ONE flat, gap-free run-NNN/ sequence per
+    # cell, so the moment a 32ch run lands beside the vlp16 ones, `--class
+    # vlp16` and `--class 32ch` render IDENTICAL rows with no field left to
+    # recover the class from.
+    #
+    # Convention (enforced by run.sh, the only writer): the `sweep_classes`
+    # id as given to `run.sh --class` and resolved by `cell_info.merge` --
+    # the SAME resolved value `BENCH_CLASS_ID` carries to the launchers,
+    # which derive the actual sensor arguments from it
+    # (cells/extension.sh, cells/tier4-native.sh). One resolution, so the
+    # manifest's label and the rig actually booted cannot disagree.
+    #
+    # DEFAULT "" -- matching `duel_id`'s own fail-safe direction, and the
+    # value every manifest filed before this field existed reads as
+    # (load_manifest supplies the dataclass default when the key is absent
+    # from the JSON). The pool rule's own legacy clause
+    # (sweep_verdict.py's `_class_admits`) treats "" as belonging to the
+    # vlp16 pool specifically -- and ONLY vlp16, because every filed
+    # sweep-arm run predating this field IS a vlp16 run (verified against
+    # the tree before the clause was written) -- so Task 14's already-filed
+    # ceiling booleans keep reproducing without a single filed manifest
+    # being rewritten.
+    #
+    # Validated as a real str below, not merely present: the same rationale
+    # as `duel_id`'s check just above -- a hand-edited or
+    # externally-generated manifest must not be able to smuggle a non-string
+    # value past validate() and into the `==` pool-membership comparison
+    # `_class_admits` makes.
+    class_id: str = ""
+
     def validate(self) -> list[str]:
         errs = []
         if self.cell not in known_cell_ids():
@@ -160,6 +240,24 @@ class RunManifest:
             errs.append(
                 f"duel_admissible must be a bool, got {type(self.duel_admissible).__name__} "
                 f"({self.duel_admissible!r})"
+            )
+        # A REAL str, not merely present -- same rationale as the bool check
+        # just above, for the field that says WHICH duel's pool this run
+        # belongs to.
+        if not isinstance(self.duel_id, str):
+            errs.append(
+                f"duel_id must be a str, got {type(self.duel_id).__name__} ({self.duel_id!r})"
+            )
+        # A REAL str, not merely present -- mirroring duel_id's check just
+        # above verbatim, for the field that says WHICH SWEEP CLASS's scoring
+        # pool this run belongs to. A bare `32` (an operator writing the
+        # channel count rather than the class id) would otherwise compare
+        # unequal to every registered class string and vanish from every
+        # verdict silently, instead of failing at the manifest -- the single
+        # place the value is written -- exactly as the `cell` typo guard does.
+        if not isinstance(self.class_id, str):
+            errs.append(
+                f"class_id must be a str, got {type(self.class_id).__name__} ({self.class_id!r})"
             )
         return errs
 

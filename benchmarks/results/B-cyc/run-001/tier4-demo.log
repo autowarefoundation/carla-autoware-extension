@@ -1,0 +1,42 @@
+[INFO]: Deployed PostProcess profile: /home/youtalk/src/carla-autoware-native/Unreal/CarlaUnreal/Content/Carla/Config/PostProcess/autoware_demo.json
+Map 'None' is already loaded — skipping reload.
+Loaded map: Not set yet
+[INFO]: Applied settings:
+	synchronous mode: True
+	fixed time step: 20 (in Hz)
+	simulation dt: 0.05 (in seconds)
+	physics substepping: True
+	time scale: 1.00
+	pure step execution: False
+[INFO]: Ego spawned!
+[WARNING]: Kill this script before stopping simulation!
+[WARNING]: Simulation is 512.0 ms behind schedule
+[WARNING]: Simulation is 714.9 ms behind schedule
+[WARNING]: Simulation is 722.6 ms behind schedule
+[WARNING]: Simulation is 703.0 ms behind schedule
+[WARNING]: Simulation is 715.9 ms behind schedule
+[WARNING]: Simulation is 684.6 ms behind schedule
+[WARNING]: Simulation is 661.1 ms behind schedule
+[WARNING]: Simulation is 654.4 ms behind schedule
+[WARNING]: Simulation is 641.6 ms behind schedule
+[WARNING]: Simulation is 622.0 ms behind schedule
+[WARNING]: Simulation is 601.7 ms behind schedule
+[WARNING]: Simulation is 579.0 ms behind schedule
+[WARNING]: Simulation is 561.3 ms behind schedule
+[WARNING]: Simulation is 544.1 ms behind schedule
+[WARNING]: Simulation is 516.5 ms behind schedule
+[WARNING]: Simulation is 484.7 ms behind schedule
+[WARNING]: Simulation is 454.8 ms behind schedule
+[WARNING]: Simulation is 422.9 ms behind schedule
+[WARNING]: Simulation is 391.7 ms behind schedule
+[WARNING]: Simulation is 370.4 ms behind schedule
+[WARNING]: Simulation is 337.0 ms behind schedule
+[WARNING]: Simulation is 313.7 ms behind schedule
+[WARNING]: Simulation is 278.5 ms behind schedule
+[WARNING]: Simulation is 251.6 ms behind schedule
+[WARNING]: Simulation is 222.3 ms behind schedule
+[WARNING]: Simulation is 189.9 ms behind schedule
+[WARNING]: Simulation is 156.5 ms behind schedule
+[WARNING]: Simulation is 121.5 ms behind schedule
+[WARNING]: Simulation is 87.5 ms behind schedule
+[WARNING]: Simulation is 54.7 ms behind schedule

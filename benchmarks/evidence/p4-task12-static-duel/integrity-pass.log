@@ -1,0 +1,42 @@
+# new runs: A=10  B-cyc=10
+
+## integrity pass (both cells; no measured value of cell A is printed)
+run              arm     mval  duel_id    adm   qual  wdog  excl  reason
+A/run-016        static  True  A+B-cyc    True  True  False False -
+A/run-017        static  True  A+B-cyc    True  True  False False -
+A/run-018        static  True  A+B-cyc    True  True  False False -
+A/run-019        static  True  A+B-cyc    True  True  False False -
+A/run-020        static  True  A+B-cyc    True  True  False False -
+A/run-021        static  True  A+B-cyc    True  True  False False -
+A/run-022        static  True  A+B-cyc    True  True  False False -
+A/run-023        static  True  A+B-cyc    True  True  False False -
+A/run-024        static  True  A+B-cyc    True  True  False False -
+A/run-025        static  True  A+B-cyc    True  True  False False -
+B-cyc/run-002    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-003    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-004    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-005    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-006    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-007    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-008    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-009    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-010    static  True  A+B-cyc    True  True  False False -
+B-cyc/run-011    static  True  A+B-cyc    True  True  False False -
+
+## Step 3 -- B-cyc ndt_rate_ratio (within-cell gate fact)
+B-cyc/run-002    ndt_rate_ratio=0.9989550530354242  gate_pass=True  reasons=[]
+B-cyc/run-003    ndt_rate_ratio=0.9989594023880347  gate_pass=True  reasons=[]
+B-cyc/run-004    ndt_rate_ratio=0.9989679933693522  gate_pass=True  reasons=[]
+B-cyc/run-005    ndt_rate_ratio=0.9999999850840338  gate_pass=True  reasons=[]
+B-cyc/run-006    ndt_rate_ratio=0.9989679933693522  gate_pass=True  reasons=[]
+B-cyc/run-007    ndt_rate_ratio=0.9989506671719838  gate_pass=True  reasons=[]
+B-cyc/run-008    ndt_rate_ratio=0.9989550530354242  gate_pass=True  reasons=[]
+B-cyc/run-009    ndt_rate_ratio=0.9989701190060682  gate_pass=True  reasons=[]
+B-cyc/run-010    ndt_rate_ratio=0.9989679933693522  gate_pass=True  reasons=[]
+B-cyc/run-011    ndt_rate_ratio=0.9989506671719838  gate_pass=True  reasons=[]
+
+B-cyc admissible n=10  min=0.998951  max=1.000000
+all >= 0.9: True
+
+## admissible: A=10  B-cyc=10
+## admissible PAIRS (min of the two) = 10

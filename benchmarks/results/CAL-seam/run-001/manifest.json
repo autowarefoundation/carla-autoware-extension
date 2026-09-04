@@ -1,0 +1,41 @@
+{
+  "cell": "CAL-seam",
+  "approach": "calibration",
+  "map_name": "Town10HD_Opt",
+  "run_index": 1,
+  "arm": "static",
+  "harness_git_sha": "7a3651bd513cd9d3ad808205c5e922d66a24daa1",
+  "patches_git_sha": "7000c7855bea62960f47d18774b2aca02f264777",
+  "transport": {
+    "rmw": "rmw_cyclonedds_cpp",
+    "shm_enabled": false,
+    "dds_profile_sha256": "1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865"
+  },
+  "carla_version": "0.10-fork",
+  "autoware_image": "none",
+  "started_at_ns": 1785800910150463202,
+  "excluded": false,
+  "exclusion_reason": "",
+  "placement": {
+    "carla_rpc_port": "2000",
+    "container_image": "none",
+    "cpu_governor": "powersave",
+    "free_gb": "453",
+    "loadavg": "0.82",
+    "map_bundle_pin": "skipped:unmapped-approach:calibration",
+    "nproc": "24",
+    "observer_env": {
+      "image": "bench-observer:universe-devel",
+      "rmw": "rmw_cyclonedds_cpp",
+      "shm": "off",
+      "topics_file": "CAL-seam.yaml"
+    },
+    "results_fs": "/home",
+    "run_mode": "container-only",
+    "shm_root_cleared": "0",
+    "shm_root_remaining": "0",
+    "shm_user_cleared": "0"
+  },
+  "duel_admissible": false,
+  "duel_id": ""
+}

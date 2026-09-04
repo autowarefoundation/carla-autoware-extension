@@ -24,6 +24,27 @@ processes:
   # Host-side spawn+tick runner (repo-root runner/__main__.py), invoked
   # by run_e2e.sh's final line as `python3 -m runner --host ...`.
   - { label: runner, pattern: python3 -m runner }
+  # The M4 ABLATION arm's publish-disabled baseline client
+  # (benchmarks/scripts/raycast_baseline.py), started by cells/extension.sh's
+  # ablation branch as
+  #   nohup env PYTHONPATH=<repo> <venv>/python3 \
+  #     -m benchmarks.scripts.raycast_baseline ...
+  # `env` execs in place, so the module path is on the surviving process's own
+  # cmdline and `pgrep -f` matches it. WITHOUT this entry that arm's only
+  # client is sampled by nothing at all: `runner` above does not run on it and
+  # reports a flat 0.0%, so the client's CPU -- the raycast cost the whole arm
+  # exists to measure, and what would let its disclosed RPC-hop caveat be
+  # QUANTIFIED rather than only stated -- is recorded nowhere and cannot be
+  # recovered after the run.
+  #
+  # EXACTLY ONE of `runner` / `raycast-baseline` is populated on any given run
+  # and the other reports 0.0% (sample_pattern_entry returns a zero row for a
+  # pattern matching no PIDs). That is expected here rather than the failure
+  # this file's header warns about -- but only because it is written down: a
+  # 0.0% `raycast-baseline` row on a PACED run means the arm simply did not run
+  # it, while a 0.0% row on an ABLATION run means the client died or was
+  # renamed, and is a finding.
+  - { label: raycast-baseline, pattern: benchmarks.scripts.raycast_baseline }
   # Clear-road/all-green injector, run identically in every sim cell
   # (Task 7 brief: "Makes the dummy-perception injector a first-class
   # harness component run identically in every cell"; Task 8 brief

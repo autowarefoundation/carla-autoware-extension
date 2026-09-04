@@ -20,19 +20,88 @@ repos:
         # formatter that rewrites them alters the measurement after the fact.
         # Measured 2026-07-29 (Task 10): `pre-commit run --all-files` modified
         # 17 committed result files, manifest.json among them.
-        exclude: ^benchmarks/(patches|results)/
+        # benchmarks/evidence/** carries the same hazard for its verbatim
+        # captures and their producing scripts. See the trailing-whitespace
+        # exclude below for the incident that proved it, the scoping
+        # rationale (captures and scripts excluded; PROVENANCE.md/README.md
+        # records are not), and the one .md file that is path-special-cased
+        # because it is itself a verbatim capture, not authored narrative.
+        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)|^benchmarks/evidence/p3-phase0/probe-transcripts\.md$
       - id: mixed-line-ending
         # See the trailing-whitespace exclude below: any generic text
         # mutator is unsafe on these byte-exact patch files, and on the
-        # recorded results for the reason given above.
-        exclude: ^benchmarks/(patches|results)/
+        # recorded results for the reason given above -- and, per the same
+        # exclude, on benchmarks/evidence/'s captures and scripts (plus one
+        # path-special-cased .md file) too.
+        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)|^benchmarks/evidence/p3-phase0/probe-transcripts\.md$
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         # In a unified diff, a blank context line is one significant
         # space, not empty. This hook strips it, turning "- " (a
         # blank/whitespace-only context line) into "-", which can break
         # `git apply` on these byte-exact, verified patch artifacts.
-        exclude: ^benchmarks/(patches|results)/
+        #
+        # benchmarks/evidence/** carries the same hazard for its verbatim
+        # captures, and it is not hypothetical: this hook stripped a trailing
+        # space from a filed console log in commit cf072ea
+        # (benchmarks/evidence/p4-task11-bringup/a-bringup-console.log,
+        # docker compose's own " Container autoware Running " line -- see
+        # that directory's own PROVENANCE.md and benchmarks/results/
+        # PROVENANCE.md sec 16.3). A formatter that edits a filed capture
+        # after the fact silently falsifies the "byte-exact" property the
+        # capture exists to have.
+        #
+        # Scope is deliberately narrower than the blanket benchmarks/results/
+        # exclude above: benchmarks/evidence/** also holds probe *scripts*
+        # (e.g. p4-task11-bringup/capture_tier4_mount.py, b-vector-map-
+        # delivery/cyclone_probe.sh) and *markdown records* (README.md, each
+        # directory's PROVENANCE.md), neither of which is a captured
+        # transcript.
+        #   - Scripts ARE excluded here, for the same reason the ruff hooks
+        #     below exclude all of benchmarks/evidence/: each PROVENANCE.md
+        #     certifies specific scripts as the exact code that produced a
+        #     specific filed figure (see e.g. b-vector-map-delivery/
+        #     PROVENANCE.md's own table), and a whitespace/newline rewrite
+        #     would falsify that certification exactly as a ruff reformat
+        #     would.
+        #   - PROVENANCE.md / README.md are deliberately NOT excluded: they
+        #     are authored narrative, not captured transcripts (markdownlint
+        #     already lints them -- only benchmarks/results/ is markdownlint-
+        #     excluded below, not benchmarks/evidence/), and they benefit
+        #     from the same whitespace/newline/line-ending hygiene as any
+        #     other maintained prose in this repo.
+        #
+        # The extension split above is a HEURISTIC, not a guarantee: it
+        # assumes .md under benchmarks/evidence/ is always authored narrative,
+        # and that assumption already has a counterexample.
+        # benchmarks/evidence/p3-phase0/probe-transcripts.md is the file's OWN
+        # description of itself: "Every console block's output is
+        # `tee`-appended unedited... Nothing was removed from any output for
+        # being inconvenient." It carries 19 fenced ```console blocks that ARE
+        # the record, and unlike every other evidence directory, p3-phase0/
+        # has no companion .log/.txt holding that output a second time -- so
+        # the extension rule would leave the one file that most needs this
+        # protection unprotected. It is therefore special-cased into this
+        # exclude by exact path, alongside the extension rule, not instead of
+        # it.
+        #
+        # Checked and ruled OUT as needing the same treatment (2026-08-03):
+        # every other fenced block under benchmarks/evidence/**/*.md is
+        # either a ```bash recompute/reproduction snippet (g1-ladder-rigid,
+        # g1-nishi-bundle, g2-nishi-cellc, route-town10-pre-repick,
+        # task-15-adapi-engage-cellc, p3-phase0/PROVENANCE.md, README.md) or a
+        # short ```text quoted excerpt (b-vector-map-delivery/PROVENANCE.md,
+        # b-closed-loop-stopcheck/PROVENANCE.md) whose full, byte-exact source
+        # is a companion .log/.txt file this exclude already protects --
+        # mutating the .md quoting it does not falsify anything the campaign
+        # cites as the record.
+        #
+        # A future .md filed under benchmarks/evidence/ needs the same
+        # path-specific exclude if it is itself the PRIMARY, SOLE verbatim
+        # capture of a session (raw console/tool output not also retained
+        # byte-for-byte in a companion non-.md file). Check for that before
+        # assuming the extension rule alone protects a new filing.
+        exclude: ^benchmarks/(patches|results)/|^benchmarks/evidence/(?!.*\.md$)|^benchmarks/evidence/p3-phase0/probe-transcripts\.md$
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.49.1
@@ -85,6 +154,30 @@ repos:
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
+        # benchmarks/evidence/** is excluded for EXACTLY the reason the ruff
+        # hooks below exclude it, and the reason the mutating hooks above
+        # exclude its scripts: each directory's PROVENANCE.md certifies
+        # specific scripts as the exact code that produced specific filed
+        # figures ("the exact driver that produced the eighteen runs"), so a
+        # lint-driven edit -- even adding a `# shellcheck disable=` line --
+        # means the script in the tree is no longer the script that produced
+        # the recorded figure.
+        #
+        # MEASURED 2026-08-04 (P4 Task 15 review, fix round 1): at b6fbc80,
+        # BEFORE any change in that round, `pre-commit run --all-files`
+        # already failed here, on
+        # benchmarks/evidence/p4-task15-32ch-sweep/sweep_driver.sh:104 --
+        # SC2016 (info) against a `down`-in-backticks message inside single
+        # quotes, i.e. deliberate literal prose in an echo, not a defect. So
+        # this exclude records a pre-existing condition rather than creating
+        # a new allowance, exactly as the ruff exclude below does.
+        #
+        # The cost, stated plainly: shell under benchmarks/evidence/ is no
+        # longer shellchecked. Anything meant to be maintained as code
+        # belongs under benchmarks/scripts/ or scripts/, which stay covered.
+        # If an evidence probe script is ever promoted to maintained code,
+        # MOVE it there and leave the evidence copy untouched.
+        exclude: ^benchmarks/evidence/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.22

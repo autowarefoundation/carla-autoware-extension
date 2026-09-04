@@ -3,7 +3,7 @@
 #
 #   bash benchmarks/run.sh <cell> --arm static|closed-loop [--class <id>]
 #        [--unpaced] [--runs N] [--no-observer] [--rpc-port N] [--rmw NAME]
-#        [--shm on|off] [--dds-profile PATH|none] [--duel]
+#        [--shm on|off] [--dds-profile PATH|none] [--duel] [--duel-id STR]
 #        [--check-args] [--dry-run]
 #
 # Every measurement in P3 and P4 comes from here. Each invocation produces
@@ -59,6 +59,13 @@ RPC_PORT=2000
 # the default points this way (a forgotten flag must under-count loudly, not
 # contaminate silently).
 DUEL=0
+# WHICH duel's admission pool this run belongs to (Amendment 2026-08-03,
+# Task 2), threaded through to RunManifest.duel_id via write_manifest.py
+# --duel-id. Default "" matches RunManifest.duel_id's own default -- the
+# legacy/no-duel value. scripts/duel.sh is the only caller that ever
+# passes a non-empty value (`--duel-id "${CELL_A}+${CELL_B}"`); see
+# RunManifest.duel_id's own comment for the pool rule this feeds.
+DUEL_ID=""
 # --check-args: resolve the invocation and print it, then exit -- steps 1-2
 # only, so it touches NO host state at all (no preflight, no /dev/shm sweep, no
 # docker, no results/ write, nothing booted). It exists so the fail-closed
@@ -110,6 +117,7 @@ while [ $# -gt 0 ]; do
     --shm) SHM="$2"; shift 2 ;;
     --dds-profile) DDS_PROFILE="$2"; DDS_PROFILE_EXPLICIT=1; shift 2 ;;
     --duel) DUEL=1; shift ;;
+    --duel-id) DUEL_ID="$2"; shift 2 ;;
     --check-args) CHECK_ARGS=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h | --help) usage ;;
@@ -290,6 +298,27 @@ do_run() {
     DDS_PROFILE="$BENCH/observer/config/udp_only.xml"
     echo "      transport: -> $RMW, shm $SHM, $DDS_PROFILE (required for the $approach family)"
   fi
+
+  # Cell B-cyc's REGISTERED transport overrides the family requirement above:
+  # rmw_cyclonedds_cpp, SHM off, NO profile -- the measured row-11
+  # configuration (benchmarks/patches/tier4-native/README.md's transport
+  # matrix; rows 5/10: the harness's `lo`-pinned cyclone default sees NOTHING
+  # from the fork). Registered 2026-08-03 (P4 transport-sweep plan, Task 4);
+  # results/B/run-033 -- a deliberate one-off deviation probe on cell B -- is
+  # the end-to-end precedent this cell's own registration turns into a
+  # regular, duellable configuration (config/cells.yaml's B-cyc entry has the
+  # full derivation, including the caveats row 11 inherits rather than
+  # fixes). An EXPLICIT --rmw/--dds-profile still wins, same as the
+  # tier4-native block above, and cells/tier4_autoware.sh refuses anything
+  # but this pair for BENCH_CELL=B-cyc, so a deliberate wrong choice fails
+  # loudly instead of being measured.
+  if [ "$CELL" = "B-cyc" ] && [ "$RMW_EXPLICIT" = "0" ] &&
+    [ "$DDS_PROFILE_EXPLICIT" = "0" ]; then
+    RMW=rmw_cyclonedds_cpp
+    SHM=off
+    DDS_PROFILE=none
+    echo "      transport: -> $RMW, shm $SHM, none (registered for cell $CELL)"
+  fi
   [ -n "$CLASS_ID" ] && echo "      class=$CLASS_ID $(json_field "$cell_json" points_per_second) pts/s"
 
   window_arm="$ARM"
@@ -309,6 +338,118 @@ do_run() {
     *" $effective_arm "*) ;;
     *) die "arm '$effective_arm' is not registered for cell $CELL (allowed: $allowed)" ;;
   esac
+
+  # A SWEEP ARM MUST CARRY A CLASS (Amendment 2026-08-04, Task C2). Named
+  # preflight refusal, at step 1 -- before preflight sweeps /dev/shm, before
+  # anything boots, and before the manifest exists to be filed.
+  #
+  # This is what makes the class-pool guarantee PERMANENT rather than merely
+  # historically true. `sweep_verdict._class_admits` reads an empty class_id
+  # as the legacy vlp16 pool, which is correct for every run filed BEFORE the
+  # field existed (all eighteen of Task 14's are vlp16, verified) -- but that
+  # clause is a statement about the past, and it must never become a way to
+  # mint NEW unlabelled sweep runs that silently pool into vlp16.
+  #
+  # The live hole it closes, verified: the `allowed` gate just above opens the
+  # sweep arms on `--unpaced` OR a non-empty class, so `run.sh A --arm static
+  # --unpaced` was accepted with no --class at all. With BENCH_CLASS_ID empty
+  # the launchers' `case "$BENCH_CLASS_ID"` derivation never fires
+  # (cells/extension.sh, cells/tier4-native.sh), so the runner takes its own
+  # defaults -- `--lidar-channels` unset is "today's 128"
+  # (runner/__main__.py), i.e. the registered 128ch workload -- and the run
+  # would file class_id="" and be scored as a vlp16 point. A 128ch rig
+  # counted as a vlp16 measurement is exactly the silent workload-mixing this
+  # amendment exists to close, so it is refused rather than warned about
+  # (contrast the `dropped:` cell WARN above: dropping is scope and
+  # un-dropping is legitimate, while an unlabelled sweep run is a FALSE
+  # measurement -- the same distinction cells/tier4-native.sh's own unmapped
+  # class-id refusal already draws).
+  #
+  # Checked against `sweep_arms` itself, not against `--unpaced`, so it holds
+  # for every path that can reach a sweep arm rather than only for the one
+  # that opened it today. No registered form loses anything: all three
+  # registered sweep forms carry --class (`--arm paced --class <id>`, the
+  # same plus `--unpaced`, `--arm ablation --class <id>`), as do all twelve
+  # invocations in evidence/p4-task14-vlp16-sweep/step1-form-verification.log
+  # and all six lines of that directory's sweep_driver.sh.
+  case " $sweep_arms " in
+    *" $effective_arm "*)
+      [ -n "$CLASS_ID" ] || die "arm '$effective_arm' is a sweep arm (cells.yaml
+  sweep_arms: $sweep_arms) and requires --class <id>. Refusing: with no class the
+  cell launcher derives no sensor arguments, so this run would boot the DEFAULT
+  128-channel rig while filing manifest class_id=\"\" -- which sweep_verdict.py's
+  legacy pool rule reads as vlp16, scoring a 128ch workload as a vlp16 point."
+      ;;
+  esac
+
+  # THE ABLATION ARM NEEDS A LAUNCHER THAT IMPLEMENTS IT (2026-08-04, final
+  # whole-branch review). Named preflight refusal, at step 1, same place and
+  # same reason as the sweep-arm class refusal above.
+  #
+  # `sweep_arms: [paced, unpaced, ablation]` is a TOP-LEVEL global in
+  # cells.yaml, not a per-cell key, so `cell_info.merge` hands it to every
+  # registered cell and the `allowed` gate above opens `ablation` for all of
+  # them. Only two of the four launchers implement the arm: cells/extension.sh
+  # and cells/tier4-native.sh branch on BENCH_ARM_IS_ABLATION;
+  # cells/python-bridge.sh and cells/calibration.sh have no ablation branch at
+  # all. Verified live before this refusal existed: `run.sh E --arm ablation
+  # --class vlp16 --check-args` exited 0, and cell E is not `dropped:`.
+  #
+  # What that run would have FILED is why this is a refusal and not a warning.
+  # A bridge/calibration cell on `--arm ablation` boots the FULL publishing
+  # stack, never starts the publish-disabled baseline client, and writes
+  # manifest.arm = "ablation". `publisher_counts.json` is then absent for the
+  # ordinary reason -- python-bridge.sh sets GT_COUNT_LIDAR="0" as a literal --
+  # which is exactly the state sweep_verdict.py reads as "ablation, publishing
+  # disabled by design", so it renders a clean ablation row. The result is a
+  # "publish-disabled baseline" that contains the entire transport layer:
+  # `T - B ~ 0`, arriving silently, in the one column whose whole job is to be
+  # the thing transport cost gets subtracted from.
+  #
+  # Checked against the APPROACH rather than against a cell id, so a cell
+  # registered later inherits the answer from its family; and it is the
+  # positive form (an approach must be named here to run the arm), so a NEW
+  # approach is refused until someone writes its ablation branch. The paired
+  # test lives in tests/benchmarks/test_bench_collect_gt.py.
+  if [ "$effective_arm" = "ablation" ]; then
+    case "$approach" in
+      extension | tier4-native) ;;
+      *) die "arm 'ablation' is not implemented by the $approach family's launcher
+  (cells/$approach.sh has no ablation branch; only cells/extension.sh and
+  cells/tier4-native.sh do). cells.yaml's sweep_arms is a top-level global, so the
+  arm gate opens 'ablation' for every registered cell -- but this cell would boot
+  its FULL publishing stack, never start benchmarks/scripts/raycast_baseline.py,
+  and file manifest arm=\"ablation\" with no publisher_counts.json. sweep_verdict.py
+  reads that as a legitimate publish-disabled baseline and scores it, so the
+  transport cost T - B would come out at ~0 with nothing anywhere to say why." ;;
+    esac
+  fi
+
+  # A DUEL RUN MUST CARRY THE DUEL IT IS FOR (2026-08-04, final whole-branch
+  # review). The exactly-analogous refusal to the sweep-arm one above, for the
+  # exactly-analogous reason, on the other pre-registration amendment's field.
+  #
+  # `_walk_cell_runs`' pool rule admits a duel-admissible run into the (A, B)
+  # pool when its `duel_id` is "" (duel_verdict.py's legacy clause), and
+  # analysis/manifest.py:149-156 states that clause's ENTIRE justification: the
+  # empty string is *a statement about the past*, there so the filed P3 A-vs-B
+  # verdict keeps reproducing byte-for-byte without rewriting a single filed
+  # manifest. `--duel` with no `--duel-id` is the one way to break that: it
+  # mints a NEW run with duel_id="" that pools straight into a published
+  # verdict's pool. Verified live before this refusal existed: `run.sh A --arm
+  # static --duel --check-args` printed duel_admissible=true with duel_id=
+  # empty.
+  #
+  # No registered form loses anything: scripts/duel.sh always passes
+  # `--duel-id "${CELL_A}+${CELL_B}"` alongside `--duel` (see its own comment
+  # on why the two travel together), and a bring-up run simply omits --duel.
+  if [ "$DUEL" = "1" ] && [ -z "$DUEL_ID" ]; then
+    die "--duel requires --duel-id <A+B>. Refusing: a duel-admissible run with an
+  empty duel_id pools into the FILED P3 (A, B) verdict by duel_verdict.py's legacy
+  clause, whose only justification is that \"\" is a statement about ALREADY-FILED
+  runs -- it must never become a way to mint new ones into a published pool.
+  scripts/duel.sh always passes both flags together."
+  fi
 
   # Config files this cell needs. Checked BEFORE the run directory exists, so
   # a missing topic list or process map costs nothing.
@@ -410,6 +551,13 @@ do_run() {
     echo "rmw=$RMW"
     echo "shm=$SHM"
     echo "duel_admissible=$([ "$DUEL" = "1" ] && echo true || echo false)"
+    echo "duel_id=$DUEL_ID"
+    # The RESOLVED sweep class (Amendment 2026-08-04, Task C2): the value
+    # step 5 exports as BENCH_CLASS_ID for the launchers' sensor-argument
+    # derivation AND step 4 forwards to write_manifest as --class-id, echoed
+    # here for the same reason duel_id is -- a resolved VALUE a test can
+    # assert on, rather than the presence of a word somewhere in prose.
+    echo "class_id=$CLASS_ID"
     echo "run_dir=$run_dir"
     exit 0
   fi
@@ -494,10 +642,37 @@ PY
     duel_args+=(--duel)
     duel_show=" --duel"
   fi
+  # Same array-element / printed-string split as --duel just above, and the
+  # same reason: DUEL_ID defaults to "" (never a stray argument), and the
+  # printed form must only show the flag when it is actually non-empty.
+  if [ -n "$DUEL_ID" ]; then
+    duel_args+=(--duel-id "$DUEL_ID")
+    duel_show="$duel_show --duel-id $DUEL_ID"
+  fi
+  # WHICH sweep class this run measures (Amendment 2026-08-04, Task C2),
+  # threaded to RunManifest.class_id via write_manifest.py --class-id. The
+  # value is $CLASS_ID -- the SAME resolved id step 5 exports as
+  # BENCH_CLASS_ID and the launchers (cells/extension.sh,
+  # cells/tier4-native.sh) derive --lidar-channels/--lidar-pps from -- so the
+  # manifest's workload label and the rig actually booted come from ONE
+  # resolution and cannot drift apart. Already validated at step 1:
+  # cell_info was called with --class "$CLASS_ID" and dies on an id that is
+  # not registered, or is registered but not for this cell.
+  #
+  # Same array-element / printed-string split as --duel and --duel-id just
+  # above, and the same reason: CLASS_ID defaults to "" on every non-sweep
+  # run (never a stray empty argument), and the printed form must show the
+  # flag only when it is actually non-empty, or every duel run's echoed
+  # command line misstates the command that ran.
+  local class_args=() class_show=""
+  if [ -n "$CLASS_ID" ]; then
+    class_args+=(--class-id "$CLASS_ID")
+    class_show=" --class-id $CLASS_ID"
+  fi
   show "python3 -m benchmarks.scripts.write_manifest --run-dir $run_dir --cell $CELL" \
     "--arm $effective_arm --rmw $RMW --shm $SHM --dds-profile $DDS_PROFILE" \
     "--carla-version $carla_kind --autoware-image $autoware_image" \
-    "--placement-json '<json>'$duel_show"
+    "--placement-json '<json>'$duel_show$class_show"
   if [ "$DUEL" = "1" ]; then
     echo "      duel_admissible=true (--duel): this run WILL feed the primary" \
       "duel's equivalence verdict"
@@ -523,7 +698,8 @@ PY
     --run-dir "$manifest_dir" --cell "$CELL" --arm "$effective_arm" \
     --rmw "$RMW" --shm "$SHM" --dds-profile "$DDS_PROFILE" \
     --carla-version "$carla_kind" --autoware-image "$autoware_image" \
-    --placement-json "$placement_json" "${duel_args[@]+"${duel_args[@]}"}") >/dev/null ||
+    --placement-json "$placement_json" "${duel_args[@]+"${duel_args[@]}"}" \
+    "${class_args[@]+"${class_args[@]}"}") >/dev/null ||
     die "manifest refused; nothing measured"
   if [ "$DRY_RUN" = "1" ]; then
     echo "      manifest VALIDATED (written to $manifest_dir, not results/)"

@@ -62,6 +62,8 @@ failure abort was left with no test exercising it while pacing is active.
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import stat
 import subprocess
 import time
@@ -326,6 +328,407 @@ def test_check_args_skips_pacing_entirely(tmp_path, fake_repo):
     gap = times[1] - times[0]
     assert gap < 2.0, f"--check-args did not skip pacing (gap={gap:.3f}s)"
     assert not pace_log.exists(), "--check-args run must write no pacing record"
+
+
+# --- Task 4 (P4 transport-sweep plan): cell B-cyc's registered transport ---
+# --- resolves by DEFAULT, the real run.sh code path ------------------------
+#
+# Unlike the --check-args pin just above (which drives duel.sh against a
+# STAND-IN run.sh -- see the module docstring's "NOT faithful" note), this
+# one drives the REAL benchmarks/run.sh directly: it is pinning run.sh's OWN
+# per-cell transport correction, not duel.sh's pacing around it, so the
+# stand-in would test nothing. --check-args is still what makes it cheap and
+# hermetic to run here (run.sh's own comment: "the last point before
+# anything touches the host" -- no preflight, no docker, no results/ write).
+
+RUN_SH = REPO / "benchmarks" / "run.sh"
+
+
+def test_bcyc_default_transport_is_row11():
+    """Cell B-cyc's registered transport is cyclone/off/none (P4 spec Task 4,
+    config/cells.yaml's B-cyc entry). run.sh must resolve it by DEFAULT --
+    with no --rmw/--dds-profile passed -- so `duel.sh A B-cyc`, which passes
+    IDENTICAL flags to both cells, still gives each cell its own registered
+    transport, exactly as the tier4-native family correction already does
+    for cell B (run.sh's `$CELL = "B-cyc"` branch, immediately after that
+    family block)."""
+    proc = subprocess.run(
+        ["bash", str(RUN_SH), "B-cyc", "--arm", "static", "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "rmw=rmw_cyclonedds_cpp" in proc.stdout, proc.stdout
+    assert "shm=off" in proc.stdout, proc.stdout
+
+
+# --- Task C2 (Amendment 2026-08-04): run.sh must RESOLVE the sweep class ---
+# --- and FORWARD it to write_manifest as --class-id -------------------------
+#
+# Same reason `test_bcyc_default_transport_is_row11` just above lives here
+# rather than in a duel test: this is run.sh's OWN resolution, so duel.sh's
+# stand-in would test nothing, and --check-args is what makes driving the
+# REAL run.sh cheap and hermetic. Two properties, pinned separately because
+# they can break independently:
+#
+#   (1) --class resolves into run.sh's CLASS_ID and is echoed in the
+#       --check-args block (the two tests immediately below), and
+#   (2) that resolved value is actually FORWARDED to write_manifest as
+#       `--class-id <value>` (the extract-then-execute tests after them).
+#
+# (2) cannot be reached through --check-args -- it exits at step 2, and the
+# write_manifest invocation is step 4 -- and cannot be reached through
+# --dry-run either, which deliberately DOES run preflight (host load, engine
+# BuildId) and so needs the CARLA trees. So the forwarding block is pulled
+# out of the real run.sh by regex and executed as real bash, the same
+# extract-then-execute idiom tests/benchmarks/test_sweep_args.py uses for
+# the launchers' class -> sensor-argument derivation and test_teardown.py
+# uses for its sidecar polling loops. What is asserted is the REAL argv the
+# real block builds, so deleting the `class_args+=(...)` line, inverting the
+# guard, or dropping the array from the write_manifest call site all show up
+# as a failure -- none of which a source text-scan would catch.
+
+
+def test_run_sh_really_resolves_class_id_empty_by_default():
+    """The legacy/no-class value: a plain (non-sweep) invocation must
+    resolve to "", which is what RunManifest.class_id defaults to and what
+    the pool rule's legacy clause (sweep_verdict._class_admits) reads as
+    vlp16 -- the value every manifest predating the field carries."""
+    proc = subprocess.run(
+        ["bash", str(RUN_SH), "A", "--arm", "static", "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "class_id=\n" in proc.stdout + "\n", proc.stdout
+
+
+def test_run_sh_really_resolves_class_id_from_the_class_flag():
+    """The other direction, so the pin above cannot be satisfied by a
+    resolver hardwired to empty: `--class 32ch` must resolve VERBATIM.
+    This is the value the launchers already derive their sensor arguments
+    from (BENCH_CLASS_ID -> cells/extension.sh, cells/tier4-native.sh), so
+    the manifest label and the rig actually booted come from one resolution,
+    not two."""
+    proc = subprocess.run(
+        ["bash", str(RUN_SH), "A", "--arm", "paced", "--class", "32ch", "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "class_id=32ch" in proc.stdout, proc.stdout
+
+
+_CLASS_ARGS_BLOCK = re.compile(r'(  local class_args=\(\) class_show=""\n.*?\n  fi\n)', re.DOTALL)
+
+
+def _extract_class_args_block() -> str:
+    """The REAL `class_args` forwarding block out of benchmarks/run.sh, by
+    regex -- so a change to the real file is what these tests run, not this
+    file's memory of it (test_sweep_args._extract_derivation_block's idiom)."""
+    m = _CLASS_ARGS_BLOCK.search(RUN_SH.read_text())
+    assert m, "class_args forwarding block not found in run.sh"
+    return m.group(1)
+
+
+def _resolve_class_args(class_id: str) -> tuple[list[str], str]:
+    """Run the extracted block as real bash for `CLASS_ID=<class_id>` and
+    return (the argv elements it appends, the string it prints in the echoed
+    command line). `local` needs a function body, so the snippet is wrapped
+    in one -- exactly as run.sh itself has it, inside do_run()."""
+    script = (
+        "set -euo pipefail\n"
+        f"CLASS_ID={shlex.quote(class_id)}\n"
+        "probe() {\n"
+        f"{_extract_class_args_block()}"
+        "  printf 'COUNT<<%s>>\\n' \"${#class_args[@]}\"\n"
+        '  for a in ${class_args[@]+"${class_args[@]}"}; do printf \'ARG<<%s>>\\n\' "$a"; done\n'
+        "  printf 'SHOW<<%s>>\\n' \"$class_show\"\n"
+        "}\n"
+        "probe\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    args = re.findall(r"ARG<<(.*?)>>", proc.stdout)
+    count = int(re.search(r"COUNT<<(\d+)>>", proc.stdout).group(1))
+    assert count == len(args), (count, args)
+    show = re.search(r"SHOW<<(.*?)>>", proc.stdout, re.DOTALL).group(1)
+    return args, show
+
+
+def test_run_sh_forwards_the_resolved_class_to_write_manifest():
+    """The forwarding half: a resolved class must reach write_manifest as
+    `--class-id <value>` -- two separate argv elements, so a class id is
+    never re-split or re-quoted on the way."""
+    assert _resolve_class_args("32ch")[0] == ["--class-id", "32ch"]
+
+
+def test_run_sh_forwards_nothing_when_no_class_was_requested():
+    """A non-sweep run must append NO argument at all, not `--class-id ""`:
+    an empty array element would become a stray argument, the same failure
+    the --duel/--duel-id blocks above are shaped to avoid. write_manifest's
+    own default ("") is then what lands in the manifest."""
+    args, show = _resolve_class_args("")
+    assert args == []
+    assert show == ""
+
+
+def test_run_sh_echoed_command_line_shows_the_class_id_flag():
+    """The printed form must show the flag only when it is actually
+    non-empty (the `duel_show` split's own rule): a run.sh transcript is
+    evidence, and a printed command line that does not match the command
+    that ran is a misstatement of the record."""
+    assert _resolve_class_args("vlp16")[1] == " --class-id vlp16"
+
+
+# --- Task C2 fix round 1 (finding I2): the array-BUILDING pin above does ----
+# --- not pin that the array is PASSED, so pin the assembled argv -----------
+#
+# The three tests above extract only the block that BUILDS `class_args`
+# (`local class_args=() … fi`). Removing `"${class_args[@]+"${class_args[@]}"}"`
+# from the `write_manifest` invocation leaves every one of them green --
+# measured: 382 tests across every suite module that touches run.sh, 0
+# failures. The control mutation shows `duel_args` at the same call site is
+# EQUALLY unpinned, so this is a gap inherited from Task 2's pattern, not a
+# new one; this block closes it for both arrays at once.
+#
+# The span extracted here runs from `local duel_args=()` all the way through
+# `die "manifest refused; nothing measured"`, so it contains the array
+# construction AND the call site AND everything between. It is executed as
+# real bash with `python3` replaced by a shell function that records its argv
+# (functions are visible inside the `(cd "$REPO" && …)` subshell, and the
+# recorder writes to a file so the block's own `>/dev/null` cannot swallow
+# it). What is asserted is therefore the ACTUAL argument vector
+# `write_manifest` would receive -- the only thing that decides what lands in
+# the manifest.
+
+_MANIFEST_CALL_BLOCK = re.compile(
+    r'(  local duel_args=\(\) duel_show=""\n.*?\n    die "manifest refused; nothing measured"\n)',
+    re.DOTALL,
+)
+
+
+def _extract_manifest_call_block() -> str:
+    """The REAL span of run.sh that builds the optional-argument arrays and
+    invokes `write_manifest`, by regex. Fails LOUDLY rather than silently
+    passing if the span's anchors move (verified for the `class_args` block's
+    own extractor, which this mirrors)."""
+    m = _MANIFEST_CALL_BLOCK.search(RUN_SH.read_text())
+    assert m, "write_manifest call block not found in run.sh"
+    return m.group(1)
+
+
+def _write_manifest_argv(tmp_path, *, duel="0", duel_id="", class_id="") -> list[str]:
+    """Run the extracted span for real and return the argv `write_manifest`
+    was actually called with. Every variable the span reads is stubbed to a
+    recognisable placeholder; only DUEL / DUEL_ID / CLASS_ID vary."""
+    repo = tmp_path / "repo"
+    repo.mkdir(exist_ok=True)
+    log = tmp_path / "argv.log"
+    script = (
+        "set -euo pipefail\n"
+        'die() { echo "DIE: $*" >&2; exit 3; }\n'
+        "show() { :; }\n"
+        'python3() { for a in "$@"; do printf \'ARGV<<%s>>\\n\' "$a"; done >>"$PROBE_LOG"; }\n'
+        f"PROBE_LOG={shlex.quote(str(log))}\n"
+        f"REPO={shlex.quote(str(repo))}\n"
+        "CELL=A\n"
+        "run_dir=/results/A/run-007\n"
+        "work_dir=/results/A/run-007\n"
+        "next_idx=7\n"
+        "effective_arm=paced\n"
+        "RMW=rmw_cyclonedds_cpp\n"
+        "SHM=off\n"
+        "DDS_PROFILE=none\n"
+        "carla_kind=0.10-fork\n"
+        "autoware_image=img@sha256:aa\n"
+        "placement_json={}\n"
+        "DRY_RUN=0\n"
+        f"DUEL={shlex.quote(duel)}\n"
+        f"DUEL_ID={shlex.quote(duel_id)}\n"
+        f"CLASS_ID={shlex.quote(class_id)}\n"
+        "probe() {\n"
+        f"{_extract_manifest_call_block()}"
+        "}\n"
+        "probe\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    return re.findall(r"ARGV<<(.*?)>>", log.read_text())
+
+
+def _flag_value(argv: list[str], flag: str) -> str | None:
+    """The argument following `flag`, or None when the flag is absent. Reads
+    the PAIR, so a forwarding that passes the flag without its value (or with
+    the wrong one) is not mistaken for a correct one."""
+    return argv[argv.index(flag) + 1] if flag in argv else None
+
+
+def test_write_manifest_argv_actually_carries_the_class_id(tmp_path):
+    """THE pin for finding I2, class half: the assembled argv must contain
+    `--class-id 32ch`. Fails when the class_args array is dropped from the
+    write_manifest call site -- which every source-extraction test above
+    passes straight over."""
+    argv = _write_manifest_argv(tmp_path, class_id="32ch")
+    assert _flag_value(argv, "--class-id") == "32ch", argv
+
+
+def test_write_manifest_argv_actually_carries_the_duel_declaration(tmp_path):
+    """The same pin for `duel_args` (Task 2's arrays, equally unpinned until
+    now): both the bare `--duel` flag and the `--duel-id` pair must survive
+    into the real argv. Closing I2 for one array and not the other would
+    leave the identical defect one field over."""
+    argv = _write_manifest_argv(tmp_path, duel="1", duel_id="A+B-cyc")
+    assert "--duel" in argv, argv
+    assert _flag_value(argv, "--duel-id") == "A+B-cyc", argv
+
+
+def test_write_manifest_argv_carries_both_arrays_at_once(tmp_path):
+    """Both arrays are appended at the same call site, so a mutation that
+    drops the LAST one only (the shape the shipped code happens to have) is
+    caught here even if each array's own single-field test were satisfied by
+    a different code path."""
+    argv = _write_manifest_argv(tmp_path, duel="1", duel_id="A+B-cyc", class_id="vlp16")
+    assert _flag_value(argv, "--duel-id") == "A+B-cyc", argv
+    assert _flag_value(argv, "--class-id") == "vlp16", argv
+
+
+def test_write_manifest_argv_has_no_stray_empty_argument(tmp_path):
+    """The property the `"${arr[@]+"${arr[@]}"}"` expansion exists for: with
+    no duel and no class, NEITHER flag appears and -- the part a presence
+    check would miss -- no empty-string argument is passed either. An empty
+    argv element would shift write_manifest's own parsing."""
+    argv = _write_manifest_argv(tmp_path)
+    assert "--class-id" not in argv, argv
+    assert "--duel" not in argv and "--duel-id" not in argv, argv
+    assert "" not in argv, argv
+    # The invocation itself is intact, so an empty argv is not what made the
+    # three assertions above pass.
+    assert argv[:2] == ["-m", "benchmarks.scripts.write_manifest"], argv
+
+
+# --- Task C2 fix round 1 (finding I1): a sweep arm may not be filed with ----
+# --- no class, or it pools into vlp16 while booting the 128ch rig ----------
+#
+# `_class_admits("", "vlp16")` is a statement about the PAST -- every filed
+# sweep-arm run predating `RunManifest.class_id` is vlp16, verified -- and it
+# must not become a way to mint NEW unlabelled sweep runs. Before this guard,
+# run.sh's `allowed` gate opened the sweep arms on `--unpaced` OR a non-empty
+# class, so `run.sh A --arm static --unpaced` was accepted with no class at
+# all (verified: rc=0, `arm=unpaced`, `class_id=` empty) -- and with
+# BENCH_CLASS_ID empty the launchers derive no sensor args, so the runner
+# takes its default 128 channels (runner/__main__.py) and the run would have
+# been scored as a vlp16 point.
+
+
+def _check_args(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(RUN_SH), *args, "--check-args"],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=60,
+    )
+
+
+def test_run_sh_refuses_a_sweep_arm_with_no_class():
+    """The refusal itself, on the exact invocation that was accepted before:
+    `--unpaced` promotes the arm to `unpaced`, a registered sweep arm, so it
+    must now die rather than resolve. Loud and named, per the harness's
+    preflight idiom -- and at step 1, before preflight touches the host."""
+    proc = _check_args("A", "--arm", "static", "--unpaced")
+    assert proc.returncode == 2, (proc.stdout, proc.stderr)
+    assert "is a sweep arm" in proc.stderr, proc.stderr
+    assert "requires --class" in proc.stderr, proc.stderr
+    # The reason, not just the refusal: an operator must learn WHY without
+    # reading run.sh.
+    assert "128-channel" in proc.stderr, proc.stderr
+
+
+def test_run_sh_refuses_every_sweep_arm_with_no_class():
+    """Checked against `sweep_arms` itself rather than against `--unpaced`,
+    so it holds for every path that can reach a sweep arm -- not only for the
+    one flag that opened the gate today. `--arm ablation` with no class is
+    refused too (by the arm gate before this guard, which is fine: the point
+    is that no route to a sweep arm survives without a class)."""
+    for extra in (("--arm", "ablation"), ("--arm", "paced")):
+        proc = _check_args("A", *extra)
+        assert proc.returncode == 2, (extra, proc.stdout, proc.stderr)
+
+
+@pytest.mark.parametrize("cell", ["A", "B-cyc"])
+@pytest.mark.parametrize("class_id", ["vlp16", "32ch"])
+@pytest.mark.parametrize(
+    "form", [("--arm", "paced"), ("--arm", "paced", "--unpaced"), ("--arm", "ablation")]
+)
+def test_every_registered_sweep_form_still_resolves(cell, class_id, form):
+    """The other side of the guard: all three registered sweep forms, on both
+    sweep cells, for both live classes, must still resolve. These are the
+    forms `evidence/p4-task14-vlp16-sweep/sweep_driver.sh` ran and that
+    directory's `step1-form-verification.log` recorded twelve invocations of
+    -- every one of them carrying `--class`, which is why the guard costs
+    nothing -- plus their 32ch equivalents, which the next task collects."""
+    proc = _check_args(cell, *form, "--class", class_id)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert f"class_id={class_id}" in proc.stdout, proc.stdout
+
+
+@pytest.mark.parametrize("arm", ["static", "closed-loop"])
+def test_duel_arms_still_resolve_without_a_class(arm):
+    """The guard must be scoped to SWEEP arms only: a duel/bring-up/gate run
+    legitimately carries no class, files `class_id=""`, and is dropped by
+    sweep_verdict's arm filter long before the class filter sees it."""
+    proc = _check_args("A", "--arm", arm)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert "class_id=\n" in proc.stdout + "\n", proc.stdout
+
+
+# --- Task 2 (Amendment 2026-08-03): duel.sh must stamp --duel-id on every --
+# --- run.sh invocation it orders, derived from its OWN two cell args -------
+
+
+def test_run_sh_invocation_carries_duel_id(tmp_path, fake_repo):
+    """Real-code-path pin for the duel_id pool rule's stamping half: unlike
+    the source text-scan a reader could satisfy by hardcoding a literal
+    string anywhere in duel.sh, this reads the ACTUAL argv each run.sh
+    invocation received (FAKE_RUN_SH logs `"$*"` verbatim), for BOTH
+    invocations in the pair -- so a bug that stamps only the first, or
+    that derives the id from the wrong cell order, shows up here. --check-
+    args keeps this instant, per test_check_args_skips_pacing_entirely
+    just above."""
+    loadavg_file = tmp_path / "loadavg"
+    loadavg_file.write_text("1.0 1.0 1.0 1/200 12345\n")
+    run_log = tmp_path / "fake-run.log"
+
+    result = _run_duel(
+        tmp_path,
+        fake_repo,
+        extra_args=("--check-args",),
+        proc_timeout=8,
+        FAKE_RUN_LOG=str(run_log),
+        DUEL_PACE_LOG=str(tmp_path / "pacing.log"),
+        DUEL_LOADAVG_SRC=str(loadavg_file),
+        DUEL_PACE_FLOOR_S="0",
+        DUEL_PACE_CEILING_S="0",
+        DUEL_PACE_POLL_S="1",
+        DUEL_PACE_TARGET_LOADAVG="6",
+    )
+    assert result.returncode == 0, result.stderr
+
+    lines = [ln for ln in run_log.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 2, f"expected 2 run.sh invocations, got {lines}"
+    for line in lines:
+        assert "--duel-id cellA+cellB" in line, line
 
 
 # --- fix-round F6: the 2-consecutive-failure abort path is unpinned with ---

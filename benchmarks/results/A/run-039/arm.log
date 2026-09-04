@@ -1,0 +1,10 @@
+[INFO] [1785835857.114664443] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785835858.313262561] [arm_and_goal]: arm observations [localized]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.000 ego_speed_mps=0.000
+[INFO] [1785835858.320830708] [arm_and_goal]: arm observations [pre-engage]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.000 ego_speed_mps=0.000
+[INFO] [1785835858.322915819] [arm_and_goal]: MRM config: /control/vehicle_cmd_gate use_emergency_handling=false (the perception-off false MRM; same configuration as the proven extension sequence and as every promoted gate number)
+[WARN] [1785835858.324739687] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[INFO] [1785835860.326091495] [arm_and_goal]: change_to_autonomous: SUCCEEDED -- per-approach observation, record it (R4.3); the proven /autoware/engage publish still runs next
+[INFO] [1785835861.329022255] [arm_and_goal]: /autoware/engage: published engage=true x5
+[INFO] [1785835864.975703285] [arm_and_goal]: post-engage state: mode_autonomous=True is_autoware_control_enabled=True (R4.3 observation; only mode_autonomous gates ARMED)
+[INFO] [1785835864.975960276] [arm_and_goal]: arm observations [post-engage]: mode=2 autonomous=True is_autoware_control_enabled=True is_autonomous_mode_available=False control_cmd_hz~19.67 n=72 nonzero_longitudinal=66/72 frac=0.917 peak_abs_velocity=0.257 ego_displacement_m=0.028 ego_speed_mps=0.116
+ARMED: localized, route set to (74.869, 66.891), autonomous engaged

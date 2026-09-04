@@ -344,18 +344,108 @@ exists — nothing else — so that is what the rule tests, applied per run:
   stamp with wall `now()`), so the metric definitions below read the same way
   with no special case, and `one_hop_wall_ms` reduces to the direct
   `arrival_system_ns - header_stamp_ns` — the form `cal_report.summarize_run`
-  computes at `scripts/cal_report.py:83`, by calling `analysis/latency.py`
+  computes at `scripts/cal_report.py:123`, by calling `analysis/latency.py`
   `segment_sim_ms(header_stamp_ns, arrival_system_ns)`.
 
 **Expected branch per cell, so a surprise is loud.** The calibration-approach
 cells (`cells.yaml` `approach: calibration` — `CAL-rmw` and `CAL-seam`) are
 expected to take the unfittable branch: they are transport/serialization
-instruments with no simulation loop, and `config/processes/CAL-seam.yaml`
-registers no ticking runner, unlike cells A/C which register `python3 -m
-runner`. Every other cell is expected to take the fittable branch. A run that
-takes the branch its cell was not expected to take is a **loud finding to be
-reported, not a silent fallback** — it means the cell did not run the way it
-is registered to.
+instruments, not driving cells, and the M5/M2 windowing this branch feeds has
+no meaning for either of them. Every other cell is expected to take the
+fittable branch. A run that takes the branch its cell was not expected to
+take is a **loud finding to be reported, not a silent fallback** — it means
+the cell did not run the way it is registered to.
+
+**CORRECTED 2026-08-03 (P4 whole-branch review), BEFORE Task 10 collects:
+`CAL-seam` is expected to take the FITTABLE branch.** The paragraph above
+stays as written and keeps its rule; only CAL-seam's side of it moves, and it
+moves on evidence that arrived after the paragraph did. The correction is made
+here rather than left for a run to expose, because this pre-registration was
+known-wrong **in advance** — leaving it would have made Stage 2 file an
+already-explained "loud finding" on every single CAL-seam run, which is the
+opposite of what "so a surprise is loud" exists for.
+
+Why the paragraph's reasoning no longer reaches CAL-seam. It groups CAL-seam
+with CAL-rmw as a "transport/serialization instrument, not a driving cell",
+and for CAL-rmw that is exactly right: `cells/calibration.sh` boots
+`bench_pub` plus the observer, no simulator, so nothing publishes `/clock` and
+`clock.csv` really is header-only. CAL-seam's reinstated branch (Task 8) does
+something materially different — it runs `scripts/e2e/run_e2e.sh`, which
+**unconditionally** passes `--ros2 --rmw=cyclonedds --ros2-extension=<so>`
+(`run_e2e.sh:288`) and **unconditionally** ends in `python3 -m runner`
+(`:328`), spawning the ego and top LiDAR with native `ros_*` attributes and
+ticking the world. That is the full cell-A publishing rig, and it is precisely
+the configuration the 2026-08-03 probe measured emitting `/clock` at **19.959
+Hz** (see "SETTLED BY MEASUREMENT" below). So `clock.csv` gets far more than
+the two rows `fit_sim_wall_affine` needs, `_actual_window_branch` resolves
+**fittable**, and CAL-seam turns out to be a calibration cell that does have a
+simulation loop.
+
+`scripts/sweep_verdict.py`'s `_expected_window_branch` encoded the same
+now-wrong expectation and is corrected with this paragraph: `unfittable` for
+`approach: calibration` **except** `CAL-seam`. Note what that costs — the rule
+was derivable from `approach` alone, which was its stated virtue, and now
+takes the cell id and names an exception. The discriminating case it used to
+cite (CAL-seam having `carla: 0.10-fork` yet expecting unfittable) has simply
+gone away: for CAL-seam `has_sim_clock` and the expected branch now agree, and
+they agree because the cell really does tick — not because the rule was
+rebased onto the `carla:` field it deliberately avoided.
+
+**KNOWN TRAP, registered 2026-08-03 (P4 whole-branch review) — the one
+consequence of that rig that yields a plausible-but-wrong NUMBER rather than a
+loud failure. Read this before reading any CAL-seam report.** Because
+`has_sim_clock` is true, `run.sh` step 15 renders CAL-seam through
+`report.summarize_run`, which computes a `fit_sim_wall_affine` over
+`clock.csv` and feeds that fit to `one_hop_wall_ms` for **every** topic in
+`observer.csv` — including `/bench/seam_cloud` and `/bench/incore_cloud`. Both
+bench publishers stamp `header.stamp` with **wall** `now()`, not sim time. So
+the renderer maps a wall stamp through a sim→wall affine and prints the result
+as `one_hop_p50_ms`: a finite, plausible-looking millisecond figure that is not
+a latency. It does not raise, it does not warn, and nothing in the rendered
+table distinguishes it from a correctly-fitted row.
+
+**The paired delta survives it; the absolutes do not.** `C1(a)` is the
+difference between the two bench topics — both stamped the same way, both put
+through the same fit in the same run — so the mapping is common-mode and
+cancels out of the delta. What must never be quoted is either topic's
+`one_hop_p50_ms` / `one_hop_p99_ms` as an absolute one-hop latency, nor a
+comparison of one of them against a genuinely sim-stamped cell's number.
+`cal_report.py` — which takes the direct arrival-minus-header-stamp
+difference, the right arithmetic for wall-stamped publishers — is NOT what step
+15 routes CAL-seam through, and its own SCOPE paragraph still names it the
+renderer for every `carla: none` cell, "which today means CAL-rmw". Whoever reads the first CAL-seam collection is reading
+`report.py`'s output unless they deliberately do otherwise. Registered here
+rather than left to be noticed, because a wrong number that renders cleanly is
+not noticed.
+
+> **CAL-seam's supporting evidence changed 2026-08-03 (Task 8).** This
+> paragraph used to also cite `config/processes/CAL-seam.yaml` registering
+> "no ticking runner" as evidence CAL-seam has no simulation loop. That is no
+> longer true: CAL-seam's reinstatement (see the Cell matrix section and
+> `cells/calibration.sh`'s CAL-seam branch) boots the identical
+> `scripts/e2e/run_e2e.sh` spawn+tick runner cell A uses, and
+> `config/processes/CAL-seam.yaml` now registers it, precisely so its CPU is
+> not misattributed. Whether CAL-seam's CARLA process therefore also
+> publishes `/clock` — the actual question this "expected branch" rule
+> depends on, not the process map — is exactly the "Open contradiction... now
+> PERMANENTLY UNSETTLED" callout above's question, and it is still open: see
+> that callout's 2026-08-03 update. This paragraph's "unfittable branch
+> expected" conclusion for CAL-seam is UNCHANGED here on purpose — Task 8
+> reinstates the launch path, not this finding — but a reader should not cite
+> the now-corrected "no ticking runner" clause as independent support for it
+> any more.
+>
+> **Superseded 2026-08-03 (P4 whole-branch review), kept as written.** "It is
+> still open" was true when this was written and is not any more: `/clock` was
+> measured emitting at 19.959 Hz from exactly this configuration — see the
+> "SETTLED BY MEASUREMENT" paragraph appended to that callout. The two lanes
+> that wrote this paragraph and that measurement never saw each other's work,
+> which is why both statements shipped in one tree. The second half goes with
+> it: the "unfittable branch expected" conclusion this paragraph deliberately
+> left UNCHANGED is now **changed**, by the "CORRECTED 2026-08-03" paragraph
+> above — and this paragraph's own instinct was sound, because what changed it
+> was not Task 8's launch path but the `/clock` measurement, exactly the
+> question it named as the one the rule actually depends on.
 
 **Who builds that check.** Nothing enforces the paragraph above today, and it
 is the half of this rule that makes the discriminator safe rather than merely
@@ -396,6 +486,62 @@ check lives there once rather than twice.
 > it — and register `CAL-seam`'s `tick_hz`, left `null` here for the same
 > reason — before the cell is first run. It is unlaunchable today
 > (`cells/calibration.sh` refuses it), so nothing is blocked meanwhile.
+>
+> **UPDATE 2026-08-03 (Task 8, P4 transport-sweep plan).** The cell is no
+> longer unlaunchable: `cells/calibration.sh` gained a CAL-seam branch, and
+> `cells.yaml`'s `tick_hz` is now registered at `20.0` (the e2e sync loop's
+> rate — the same value cell A registers, since CAL-seam boots through the
+> identical `scripts/e2e/run_e2e.sh` recipe minus Autoware). Registering
+> `tick_hz` is NOT the same as settling the contradiction above: it records
+> what the harness now _asserts_ the cell does, not what a run _observed_ it
+> do. Whether CAL-seam's `/clock` actually ticks — and therefore which of
+> `has_sim_clock` or `cal_report.py`'s no-`/clock` premise is wrong — is still
+> only answerable by watching a real run's `clock.csv`, which is Task 10's to
+> do on the first live CAL-seam collection. This entry stays open until that
+> observation is made and recorded.
+>
+> **SETTLED BY MEASUREMENT 2026-08-03 (P4 Task 7's bring-up probe; recorded
+> here by the P4 whole-branch review). `/clock` EMITS.** Everything above is
+> left standing verbatim; this paragraph supersedes it, and the two claims it
+> supersedes are named rather than quietly dropped.
+>
+> The measurement: an extension-fork editor booted with `--ros2`,
+> `--rmw=cyclonedds` and a `--ros2-extension` path, with **no runner and no
+> Autoware attached**, probed
+> from the campaign's own matched Humble/cyclonedds instrument (the host's
+> Jazzy CLI cannot parse this fork's type hashes and is not a trustworthy
+> witness here), publishes `/clock` and it emits at **19.959 Hz** — two windows
+> of 21 and 41 samples, min 0.050 s / max 0.051 s — as soon as a client ticks
+> the world. Booted **without** `--ros2`, the same instrument sees no CARLA
+> topic at all. The probe and its numbers are recorded in
+> `benchmarks/scripts/raycast_baseline.py`'s module docstring and in both sweep
+> launchers' ablation blocks (`cells/extension.sh`, `cells/tier4-native.sh`),
+> where the same measurement is load-bearing for a different decision.
+>
+> **1. "It is still open" (the blockquote above this callout, and the update
+> immediately above) is superseded.** It is answered for the extension fork:
+> `has_sim_clock` is right and `cal_report.py`'s no-`/clock` premise is the
+> half that does not hold for CAL-seam. `cal_report.py`'s premise remains
+> correct for **CAL-rmw**, which runs no simulator at all — the premise was
+> over-scoped to the approach, not wrong about the cell it was written for.
+>
+> **2. "It cannot now be settled by measurement" (the 2026-07-30 head of this
+> callout) is REFUTED, and it is worth being precise about how.** That clause
+> was an ARGUMENT, not an observation: it inferred unmeasurability from the
+> cell's strike, i.e. from a scheduling decision. The refutation did not find a
+> flaw in the inference — it went and looked. A bring-up probe of the same
+> configuration was cheap, needed no CAL-seam run and no un-strike, and
+> answered the question outright. The general lesson is the one this campaign
+> keeps relearning: "nobody owes this any more" bounds who will look, never
+> what is true, and a question about committed code stays answerable by
+> booting it.
+>
+> **What is NOT settled by this.** The probe observed the extension fork's
+> editor, not a CAL-seam run: it says `/clock` flows from that boot, not that
+> CAL-seam's `clock.csv` will hold a well-formed series end to end, and it says
+> nothing about the stamp domain of the two bench publishers. See "Expected
+> branch per cell" above for the branch consequence, which follows from this
+> measurement and is registered ahead of Task 10 rather than discovered by it.
 
 **Recorded consequence for Task 16.** The `one_hop_wall_ms` margin is frozen
 from CAL-rmw, which takes the unfittable branch: an observer-windowed, unfitted
@@ -439,7 +585,7 @@ must not be assumed to be the same number.
 Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code path,
 deliberately. On **`CAL-rmw`** the publisher stamps `header.stamp` with wall
 `now()` and nothing publishes `/clock`, so `cal_report.summarize_run` takes the
-direct `arrival_system_ns - header_stamp_ns` — `scripts/cal_report.py:83`,
+direct `arrival_system_ns - header_stamp_ns` — `scripts/cal_report.py:123`,
 `segment_sim_ms(header_stamp_ns, arrival_system_ns)`, whose percentiles become
 `one_hop_p50_ms` on the next lines — and no fit is possible. Both
 halves are evidenced for that cell and only that cell:
@@ -447,10 +593,33 @@ halves are evidenced for that cell and only that cell:
 CAL-rmw and states "stamp is system now() so the CAL analysis
 (`cal_report.py`) is a same-host wall-clock difference", and
 `cells/calibration.sh` launches `bench_pub` plus the observer and nothing else.
-**`CAL-seam` is not covered by this sentence**: its publisher pair is Task 14
-and does not exist, so neither its stamp domain nor its `/clock` status is
-known — see the open contradiction recorded under "Scoring window" above. A
-simulated cell's stamps are sim-domain, so the fit is required there. The duel
+**`CAL-seam` is not covered by this sentence**: its publisher pair
+(`benchmarks/patches/extension/README.md`, Task 14) does not have both
+publishers evidenced against a live run — so neither its stamp domain nor its
+`/clock` status is known — see the open contradiction recorded under
+"Scoring window" above.
+
+> **UPDATE 2026-08-03 (Task 8, P4 transport-sweep plan).** This sentence used
+> to say the pair "does not exist". That was already imprecise: the extension
+> half (`BenchCloudPublisher`) predates the 2026-07-30 strike. What changed
+> today is the launch path — `cells/calibration.sh` now boots CAL-seam with
+> both halves enabled (see the Cell matrix section) — not the pair's
+> existence. The stamp-domain / `/clock` question this paragraph defers is
+> still open; only Task 10's first live collection settles it.
+>
+> **Partly superseded 2026-08-03 (P4 whole-branch review); the sentence above
+> stays as written.** The `/clock` half is settled and did NOT need Task 10 to
+> settle it: a bring-up probe measured `/clock` emitting at 19.959 Hz from a
+> `--ros2` extension-fork editor with no runner attached — see the "SETTLED BY
+> MEASUREMENT" paragraph under "Scoring window" above. Only the **stamp-domain**
+> half is still owed to Task 10's first live collection, and it is the half
+> that matters for this metric's `cal_report` relation: the seam publishers'
+> stamp domain decides whether `one_hop_wall_ms` on CAL-seam is the direct
+> wall difference CAL-rmw's is. `has_sim_clock` being right about CAL-seam does
+> NOT make the bench publishers' stamps sim-domain — they stamp wall `now()` —
+> which is precisely the trap registered under "Expected branch per cell".
+
+A simulated cell's stamps are sim-domain, so the fit is required there. The duel
 term therefore carries the fit's error on top of the transport it measures, and
 a duel row must be read next to that run's `fit_residual_ns`
 (`report.summarize_run`).
@@ -832,17 +1001,20 @@ after the first P3 measurement run.
 
 ### Scope: the core duel only (owner decision, 2026-07-30)
 
-**Six of the twelve registered cells will not be measured.** The owner cut the
-campaign's scope to the core duel; the full per-item reasoning is the
+**Five of the twelve registered cells will not be measured.** The owner cut
+the campaign's scope to the core duel; the full per-item reasoning is the
 2026-07-30 "core-duel scope cut" entry in the `Amendments made so far:` list
 under `## Pre-registration`, and the strike is machine-readable in `cells.yaml`
-as a `dropped:` key.
+as a `dropped:` key. **`CAL-seam` was a sixth struck cell until 2026-08-03**,
+when the owner reinstated it (P4 transport-sweep plan, spec decision 6, on
+the D8 lift that makes its fork-side twin publisher buildable — Task 9); see
+that date's entry in the amendments list for what reinstating it changed.
 
-| status                                                   | cells                                                          |
-| -------------------------------------------------------- | -------------------------------------------------------------- |
-| **in scope**                                             | `A`, `B` (the primary duel, n ≥ 10), `C`, `E0`, `E`, `CAL-rmw` |
-| **struck** — was `mandatory: true` (amendment items)     | `CAL-seam`, `B45`                                              |
-| **struck** — was already `mandatory: false` (note items) | `D`, `E-opt`, `A-hf`, `B-hf`                                   |
+| status                                                   | cells                                                                      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **in scope**                                             | `A`, `B` (the primary duel, n ≥ 10), `C`, `E0`, `E`, `CAL-rmw`, `CAL-seam` |
+| **struck** — was `mandatory: true` (amendment items)     | `B45`                                                                      |
+| **struck** — was already `mandatory: false` (note items) | `D`, `E-opt`, `A-hf`, `B-hf`                                               |
 
 The M4 LiDAR-load sweep is reduced to a ceiling confirmation at the duel size,
 so `sweep_classes`' `32ch` and `128ch` are struck too, and the M4 **camera-load
@@ -869,17 +1041,45 @@ launchers refuse a `--class` whose sensor arguments are not spelled out, because
 nothing maps a class id onto them (`cells/tier4-native.sh`'s
 `BENCH_TIER4_SWEEP_ARGS` refusal and `cells/extension.sh`'s
 `BENCH_RUNNER_SWEEP_ARGS` refusal — a sweep run that quietly used the baseline
-VLP16 rig would be filed as a `32ch` measurement). So the operator must supply
-those arguments by hand — for the tier4 side, in the form that launcher's own
-message gives: `BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000"`
-(patch 0003's flags, matching `32ch`'s registered `channels` / `points_per_second`).
-The class→arguments mapping itself is still unwritten on **both** sides, and the
-two name different owners: the tier4 side was owed to **Task 26**, which is
-struck, so it now has **no owner** and that refusal is permanent until someone
-writes it; the extension side is owed to **Task 12** per
-`cells/extension.sh`'s own refusal text. The ruling that reinstatement is "a
-decision, not an edit" is about the **pre-registration** — the branch needs no
-new amendment — and is not a claim that no operator work is involved.
+VLP16 rig would be filed as a `32ch` measurement). So, at the time of this
+paragraph, the operator had to supply those arguments by hand — for the
+tier4 side, in the form that launcher's own message gave:
+`BENCH_TIER4_SWEEP_ARGS="--lidar-channels 32 --lidar-pps 1200000"` (patch
+0003's flags, matching `32ch`'s registered `channels` / `points_per_second`)
+— until Task 6 closed the mapping gap (below).
+The class→arguments mapping itself was, at the time of the paragraph above,
+still unwritten on **both** sides, and the two named different owners: the
+tier4 side was owed to **Task 26**, which is struck, so it had **no owner**
+and that refusal was permanent until someone wrote it; the extension side
+was owed to **Task 12** per `cells/extension.sh`'s own refusal text. The
+ruling that reinstatement is "a decision, not an edit" is about the
+**pre-registration** — the branch needs no new amendment — and is not a
+claim that no operator work is involved.
+
+**Closed 2026-08-03 (Task 6).** Both refusals above are now conditional, not
+unconditional: `cells/tier4-native.sh` and `cells/extension.sh` each carry a
+`case "$BENCH_CLASS_ID"` block, immediately before the refusal text quoted
+above, that derives the sensor arguments for a _registered_ class id and
+still refuses only an _unregistered_ one — an unmapped class would file a
+run under the wrong workload label, which is a false measurement rather
+than an out-of-scope one, and that half of the refusal is unchanged. An
+explicit `BENCH_TIER4_SWEEP_ARGS` / `BENCH_RUNNER_SWEEP_ARGS` still wins
+over the derivation. The mapping, matching `sweep_classes`' own
+`channels` / `points_per_second`:
+
+| Class id | `channels` | `points_per_second` | Derived sensor arguments                                                             |
+| -------- | ---------: | ------------------: | ------------------------------------------------------------------------------------ |
+| `vlp16`  |         16 |             288 000 | `--lidar-channels 16 --lidar-pps 288000`                                             |
+| `32ch`   |         32 |           1 200 000 | `--lidar-channels 32 --lidar-pps 1200000`                                            |
+| `128ch`  |        128 |           4 600 000 | **not mapped** — still refuses on both launchers; struck on either M4 branch (below) |
+
+This is the tooling half of the pre-registered **32ch auto-branch
+registration**, quoted verbatim: "per cell, if no vlp16 ceiling disjunct
+fires, the 32ch class executes mechanically; 128ch stays struck on either
+branch." Taking the branch now costs neither a `cells.yaml` edit (the
+registry already carried the entry) nor hand-supplied environment (this
+mapping supplies it) — only the M4 ceiling criterion's own data-driven
+choice of which branch a cell is on, exactly as pre-registered.
 
 **Read the reason precisely.** Every strike is an owner **time-budget**
 decision, taken on two measurements (recorded in the amendment). **None of
@@ -888,8 +1088,9 @@ result about any of them may be inferred from its absence. `B45` in particular
 was expected to surface a hard-fork-maintenance result: the campaign is
 choosing not to look, which is a different statement from "it failed". The
 struck entries stay **registered, not deleted** — `mandatory: true` still
-stands on `CAL-seam` and `B45`, because that flag is what records that a
-mandatory cell was given up.
+stands on `B45` (and stood on `CAL-seam` throughout its 2026-07-30 –
+2026-08-03 strike, before and after), because that flag is what records that
+a mandatory cell was given up.
 
 ## Known confounds
 
@@ -1280,19 +1481,28 @@ beside the B-family M5 numbers.
 
 ### CAL-seam (Task 14): a per-publish allocation the fork side alone carries
 
-> **MOOT AS A CONFOUND — the cell is struck and there are no CAL-seam numbers (2026-07-30).** The
-> owner's core-duel scope cut dropped cell CAL-seam (`cells.yaml` `dropped:`; the 2026-07-30
-> amendment below), so **C1(a) seam overhead is UNMEASURED**: the paired seam-vs-in-core delta this
-> entry qualifies was, in `scripts/cal_report.py`'s own words, "the only measurement the
-> seam-overhead claim rests on", and it will not be taken. Two consequences for the text below.
-> First, its closing instruction — "Task 22's confound table must state this alongside the CAL-seam
-> numbers" — **is withdrawn**: there are no CAL-seam numbers to state it alongside. What Task 22
-> owes instead is the plain statement that C1(a) has **no evidence**, not weak evidence.
-> Second, the asymmetry itself is **still a true fact about the committed code** on both sides, so
-> the entry is kept in full rather than deleted: it is the analysis a revived CAL-seam would need on
-> day one, and it also records that the extension side's preallocated `msg_` is not merely a style
-> choice. An owner **time-budget** decision, not a defect and not an infeasibility — this confound
-> was never a reason the cell could not run.
+> **WAS MOOT AS A CONFOUND — the cell was struck and there were no CAL-seam numbers (2026-07-30 –
+> 2026-08-03).** The owner's core-duel scope cut dropped cell CAL-seam (`cells.yaml` `dropped:`; the
+> 2026-07-30 amendment below), so **C1(a) seam overhead stayed UNMEASURED**: the paired seam-vs-in-core
+> delta this entry qualifies was, in `scripts/cal_report.py`'s own words, "the only measurement the
+> seam-overhead claim rests on", and it was not taken while the strike held. Two consequences held
+> for the text below. First, its closing instruction — "Task 22's confound table must state this
+> alongside the CAL-seam numbers" — was withdrawn: there were no CAL-seam numbers to state it
+> alongside, so what Task 22 owed instead was the plain statement that C1(a) had **no evidence**, not
+> weak evidence. Second, the asymmetry itself was **still a true fact about the committed code** on
+> both sides, so the entry was kept in full rather than deleted: it was the analysis a revived
+> CAL-seam would need on day one, and it also records that the extension side's preallocated `msg_`
+> is not merely a style choice. An owner **time-budget** decision, not a defect and not an
+> infeasibility — this confound was never a reason the cell could not run.
+>
+> **REINSTATED 2026-08-03 (Task 8, P4 transport-sweep plan).** CAL-seam is un-struck (see the Cell
+> matrix section above and that date's `Amendments made so far:` entry); `cells/calibration.sh` now
+> launches it. This does NOT yet produce CAL-seam numbers — Task 8 only makes the cell launchable
+> again, the same way it was before the strike. Task 22's withdrawn instruction above is REINSTATED
+> alongside it: once Task 10 collects a live CAL-seam run, its confound table must state this
+> per-publish allocation asymmetry alongside the CAL-seam numbers, not merely note the difference —
+> exactly the original instruction this callout had withdrawn. Until that collection happens, C1(a)
+> still has no evidence; only the reason ("struck") has changed to "not yet collected".
 
 CAL-seam pairs the same synthetic `sensor_msgs/PointCloud2` message published two ways on one
 CARLA fork process — through the extension's C-ABI seam (`/bench/seam_cloud`) and by an in-core
@@ -1319,6 +1529,85 @@ per-publish allocation asymmetry, not the seam's cost alone: a small measured de
 an unexpected sign) cannot be attributed to the seam without accounting for it, and a report that
 attributes the whole delta to the seam would be biased in the seam's favour. Task 22's confound
 table must state this alongside the CAL-seam numbers, not merely note the difference.
+
+> **UPDATED 2026-08-03 (P4 Task 9) — the cell is REVIVED, one confound above no longer applies,
+> and a new, larger one is pre-registered below.** The 2026-07-30 blockquote at the head of this
+> entry is left standing as the P3-era fact it was; what follows supersedes it.
+>
+> **1. CAL-seam is no longer struck.** The owner revived it (P4 spec decision 6) and the fork-side
+> in-core twin — the half `patches/extension/README.md` says "was never written and will not be" —
+> now exists and is built into the loaded editor artifact. `C1(a)` is therefore **measurable
+> again**, and the "no evidence at all" status is superseded for P4. (The `cells.yaml` un-strike
+> is registered separately; this entry records only the confound consequences.)
+>
+> **2. The per-publish allocation asymmetry described above DOES NOT APPLY to the twin as built.**
+> That analysis assumed the spec's design, in which the in-core publisher was a
+> `CarlaPointCloudPublisher` subclass and so inherited `WritePointCloud`'s per-publish
+> `BuildPointFields(...)` rebuild. **The implemented twin is not that.** It deliberately does not
+> go through `CarlaPointCloudPublisher` at all — that is the Fast-DDS path, and routing through it
+> would have made the paired delta measure "Fast-DDS vs CycloneDDS plus the seam" instead of the
+> seam. It builds `fields` exactly once in `MakeCloudTemplate()` and `OnTick()` never touches it,
+> which is symmetric with the extension side's `msg_`. Verified in source: the twin's TU contains
+> no reference to `CarlaPointCloudPublisher`, `BuildPointFields` or `WritePointCloud` outside one
+> comment, and its `OnTick` body touches `fields` zero times. The analysis above is kept because
+> it correctly describes the base class and would apply again to any subclass-based revival.
+>
+> **3. NEW, and now the LARGEST residual confound: publish order.** The two twins publish from the
+> same thread microseconds apart, and the **seam goes first**
+> (`FCarlaEngine::OnPostTick` drives `ROS2ExtensionLoader->Tick()` before `BenchIncoreCloudOnTick()`).
+> Two publishes on one thread cannot both go first, so a fixed order bias is unavoidable; seam-first
+> is chosen deliberately because it makes the **seam** pay any cold-cache / first-writer cost and
+> gives the in-core twin the warmed path — the bias therefore runs **against** the seam being cheap,
+> so a seam that still measures cheap is a robust result rather than an artifact of the ordering.
+>
+> **DIRECTION ARGUMENT CORRECTED 2026-08-03 (P4 whole-branch review); the paragraph above stays
+> verbatim and the RULE below is UNCHANGED.** What is wrong in it is the words "makes the **seam**
+> pay any cold-cache / first-writer cost": on the cell as launched, the seam's write path is
+> already **warm** when the bench publish happens. CAL-seam boots through
+> `scripts/e2e/run_e2e.sh`, which unconditionally passes `--ros2`, `--rmw=cyclonedds` and a
+> `--ros2-extension` path, and unconditionally ends in `python3 -m runner` — so the ego's top LiDAR
+> is spawned with native `ros_*` attributes and roughly **921 KB of point cloud crosses the same
+> extension seam at 20 Hz, inside every measured frame**, in `SensorManager.PostPhysTick`, which
+> runs BEFORE `OnPostTick` drives either twin. The seam is not the frame's first writer; it is a
+> late writer on a path a large sensor burst has just walked. That was not known when the
+> ordering was chosen — the CAL-seam launch branch and the publish-order fix were written in
+> different lanes.
+>
+> Two consequences, and only one of them costs anything. The sensor burst is **common-mode** — it
+> precedes BOTH publishes, which the publish-order fix put adjacent in the frame — so the paired
+> delta `C1(a)` is unaffected and the instrument still measures what it was built to measure.
+> What does NOT survive is the **conservatism claim**: with the cold-cache asymmetry largely
+> absent, the residual order effect between two adjacent publishes is smaller than the paragraph
+> above assumes and its sign is **not established**, so "the bias runs against the seam being
+> cheap" may not be read as a guarantee that a cheap-looking seam is conservative. Seam-first
+> remains the right choice (a fixed order is unavoidable and this one is at worst neutral now),
+> but it is no longer self-justifying.
+>
+> The rule below is therefore doing MORE work than when it was written, not less — it used to have
+> a direction argument standing behind it and now stands on its own. That is the reason it is not
+> weakened here: a pre-registered rule whose supporting argument weakens is exactly the situation
+> pre-registration exists for.
+>
+> **PRE-REGISTERED READING RULE, recorded 2026-08-03 before any CAL-seam run is collected:**
+> **if the measured seam cost lands on the order of a cache-warming effect, `C1(a)` is reported as
+> an UPPER BOUND, not a point estimate.** It is written down now, ahead of the data, so it binds
+> whatever the data turns out to say — deciding how to read a number after seeing it is the
+> post-hoc move this campaign's no-peeking discipline exists to prevent. Reordering those two call
+> sites changes the measurement and invalidates this rule. Also recorded in the twin's TU comment
+> block, in the `Amendments made so far:` list below, and in `results/PROVENANCE.md` §11.9, which
+> now carries this same correction as an appended dated block (its pre-registered paragraph stays
+> verbatim). After that append, the **only** place still carrying the uncorrected direction argument
+> is the twin's TU comment block itself, in the fork tree
+> (`~/src/carla-autoware-integration/LibCarla/source/carla/ros2/extension/BenchIncoreCloudPublisher.cpp`),
+> outside this repository — it must stay uncorrected for now: editing it there moves that tree's
+> HEAD past the editor artifact's mtime and trips `scripts/e2e/verify_editor_artifact.sh`, forcing a
+> full rebuild before the live collection phase this correction is filed ahead of. It is owed on the
+> next fork-side commit; until then, read this entry as authoritative.
+>
+> **What Task 22 owes, restated:** the withdrawn instruction is reinstated in amended form — the
+> confound table must state the serializer difference (§11.8: same bytes, different code) and this
+> publish-order bias alongside the CAL-seam numbers, and must apply the upper-bound rule above if
+> it triggers.
 
 ### DDS middleware and transport (Task 9): the B family runs a different one
 
@@ -1357,7 +1646,8 @@ than the `observer_env` row it shows up in:
 - **DISCLOSED APPROXIMATION: publisher PLACEMENT is not the duel's.** In
   `CAL-rmw` both ends are containerised — `bench_pub` and `bench_observer` run
   in two containers from the ONE observer image, `--net=host --ipc=host`
-  (`cells/calibration.sh:136-142`, `run.sh:605-607`), and every CAL-rmw
+  (`cells/calibration.sh:319`, `run.sh:781` — the two `docker run -d --name
+… --net=host --ipc=host` lines), and every CAL-rmw
   manifest records it as `placement.run_mode: container-only`. In the native
   cells the publisher is a HOST process — the CARLA fork, whose manifests
   record `editor-game` — and only the observer is containerised. So the
@@ -3368,6 +3658,58 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   scope and are corrected with it. Nothing about the PUBLISHERS changes — they
   remain committed and never run.
 
+- **2026-08-03 (P4 Task 9) — pre-registered reading rule for `C1(a)`: the
+  CAL-seam publish-order bias, and when the result is an UPPER BOUND.** Cell
+  `CAL-seam` is revived (P4 spec decision 6) and the fork-side in-core twin now
+  exists, so `C1(a)` is measurable again — the 2026-07-30 "UNMEASURED, no
+  evidence at all" loss above is superseded for P4 and is left standing as the
+  P3-era fact it was. This entry registers **how the revived measurement may be
+  read**, and it is filed BEFORE Task 10 collects a single run so that it binds
+  whatever the data turns out to say. Deciding a reading rule after seeing the
+  number is the post-hoc move the no-peeking discipline exists to prevent, which
+  is why this is a pre-registration and not a write-up decision.
+
+  The two twins publish from one thread microseconds apart and the **seam goes
+  first** (`FCarlaEngine::OnPostTick` drives `ROS2ExtensionLoader->Tick()` before
+  `BenchIncoreCloudOnTick()`). Two publishes on one thread cannot both go first,
+  so a fixed order bias is unavoidable; seam-first is deliberate, because it
+  makes the seam pay any cold-cache / first-writer cost and gives the in-core
+  twin the warmed path — the bias runs **against** the seam being cheap, so a
+  seam that still measures cheap is robust rather than an artifact. This is now
+  the **largest** residual confound, ahead of the serializer difference (which
+  was verified 2026-08-03 to be a difference of code and not of payload: both
+  sides emit an identical 921 905 bytes, same type name, same RIHS01 hash).
+
+  **Direction argument corrected 2026-08-03 (P4 whole-branch review); the
+  paragraph above stays as filed and the RULE below is unchanged.** "Makes the
+  seam pay any cold-cache / first-writer cost" is not true of the cell as
+  launched: CAL-seam boots through `scripts/e2e/run_e2e.sh`, which
+  unconditionally passes `--ros2 --rmw=cyclonedds --ros2-extension=<so>` and
+  unconditionally ends in `python3 -m runner`, so ~921 KB of ego LiDAR cloud
+  crosses the SAME extension seam at 20 Hz in `SensorManager.PostPhysTick` —
+  before `OnPostTick` drives either twin — inside every measured frame. The
+  seam is a late writer on a freshly-walked path, not the frame's first writer.
+  The burst is common-mode (it precedes both publishes, which the publish-order
+  fix made adjacent), so the paired delta is unaffected; what is lost is the
+  CONSERVATISM claim, because the cold-cache asymmetry it rested on is largely
+  absent and the residual order effect's sign is not established. Seam-first
+  stays — a fixed order is unavoidable and this one is at worst neutral — but
+  "the bias runs against the seam being cheap" may no longer be quoted as a
+  guarantee. The rule below consequently stands on its own rather than on that
+  argument, which is why it is kept exactly as pre-registered instead of being
+  relaxed.
+
+  **THE RULE: if the measured seam cost lands on the order of a cache-warming
+  effect, `C1(a)` is reported as an UPPER BOUND, not a point estimate.**
+
+  Recorded identically in the twin's TU comment block
+  (`LibCarla/source/carla/ros2/extension/BenchIncoreCloudPublisher.cpp`), in the
+  `## Known confounds` CAL-seam entry, and in `results/PROVENANCE.md` §11.9.
+  Reordering those two call sites changes the measurement and invalidates the
+  rule. **No metric definition, threshold, margin, aggregation rule or scoring
+  window is edited by this entry** — it adds a reading constraint on one claim
+  and nothing else; `config/margins.yaml` and `analysis/` are untouched.
+
 - **2026-07-30 — registered loss: no hard-fork-maintenance finding (`B45`).**
   This cell existed to measure what it costs to carry the tier4 CARLA fork
   against a **different** Autoware release (`pins.yaml` `autoware_045`,
@@ -3582,7 +3924,7 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   sensor rigs. Recorded as finding 4 of "Cell A's bench-harness control (Task
   15b)", with a pointer from the 8.78× CPU finding it bears on.
   **Completeness, and nothing in the cut's own rationale had noticed it:**
-  `cells.yaml:232-240` and `cells/tier4_autoware.sh:70-80` both justify the duel's
+  `cells.yaml:266-274` and `cells/tier4_autoware.sh:76-83` both justify the duel's
   deliberate rig asymmetry by naming the M4 sweep as the place "where the two rigs
   ARE equalized" — so the sweep was carrying a **duel-level** job as well as an M4
   one, and reducing it to a ceiling confirmation (which then did not fire) left
@@ -3597,7 +3939,7 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
   decided** here (it needs Task 23's class → argument mapping, and the scheduling
   is the coordinator's and the owner's). Finally it records a NEWLY MEASURED
   contradiction the remedy must verify rather than assume:
-  `cells/tier4_autoware.sh:78-80` registers per-message size as landing "within 4%
+  `cells/tier4_autoware.sh:84-86` registers per-message size as landing "within 4%
   either way", but the as-emitted medians are **512 184 B/msg (A)** against
   **241 813 B/msg (B)** — **2.118×**, stable across two cell-A and six cell-B runs
   (0.35% / 0.30% spread), on the same instrument and topic so no point-layout
@@ -3783,6 +4125,330 @@ same as the current.'`), after which `/vehicle/status/velocity_status` measured
     work is added for struck cells (E-opt stays struck). `config/margins.yaml` and
     `config/exclusions.md` byte-identical; criterion 3 is cited as it already
     stands, not amended.
+- **2026-08-03 (Task 2 of the P4 transport-sweep plan) — `duel_id` partitions
+  the primary duel's admission pool from later duels filed over the same
+  cells.** `RunManifest.duel_admissible` (Task 15b, above) only answers "is
+  this run duel data at all?"; it does not say WHICH duel, so a cell
+  directory holding admissible runs from more than one duel filed over the
+  campaign's life would let a verdict over a NEW pairing silently pull an
+  OLD pairing's runs into its count. `benchmarks/analysis/manifest.py` gains
+  `duel_id: str = ""` on `RunManifest`, stamped by `scripts/duel.sh` as
+  `--duel-id "${CELL_A}+${CELL_B}"` on every `run.sh --duel` invocation it
+  orders and threaded through `write_manifest.py --duel-id`.
+  `duel_verdict.py`'s `_walk_cell_runs` gains the pool rule: for a verdict
+  over `(cell_a, cell_b)`, the expected id is `f"{cell_a}+{cell_b}"`, and a
+  duel-admissible run pools in iff `manifest.duel_id == expected` OR
+  (`manifest.duel_id == ""` AND `(cell_a, cell_b) == ("A", "B")`) — the
+  legacy clause exists ONLY so the already-filed primary (A, B) verdict
+  keeps reproducing byte-for-byte without a single filed manifest being
+  rewritten. `benchmarks/analysis/**` is listed as **frozen, never
+  modified** among this document's global constraints; this field is the
+  one ruled exception, on the owner's own reading (recorded in the P4
+  transport-sweep plan's SDD ledger): **adding a metadata field with
+  default `""` changes no score, so every filed manifest keeps scoring
+  identically.** The freeze protects scoring semantics, not metadata, and
+  the legacy clause above is precisely what keeps the filed P3 (A, B)
+  verdict's score untouched.
+  **IT IS NO LONGER THE ONE RULED EXCEPTION.** Annotated 2026-08-04 by Task
+  C2's fix round, which added a SECOND field (`class_id`) to the same
+  dataclass under this same reading, so the sentence above reads
+  historically rather than currently. The paragraph is kept verbatim as the
+  record of what was true when it was written, and this note is how a reader
+  learns it no longer is — the same convention `config/cells.yaml`'s "THE
+  MAPPING WAS WRITTEN" annotation follows, and for the same reason: this
+  ledger is what a reader treats as authoritative on how many exceptions the
+  freeze has, so it must not be the last place to find out. The count is
+  resolved by the 2026-08-04 (Task C2) entry at the end of this list, which
+  states it as the second; nothing else about this entry changes.
+- **2026-08-03 (Task 4 of the P4 transport-sweep plan) — cell B-cyc
+  registered: the SAME tier4-native stack as cell B, under the row-11
+  cyclonedds transport instead of B's fastrtps/udp_only pair.** `config/
+cells.yaml` gains a `B-cyc` entry (`approach: tier4-native`, `mandatory:
+true`, `arms: [static, closed-loop]`) whose `metrics` block is IDENTICAL to
+  cell B's, field for field — B-cyc is the same fork tree, same launcher
+  (`cells/tier4_autoware.sh`), same bundle, differing only in DDS transport,
+  so every metric binding (topics, rates, process label, ladder branch) is
+  unaffected by which transport carries them. `config/observer_topics/
+B-cyc.yaml` and `config/processes/B-cyc.yaml` are byte-for-byte copies of
+  B's own files (header comments updated only), including B's already-present
+  `control_published_time_topic` / `published_time` observer row, inherited
+  unchanged — Task 5 must not re-add it. `run.sh` gains a per-cell transport
+  correction (`$CELL = "B-cyc"`, immediately after the existing tier4-native
+  family correction) that resolves `rmw_cyclonedds_cpp` / SHM off / no
+  profile by DEFAULT, the measured row-11 configuration
+  (`benchmarks/patches/tier4-native/README.md`'s transport matrix; rows
+  5/10, the harness's `lo`-pinned cyclone default, see NOTHING from the
+  fork), while an explicit `--rmw`/`--dds-profile` still wins, exactly as
+  for the existing family correction. `cells/tier4_autoware.sh`'s
+  registered-transport refusal block (pinned by
+  `tests/benchmarks/test_vector_map_gate.py`) now keys on `BENCH_CELL`
+  rather than assuming cell B unconditionally: B keeps its fastrtps/udp_only
+  requirement byte-identical, B-cyc requires cyclonedds/no-profile, and
+  `BENCH_TIER4_TRANSPORT_DEVIATION` still opts out of either pair for a
+  deliberate probe, unchanged in semantics. `results/B/run-033` — a
+  one-off cyclonedds deviation probe on cell B (`ndt_rate_ratio ≈ 1.000`,
+  n=1) — is the end-to-end precedent this registration turns into a regular,
+  duellable cell rather than a one-off; row 11's own caveats (routable-NIC
+  binding, flaky discovery graph for bare-DDS publishers) are inherited here
+  as confound rows for B-cyc's results, not fixed by registering it. Cell
+  B's own registration is untouched by this entry. `config/margins.yaml`,
+  `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
+  frozen file touched.
+- **2026-08-03 (Task 5 of the P4 transport-sweep plan) — cell A's
+  `control_published_time_topic` binding filled, making `control_staleness_ms`
+  computable for every P4 duel run.** `config/cells.yaml`'s cell-A binding
+  moves from null to `/control/command/control_cmd/debug/published_time` --
+  the SAME topic and type (`autoware_internal_msgs/msg/PublishedTime`) cell B
+  registers, because both approaches gate through `vehicle_cmd_gate` and the
+  same `PublishedTimePublisher` implementation stamps the gated
+  `/control/command/control_cmd` on either stack. `config/observer_topics/A.yaml`
+  already carried this row (Task 15b, 2026-07-30, live discovery on
+  cell A's own stack) -- only the cells.yaml binding was missing, and this
+  task closes that gap without duplicating the observer line; its "STILL
+  OWED" note is amended to record the closure rather than rewritten. This is
+  the fifth and last of the primary duel's metrics: it was UNAVAILABLE for
+  the WHOLE P3 duel (`docs/evaluation/p3-baseline.md` Sec.1) because this one
+  binding was null, and `duel_verdict.build_verdict_table` reports a metric
+  unavailable when either side is unbound. NOT yet live-confirmed through the
+  filled binding -- that check is owed to Task 11's bring-up boot, which must
+  observe this exact topic on a live cell-A run before any P4 duel proceeds.
+  `config/observer_topics/B-cyc.yaml` is untouched (it already carries the
+  matching row, inherited from B.yaml by Task 4); `config/margins.yaml`,
+  `config/exclusions.md` and `benchmarks/analysis/**` byte-identical; no
+  frozen file touched.
+- **2026-08-03 (Task 8 of the P4 transport-sweep plan) — cell CAL-seam
+  reinstated, un-striking the 2026-07-30 core-duel scope cut.**
+  `config/cells.yaml`'s CAL-seam entry loses its
+  `dropped: owner-time-budget-2026-07-30` key (the strike comment stays,
+  extended with this note) and gains `tick_hz: 20.0` /
+  `lidar_expected_hz: 10.0`; `mandatory: true` is unchanged, so the record
+  still shows a mandatory cell was struck and is now un-struck, not that it
+  was always optional. The reinstatement rides on the D8 lift (Task 9) that
+  makes the fork-side twin of `BenchCloudPublisher` buildable -- CAL-seam's
+  own paired instrument, gated by `benchmarks/patches/extension/README.md`'s
+  `$CARLA_BENCH_SEAM_CLOUD` / `$CARLA_BENCH_INCORE_CLOUD` env vars -- so both
+  halves of the pair now exist. `config/observer_topics/CAL-seam.yaml`
+  replaces its deliberately-empty list with the two topics
+  (`/bench/seam_cloud`, `/bench/incore_cloud`);
+  `config/processes/CAL-seam.yaml` is (re)written, derived from `A.yaml`
+  minus its Autoware-side entries. `cells/calibration.sh`'s permanent-looking
+  CAL-seam refusal is replaced with a launch branch that boots the extension
+  fork editor via `scripts/e2e/run_e2e.sh` with `WITH_AUTOWARE=0` and both
+  bench-publisher env vars set, reusing the `extension` family's
+  launch/teardown plumbing (`ARM_ENABLED="0"`, no Autoware container) -- the
+  refusal history in that file's header is UNEDITED (verbatim, present
+  tense), with this reinstatement appended below it exactly the way this
+  entry is appended here rather than rewriting the 2026-07-30 entry above.
+  Completeness: C1(a) seam overhead was UNMEASURED with no weaker evidence
+  standing in for it; this task makes the cell launchable again so a later
+  task (Task 10) can collect it -- it does not itself produce CAL-seam
+  numbers. `config/margins.yaml`, `config/exclusions.md` and
+  `benchmarks/analysis/**` byte-identical; no frozen file touched.
+- **2026-08-03 (P4 whole-branch review) — cell `B-cyc` is registered as a SWEEP
+  TARGET, not only as a cell.** `config/cells.yaml`'s three `sweep_classes`
+  entries (`vlp16`, `32ch`, `128ch`) each gain `B-cyc` in `applies_to`. Being a
+  registered cell (Task 4) and being a registered sweep target are different
+  registrations, and only the first had been made: `cell_info.merge` raises
+  `UnknownIdError` for a class whose `applies_to` omits the cell, and `run.sh`
+  resolves the merged cell JSON before `--check-args` returns, so
+  `run.sh B-cyc --arm paced --class vlp16` and `--arm ablation --class vlp16`
+  both refused outright — i.e. the sweep could not run against the one cell
+  this campaign phase exists to sweep. All three classes rather than `vlp16`
+  alone, because `applies_to` records which cells a class is DEFINED for while
+  which classes the campaign RUNS is scope, recorded separately in that
+  block's strike comment: `32ch` stays the pre-registered step-up, `128ch`
+  stays struck on either branch, and both launchers still refuse `128ch` for
+  want of a sensor-argument mapping, so nothing is un-struck here. B-cyc is
+  cell B's rig exactly — same fork tree, same launcher, same sensor arguments,
+  differing only in DDS transport — and a sweep class pins
+  `channels`/`points_per_second` only, so any class defined for B is defined
+  for B-cyc by construction. `config/processes/B-cyc.yaml` gains the
+  `raycast-baseline` entry its original (`processes/B.yaml`) had gained in a
+  parallel lane after the copy was taken, restoring the byte-for-byte-body
+  claim its own header makes (now machine-checked by
+  `tests/benchmarks/test_raycast_baseline.py`); without it B-cyc's ablation
+  client would have been sampled by nothing and filed a flat 0.0% CPU instead
+  of failing loudly. `config/margins.yaml`, `config/exclusions.md` and
+  `benchmarks/analysis/**` byte-identical; no frozen file touched, and no
+  metric, threshold, margin, aggregation rule or scoring window is edited.
+- **2026-08-03 (P4 whole-branch review) — what the CAL-seam instrument
+  actually runs is registered, ahead of Task 10's first collection.**
+  `cells/calibration.sh`'s CAL-seam branch boots `scripts/e2e/run_e2e.sh`,
+  which **unconditionally** passes `--ros2 --rmw=cyclonedds --ros2-extension=<so>`
+  (`run_e2e.sh:288`) and **unconditionally** ends in
+  `python3 -m runner` (`:328`), spawning the ego and top LiDAR with native
+  `ros_*` attributes. CAL-seam therefore runs the full cell-A publishing rig,
+  and that fact was registered nowhere — each of its three consequences is
+  cheaper to register now than to discover from a GPU-hour run, and one of them
+  yields a plausible-but-wrong number rather than a loud failure.
+  **(1) The expected scoring-window branch for CAL-seam changes from
+  UNFITTABLE to FITTABLE.** `/clock` was measured emitting at 19.959 Hz from
+  exactly this configuration, so `clock.csv` gets far more than the ≥ 2 rows
+  `fit_sim_wall_affine` needs. The "Expected branch per cell" registration and
+  `sweep_verdict._expected_window_branch` both said unfittable; both are
+  corrected, with the superseded rule kept verbatim beside the correction.
+  Registering it now is what stops Stage 2 filing an already-explained "loud
+  finding" on every CAL-seam run and devaluing the signal for runs that mean
+  it. The rule now takes the cell id as well as the approach and names
+  CAL-seam as an exception — a real loss of derivability, recorded as such.
+  **(2) The `report.summarize_run` wall-stamp trap is registered as a known
+  trap.** `has_sim_clock` is true for CAL-seam, so `run.sh` step 15 renders it
+  through `report.summarize_run`, which applies `fit_sim_wall_affine` — a
+  sim→wall map — to every topic's `header_stamp_ns`, including the two bench
+  publishers', which stamp **wall** `now()`. The result is a finite,
+  plausible-looking `one_hop_p50_ms` that is not a latency, with no exception
+  and no marker in the table. The paired `C1(a)` delta survives (common-mode,
+  same stamps and same fit within a run); the ABSOLUTES must never be quoted,
+  nor compared against a sim-stamped cell's. Recorded here and in
+  `benchmarks/report.py` beside the fit itself. Nothing in `analysis/**` is
+  touched and the renderer is not special-cased — a silent per-cell branch in
+  a shared renderer would be a worse trap than the disclosed one.
+  **(3) The seam-first order bias keeps its pre-registered UPPER-BOUND rule
+  and loses its direction argument.** ~921 KB of ego LiDAR cloud crosses the
+  same extension seam at 20 Hz in `SensorManager.PostPhysTick`, before
+  `OnPostTick` drives either twin, in every measured frame — so the seam is a
+  late writer on a warm path, not the frame's first writer, and "seam-first
+  makes the seam pay the cold-cache cost, so the bias runs against the seam
+  being cheap" is not established. The burst is common-mode, so the delta is
+  unaffected. **The rule is unchanged and deliberately not weakened**: it now
+  stands on its own rather than on that argument, which is the situation
+  pre-registration exists for. `config/margins.yaml`, `config/exclusions.md`
+  and `benchmarks/analysis/**` byte-identical; no frozen file touched, and no
+  metric, threshold, margin, aggregation rule or scoring window is edited —
+  (1) corrects a branch EXPECTATION (a diagnostic annotation, never a score),
+  (2) and (3) add reading constraints and nothing else.
+- **2026-08-03 (P4 Task 7, recorded here by the whole-branch review) — the M4
+  ABLATION arm's reading rules are PRE-REGISTERED, not merely written down.**
+  The arm itself (`benchmarks/scripts/raycast_baseline.py`, plus the ablation
+  branch in both sweep launchers) landed with its rules in that module's
+  docstring and nowhere else — `grep raycast_baseline benchmarks/README.md`
+  returned nothing until this entry. By this campaign's own argument, which it
+  made about its own `C1(a)` rule five entries above, documenting a rule is not
+  the same as **pre**-registering it: what makes a reading rule binding is that
+  it is filed here, ahead of the data, where it cannot be adjusted to suit a
+  number. Filed before Task 10 collects a single ablation run. **The rules.**
+  `transport cost = total − baseline` is a **LOWER BOUND** with respect to the
+  client-stream RPC hop — a CARLA sensor only produces data while a client is
+  subscribed, so the baseline must `sensor.listen(...)` to raycast at all, and
+  that hop is work the native in-process publisher never does, inflating `B`.
+  It is simultaneously an **OVER-ESTIMATE** with respect to the un-spawned
+  sensor set: cell A's measured rig is LiDAR + IMU and cell B's demo also
+  spawns IMU, GNSS, vehicle_status and a traffic-light camera, none of which
+  the baseline spawns, so their **entire** cost — spawn, per-tick simulation,
+  render and publish, not merely their publish cost — lands inside `T − B`, and
+  on cell B that includes a camera render pass which is not transport by any
+  reading. (The module docstring understated this as "their publish cost" until
+  2026-08-03; corrected there too, with the correction recorded rather than
+  swapped in, because the understatement ran in the campaign's favour.) The two
+  errors have OPPOSITE sign and neither is measured, so `T − B` is strictly a
+  lower bound only if `H ≥ (R_T − R_B) + Ω` — `H` the RPC hop, `R_T`/`R_B` the
+  two rigs' raycast costs, `Ω` the un-spawned sensors' whole-lifecycle cost —
+  and that inequality is asserted nowhere. **What rescues the number, and the
+  rule that follows from it:** the whole gap is a per-run CONSTANT, independent
+  of the sweep class, so it shifts the **intercept** of transport-vs-class and
+  not the **slope** — and the slope is what the sweep reads. Therefore a single
+  cell's `T − B` may NOT be quoted as "the transport cost"; how `T − B` grows
+  with the class MAY be. Also registered: dropping `--ros2` from the ablation
+  boot (the arm's central mechanism, forced by measurement — the flag made the
+  server advertise a publisher for a rig with no `ros_*` attributes) can only
+  make `B` smaller, so `T − B` grows toward the quantity of interest rather
+  than past it, because the old form was subtracting transport from transport.
+  No metric, threshold, margin, aggregation rule or scoring window changes;
+  `config/margins.yaml`, `config/exclusions.md` and `benchmarks/analysis/**`
+  byte-identical.
+- **2026-08-03 (P4 Task 3, recorded here by the whole-branch review) —
+  teardown stops the GT collector AFTER the observer, and P3's pools are NOT
+  re-scored.** `benchmarks/scripts/teardown.sh` moves the GT collector's stop
+  off position 1 (alongside the clock watchdog) to position 3, after the
+  observer. This is a **scoring-comparability** decision and belongs here, not
+  only in that file's header where it has lived so far: it changes how
+  `duel_verdict._reconcile_run` scores `publisher_drop_rate` on every P4 static
+  run relative to every P3 one, so a reader comparing a P4 static number with a
+  P3 static number is comparing two teardown orders. **What it fixes:** "Cell
+  A's bench-harness control (Task 15b) finding #1" below measured that stopping
+  the GT collector — which writes `publisher_counts.json` — before the observer
+  — which writes `clock.csv`, the series `window.static_window` tops out at —
+  ends the publisher series ~1.051 s before the window's real top on
+  `results/A/run-001`, fabricating `publisher_drop_rate = 0.0213` on a
+  publisher that dropped nothing (984 expected, 963 published; the predicted
+  21-tick deficit equals the observed 21). It is inherited by all ten P3 static
+  pairs, cell A and cell B alike; the closed-loop arm is immune, its window
+  closing on ego position ~80 s before the run ends. **The decision that needs
+  registering: the P3 pools are NOT re-scored.** Filed evidence stays
+  untouched and the artefact is already disclosed in the P3 record, so this fix
+  protects P4's pools only — which means P4 static `publisher_drop_rate` values
+  are not comparable with P3's and Task 22's write-up must not present them as
+  one series. The frozen alternative (clamping the window to
+  `min(clock_wall.max(), publisher_end)` in `analysis/window.py`) was
+  unavailable because `analysis/**` is frozen, which is why the registered fix
+  is a teardown reordering rather than a scoring change. No metric, threshold,
+  margin or scoring-window DEFINITION changes; `config/margins.yaml`,
+  `config/exclusions.md` and `benchmarks/analysis/**` byte-identical.
+- **2026-08-03 (P4 Task 6, recorded here by the whole-branch review for ledger
+  completeness) — the class→sensor-arguments mapping is TOOLING for an
+  already-pre-registered branch and registers nothing new.** Both sweep
+  launchers gained a `case "$BENCH_CLASS_ID"` block deriving
+  `--lidar-channels` / `--lidar-pps` for `vlp16` and `32ch` from
+  `sweep_classes`' own `channels` / `points_per_second`; an explicit
+  `BENCH_TIER4_SWEEP_ARGS` / `BENCH_RUNNER_SWEEP_ARGS` still wins and an
+  unregistered id still refuses, `128ch` included. The `32ch` step-up BRANCH
+  and its trigger were pre-registered on 2026-07-30 (the sweep-reduction entry
+  above); this task only removed the hand-supplied environment that taking the
+  branch used to cost, so it is deliberately NOT filed as a new
+  pre-registration. It is filed so a reader auditing this ledger against the
+  tree finds the change accounted for instead of missing. The stale "has NO
+  owner now and the refusal stands until someone writes it" claim it left
+  behind in `config/cells.yaml` is annotated there. Nothing pre-registered is
+  amended; no frozen file is touched.
+- **2026-08-04 (Task C2 of the P4 transport-sweep plan) — `class_id`
+  partitions the M4 sweep's scoring pool by sweep class, closing a
+  `sweep_verdict.py` defect that rendered one class's runs under another
+  class's heading.** `benchmarks/scripts/sweep_verdict.py --class <id>`
+  validated the id against `cells.yaml` (`cell_info.merge`'s typo guard) and
+  printed it in the table heading, but filtered NOTHING: its only row filter
+  was the sweep-arm one, so `sweep_verdict.py A --class 32ch` rendered Task
+  14's eighteen vlp16 rows under a "class 32ch" heading — demonstrated live.
+  No `manifest.json` recorded a class at all. Today's filed results are sound
+  (the only sweep-arm runs in either cell are Task 14's eighteen, all taken
+  `--class vlp16`, and the filed ceiling booleans were read with `--class
+vlp16`), but the next task files 32ch runs into the same flat `run-NNN/`
+  sequence, at which point `--class vlp16` and `--class 32ch` would render
+  identical rows with no field left to recover the class from.
+  `benchmarks/analysis/manifest.py` gains `class_id: str = ""` on
+  `RunManifest`, beside `duel_id` and validated the same way (a non-`str`
+  fails `validate()`), stamped by `benchmarks/run.sh` from its own `--class`
+  — the SAME resolved value it exports as `BENCH_CLASS_ID` for the launchers'
+  sensor-argument derivation, so the manifest's workload label and the rig
+  actually booted come from one resolution — and threaded through
+  `write_manifest.py --class-id`. `sweep_verdict.py` gains the pool rule
+  (`_class_admits`): a sweep-arm run is eligible for a verdict over class `C`
+  iff `manifest.class_id == C` OR (`manifest.class_id == ""` AND `C ==
+"vlp16"`) — the legacy clause exists ONLY so Task 14's already-filed
+  ceiling booleans keep reproducing without a single filed manifest being
+  rewritten, and its premise was VERIFIED before it was written (the only
+  filed sweep-arm runs are `results/A/run-036…044` and
+  `results/B-cyc/run-022…030`;
+  `evidence/p4-task14-vlp16-sweep/sweep-console.log` records `--class vlp16`
+  on all eighteen invocations, and the six ablation runs corroborate it
+  independently in their own `raycast_baseline.json`'s `"class_id":
+"vlp16"`). Runs dropped by the filter are COUNTED and surfaced in the
+  rendered table on their own line, never silently skipped — a separate
+  counter from the out-of-arm one, because that line names a specific reason
+  a class-dropped run does not match. `benchmarks/analysis/**` is listed as
+  **frozen, never modified** among this document's global constraints; this
+  field is the second ruled exception, on the same reading Task 2's `duel_id`
+  was granted (recorded in the P4 transport-sweep plan's SDD ledger): **the
+  freeze protects scoring semantics; adding a metadata field with default
+  `""` changes no score.** Every filed manifest keeps scoring identically,
+  and the legacy clause above is precisely what keeps the filed vlp16 ceiling
+  booleans untouched — confirmed by re-running `sweep_verdict.py <cell>
+--class vlp16` on both A and B-cyc after the change and diffing against the
+  pre-change output (byte-identical: 9 rows per cell, all `reached False`
+  with empty reasons), and by confirming `--class 32ch` now scores zero rows
+  on both cells instead of those same nine. No metric, threshold, margin,
+  aggregation rule or scoring window changes; `config/margins.yaml` and
+  `config/exclusions.md` byte-identical, and `benchmarks/analysis/**` changes
+  only by the one field and its validation.
 
 ### Cell A's bench-harness control (Task 15b): three findings the duel inherits
 
@@ -3880,16 +4546,16 @@ This is a **duel-level confound**, not a cell-A one, and it lands directly on th
 8.78× CPU finding above, which compares two different sensor rigs.
 
 **The asymmetry is registered and deliberate, and that part is sound.**
-`config/cells.yaml:232-240` keeps cell B's LiDAR at "the demo's OWN value,
+`config/cells.yaml:266-274` keeps cell B's LiDAR at "the demo's OWN value,
 deliberately NOT harmonized to cell A's 20 Hz", because the demo derives
 `points_per_second` FROM its `sensor_tick`, so re-rating it would be "a fidelity
 change dressed as harmonization" — it would either halve the angular resolution or
 specify a different sensor than the VLP16 the demo documents.
-`cells/tier4_autoware.sh:70-80` repeats the reasoning. **Each approach running on
+`cells/tier4_autoware.sh:76-83` repeats the reasoning. **Each approach running on
 its native rig is by design.**
 
 **But both of those blocks name the same equalization point, and it is gone.**
-Verbatim, `cells.yaml:238-240`: "The M4 sweep classes (`sweep_classes` below,
+Verbatim, `cells.yaml:272-274`: "The M4 sweep classes (`sweep_classes` below,
 applying to A and B alike) are where the two rigs ARE equalized." The M4 sweep is
 now reduced to a ceiling confirmation by the 2026-07-30 core-duel scope cut, and
 the ceiling criterion did not fire, so **no rig-matched A-vs-B measurement exists
@@ -3916,7 +4582,7 @@ Task 26 is struck; both sweep launchers refuse a `--class` without it), and the
 scheduling is the coordinator's and the owner's.
 
 **One thing that remedy must VERIFY rather than assume, newly measured.**
-`cells/tier4_autoware.sh:78-80` registers a per-message-size parity claim —
+`cells/tier4_autoware.sh:84-86` registers a per-message-size parity claim —
 "Per-message size happens to land within 4% either way (A: 600000 \* 0.05 = 30000
 points/message; B: 288000 \* 0.1 = 28800), so M1/M2's per-message latency terms
 compare like with like even at different rates". **On the wire it is not within 4%;
@@ -3975,7 +4641,7 @@ distinguishes them — the byte gap is layout. Cell A's share is explained by
 source-vs-wire contradiction rather than with its registration.
 
 **The registered claim is therefore UNIT-AMBIGUOUS rather than simply wrong.**
-`cells/tier4_autoware.sh:78-80`'s "within 4% either way" is **false for bytes
+`cells/tier4_autoware.sh:84-86`'s "within 4% either way" is **false for bytes
 (2.118×)** and **nearly true for points (5.9%)** — its own parenthetical reasons in
 _points per message_ (30 000 vs 28 800) while the quantity it licenses,
 "M1/M2's per-message latency terms", is carried by **bytes** on the wire. Someone
@@ -4059,3 +4725,85 @@ evaluation, spatial window, M5 quality). The entry point for rendering a
 per-cell report is `python3 -m benchmarks.report <results_dir>`; `run.sh`
 runs it as its own last step, so a run directory that does not render is a
 loud failure rather than a silent one.
+
+### Editor-artifact ownership is shared and exclusive between the two UE trees (Task 9, 2026-08-03)
+
+**Only one of the two CARLA trees can refresh its editor Carla module at a time,
+and a build from the other tree fails silently by writing into the wrong one.**
+This cost most of P4 Task 9 to find; it will cost the next person the same unless
+they read this first.
+
+Both trees ship a project named `CarlaUnreal.uproject`
+(`~/src/carla-autoware-integration` for cells A/C, `~/src/carla-autoware-native`
+for the B family). The **shared** engine keeps ONE set of cached link actions for
+the editor's Carla module, as per-module scripts under
+
+```text
+~/src/UnrealEngine/Engine/Intermediate/Build/Linux/x64/UnrealEditor/Development/
+    Link-libUnrealEditor-Carla.so.link.sh
+```
+
+each carrying the **absolute** output path baked in. Whichever tree last made UBT
+_re-gather_ owns that path **for both trees**. Ownership does **not** follow the
+tree you invoke the build from, and passing a correct absolute `-project=` does
+not change it — the redirect happens below the flag, in cached actions the flag
+does not participate in.
+
+**Current owner: the integration tree** (set 2026-08-03, which is what cell A
+needs). So a `carla-unreal-editor` build run from the **tier4** tree currently
+refreshes the **integration** tree's module and leaves tier4's untouched.
+
+**Detection signal.** The failure is silent at the build — the build reports
+success and the artifact simply does not move. What catches it is the artifact
+gate for the tree you were trying to refresh:
+
+- `scripts/e2e/verify_editor_artifact.sh` refusing with `PREFLIGHT FAIL: ...
+libUnrealEditor-Carla.so (<mtime>) is OLDER than HEAD commit (<ct>)` — the
+  integration tree; or
+- `benchmarks/scripts/verify_tier4_artifact.sh` refusing `tier4-artifact-stale` —
+  the tier4 tree; or, generally,
+- a `libUnrealEditor-Carla.so` whose mtime does not move across a build that
+  reported success.
+
+A second, subtler tell: a **no-op rebuild relinks the module every single time**,
+because the output UBT checks on the non-owning side never gets any newer.
+
+**Remedy — re-gather from the tree that should own the path:**
+
+```bash
+$CARLA_UNREAL_ENGINE_PATH/Engine/Build/BatchFiles/Linux/Build.sh \
+  CarlaUnrealEditor Linux Development \
+  -project=<ABSOLUTE path to the desired tree's CarlaUnreal.uproject> \
+  -game -NoUBTMakefiles
+```
+
+`-NoUBTMakefiles` makes UBT re-gather instead of replaying the cached graph. It is
+a **one-time unstick, not a flag to keep passing**: afterwards the ordinary
+documented target (`cmake --build Build/Development --target carla-unreal-editor`
+for the integration tree, `cmake --build Build --target carla-unreal-editor` for
+tier4 — note the different build dirs) writes all of its outputs to the right
+place again.
+
+**Do not flip ownership speculatively — it re-breaks the other cell.** Flip it
+only when a source change in the non-owning tree actually needs to reach an
+artifact, and flip it back afterwards. Both trees' sources are pinned for P4
+(`pins.yaml`), so no flip should be needed for the rest of this campaign.
+
+**This is not a relink and does not touch D8.** `engine.build_id` was captured
+before and after every attempt in Task 9 and held
+`bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` throughout; re-gathering regenerates
+UBT's own action cache, it does not relink the engine. Verify the same way if you
+ever do it: census the BuildId across the engine and both trees' project and
+plugin `UnrealEditor.modules` before and after, and stop if it moves.
+
+Full derivation, the two wrong root causes it went through, and the
+before/after evidence: `benchmarks/results/PROVENANCE.md` §11.3, §11.5 and §11.6.
+
+**Standing cost, so you budget it instead of rediscovering it: any commit to the
+CARLA fork needs a post-commit `carla-unreal-editor` rebuild before
+`verify_editor_artifact.sh` will pass.** The gate compares the artifact's mtime
+against `git show -s --format=%ct HEAD`, so committing after a build always moves
+HEAD past the artifact and the gate correctly refuses. Task 9 paid this cycle
+three times. Do **not** "fix" it by loosening the gate: that strictness is what
+caught the frozen artifact in the first place, and a gate that refuses a stale
+build is worth far more than the rebuild it costs.

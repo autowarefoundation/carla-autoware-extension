@@ -1,0 +1,3 @@
+[INFO] [1785814429.277457639] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785814430.495386978] [arm_and_goal]: arm observations [localized]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.002 ego_speed_mps=0.000
+LOCALIZED: /localization/kinematic_state sustained 5 Hz over 5 s (static arm; no route set, not engaged)

@@ -1,0 +1,84 @@
+[INFO]: Deployed PostProcess profile: /home/youtalk/src/carla-autoware-native/Unreal/CarlaUnreal/Content/Carla/Config/PostProcess/autoware_demo.json
+Map 'None' is already loaded — skipping reload.
+Loaded map: Not set yet
+[INFO]: Applied settings:
+	synchronous mode: True
+	fixed time step: 20 (in Hz)
+	simulation dt: 0.05 (in seconds)
+	physics substepping: True
+	time scale: 1.00
+	pure step execution: False
+[INFO]: Ego spawned!
+[WARNING]: Kill this script before stopping simulation!
+[WARNING]: Simulation is 525.1 ms behind schedule
+[WARNING]: Simulation is 845.2 ms behind schedule
+[WARNING]: Simulation is 823.0 ms behind schedule
+[WARNING]: Simulation is 2210.3 ms behind schedule
+[WARNING]: Simulation is 2186.0 ms behind schedule
+[WARNING]: Simulation is 2176.1 ms behind schedule
+[WARNING]: Simulation is 2157.7 ms behind schedule
+[WARNING]: Simulation is 2152.4 ms behind schedule
+[WARNING]: Simulation is 2121.2 ms behind schedule
+[WARNING]: Simulation is 2089.8 ms behind schedule
+[WARNING]: Simulation is 2064.2 ms behind schedule
+[WARNING]: Simulation is 2041.7 ms behind schedule
+[WARNING]: Simulation is 2008.7 ms behind schedule
+[WARNING]: Simulation is 1977.0 ms behind schedule
+[WARNING]: Simulation is 1948.7 ms behind schedule
+[WARNING]: Simulation is 1916.1 ms behind schedule
+[WARNING]: Simulation is 1883.8 ms behind schedule
+[WARNING]: Simulation is 1850.8 ms behind schedule
+[WARNING]: Simulation is 1831.5 ms behind schedule
+[WARNING]: Simulation is 1798.2 ms behind schedule
+[WARNING]: Simulation is 1766.6 ms behind schedule
+[WARNING]: Simulation is 1740.1 ms behind schedule
+[WARNING]: Simulation is 1710.2 ms behind schedule
+[WARNING]: Simulation is 1678.7 ms behind schedule
+[WARNING]: Simulation is 1646.8 ms behind schedule
+[WARNING]: Simulation is 1613.6 ms behind schedule
+[WARNING]: Simulation is 1581.3 ms behind schedule
+[WARNING]: Simulation is 1548.4 ms behind schedule
+[WARNING]: Simulation is 1518.5 ms behind schedule
+[WARNING]: Simulation is 1484.8 ms behind schedule
+[WARNING]: Simulation is 1452.0 ms behind schedule
+[WARNING]: Simulation is 1417.9 ms behind schedule
+[WARNING]: Simulation is 1383.5 ms behind schedule
+[WARNING]: Simulation is 1349.7 ms behind schedule
+[WARNING]: Simulation is 1315.1 ms behind schedule
+[WARNING]: Simulation is 1281.0 ms behind schedule
+[WARNING]: Simulation is 1246.7 ms behind schedule
+[WARNING]: Simulation is 1212.4 ms behind schedule
+[WARNING]: Simulation is 1179.2 ms behind schedule
+[WARNING]: Simulation is 1145.2 ms behind schedule
+[WARNING]: Simulation is 1112.5 ms behind schedule
+[WARNING]: Simulation is 1081.8 ms behind schedule
+[WARNING]: Simulation is 1047.5 ms behind schedule
+[WARNING]: Simulation is 1013.7 ms behind schedule
+[WARNING]: Simulation is 978.5 ms behind schedule
+[WARNING]: Simulation is 947.4 ms behind schedule
+[WARNING]: Simulation is 913.4 ms behind schedule
+[WARNING]: Simulation is 878.6 ms behind schedule
+[WARNING]: Simulation is 844.1 ms behind schedule
+[WARNING]: Simulation is 810.0 ms behind schedule
+[WARNING]: Simulation is 774.5 ms behind schedule
+[WARNING]: Simulation is 740.3 ms behind schedule
+[WARNING]: Simulation is 706.1 ms behind schedule
+[WARNING]: Simulation is 671.4 ms behind schedule
+[WARNING]: Simulation is 638.3 ms behind schedule
+[WARNING]: Simulation is 604.9 ms behind schedule
+[WARNING]: Simulation is 569.7 ms behind schedule
+[WARNING]: Simulation is 536.8 ms behind schedule
+[WARNING]: Simulation is 501.7 ms behind schedule
+[WARNING]: Simulation is 466.7 ms behind schedule
+[WARNING]: Simulation is 431.1 ms behind schedule
+[WARNING]: Simulation is 397.0 ms behind schedule
+[WARNING]: Simulation is 362.9 ms behind schedule
+[WARNING]: Simulation is 327.8 ms behind schedule
+[WARNING]: Simulation is 292.1 ms behind schedule
+[WARNING]: Simulation is 258.9 ms behind schedule
+[WARNING]: Simulation is 223.2 ms behind schedule
+[WARNING]: Simulation is 188.9 ms behind schedule
+[WARNING]: Simulation is 155.6 ms behind schedule
+[WARNING]: Simulation is 120.8 ms behind schedule
+[WARNING]: Simulation is 85.4 ms behind schedule
+[WARNING]: Simulation is 50.6 ms behind schedule

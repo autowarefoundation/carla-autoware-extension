@@ -42,8 +42,21 @@ EXPECTED_FITTABLE = "fittable"
 
 
 def _write_manifest(
-    run_dir, *, arm, approach="python-bridge", cell="A", excluded=False, exclusion_reason=""
+    run_dir,
+    *,
+    arm,
+    approach="python-bridge",
+    cell="A",
+    excluded=False,
+    exclusion_reason="",
+    class_id="",
 ):
+    # class_id DEFAULTS "" here, matching RunManifest's own default (Amendment
+    # 2026-08-04, Task C2): every fixture in this module predating the field
+    # exercises a single class at a time and never needs to distinguish
+    # scoring pools, so "" -- the legacy/unstamped state the pool rule reads
+    # as vlp16 -- keeps them all scoring exactly as they did. The
+    # pool-partitioning tests below override it explicitly per run.
     placement = {
         "run_mode": "container",
         "container_image": "img@sha256:deadbeef",
@@ -69,6 +82,7 @@ def _write_manifest(
         started_at_ns=0,
         excluded=excluded,
         exclusion_reason=exclusion_reason,
+        class_id=class_id,
         placement=placement,
     ).save(run_dir / "manifest.json")
 
@@ -151,12 +165,12 @@ def _write_quality(run_dir, gate_pass=True, reasons=None, **extra):
     (run_dir / "quality.json").write_text(json.dumps(doc))
 
 
-def _healthy_paced_point(run_dir, *, arm="paced", approach="python-bridge", dip=None):
+def _healthy_paced_point(run_dir, *, arm="paced", approach="python-bridge", dip=None, class_id=""):
     """60 x 1 Hz resources samples (rtf 0.99, optionally dipped) plus a
     60 s / 20 Hz clock.csv and a healthy (>90%) publisher count -- the
     common healthy baseline every "fires only its own criterion" test
     starts from, then deviates exactly one input away from healthy."""
-    _write_manifest(run_dir, arm=arm, approach=approach)
+    _write_manifest(run_dir, arm=arm, approach=approach, class_id=class_id)
     sample_ns = BASE + np.arange(60) * 1_000_000_000
     rtf = np.full(60, 0.99)
     if dip is not None:
@@ -676,16 +690,34 @@ def test_resolve_override_flag_always_wins_with_no_check(flag, key):
 # --- S5: mirror the expected-window-branch check (D10, Task 23's half) ----
 
 
-def test_expected_window_branch_calibration_approach_is_unfittable():
-    assert sweep_verdict._expected_window_branch("calibration") == "unfittable"
+def test_expected_window_branch_cal_rmw_is_unfittable():
+    assert sweep_verdict._expected_window_branch("calibration", "CAL-rmw") == "unfittable"
+
+
+def test_expected_window_branch_cal_seam_is_fittable():
+    """CORRECTED 2026-08-03 (P4 whole-branch review). CAL-seam shares
+    `approach: calibration` with CAL-rmw but NOT its shape: its reinstated
+    launch branch runs `scripts/e2e/run_e2e.sh`, which unconditionally boots
+    the editor `--ros2` and unconditionally ends in `python3 -m runner`, i.e.
+    the full cell-A publishing rig. That configuration was MEASURED emitting
+    `/clock` at 19.959 Hz, so clock.csv gets far more than the two rows
+    `fit_sim_wall_affine` needs and the run resolves FITTABLE.
+
+    Pinned as its own test rather than folded into the CAL-rmw one because the
+    two now differ, and a rule that answered `unfittable` for both would make
+    every CAL-seam run file a pre-explained "loud finding"."""
+    assert sweep_verdict._expected_window_branch("calibration", "CAL-seam") == "fittable"
 
 
 def test_expected_window_branch_every_other_approach_is_fittable():
     """Every registered non-calibration approach, not just "extension" --
-    the rule is about having (or not having) a simulation loop, and only
-    `approach: calibration` cells lack one."""
+    the rule is about having (or not having) a simulation loop, and among the
+    calibration cells only CAL-rmw now lacks one. The cell id is passed but
+    must not matter here: a non-calibration approach is fittable whatever the
+    cell is called, so the CAL-seam exception cannot leak outward."""
     for approach in ("extension", "tier4-native", "python-bridge"):
-        assert sweep_verdict._expected_window_branch(approach) == "fittable"
+        for cell in ("A", "B", "B-cyc", "E", "CAL-seam"):
+            assert sweep_verdict._expected_window_branch(approach, cell) == "fittable"
 
 
 def test_actual_window_branch_needs_at_least_two_clock_rows():
@@ -1012,10 +1044,20 @@ def test_main_on_an_unbound_cell_fails_clearly_when_lidar_expected_hz_is_unbound
     B's rate from the launcher constant it landed, then on cell E until Task 8
     registered the whole bridge family from
     `0002-sensor-config-harmonized.patch` -- and there is now NO committed null
-    left to drive it. `--class` only resolves for the three cells
-    `sweep_classes.applies_to` lists (A, B, E), and all three are registered;
-    the remaining nulls (A-hf, B-hf, E-opt, CAL-seam) belong to cells no sweep
-    class applies to, so `merge` rejects them before the binding is ever read.
+    left to drive it. `--class` only resolves for the cells
+    `sweep_classes.applies_to` lists -- (A, B, E) when this was written, plus
+    `B-cyc` since 2026-08-03 (P4 whole-branch review, blocker B1: B-cyc was a
+    registered CELL but not a registered SWEEP TARGET, so the sweep could not
+    run against the one cell P4 exists to sweep) -- and every one of them is
+    registered; B-cyc's `metrics` block is cell B's field for field, so it
+    arrives fully bound and does not reopen this test's search for a real null.
+    The remaining nulls (A-hf, B-hf, E-opt) belong to cells no sweep class
+    applies to, so `merge` rejects them before the binding is ever read.
+    CAL-seam left this "remaining nulls" set on 2026-08-03 too (Task 8, P4
+    transport-sweep plan, `lidar_expected_hz: 10.0`), but it was never in it
+    for the reason the other three are: `--class` never applied to a
+    calibration cell in the first place, so its departure does not change
+    which cells this refusal exercises.
 
     So the null is INJECTED through `--cells-yaml` rather than borrowed. That is
     strictly weaker evidence than a real committed null and is labelled as such:
@@ -1075,6 +1117,163 @@ def test_main_skips_non_sweep_arm_runs_and_reports_the_count(tmp_path, capsys):
     assert "run-002" in out
     assert "run-001" not in out
     assert "1 run(s) skipped" in out
+
+
+# ---------------------------------------------------------------------------
+# class_id scoring-pool filter (Amendment 2026-08-04, Task C2 of the P4
+# transport-sweep plan). `arm` says WHICH SWEEP ARM a run belongs to;
+# `class_id` says WHICH SWEEP CLASS's point it measures. Before this field,
+# `--class <id>` was validated against cells.yaml and printed in the heading
+# but filtered NOTHING: `sweep_verdict.py A --class 32ch` rendered Task 14's
+# eighteen vlp16 rows under a "class 32ch" heading, demonstrated live. Once a
+# 32ch run lands in the same flat run-NNN/ sequence, `--class vlp16` and
+# `--class 32ch` render IDENTICAL rows with no field to recover the class
+# from -- a guaranteed corruption of the next task's gate facts.
+#
+# The pool rule (mirroring duel_verdict.py's legacy clause exactly): a
+# sweep-arm run is eligible for a verdict over class C iff
+# `manifest.class_id == C` OR (`manifest.class_id == ""` AND C == "vlp16").
+# The legacy clause exists for exactly one reason -- every filed sweep-arm
+# run predating the field is a vlp16 run (VERIFIED against the tree: the
+# only sweep-arm runs are Task 14's eighteen, and
+# benchmarks/evidence/p4-task14-vlp16-sweep/sweep-console.log records
+# `--class vlp16` on every one of the eighteen invocations) -- so it keeps
+# Task 14's filed ceiling booleans reproducing without touching a single
+# filed manifest.
+# ---------------------------------------------------------------------------
+
+
+def test_class_admits_the_requested_class():
+    assert sweep_verdict._class_admits("32ch", "32ch") is True
+    assert sweep_verdict._class_admits("vlp16", "vlp16") is True
+
+
+def test_class_admits_rejects_a_different_class():
+    """The whole point of the field: a run collected under one class must
+    never be scored as a point of another."""
+    assert sweep_verdict._class_admits("vlp16", "32ch") is False
+    assert sweep_verdict._class_admits("32ch", "vlp16") is False
+
+
+def test_class_admits_legacy_empty_only_for_vlp16():
+    """The legacy clause, in BOTH directions. Admitting "" for vlp16 is what
+    keeps the filed booleans reproducing; refusing it for every other class
+    is what stops those same eighteen runs from being re-scored as 32ch
+    points -- which is exactly the defect this field closes."""
+    assert sweep_verdict._class_admits("", "vlp16") is True
+    assert sweep_verdict._class_admits("", "32ch") is False
+    assert sweep_verdict._class_admits("", "128ch") is False
+
+
+def test_main_scores_only_runs_of_the_requested_class(tmp_path, capsys):
+    """End-to-end through main(): two sweep-arm runs in one cell directory,
+    identical except for their stamped class. A verdict over 32ch must
+    render the 32ch run and NOT the vlp16 one."""
+    vlp16_run = tmp_path / "A" / "run-001"
+    vlp16_run.mkdir(parents=True)
+    _healthy_paced_point(vlp16_run, approach="extension", class_id="vlp16")
+
+    ch32_run = tmp_path / "A" / "run-002"
+    ch32_run.mkdir(parents=True)
+    _healthy_paced_point(ch32_run, approach="extension", class_id="32ch")
+
+    rc = sweep_verdict.main(
+        ["A", "--class", "32ch", "--results-root", str(tmp_path), "--override-topic", TOPIC]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "run-002" in out
+    assert "run-001" not in out
+
+
+def test_main_counts_and_surfaces_runs_dropped_by_the_class_filter(tmp_path, capsys):
+    """A class-dropped run must be LOUD, not silent: the campaign's standard
+    (analysis/manifest.py's own comments about the duel path, and this
+    module's existing out-of-arm counter) is a drop reported with its count,
+    never a row that quietly vanishes. Reported on its OWN counter rather
+    than folded into the out-of-arm one, because the existing line names a
+    specific reason ("arm not in this cell's sweep_arms") that a
+    class-dropped run does not match -- folding would make the existing
+    sentence false."""
+    vlp16_run = tmp_path / "A" / "run-001"
+    vlp16_run.mkdir(parents=True)
+    _healthy_paced_point(vlp16_run, approach="extension", class_id="vlp16")
+
+    ch32_run = tmp_path / "A" / "run-002"
+    ch32_run.mkdir(parents=True)
+    _healthy_paced_point(ch32_run, approach="extension", class_id="32ch")
+
+    rc = sweep_verdict.main(
+        ["A", "--class", "32ch", "--results-root", str(tmp_path), "--override-topic", TOPIC]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "1 run(s) skipped: class" in out
+    # The out-of-arm counter must not absorb it: nothing here has a
+    # non-sweep arm, so that line must not appear at all.
+    assert "arm not in this cell's sweep_arms" not in out
+
+
+def test_main_admits_a_legacy_unstamped_run_for_vlp16(tmp_path, capsys):
+    """The legacy clause end-to-end. Task 14's eighteen filed sweep-arm runs
+    carry no `class_id` key at all, so they load as "" -- and `--class
+    vlp16` must keep scoring them, which is what makes the filed ceiling
+    booleans reproduce without rewriting a single filed manifest."""
+    legacy_run = tmp_path / "A" / "run-001"
+    legacy_run.mkdir(parents=True)
+    _healthy_paced_point(legacy_run, approach="extension", class_id="")
+
+    rc = sweep_verdict.main(
+        ["A", "--class", "vlp16", "--results-root", str(tmp_path), "--override-topic", TOPIC]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "run-001" in out
+    assert "skipped: class" not in out
+
+
+def test_main_drops_a_legacy_unstamped_run_for_32ch(tmp_path, capsys):
+    """The other half of the legacy clause, and the defect itself: the SAME
+    unstamped run must NOT render under `--class 32ch`. Before this filter
+    existed it did -- that is precisely how `sweep_verdict.py A --class
+    32ch` printed the vlp16 rows under a "class 32ch" heading."""
+    legacy_run = tmp_path / "A" / "run-001"
+    legacy_run.mkdir(parents=True)
+    _healthy_paced_point(legacy_run, approach="extension", class_id="")
+
+    rc = sweep_verdict.main(
+        ["A", "--class", "32ch", "--results-root", str(tmp_path), "--override-topic", TOPIC]
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "run-001" not in out
+    assert "1 run(s) skipped: class" in out
+
+
+def test_render_verdicts_reports_skipped_out_of_class_count():
+    """Pure, filesystem-free, exactly as the out-of-arm counter's own test
+    just above: the count must be visible in the TABLE text (the artifact a
+    reader sees), not only in a caller-side print. A caller that skips
+    nothing still sees byte-identical output to before this parameter
+    existed."""
+    table = render_verdicts("A", "32ch", [], skipped_out_of_class=2)
+    assert "2 run(s) skipped" in table
+    assert render_verdicts("A", "32ch", []) == render_verdicts(
+        "A", "32ch", [], skipped_out_of_class=0
+    )
+
+
+def test_render_verdicts_reports_both_skip_counters_separately():
+    """The two counters answer different questions -- "filed in this cell but
+    not a sweep run at all" vs. "a sweep run of a DIFFERENT class" -- and a
+    reader acts differently on each, so both must be nameable at once."""
+    table = render_verdicts("A", "32ch", [], skipped_out_of_arm=3, skipped_out_of_class=2)
+    assert "3 run(s) skipped: arm" in table
+    assert "2 run(s) skipped: class" in table
 
 
 def test_main_tick_hz_flag_disagreeing_with_registry_fails_loudly(tmp_path):

@@ -1,0 +1,22 @@
+engine_build_id over all 191 filed manifests:
+  bc08ce19-f19c-46fe-808f-dbb2b0ddf41a     84
+  4210e602-78ec-46e1-8f2f-03fadbe036a3     61
+  None                                     46
+
+P4 runs (patches_git_sha startswith 7000c785): 89
+  A          run-015..run-053  n=39  engine_build_id={'bc08ce19': 39}
+  B-cyc      run-001..run-045  n=45  engine_build_id={'bc08ce19': 45}
+  CAL-seam   run-001..run-005  n=5   engine_build_id={'None': 5}
+
+  A closed-loop duel           n=10  harness=['3fcd807'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A static duel                n=10  harness=['d57df9d'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A static non-duel            n=1   harness=['876b500'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A sweep 32ch                 n=9   harness=['55df5c1'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  A sweep vlp16                n=9   harness=['51d27f2-dirty'] patches=['7000c78-dirty'] buildid=['bc08ce19'] image=['autoware:universe-devel'] dds=['1eeef31e']
+  B-cyc EXCLUDED               n=6   harness=['55df5c1'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc closed-loop duel       n=10  harness=['3fcd807'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc closed-loop non-duel   n=1   harness=['876b500'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc static duel            n=10  harness=['d57df9d'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc sweep 32ch             n=9   harness=['4e195f6', '55df5c1'] patches=['7000c78'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  B-cyc sweep vlp16            n=9   harness=['51d27f2-dirty'] patches=['7000c78-dirty'] buildid=['bc08ce19'] image=['autoware@sha256:5c22369a'] dds=['(none)']
+  CAL-seam static non-duel     n=5   harness=['7a3651b'] patches=['7000c78'] buildid=['None'] image=['none'] dds=['1eeef31e']

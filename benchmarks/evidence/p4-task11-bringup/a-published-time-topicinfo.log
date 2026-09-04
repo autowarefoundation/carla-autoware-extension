@@ -1,0 +1,24 @@
+Type: autoware_internal_msgs/msg/PublishedTime
+
+Publisher count: 0
+
+Subscription count: 1
+
+Node name: bench_observer
+Node namespace: /
+Topic type: autoware_internal_msgs/msg/PublishedTime
+Endpoint type: SUBSCRIPTION
+GID: 01.10.f3.44.59.88.e0.04.42.d1.a4.f2.00.00.1a.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: BEST_EFFORT
+  History (Depth): KEEP_LAST (1000)
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+--- control_cmd itself ---
+Type: autoware_control_msgs/msg/Control
+Publisher count: 1
+Subscription count: 9

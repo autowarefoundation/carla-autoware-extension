@@ -4,25 +4,60 @@
 #   bash benchmarks/scripts/teardown.sh <run-dir>
 #
 # Order matters and is not arbitrary:
-#   1. the clock watchdog and the GT collector FIRST -- before the observer.
-#      The watchdog judges the run by how stale clock.csv is; stopping the
-#      observer first freezes that file, so a slow observer flush would make
-#      the watchdog condemn a complete, healthy run as stall:clock.
+#   1. the clock watchdog FIRST -- before the observer. The watchdog judges
+#      the run by how stale clock.csv is; stopping the observer first freezes
+#      that file, so a slow observer flush would make the watchdog condemn a
+#      complete, healthy run as stall:clock.
 #   2. the observer, with SIGINT -- bench_observer's ofstreams flush in its
 #      destructor, which only runs when rclcpp's own SIGINT handler makes
 #      spin() return. A SIGTERM/SIGKILL here loses the buffered tail of every
 #      CSV, i.e. exactly the end of the scoring window. Verified live: the
 #      same container SIGKILLed leaves 0-byte CSVs, SIGINTed leaves complete
 #      ones.
-#   3. the resource sampler, after the observer, so the observer's own
-#      container cost is sampled right up to its shutdown.
-#   4. the injector inside the Autoware container, by recorded PID.
-#   5. the stack and the simulator, per approach, PID file first and pattern
+#   3. the GT collector, AFTER the observer (renumbered here 2026-08-03,
+#      Task 3, P4 spec 1f -- moved OFF position 1, where it used to stop
+#      alongside the watchdog). benchmarks/README.md's "Cell A's
+#      bench-harness control (Task 15b)" finding #1 ("The static arm's
+#      windowed M2 reconciliation charges a teardown-ordering gap to the
+#      publisher") measured that stopping the GT collector -- which writes
+#      publisher_counts.json -- BEFORE the observer -- which writes
+#      clock.csv, the series window.static_window tops out at
+#      (clock_wall.max()) -- ends the publisher series ~1.051 s before the
+#      window's real top on results/A/run-001, fabricating
+#      `publisher_drop_rate = 0.0213` on a publisher that dropped nothing
+#      (984 expected, 963 published; the predicted 21-tick deficit equals
+#      the observed 21). Inherited by all ten P3 static pairs, cell A and
+#      cell B alike; the closed-loop arm is immune (its window closes on
+#      ego position, ~80 s before the run ends). The OLD reasoning here --
+#      "it has no business recording ticks from a stack that is being
+#      dismantled" -- is superseded, not merely wrong: the scoring window is
+#      already over by the time teardown runs (see item 1), so any ticks the
+#      collector records while the observer is still flushing land at or
+#      before the window's true top, which is exactly what
+#      window.static_window wants counted, not extra. Costs nothing new: it
+#      does not shorten the observer's own SIGINT+flush wait (run.sh step
+#      6's comment -- "teardown sends SIGINT, and only rclcpp's own handler
+#      makes spin() return so the CSV buffers flush" -- describes a property
+#      of the observer's OWN process, untouched by when its caller happens
+#      to stop a DIFFERENT process afterward). The frozen analysis/window.py
+#      fix variant (clamp the window to `min(clock_wall.max(),
+#      publisher_end)`) is not available (analysis/** is frozen); reversing
+#      the two stops is the registered smaller fix (README: "the latter is
+#      smaller but moves flush ordering, which run.sh step 6's exec comment
+#      says was already paid for once" -- paid for, and not re-spent, by the
+#      previous paragraph's reasoning). The P3 pools this artefact already
+#      shipped in are NOT re-scored (filed evidence stays untouched; the
+#      artefact is already disclosed in the P3 record) -- this fix protects
+#      P4's pools only.
+#   4. the resource sampler, after the observer AND the GT collector, so the
+#      observer's own container cost is sampled right up to its shutdown.
+#   5. the injector inside the Autoware container, by recorded PID.
+#   6. the stack and the simulator, per approach, PID file first and pattern
 #      only as a fallback -- and any pattern that could match a UE editor is
 #      qualified by its TREE PATH, because three CARLA trees on this host
 #      share one engine binary and an unqualified pattern kills the wrong
 #      tree's editor.
-#   6. SIGKILL escalation, because a stalled sync-mode CARLA ignores SIGTERM.
+#   7. SIGKILL escalation, because a stalled sync-mode CARLA ignores SIGTERM.
 #
 # Everything is best-effort and idempotent: teardown runs on the success path
 # AND from run.sh's EXIT trap, so a second invocation must be a no-op rather
@@ -99,7 +134,7 @@ stop_container() {
 # uses compose_exec_script for the identical "no bind mount needed" reason
 # (launch_autoware.sh:113-118), but that helper wraps `docker compose exec`,
 # and this family's container is a bare `docker run` with AW_COMPOSE=""
-# (cells/tier4-native.sh:144) -- there is no compose file for it to
+# (cells/tier4-native.sh:399) -- there is no compose file for it to
 # target. `docker exec -i` piping the script on stdin gets the same
 # no-bind-mount property without that dependency.
 #
@@ -175,9 +210,12 @@ stop_tier4_launch_tree() {
     say "stop_launch_tree.sh exec ($container) exited $rc -- continuing"
 }
 
-# Sourced FIRST because step 1 below needs AW_CONTAINER to signal a
-# container-side GT collector. Absence just means the launcher never got that
-# far, which is not an error -- teardown still stops whatever did start.
+# Sourced FIRST because step 3 below needs AW_CONTAINER to signal a
+# container-side GT collector (renumbered 2026-08-03, Task 3: the GT
+# collector itself moved from step 1 to step 3, but launch.env must still be
+# read before ANY stop call below, since step 1's WATCHDOG_PID also comes
+# from it). Absence just means the launcher never got that far, which is not
+# an error -- teardown still stops whatever did start.
 LAUNCH_ENV_PRESENT=0
 if [ -f "$LAUNCH_ENV" ]; then
   # shellcheck disable=SC1090 # generated at run time by the cell launcher
@@ -200,12 +238,23 @@ fi
 # stall:clock. The scoring window is over by the time teardown runs, so there
 # is nothing left for the watchdog to catch: stopping it first costs no
 # coverage and removes a whole class of false exclusion.
-#
-# The GT collector goes with it, for the same reason in reverse: it is the
-# other process still writing into the run directory, and it has no business
-# recording ticks from a stack that is being dismantled.
 # ---------------------------------------------------------------------------
 stop_pid "${WATCHDOG_PID:-}" "clock watchdog"
+
+# ---------------------------------------------------------------------------
+# 2. observer -- SIGINT, so its ofstream destructors flush
+# ---------------------------------------------------------------------------
+stop_container "$OBSERVER_CONTAINER"
+
+# ---------------------------------------------------------------------------
+# 3. GT collector, AFTER the observer's SIGINT+flush wait above (Task 3,
+# 2026-08-03, P4 spec 1f -- moved from alongside the watchdog at position 1;
+# see the header block for the README finding and why this position is
+# load-bearing). `stop_container` above already blocked (up to 15 s) until
+# the observer container exited or the wait timed out, so by the time this
+# runs the observer's own clock.csv/observer.csv flush has already had its
+# full window -- nothing here needs its own extra wait.
+# ---------------------------------------------------------------------------
 stop_pid "${GT_PID:-}" "gt collector"
 
 # A GT collector running INSIDE a container (bridge cells) is not reachable by
@@ -217,13 +266,8 @@ if [ -n "${AW_CONTAINER:-}" ] && [ "${GT_OUT_DIR:-}" = "/out" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. observer -- SIGINT, so its ofstream destructors flush
-# ---------------------------------------------------------------------------
-stop_container "$OBSERVER_CONTAINER"
-
-# ---------------------------------------------------------------------------
-# 3. resource sampler (after the observer, so the observer's own container
-#    cost is sampled right up to its shutdown)
+# 4. resource sampler (after the observer AND the GT collector, so the
+#    observer's own container cost is sampled right up to its shutdown)
 # ---------------------------------------------------------------------------
 stop_pid "${SAMPLER_PID:-}" "resource sampler"
 
@@ -233,7 +277,7 @@ if [ "$LAUNCH_ENV_PRESENT" = "0" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. injector (container-side, by the PID file it writes)
+# 5. injector (container-side, by the PID file it writes)
 # ---------------------------------------------------------------------------
 if [ -n "${AW_CONTAINER:-}" ]; then
   docker exec "$AW_CONTAINER" bash -lc '
@@ -244,8 +288,22 @@ if [ -n "${AW_CONTAINER:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 5/6. stack + simulator, per approach
+# 6/7. stack + simulator, per approach
+#
+# The M4 ablation arm's baseline client goes FIRST, before any approach's
+# simulator below, and for the same reason the tier4 case stops
+# autoware_demo.py before the editor: on that arm
+# benchmarks/scripts/raycast_baseline.py IS the world's tick authority and its
+# only client, and a CARLA client left ticking a server that has just died
+# hangs on actor destroy (CLAUDE.md's teardown gotcha). Written into launch.env
+# by both sweep launchers' ablation branch ONLY, so on every other arm the
+# variable is unset and `stop_pidfile` returns immediately on the missing file
+# -- a no-op, not a new failure mode. Placed here rather than as its own
+# numbered step because it belongs to exactly this one: on the ablation arm
+# this client is the stack.
 # ---------------------------------------------------------------------------
+stop_pidfile "${ABLATION_PID_FILE:-}" "raycast baseline client"
+
 case "${APPROACH:-}" in
   extension)
     # run_e2e.sh owns the editor and the Autoware launch through its own EXIT
@@ -348,6 +406,45 @@ if [ -n "${AW_CONTAINER:-}" ] && docker inspect "${AW_CONTAINER}" >/dev/null 2>&
       say "saved ${log}.log"
     fi
   done
+fi
+
+# The UE editor's OWN stdout/stderr, for the launch path that does not already
+# file it. Added 2026-08-03 (P4 Task 10 fix round) after the first CAL-seam
+# collection could not attribute a per-run publish gap: the in-core bench
+# twin's two non-terminal skip paths log through carla::log_error to std::cerr
+# (LibCarla/.../BenchIncoreCloudPublisher.cpp:281,299 -- "serialize_to_cdr
+# failed", "BlobPublish FAILED"), i.e. into the editor's stderr, and nothing
+# copied that stream into the run directory. Without it the filed evidence
+# cannot separate "the transport dropped it" from "the publisher skipped it"
+# -- on the cell whose entire purpose is that publisher.
+#
+# WHICH PATHS NEED THIS, exactly (checked, not assumed):
+#   cells/tier4-native.sh:369-371  editor launched here, `>"$LAUNCH_LOG"`  -- already filed
+#   cells/extension.sh:372-374     ablation arm, same shape               -- already filed
+#   cells/extension.sh:460         via scripts/e2e/run_e2e.sh             -- NOT filed
+#   cells/calibration.sh:191       via scripts/e2e/run_e2e.sh             -- NOT filed
+# run_e2e.sh owns the editor on the last two and redirects it to its own fixed
+# LOG path (scripts/e2e/run_e2e.sh:24), which is overwritten on every boot. So
+# the launcher that used that path declares EDITOR_LOG in launch.env and this
+# copies it; the two launchers that already redirect into the run directory
+# leave EDITOR_LOG empty and are untouched.
+#
+# FRESHNESS IS LOAD-BEARING, not defensive coding. The source path is a fixed
+# /tmp file that survives the run that wrote it, so an unconditional copy would
+# file the PREVIOUS run's editor log whenever this run's editor died before
+# writing one -- misattributed evidence, which is worse than the gap it closes.
+# manifest.json is the reference because run.sh writes it at step 4, before the
+# launcher boots anything (run.sh:559), so "newer than the manifest" means
+# "written by this run".
+if [ -n "${EDITOR_LOG:-}" ] && [ -r "$EDITOR_LOG" ]; then
+  if [ "$EDITOR_LOG" -nt "$RUN_DIR/manifest.json" ]; then
+    if cp "$EDITOR_LOG" "$RUN_DIR/carla-editor.log" 2>/dev/null; then
+      say "saved carla-editor.log (editor stdout/stderr from $EDITOR_LOG)"
+    fi
+  else
+    say "NOT saving $EDITOR_LOG: older than this run's manifest (stale from an
+  earlier run; this run's editor never wrote it)"
+  fi
 fi
 
 # Containers. The Autoware container is REMOVED, not left running: cells

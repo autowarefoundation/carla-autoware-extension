@@ -280,7 +280,11 @@ fail with shared memory on and both work with `udp_only.xml`.
 
 Evidence run: tier4 editor `-game` Town10HD_Opt `--ros2
 -carla-rpc-port=3000 -RenderOffScreen -nosound`, engine BuildId
-`4210e602-78ec-46e1-8f2f-03fadbe036a3` (matches `pins.yaml`), one
+`4210e602-78ec-46e1-8f2f-03fadbe036a3` — the value `pins.yaml` carried
+when this run was taken; the pin moved to
+`bc08ce19-f19c-46fe-808f-dbb2b0ddf41a` in the 2026-08-03 registered
+relink round (P4 Task 9) and the BuildId above is left as recorded
+because it is what produced this observation — one
 VLP16 LiDAR spawned through the CARLA API with the fork's own
 `autoware_demo.py` attributes (`ros_name=velodyne_top`,
 `ros_topic_name=/sensing/lidar/top/pointcloud_raw_ex`,
@@ -437,7 +441,8 @@ sit still while the logs looked healthy.
 ### The invocation cells B / B-hf / B45 (and D) must use
 
 The cell id is **positional**, and `--arm` is required
-(`run.sh:70-72,89`); `run.sh --cell B …` exits 2 with the usage block.
+(`run.sh:92-99` `usage()`, `run.sh:127` `[ -n "$ARM" ] || die`);
+`run.sh --cell B …` exits 2 with the usage block.
 
 ```bash
 bash benchmarks/run.sh B --arm static --rmw rmw_fastrtps_cpp --shm off

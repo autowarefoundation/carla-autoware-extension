@@ -17,18 +17,30 @@ every `carla: none` cell, which today means CAL-rmw.
     `benchmarks/config/margins.yaml` is derived from those p50s. The tool is
     LIVE; only its SEAM use is dead. See results/CAL-rmw/PROVENANCE.md.
 
-WHAT IS DEAD is the C1(a) seam half, and it is deliberately kept
+WHAT WAS DEAD was the C1(a) seam half, and it was deliberately kept
 (2026-07-30). Cell CAL-seam was STRUCK by the owner's core-duel scope cut
 (config/cells.yaml `dropped:`; benchmarks/README.md's 2026-07-30 amendment),
-so there is no C1(a) table in the results and C1(a) seam overhead is
+so there was no C1(a) table in the results and C1(a) seam overhead stayed
 UNMEASURED -- not weakly measured. An owner TIME-BUDGET decision, not a
 technical block: this module and its unit tests
-(tests/benchmarks/test_cal_report.py) are complete and green, and so is the
-extension-side publisher they were written for
+(tests/benchmarks/test_cal_report.py) were complete and green throughout, and
+so was the extension-side publisher they were written for
 (extension/src/publishers/BenchCloudPublisher.{h,cpp}, registered in
-ExtensionInit.cpp). Nothing is deleted, so a later campaign can pick the seam
-instrument up; nobody should read its presence as evidence that the SEAM was
-measured.
+ExtensionInit.cpp). Nothing was deleted, so a later campaign could pick the
+seam instrument up.
+
+REINSTATED 2026-08-03 (Task 8, P4 transport-sweep plan). Cell CAL-seam's
+strike is un-struck: `config/cells.yaml`'s `dropped:` key is removed
+(`mandatory: true` stays, as it did throughout the strike), the fork-side
+twin publisher now exists (Task 9's D8 lift), and
+`benchmarks/cells/calibration.sh` no longer refuses to launch it -- see that
+file's own header for the launch recipe. This module and its tests did not
+change: they were already correct for a live CAL-seam run, the same way the
+SCOPE CORRECTED paragraph above already established for CAL-rmw. What
+changes is that a CAL-seam `run_dir` this module is pointed at may now be a
+REAL measurement rather than only a fixture -- Task 10 owns collecting the
+first one, and only that collection, not this reinstatement, turns "seam
+overhead is UNMEASURED" into a number.
 
 CAL-seam pairs the SAME synthetic sensor_msgs/PointCloud2 message published
 two ways on one CARLA fork process -- through the extension's C-ABI seam .so
@@ -43,6 +55,34 @@ none` cells). Both bench publishers stamp `header.stamp` with wall `now()`
 on the SAME host as the observer, so one-hop wall latency is the direct
 difference `arrival_system_ns - header_stamp_ns` -- no sim/wall affine fit
 (`benchmarks/analysis/clockfit.py`) is needed, or even possible, here.
+
+    FIRST SENTENCE CORRECTED 2026-08-03 (P4 Task 10 fix round). The paragraph
+    above stays verbatim as what it asserted; its CONCLUSION is unaffected.
+    "A CAL run has NO `clock.csv`: there is no simulation" is FALSE for
+    CAL-seam, and became false the moment that cell was reinstated. CAL-seam is
+    `carla: 0.10-fork`, not `carla: none`: it boots a real CARLA fork editor,
+    `cell_info` reports `has_sim_clock: true` for it, and each of the five
+    filed runs (`benchmarks/results/CAL-seam/run-001..005`) carries a 1258-row
+    `clock.csv` recording `/clock` at ~19.95 Hz. The claim was written while
+    CAL-rmw -- which genuinely has no simulator -- was the only live CAL cell,
+    and it generalised from that one cell to the whole approach.
+
+    WHAT STILL HOLDS, and why this is still the right tool: the reason no
+    affine fit is wanted here is NOT the absence of a sim clock. It is that
+    BOTH bench publishers stamp `header.stamp` with WALL `now()` on the same
+    host as the observer -- the second sentence above, which is correct and is
+    what the arithmetic actually rests on. The direct difference is therefore
+    right for these publishers whether or not a sim clock exists, and on
+    CAL-seam one does. "or even possible" is the part that does not survive: a
+    fit is possible on CAL-seam, it is simply wrong for these stamps.
+
+    That distinction is load-bearing rather than pedantic. BECAUSE
+    `has_sim_clock` is true, `benchmarks/run.sh` step 15 hands CAL-seam runs to
+    `report.summarize_run`, which DOES apply `fit_sim_wall_affine` to these
+    wall stamps and renders one-hop columns of about -1.79e12 ms in every filed
+    `report.md`. That rendering is a registered, expected artefact rather than
+    a defect (`benchmarks/results/PROVENANCE.md` 12.4), and THIS module -- not
+    that one -- is what a CAL-seam one-hop number may be read from.
 
 Percentile and rate math is not reimplemented: achieved Hz comes from
 `benchmarks.analysis.cadence.inter_arrival_stats` (the same helper

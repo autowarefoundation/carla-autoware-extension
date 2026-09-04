@@ -1,0 +1,125 @@
+# P4 Task 14 -- vlp16 sweep integrity pass
+
+Facts only: arm, exclusion label, transport, duel flags, file presence,
+row counts, and the ablation client's self-recorded rig. No verdicts.
+
+## cell A: 9 sweep-arm run(s)
+
+| run | arm | excluded | reason | rmw | shm_enabled | dds_profile_sha256 | duel_adm | duel_id |
+|---|---|---|---|---|---|---|---|---|
+| run-036 | paced | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-037 | paced | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-038 | paced | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-039 | unpaced | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-040 | unpaced | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-041 | unpaced | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-042 | ablation | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-043 | ablation | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-044 | ablation | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+
+| run | arm | engine_build_id | cpu_governor | loadavg | run_mode |
+|---|---|---|---|---|---|
+| run-036 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.43 | editor-game |
+| run-037 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.17 | editor-game |
+| run-038 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 2.02 | editor-game |
+| run-039 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.56 | editor-game |
+| run-040 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.29 | editor-game |
+| run-041 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.57 | editor-game |
+| run-042 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.89 | editor-game |
+| run-043 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.88 | editor-game |
+| run-044 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.46 | editor-game |
+
+- arm `paced`: n=3 run-036 run-037 run-038
+- arm `unpaced`: n=3 run-039 run-040 run-041
+- arm `ablation`: n=3 run-042 run-043 run-044
+
+| run | arm | observer rows | resources rows | clock rows | publisher_counts | quality.json |
+|---|---|---|---|---|---|---|
+| run-036 | paced | 12193 | 948 | 3089 | True | True |
+| run-037 | paced | 12322 | 960 | 3119 | True | True |
+| run-038 | paced | 12336 | 960 | 3123 | True | True |
+| run-039 | unpaced | 11150 | 870 | 2826 | True | True |
+| run-040 | unpaced | 11241 | 876 | 2850 | True | True |
+| run-041 | unpaced | 11149 | 870 | 2826 | True | True |
+| run-042 | ablation | 0 | 870 | 2882 | False | False |
+| run-043 | ablation | 0 | 870 | 2883 | False | False |
+| run-044 | ablation | 0 | 870 | 2881 | False | False |
+
+## cell B-cyc: 9 sweep-arm run(s)
+
+| run | arm | excluded | reason | rmw | shm_enabled | dds_profile_sha256 | duel_adm | duel_id |
+|---|---|---|---|---|---|---|---|---|
+| run-022 | paced | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-023 | paced | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-024 | paced | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-025 | unpaced | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-026 | unpaced | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-027 | unpaced | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-028 | ablation | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-029 | ablation | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+| run-030 | ablation | False | - | rmw_cyclonedds_cpp | False | (none) | False | (empty) |
+
+| run | arm | engine_build_id | cpu_governor | loadavg | run_mode |
+|---|---|---|---|---|---|
+| run-022 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.69 | editor-game |
+| run-023 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.14 | editor-game |
+| run-024 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.02 | editor-game |
+| run-025 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.73 | editor-game |
+| run-026 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.40 | editor-game |
+| run-027 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.42 | editor-game |
+| run-028 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 2.05 | editor-game |
+| run-029 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.63 | editor-game |
+| run-030 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.69 | editor-game |
+
+- arm `paced`: n=3 run-022 run-023 run-024
+- arm `unpaced`: n=3 run-025 run-026 run-027
+- arm `ablation`: n=3 run-028 run-029 run-030
+
+| run | arm | observer rows | resources rows | clock rows | publisher_counts | quality.json |
+|---|---|---|---|---|---|---|
+| run-022 | paced | 9079 | 785 | 3072 | True | True |
+| run-023 | paced | 9555 | 825 | 3219 | True | True |
+| run-024 | paced | 9062 | 785 | 3058 | True | True |
+| run-025 | unpaced | 8429 | 730 | 2850 | True | True |
+| run-026 | unpaced | 8425 | 730 | 2845 | True | True |
+| run-027 | unpaced | 8419 | 730 | 2845 | True | True |
+| run-028 | ablation | 0 | 725 | 2883 | False | False |
+| run-029 | ablation | 0 | 725 | 2861 | False | False |
+| run-030 | ablation | 0 | 725 | 2882 | False | False |
+
+### cell A ablation client, as the client itself recorded it
+
+| run | rig | class_id | channels | pps | mount_location_m | mount_rotation_deg |
+|---|---|---|---|---|---|---|
+| run-042 | extension | vlp16 | 16 | 288000 | [0.9, 0.0, 2.0] | [0.8596703279023998, -0.05367618110798624, -88.1561187736481] |
+| run-043 | extension | vlp16 | 16 | 288000 | [0.9, 0.0, 2.0] | [0.8596703279023998, -0.05367618110798624, -88.1561187736481] |
+| run-044 | extension | vlp16 | 16 | 288000 | [0.9, 0.0, 2.0] | [0.8596703279023998, -0.05367618110798624, -88.1561187736481] |
+
+| run | ticks | sensor_callbacks | clock_rows | hdr_reasserts | toctou | stood_down | by_signal |
+|---|---|---|---|---|---|---|---|
+| run-042 | 2912 | 2914 | 2912 | 1 | 0 | False | True |
+| run-043 | 2902 | 2904 | 2902 | 1 | 0 | False | True |
+| run-044 | 2903 | 2905 | 2903 | 1 | 0 | False | True |
+
+-> extension rig: no --mount is passed and none is expected; `default_mount()` composes the committed kit and is exact here.
+
+### cell B-cyc ablation client, as the client itself recorded it
+
+| run | rig | class_id | channels | pps | mount_location_m | mount_rotation_deg |
+|---|---|---|---|---|---|---|
+| run-028 | tier4 | vlp16 | 16 | 288000 | [-0.497071, 2e-06, 2.0] | [0.85967, -0.053676, -88.156119] |
+| run-029 | tier4 | vlp16 | 16 | 288000 | [-0.497071, 2e-06, 2.0] | [0.85967, -0.053676, -88.156119] |
+| run-030 | tier4 | vlp16 | 16 | 288000 | [-0.497071, 2e-06, 2.0] | [0.85967, -0.053676, -88.156119] |
+
+| run | ticks | sensor_callbacks | clock_rows | hdr_reasserts | toctou | stood_down | by_signal |
+|---|---|---|---|---|---|---|---|
+| run-028 | 2909 | 1456 | 2909 | 1 | 0 | False | True |
+| run-029 | 2864 | 1433 | 2864 | 1 | 0 | False | True |
+| run-030 | 2910 | 1456 | 2910 | 1 | 0 | False | True |
+
+-> the Task 11 measured `--mount` reached the client: 3/3 run(s)
+
+## exclusions
+
+None. No run in either cell carries `excluded: true`.
+

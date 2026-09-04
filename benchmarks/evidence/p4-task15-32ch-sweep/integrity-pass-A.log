@@ -1,0 +1,91 @@
+# P4 Task 15 -- 32ch sweep integrity pass, cell A
+
+Facts only: arm, class label, exclusion label, transport, duel flags,
+instrument PRESENCE (not size), each measured arm's RIG derived from
+its own observer payload, and the ablation client's self-recorded rig.
+No ceiling verdict, one cell. Exits non-zero on any rig mismatch.
+
+## cell A: 9 sweep-arm run(s) at class `32ch`
+
+| run | arm | class_id | excluded | reason | rmw | shm_enabled | dds_profile_sha256 | duel_adm | duel_id |
+|---|---|---|---|---|---|---|---|---|---|
+| run-045 | paced | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-046 | paced | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-047 | paced | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-048 | unpaced | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-049 | unpaced | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-050 | unpaced | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-051 | ablation | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-052 | ablation | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+| run-053 | ablation | 32ch | False | - | rmw_cyclonedds_cpp | False | 1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865 | False | (empty) |
+
+| run | arm | engine_build_id | cpu_governor | loadavg | run_mode |
+|---|---|---|---|---|---|
+| run-045 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.31 | editor-game |
+| run-046 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.11 | editor-game |
+| run-047 | paced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.58 | editor-game |
+| run-048 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.21 | editor-game |
+| run-049 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.35 | editor-game |
+| run-050 | unpaced | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.68 | editor-game |
+| run-051 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.31 | editor-game |
+| run-052 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 1.06 | editor-game |
+| run-053 | ablation | bc08ce19-f19c-46fe-808f-dbb2b0ddf41a | powersave | 0.97 | editor-game |
+
+- arm `paced`: n=3 run-045 run-046 run-047
+- arm `unpaced`: n=3 run-048 run-049 run-050
+- arm `ablation`: n=3 run-051 run-052 run-053
+
+| run | arm | observer rows? | resources rows? | clock rows? | publisher_counts | quality.json |
+|---|---|---|---|---|---|---|
+| run-045 | paced | True | True | True | True | True |
+| run-046 | paced | True | True | True | True | True |
+| run-047 | paced | True | True | True | True | True |
+| run-048 | unpaced | True | True | True | True | True |
+| run-049 | unpaced | True | True | True | True | True |
+| run-050 | unpaced | True | True | True | True | True |
+| run-051 | ablation | empty | True | True | False | False |
+| run-052 | ablation | empty | True | True | False | False |
+| run-053 | ablation | empty | True | True | False | False |
+
+### cell A measured-arm rig, from each run's own observer.csv
+
+topic `/sensing/lidar/top/pointcloud_raw_ex`; baseline class `vlp16`; registered point
+ratio 32ch/vlp16 = 4.1667; tolerance +/-5%.
+
+baseline: 6 vlp16 measured run(s) (run-036, run-037, run-038, run-039, run-040, run-041), median 245080 B
+
+| run | arm | excluded | median size_bytes | x baseline | rig |
+|---|---|---|---|---|---|
+| run-045 | paced | False | 1020888 | x4.1655 | OK |
+| run-046 | paced | False | 1022104 | x4.1705 | OK |
+| run-047 | paced | False | 1020920 | x4.1657 | OK |
+| run-048 | unpaced | False | 1020632 | x4.1645 | OK |
+| run-049 | unpaced | False | 1021208 | x4.1668 | OK |
+| run-050 | unpaced | False | 1021192 | x4.1668 | OK |
+
+-> the 32ch rig is confirmed from measured data on 6 non-excluded measured run(s) of cell A
+
+### cell A ablation client, as the client itself recorded it
+
+| run | rig | class_id | channels | pps | mount_location_m | mount_rotation_deg | mount_source |
+|---|---|---|---|---|---|---|---|
+| run-051 | extension | 32ch | 32 | 1200000 | [0.9, 0.0, 2.0] | [0.8596703279023998, -0.05367618110798624, -88.1561187736481] | default_mount() |
+| run-052 | extension | 32ch | 32 | 1200000 | [0.9, 0.0, 2.0] | [0.8596703279023998, -0.05367618110798624, -88.1561187736481] | default_mount() |
+| run-053 | extension | 32ch | 32 | 1200000 | [0.9, 0.0, 2.0] | [0.8596703279023998, -0.05367618110798624, -88.1561187736481] | default_mount() |
+
+| run | clock_rows_written? | hdr_reasserts | toctou | stood_down | by_signal |
+|---|---|---|---|---|---|
+| run-051 | True | 1 | 0 | False | True |
+| run-052 | True | 1 | 0 | False | True |
+| run-053 | True | 1 | 0 | False | True |
+
+-> extension rig: no --mount is passed and none is expected; `default_mount()` composes the committed kit and is exact here.
+
+## exclusions
+
+None. No run of cell A at class `32ch` carries `excluded: true`.
+
+## rig verdict
+
+PASS: every non-excluded run of cell A at class `32ch` carries the rig its manifest claims, on both arms.
+

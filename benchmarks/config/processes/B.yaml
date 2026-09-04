@@ -31,6 +31,23 @@ processes:
   # BENCH_TIER4_DEMO hook), which is handed BENCH_AW_CONTAINER=autoware
   # but has not been written. If Task 13 lands with a different name,
   # correct BOTH this file and the launcher's AW_CONTAINER together.
+  # The M4 ABLATION arm's publish-disabled baseline client
+  # (benchmarks/scripts/raycast_baseline.py), started by
+  # cells/tier4-native.sh's ablation branch IN PLACE OF autoware_demo.py --
+  # on that arm it is this cell's only client and its tick authority. It runs
+  # as `nohup env PYTHONPATH=<repo> <venv>/python3 -m
+  # benchmarks.scripts.raycast_baseline ...`; `env` execs in place, so the
+  # module path is on the surviving process's own cmdline and `pgrep -f`
+  # matches it. Without this entry the arm's only client is sampled by nothing
+  # and the raycast cost it exists to measure is recorded nowhere.
+  #
+  # Unlike cell A there is no host-side `runner` entry to sit opposite it (see
+  # the note above: this family's ego spawner is a ROS node inside the
+  # container), so on every NON-ablation run this label reports 0.0% --
+  # sample_pattern_entry's zero row for a pattern that matches no PIDs. That is
+  # expected, and it is written down for the same reason as in A.yaml: a 0.0%
+  # row on an ABLATION run is a finding, not the normal state.
+  - { label: raycast-baseline, pattern: benchmarks.scripts.raycast_baseline }
   - { label: injector, pattern: dummy_perception }
   - { label: autoware, container: autoware }
   # See A.yaml's "observer" entry: RE-GROUNDED in Task 8 --

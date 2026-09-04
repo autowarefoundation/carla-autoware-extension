@@ -41,6 +41,14 @@ everything else defaults to false -- see `RunManifest.duel_admissible`. Rewrite
 mode preserves it along with everything else, so excluding a duel run does not
 silently reclassify it.
 
+Two later fields join it on exactly that footing -- caller-declared because
+nothing here can derive them, defaulting to "" because a forgotten flag must
+under-count loudly rather than misfile silently, and preserved verbatim by
+rewrite mode: `--duel-id` (WHICH duel's admission pool, Task 2) and
+`--class-id` (WHICH sweep class's scoring pool, Task C2). The two partition
+different verdicts -- `duel_verdict.py`'s and `sweep_verdict.py`'s -- by the
+same rule shape; see `RunManifest.duel_id` / `RunManifest.class_id`.
+
 `approach` and `map_name` are NOT arguments: they are looked up from the
 pre-registered cells.yaml via `cell_info`, so a run cannot be filed under
 cell A while claiming a different approach or map.
@@ -186,6 +194,23 @@ def build_manifest(args: argparse.Namespace) -> RunManifest:
         # single explicit declaration; see RunManifest.duel_admissible for why
         # the default points this way.
         duel_admissible=bool(args.duel),
+        # Which duel's pool this run belongs to (Amendment 2026-08-03,
+        # Task 2). Same opt-in-only rationale as duel_admissible just
+        # above: this tool cannot know which pairing ordered the run, only
+        # the caller that did (scripts/duel.sh, which stamps
+        # `--duel-id "${CELL_A}+${CELL_B}"`); every other caller leaves it
+        # at its default "", matching RunManifest.duel_id's own default.
+        duel_id=args.duel_id,
+        # Which sweep class's point this run measures (Amendment 2026-08-04,
+        # Task C2). Unlike `approach`/`map_name` -- looked up from cells.yaml
+        # so a run cannot claim a workload its cell was not registered for --
+        # the class is a per-INVOCATION choice, not a per-cell fact: cells A,
+        # B, B-cyc and E each accept every registered sweep class, so there is
+        # nothing to look it up from. It comes from the one caller that knows
+        # (run.sh, which resolves `--class` and hands the same value to the
+        # launchers as BENCH_CLASS_ID), and defaults to "" -- matching
+        # RunManifest.class_id's own default -- for every non-sweep run.
+        class_id=args.class_id,
     )
 
 
@@ -220,6 +245,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "Passed by scripts/duel.sh on every run it orders; omitted by every "
         "other invocation, so a bring-up or gate run cannot reach the "
         "equivalence verdict in benchmarks/scripts/duel_verdict.py",
+    )
+    p.add_argument(
+        "--duel-id",
+        default="",
+        help="WHICH duel's admission pool this run belongs to "
+        "(RunManifest.duel_id; Amendment 2026-08-03, Task 2), "
+        "conventionally f'{cell_a}+{cell_b}' in the order the two cells "
+        "were given to scripts/duel.sh, which is the only caller that "
+        "ever passes this. Defaults to '', the legacy/no-duel value every "
+        "manifest predating this field also reads as.",
+    )
+    p.add_argument(
+        "--class-id",
+        default="",
+        help="WHICH sweep class's point this run measures "
+        "(RunManifest.class_id; Amendment 2026-08-04, Task C2) -- a "
+        "cells.yaml `sweep_classes` id (vlp16, 32ch), forwarded by "
+        "benchmarks/run.sh from its own --class, which is the same "
+        "resolved value the cell launchers derive their sensor arguments "
+        "from. Defaults to '', the legacy/no-class value every manifest "
+        "predating this field also reads as, and the value every non-sweep "
+        "(duel, bring-up, gate) run keeps.",
     )
     p.add_argument(
         "--exclude",
