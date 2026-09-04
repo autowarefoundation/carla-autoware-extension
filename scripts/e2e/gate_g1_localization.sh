@@ -1,38 +1,30 @@
 #!/usr/bin/env bash
-# G1: after setting an initial pose, NDT must track the ego on Nishi-Shinjuku.
-# Collects an NDT pose series (container) + a CARLA ground-truth series (host) over the
-# SAME wall-clock window, then feeds both through measure_ndt.py, which computes the max
-# XY error and EXITS NON-ZERO on FAIL (automated pass/fail, run_g0.sh style — no eyeballing).
+# G1: NDT pose (/localization/pose_estimator/pose, map frame, base_link) vs CARLA
+# ground truth (rear axle, mapped with map_frame) over the same wall-clock window.
+# Usage: gate_g1_localization.sh --log-dir DIR [--map-origin X,Y,Z] [--rpc-port N]
+#        [--domain-id N] [--window S] [--max-err-m M] [--out DIR]
 set -euo pipefail
-export ROS_DOMAIN_ID=0
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$HERE/../.." && pwd)"
-COMPOSE="$REPO/docker/compose.yaml"
-WIN=20   # seconds
-NDT=/tmp/g1_ndt.txt GT=/tmp/g1_gt.txt
-
-# 1) NDT pose series inside the container -> /tmp/g1_ndt.txt (t x y), then copy out.
-docker compose -f "$COMPOSE" exec -T autoware bash -lc '
-  source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && export ROS_DOMAIN_ID=0
-  python3 - "'"$WIN"'" <<PY
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"
+LOG_DIR=""; ORIGIN=""; PORT=2000; DOMAIN=42; WIN=30; MAXERR=1.0; OUT=/tmp
+while [[ $# -gt 0 ]]; do case "$1" in
+  --log-dir) LOG_DIR="$2"; shift 2;; --map-origin) ORIGIN="$2"; shift 2;; --rpc-port) PORT="$2"; shift 2;;
+  --domain-id) DOMAIN="$2"; shift 2;; --window) WIN="$2"; shift 2;; --max-err-m) MAXERR="$2"; shift 2;;
+  --out) OUT="$2"; shift 2;; *) echo "unknown option $1" >&2; exit 2;; esac; done
+[[ -n "$LOG_DIR" ]] || { echo "--log-dir required" >&2; exit 2; }
+mkdir -p "$OUT"
+bash "$HERE/aw_exec.sh" "$LOG_DIR" "$DOMAIN" "python3 - $WIN <<'PY'
 import sys, time, rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
-end=time.time()+float(sys.argv[1]); rclpy.init(); n=Node("g1"); rows=[]
-n.create_subscription(PoseStamped,"/localization/pose_estimator/pose",
-  lambda m: rows.append(f"{time.time():.3f} {m.pose.position.x:.4f} {m.pose.position.y:.4f}"), 10)
-while time.time()<end and rclpy.ok(): rclpy.spin_once(n, timeout_sec=0.1)
-open("/tmp/g1_ndt.txt","w").write("\n".join(rows)+"\n"); print(f"ndt_rows={len(rows)}")
-PY' &
+end = time.time() + float(sys.argv[1]); rclpy.init(); n = Node('g1_ndt'); rows = []
+n.create_subscription(PoseStamped, '/localization/pose_estimator/pose',
+    lambda m: rows.append(f'{time.time():.3f} {m.pose.position.x:.4f} {m.pose.position.y:.4f}'), 10)
+while time.time() < end and rclpy.ok(): rclpy.spin_once(n, timeout_sec=0.1)
+sys.stdout.write('\n'.join(rows) + '\n'); sys.stderr.write(f'ndt_rows={len(rows)}\n')
+PY" > "$OUT/g1_ndt.txt" &
 CPID=$!
-# 2) CARLA ground-truth series on the host over the same window (ego = role_name "ego").
-# collect_gt.py maps CARLA metres into the MGRS-local map frame via the pinned affine
-# (verify_mgrs_handedness.CONVERTER_OFFSET, byte-identical to the extension's MgrsOffset.h).
-PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 -m scripts.e2e.collect_gt --window "$WIN" --out "$GT" &
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" "${CARLA_PYTHON:-python3}" -m scripts.e2e.collect_gt \
+  --window "$WIN" --out "$OUT/g1_gt.txt" --port "$PORT" ${ORIGIN:+--map-origin "$ORIGIN"} &
 GPID=$!
 wait $CPID; wait $GPID
-docker compose -f "$COMPOSE" cp autoware:/tmp/g1_ndt.txt "$NDT"
-
-# 3) Programmatic PASS/FAIL (exit non-zero on FAIL).
-python3 "$HERE/measure_ndt.py" --ndt "$NDT" --gt "$GT" --max-err-m 0.5
+python3 "$HERE/measure_ndt.py" --ndt "$OUT/g1_ndt.txt" --gt "$OUT/g1_gt.txt" --max-err-m "$MAXERR"
