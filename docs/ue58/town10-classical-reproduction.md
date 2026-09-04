@@ -201,7 +201,7 @@ ego drove through them at 4.17 m/s. The only reason the diagnostic graph ever
 prints alongside them is `/autoware/localization/scan_matching_status WARN`
 (`run4/autoware.log:1236-1242` and three further blocks at `:1266`, `:1296`,
 `:1378`), i.e. a transient NDT scan-matching degradation. The traffic-signals
-topic-state monitor does fire 294 times across the whole run, but it never
+topic-state monitor does fire 295 times across the whole run, but it never
 appears in a `The target mode is not available for the following reasons` tree,
 so it does not explain a 21-second burst and must not be blamed for it.
 
@@ -286,9 +286,13 @@ over the stationary window (t = 65 s to 415 s): x stays within **0.014 m**, but
 y creeps from 28.448 to 28.674 (**0.226 m**) and yaw rotates from -1.32 to
 -9.70 deg. Because the rear axle sits 1.425 m behind the actor origin, that
 8.4 deg of yaw moves it: `base_link` to goal is **0.23 m at arrival (t = 65 s)**
-and **0.58 m at the last sample (t = 415 s)**. Both are inside the 1 m gate, so
-G2 passes on either reading, but the honest statement is "0.24 m at arrival,
-0.58 m after about six minutes of settling drift", not a static 0.24 m.
+and **0.58 m at the last sample (t = 415 s)**. The 0.23 m here and the 0.244 m
+in the decomposition above are the same arrival on two different samples -- the
+decomposition uses the `task-9c` arrival sample, this recomputation the t = 65 s
+row of `35-groundtruth-run4.txt` -- so the ~1 cm gap is sampling, not a
+disagreement. Both are inside the 1 m gate, so G2 passes on either reading,
+but the honest statement is "0.24 m at arrival, 0.58 m after about six minutes
+of settling drift", not a static 0.24 m.
 
 ### Fast-DDS vs CycloneDDS on the simulator side
 
@@ -320,7 +324,9 @@ run `ros2 daemon stop` before concluding anything about discovery.
 ## `VK_ERROR_DEVICE_LOST` (spec risk 4) did not occur
 
 The designated Phase 0 blocker, `VK_ERROR_DEVICE_LOST` as reported upstream in
-`#9826`, appears **zero times across all 54 log files** in `~/ue58-logs/`, and
+`#9826`, appears **zero times across the 53 top-level `*.log` and `*.txt`
+files** in `~/ue58-logs/`, and zero again across all 77 such files once the
+per-run subdirectories are included (165 files in the tree in total);
 `VK_ERROR` of any kind is likewise zero. Counted with binary-safe `grep -ac`,
 because plain `grep -c` mis-reports on the 1.7 MB launch logs. Scope: this is
 one machine, an RTX 5090 on driver 580.173.02; upstream's report is against an
