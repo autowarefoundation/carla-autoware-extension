@@ -10,20 +10,20 @@ import math
 import pytest
 
 from scripts.e2e.collect_gt import ego_map_xy, find_ego, goal_distance
-from scripts.e2e.verify_mgrs_handedness import CONVERTER_OFFSET
+from scripts.e2e.map_frame import NISHISHINJUKU_ORIGIN
 
 
 def test_ego_map_xy_matches_the_pinned_affine():
     # The mapping must be the single pinned affine (offset + X pass-through,
     # Y flip), not an independent re-derivation.
-    ox, oy, _ = CONVERTER_OFFSET
+    ox, oy, _ = NISHISHINJUKU_ORIGIN
     x, y = ego_map_xy(-278.39, 220.54)
     assert math.isclose(x, ox - 278.39, abs_tol=1e-9)
     assert math.isclose(y, oy - 220.54, abs_tol=1e-9)
 
 
 def test_goal_distance_is_map_frame_hypot():
-    ox, oy, _ = CONVERTER_OFFSET
+    ox, oy, _ = NISHISHINJUKU_ORIGIN
     # Ego at CARLA (3, -4) -> map (ox+3, oy+4); goal at map (ox, oy) -> distance 5.
     assert math.isclose(goal_distance(3.0, -4.0, ox, oy), 5.0, abs_tol=1e-9)
 

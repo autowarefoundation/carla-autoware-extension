@@ -5,9 +5,9 @@
 logic as per-gate heredocs, each re-typing the MGRS affine constants by hand.
 This module replaces them so that:
 
-* the CARLA->MGRS mapping is imported from ``verify_mgrs_handedness`` -- the
-  single pinned source, byte-identical to the extension's ``MgrsOffset.h`` --
-  instead of drifting as inline literals, and
+* the CARLA->MGRS mapping is imported from ``map_frame`` -- the single pinned
+  source, byte-identical to the extension's ``MgrsOffset.h`` -- instead of
+  drifting as inline literals, and
 * the ego discovery / mapping / distance logic is unit-testable
   (``tests/e2e/test_collect_gt.py``).
 
@@ -31,7 +31,7 @@ import math
 import sys
 import time
 
-from scripts.e2e.verify_mgrs_handedness import world_m_to_mgrs_local
+from scripts.e2e.map_frame import NISHISHINJUKU_ORIGIN, carla_to_map
 
 
 def ego_map_xy(x_m: float, y_m: float) -> tuple[float, float]:
@@ -39,9 +39,9 @@ def ego_map_xy(x_m: float, y_m: float) -> tuple[float, float]:
 
     CARLA reports metres; the map frame is the MGRS-local converter frame
     (single Y flip + offset). This is a pure affine wrapper so the gates share
-    one mapping with the transform verifier and the extension.
+    one mapping with the transform module and the extension.
     """
-    mgrs_x, mgrs_y, _ = world_m_to_mgrs_local(x_m, y_m, 0.0)
+    mgrs_x, mgrs_y, _ = carla_to_map(x_m, y_m, 0.0, origin=NISHISHINJUKU_ORIGIN)
     return (mgrs_x, mgrs_y)
 
 
