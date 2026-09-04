@@ -13,3 +13,8 @@ def test_lidar_free_running_too_fast_fails():
 def test_lidar_configured_at_10hz_passes_and_20hz_fails():
     assert rate_in_band(10.0, 10, 1)
     assert not rate_in_band(20.0, 10, 1)
+    # The +-1 Hz band edges: inclusive just inside, rejected just outside.
+    assert rate_in_band(9.0, 10, 1)
+    assert rate_in_band(11.0, 10, 1)
+    assert not rate_in_band(8.9, 10, 1)
+    assert not rate_in_band(11.1, 10, 1)

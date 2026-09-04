@@ -26,5 +26,8 @@ CPID=$!
 PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" "${CARLA_PYTHON:-python3}" -m scripts.e2e.collect_gt \
   --window "$WIN" --out "$OUT/g1_gt.txt" --port "$PORT" ${ORIGIN:+--map-origin "$ORIGIN"} &
 GPID=$!
-wait $CPID; wait $GPID
+# If either collector fails, set -e aborts the other `wait` -- so clean the survivor up
+# instead of orphaning a live CARLA-connected collect_gt. Cleared once both are reaped.
+trap 'kill "$CPID" "$GPID" 2>/dev/null || true' EXIT
+wait "$CPID"; wait "$GPID"; trap - EXIT
 python3 "$HERE/measure_ndt.py" --ndt "$OUT/g1_ndt.txt" --gt "$OUT/g1_gt.txt" --max-err-m "$MAXERR"
