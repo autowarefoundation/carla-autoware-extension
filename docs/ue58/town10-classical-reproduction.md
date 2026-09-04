@@ -1,5 +1,37 @@
 # Phase 1 - Reproducing upstream's Town10HD `classical` run (CARLA `ue58-dev`)
 
+> **`[CORRECTED]` 2026-09-04, after Phase 2. Read this before citing anything
+> below it.** The measurements in this file are real and unaltered. What is
+> withdrawn is the _causal_ story it tells about the Town10HD lanelet2 map -
+> that the 17 misoriented bounds cause backward planning, latched emergency
+> stops and a ~20 % spawn failure rate. That chain was **falsified by this
+> campaign's own logs**. What survives: 17 of 160 road lanelets (17 of 246
+> relations) reference a shared bound ordered against travel, the legacy 2019
+> map has 0 of 168, and the generator reproduces the repaired map
+> byte-identically. What does not: on the _fixed_ map `Backward path is NOT
+> supported` still occurred 290 and 190 times, the _unfixed_ map produced the
+> identical route from a pose 0.024 m away and halted at the same metre by the
+> same mechanism, and a static `lanelet2` probe showed `geometry::align`
+> already recovers the correct orientation for **all 17** today, with the
+> derived centreline and the routing graph unchanged. **The map fix is
+> preventive**: it removes a dependence on a loader heuristic that currently
+> guesses right.
+>
+> Five statements below carry withdrawn wording and are each marked
+> `[CORRECTED]` in place, so a reader who greps into the middle of this file
+> cannot land on them without the correction: the two `EMERGENCY_STOP` table
+> rows reading "171, latched" (actually 171 operated / 172 canceled, last event
+> a cancel, so nothing latched; median cycle 2.200 s, not ~100 ms), the
+> `Backward path` row of the run-3-vs-run-4 table (the counts are real, the
+> attribution of the contrast to the map defect is not), and the two "roughly
+> one spawn point in five" passages, which measure the size of the affected map
+> region and are **never** an expected failure rate.
+>
+> Do not re-add "fixes Backward path", any emergency-stop claim, any failure
+> rate, or a "377 -> 0". Corrected record: `phase2-gates.md` and
+> `~/ue58-logs/p2-03-evidence.md` - **not** `~/ue58-logs/24-metrics.txt`, whose
+> body still carries the withdrawn narrative below its correction header.
+
 Date: 2026-09-03. Machine: RTX 5090 (driver 580.173.02), 24 cores, 62 GB RAM,
 Ubuntu 24.04, ROS 2 Jazzy at `/opt/ros/jazzy`.
 
@@ -140,12 +172,16 @@ Planning then broke, 0.4 s after the route was set. Counts are re-derived from
 `run3/autoware.log` for this record, because the per-node breakdown in the task
 report was wrong:
 
+`[CORRECTED]` The counts in this table are real; the causal chain this section
+draws from them to the map defect is withdrawn - see the banner at the top of
+this file. One cell is corrected in place.
+
 | Message | Count | Emitting node(s) |
 | --- | --- | --- |
 | `Backward path is NOT supported, just returning input path` | **377 total** | `behavior_velocity_planner` 171, `elastic_band_smoother` 103, `path_optimizer` 103 |
 | `Caution! Invalid Trajectory published.` | 166 | `planning_validator` |
 | `planning trajectory is too far from ego in longitudinal direction!!` | 166 | `planning_validator` |
-| `EMERGENCY_STOP is operated.` | 171, latched | `mrm_handler` |
+| `EMERGENCY_STOP is operated.` | 171 operated / 172 canceled, last event a cancel, so **nothing latched** `[CORRECTED]`; median cycle 2.200 s, not ~100 ms | `mrm_handler` |
 | `Emergency!` | 427 | `control.vehicle_cmd_gate` |
 
 `/planning/trajectory` stayed pinned at the route start, running west with
@@ -179,14 +215,22 @@ The published route matched the offline prediction exactly, 7 segments, all
 clean: `5013 -> 27144 -> 12771 -> 36676 -> 13373 -> 25058 -> 16406`
 (`run4/autoware.log:1099-1106`).
 
-The controlled comparison against run 3 is decisive:
+The controlled comparison against run 3, `[CORRECTED]`: the counts below are
+real and reproducible, but this table was written as a map-fix result and is
+not one. Run 3 and run 4 differ in spawn and route, not in the map file - both
+ran the *unrepaired* map - and on the *repaired* map the same pinned scenario
+still produced 290 and 190 `Backward path` occurrences. Read the table as
+"a clean route plans, a route through a malformed lanelet does not", and note
+that even that reading is not attributable to the bound orientation, because
+`geometry::align` already recovers it for all 17. See the banner at the top of
+this file.
 
 | Signature | Run 3 (started inside malformed `12236`) | Run 4 (started inside clean `5013`) |
 | --- | --- | --- |
-| `Backward path is NOT supported` | 377 | **0** |
+| `Backward path is NOT supported` `[CORRECTED]` (counts real, map attribution withdrawn) | 377 | **0** |
 | `Invalid Trajectory published` | 166 | **0** |
 | `too far from ego in longitudinal direction` | 166 | **0** |
-| `EMERGENCY_STOP is operated` | 171, latched | 11 operated / 11 cancelled |
+| `EMERGENCY_STOP is operated` `[CORRECTED]` (run 3: 171 operated / 172 canceled, nothing latched) | 171, **not latched** | 11 operated / 11 cancelled |
 | `Emergency!` | 427 | 9 |
 
 `AutowareState` walked `Initializing -> WaitingForRoute -> Planning ->
@@ -408,9 +452,15 @@ not a refutation of the report.
   scanned for the same defect.
 - **`lanelet2_map_2019_legacy.osm` was never scanned.** If the legacy file is
   clean, that would localize which converter generation introduced the defect.
-- **There is no interim guidance for a user.** The documented default path
-  still fails on roughly one spawn in five even with a corrected goal, and this
-  record does not propose a workaround short of the fix.
+- **There is no interim guidance for a user.** `[CORRECTED]`: "one spawn in
+  five" is the share of CARLA spawn points that sit inside one of the 17
+  affected lanelets (30 of 155, 19.4 %), i.e. the size of the affected map
+  region - **not** a failure rate. No spawn failure attributable to the bound
+  orientation was ever demonstrated, so there is no residual failure for a
+  workaround to address. What remains true is narrower: the documented default
+  path leaves the direction of travel of those lanelets up to the loader's
+  `align` heuristic, and this record does not propose a workaround short of the
+  map fix.
 - **`is_autonomous_mode_available: false` while `mode = 2` (AUTONOMOUS) and
   `is_autoware_control_enabled: true`** in both run-3 metrics blocks
   (`30-metrics-run3-block1.txt:32-35`, `block2` the same), and again in run 4
@@ -441,7 +491,9 @@ driving on Town10HD under UE 5.8, with all three spec gates green - but only
 once two upstream defects are worked around, and they are entangled rather than
 independent: the README's only documented goal is 19.4 m off the nearest lane
 centreline, and 17 of 160 lanelets in the shipped Town10HD lanelet2 map have
-opposing boundary directions, reaching roughly one spawn point in five. The
+opposing boundary directions, overlapping roughly one spawn point in five
+`[CORRECTED]` - a region size (30 of 155 spawns, 19.4 %), **not** a failure
+rate, and not a demonstrated failure at all; the map repair is preventive. The
 README's own rejected route ran through one of the malformed lanelets. Both are
 self-contained, evidenced and independently reproducible; they head the list in
 `pr-candidates.md`.

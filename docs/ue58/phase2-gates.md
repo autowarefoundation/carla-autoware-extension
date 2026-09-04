@@ -1,8 +1,9 @@
 # Phase 2 — gate results on Town10HD for CARLA's in-tree Autoware layer
 
 Three live cells, run 2026-09-04 against CARLA's in-tree Autoware layer on UE 5.8,
-measured with this repository's `scripts/e2e/run_gates.sh`. All four gates PASS in
-every cell.
+measured with this repository's `scripts/e2e/run_gates.sh`. All four gate verdicts
+PASS in every cell — four, not three, because `gate_g3_performance.sh` scores
+LiDAR and control separately (see "Plan defects found during Phase 2").
 
 This file is the authoritative Phase 2 record. Where a per-task report and this
 file disagree, this file wins: several reports carry figures that later audits
@@ -42,15 +43,22 @@ build with no rebuild between cells. The goal converts to map `(-1.160, -28.370)
 Thresholds: G1 < 1.0 m, G2 < 1.0 m, G3 LiDAR 10 ± 1 Hz, G3 control 20 ± 5 Hz.
 
 \* **The reported control figure is the last rate window, not a robust statistic.**
-Both Jazzy cells contain duplicate-timestamp burst windows (identifiable by
-`min: 0.000s`). Comparing only clean windows gives **19.999–20.012 Hz**
-(`J-fastdds`) against **19.997–20.023 Hz** (`J-cyclonedds`) — indistinguishable
-within measurement noise. `H-fastdds` was the only burst-free series of the three,
-at 19.991–20.011 Hz across 13 windows. Making this figure robust
-(median-of-windows, or discarding `min: 0.000s` windows) is a recorded candidate;
-it was deliberately **not** changed mid-series, because changing the instrument
-between cells would have made them non-comparable, and the verdict is unaffected
-either way.
+Both Jazzy cells contain duplicate-timestamp burst windows. The discriminator is
+the window's **std dev**, not its `min`: burst windows sit at 0.00644–0.02019 s
+against 0.00060–0.00127 s for the clean ones, a five-fold gap with nothing in
+between, so any threshold in 0.0013–0.006 s partitions all three cells
+identically. `min: 0.000s` is only a *usually*-present symptom and it misses the
+case that matters: `J-cyclonedds`'s printed 20.691 Hz window has `min: 0.001s`
+with a std dev of 0.00880 s, so filtering on `min` alone keeps it and widens that
+cell's clean range to 19.997–20.691 Hz. Comparing std-dev-clean windows gives
+**19.999–20.012 Hz** (`J-fastdds`, 7 of 13 windows) against
+**19.997–20.023 Hz** (`J-cyclonedds`, 6 of 13) — indistinguishable within
+measurement noise. `H-fastdds` was the only burst-free series of the three, all 13
+windows clean at 19.991–20.011 Hz. Making the printed figure robust is a recorded
+candidate (candidate 22); it was deliberately **not** changed mid-series, because
+changing the instrument between cells would have made them non-comparable, and the
+verdict is unaffected either way. Raw windows:
+`~/ue58-logs/p2-{17,18,19}-cell-*/gates/g3_control_hz.txt`.
 
 Supporting distributions, recomputed from raw per-sample rows rather than the
 summary lines:
@@ -207,7 +215,11 @@ Separately, the installer's `TIERIV_BASELINE_TAG` pin is source-mode-only
 The genuinely useful positive result from this cell: everything CARLA publishes
 measured **nominal inside the Humble container** throughout — LiDAR 9.973–10.001 Hz,
 IMU 19.960 Hz, `/clock` 19.987–19.999 Hz. Nothing CARLA publishes is rejected by a
-Humble-side node.
+Humble-side node. **Instrument:** these are the ad-hoc during-the-stall probe,
+`ros2 topic hz --window 20` over two windows on
+`/sensing/lidar/top/pointcloud_raw_ex`, recorded in
+`~/ue58-logs/p2-19-a1-hz.txt` — a different measurement from the gate's own,
+below, which is why the two LiDAR figures in this section differ.
 
 ### The Humble cell's 54 s localisation stall was environmental
 
@@ -221,9 +233,15 @@ line. (The `mission_planner` "Initial pose" print 39 s later is a planning-side
 echo, not a localisation signal — do not use it as the convergence marker.)
 
 One anomaly is left **unexplained on purpose**: a single 9.849 Hz LiDAR window,
-inside tolerance. The engine-rebuild story was tested against it and does not fit —
-bounding the build intervals leaves one candidate, but the control sample inside
-that same interval was the cleanest series of all three cells.
+inside tolerance. **Instrument:** this one is G3's own measurement — window 11 of
+the 12 windows `gate_g3_performance.sh` captures with `ros2 topic hz --window 40`
+under `timeout -k 2 15`, in
+`~/ue58-logs/p2-19-cell-humble-fastdds/gates/g3_lidar_hz.txt`. Same topic as the
+probe above, different window size and a different point in the run, so the two
+figures are not comparable and neither contradicts the other. The engine-rebuild
+story was tested against the 9.849 Hz window and does not fit — bounding the build
+intervals leaves one candidate, but the control sample inside that same interval
+was the cleanest series of all three cells.
 
 ### One deliberate divergence from the plan's script text
 
@@ -262,7 +280,7 @@ favour of its Interfaces contract.
 ## What these three cells do and do not establish
 
 **Supported.** CARLA's in-tree Autoware layer, at `82ef62095` on UE 5.8, passes all
-four gates on Town10HD from spawn 24 to goal `-1.16,28.37,0.16` under
+four gate verdicts on Town10HD from spawn 24 to goal `-1.16,28.37,0.16` under
 Jazzy/Fast DDS, Jazzy/CycloneDDS and Humble/Fast DDS. `is_dense` warnings are 0 in
 all three against a Phase 1 before-count of 99 and a non-vacuity argument per cell.
 G2 arrival is stable at 0.213–0.218 m across three independent drives, and the G1
@@ -278,7 +296,7 @@ reader would otherwise assume:**
   control series is one sample.
 - **Not a durability or regression-tested claim of any kind.** Three single runs,
   one per cell, on one machine, one town, one route.
-- **Not a transport verdict.** CycloneDDS reaches ARRIVED with all four gates PASS
+- **Not a transport verdict.** CycloneDDS reaches ARRIVED with all four gate verdicts PASS
   and a LiDAR rate identical to Fast DDS to within 0.01 Hz on the same build; the
   control rate is `20 ± 5 Hz` in both, with clean-window ranges of
   19.997–20.023 Hz (CycloneDDS) against 19.999–20.012 Hz (Fast DDS) — i.e.
