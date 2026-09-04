@@ -23,7 +23,54 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 EXT_SO="$REPO/extension/build/libcarla-autoware-extension.so"
 LOG=/tmp/carla-e2e.log
 CARLA_PID_FILE=/tmp/carla-e2e.pid
-MAP=NishishinjukuMap
+
+# MAP SELECTION. Three things must agree on which map is being driven, or the
+# stack fails in ways that look like anything but a config error:
+#   MAP                -- the CARLA map the editor loads and the runner targets
+#   MAP_DIR            -- the Autoware map bundle (pcd + lanelet2 + projector
+#                         info) mounted into the container, consumed by
+#                         launch_autoware.sh as map_path:=
+#   CARLA_AUTOWARE_MAP -- the extension .so's GNSS converter-offset selector
+#                         (extension/include/carla/autoware/geo/MgrsOffset.h)
+# All three are derived from MAP here so a caller sets exactly one variable.
+# MAP defaults to Nishi-Shinjuku, so an argument-free run is byte-identical to
+# the historical harness. An unknown MAP is rejected here rather than silently
+# localizing against the wrong pointcloud (which surfaces only as NDT failing
+# to converge).
+# The table itself lives in map_defaults.sh so arm_closed_loop.sh and
+# launch_autoware.sh derive the same values instead of carrying a second copy
+# that can drift.
+MAP="${MAP:-NishishinjukuMap}"
+# The linter runs without -x in pre-commit and so cannot follow the source even
+# with the directive below; SC1091 is informational and disabled for that reason.
+# shellcheck source=scripts/e2e/map_defaults.sh disable=SC1091
+. "$REPO/scripts/e2e/map_defaults.sh"
+carla_autoware_map_defaults "$MAP"
+# Checked on the NAME, not on the resolved MAP_DIR: an explicit MAP_DIR used to
+# carry an unknown name past this point, and the run then died ~2 minutes later
+# inside the extension's dlopen, because MgrsOffset.h has no entry for it
+# either. An explicit bundle cannot rescue that -- the converter offset is the
+# other half of the pair and lives in the extension, not in the bundle -- so
+# reject the name here, in under a second.
+if [ -z "$MAP_DEFAULT_DIR" ]; then
+  echo "PREFLIGHT FAIL: MAP=$MAP is not a known map. Add it to" >&2
+  echo "  scripts/e2e/map_defaults.sh (bundle + mount in docker/compose.yaml)" >&2
+  echo "  AND to extension/include/carla/autoware/geo/MgrsOffset.h." >&2
+  exit 1
+fi
+MAP_DIR="${MAP_DIR:-$MAP_DEFAULT_DIR}"
+export MAP_DIR
+# An unknown name here ABORTS the extension load (MgrsOffset.h has no entry for
+# it) rather than publishing another map's GNSS poses -- deliberate, see there.
+export CARLA_AUTOWARE_MAP="$MAP"
+echo "OK: map $MAP  autoware bundle $MAP_DIR"
+# PRINTED because the G1/G2 gate scripts and arm_closed_loop.sh run in the
+# OPERATOR's shell -- a separate process these exports cannot reach -- and both
+# map CARLA ground truth with the SAME per-map offset. arm_closed_loop.sh
+# derives MAP_DIR from CARLA_AUTOWARE_MAP on its own, so the first line is
+# sufficient; MAP_DIR is printed too for the case where it was overridden here.
+echo "OK: export CARLA_AUTOWARE_MAP=$MAP  # gate scripts in this shell need this too"
+[ "$MAP_DIR" = "$MAP_DEFAULT_DIR" ] || echo "OK: export MAP_DIR=$MAP_DIR  # non-default bundle, export it too"
 
 # The Autoware container runs on DDS domain 0. A login shell that exports a
 # nonzero ROS_DOMAIN_ID would leak into CARLA and put it on a different DDS
@@ -64,6 +111,15 @@ RUNNER_MODE_ARGS=()
 # operator-supplied local value, not untrusted input.
 # shellcheck disable=SC2206
 RUNNER_EXTRA_ARGS_ARR=(${RUNNER_EXTRA_ARGS:-})
+
+# Optional spawn-point selection. Unset keeps the runner's own default (spawn
+# point 0). Nishi-Shinjuku exposes exactly ONE spawn point, so this only becomes
+# useful on the CARLA town maps, which expose dozens -- and picking one by index
+# keeps the ego ON a recommended spawn (hence on the road network), which a
+# hand-typed --initial-pose does not guarantee.
+SPAWN_INDEX="${SPAWN_INDEX:-}"
+RUNNER_SPAWN_ARGS=()
+[ -n "$SPAWN_INDEX" ] && RUNNER_SPAWN_ARGS+=(--spawn-index "$SPAWN_INDEX")
 
 # Fails loudly if the editor plugin .so is older than CARLA HEAD (see the script's
 # own header for the carla-unreal-vs-carla-unreal-editor trap it guards against).
@@ -270,4 +326,4 @@ fi
 # the refutation of the old "sync does not propel" prior), and G3's LiDAR-cadence
 # check needs sync so 20 Hz means a real paced cadence rather than a free-run.
 python3 -m runner --host localhost --port 2000 --map "$MAP" \
-  "${RUNNER_MODE_ARGS[@]}" "${RUNNER_EXTRA_ARGS_ARR[@]}"
+  "${RUNNER_SPAWN_ARGS[@]}" "${RUNNER_MODE_ARGS[@]}" "${RUNNER_EXTRA_ARGS_ARR[@]}"

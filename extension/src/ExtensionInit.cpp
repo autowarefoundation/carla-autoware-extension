@@ -25,8 +25,11 @@
 
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <new>
 
+#include "carla/autoware/geo/MgrsOffset.h"
 #include "engage/EngageStateMachine.h"
 #include "publishers/GnssPosePublisher.h"
 #include "publishers/StatusPublishers.h"
@@ -54,6 +57,7 @@ enum InitResult {
   kNullOut = 2,         // out vtable pointer missing
   kVersionMismatch = 3, // host ABI version != this extension's
   kAllocFailed = 4,     // ExtensionState allocation failed
+  kUnknownMap = 5,      // $CARLA_AUTOWARE_MAP names a map with no offset entry
 };
 
 // VEHICLE_STATUS observer: invoked synchronously on the host's sensor-dispatch
@@ -109,6 +113,28 @@ extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Ext
   if (out == nullptr) return kNullOut;
   if (host->api_version != CARLA_ROS2_EXTENSION_API_VERSION) return kVersionMismatch;
 
+  // Resolve the active map's GNSS converter offset. The frozen C ABI carries no
+  // map name, so $CARLA_AUTOWARE_MAP is the channel (MgrsOffset.h owns the
+  // table); unset selects Nishi-Shinjuku, so pre-existing runs are unchanged.
+  // An unknown name ABORTS the load rather than falling back: a wrong offset
+  // would otherwise surface far downstream as NDT never converging. Resolved
+  // BEFORE the allocation below so this rejection cannot leak state.
+  const char* map_name = std::getenv(carla::autoware::kMapEnvVar);
+  carla::autoware::MapOffset map_offset{};
+  if (!carla::autoware::map_offset_for(map_name, &map_offset)) {
+    // Name the offending value AND the accepted ones. The only other symptom of
+    // this rejection is a nonzero return code buried in a core log, and its
+    // visible consequence -- every extension topic silently absent -- looks
+    // nothing like a misspelled environment variable.
+    std::fprintf(stderr, "[carla-autoware-extension] FATAL: %s=\"%s\" is not a known map. Known:",
+                 carla::autoware::kMapEnvVar, map_name);
+    for (const carla::autoware::NamedMapOffset& entry : carla::autoware::kMapOffsets) {
+      std::fprintf(stderr, " %s", entry.name);
+    }
+    std::fprintf(stderr, " (unset selects the default). Aborting extension load.\n");
+    return kUnknownMap;
+  }
+
   auto* st = new (std::nothrow) ExtensionState();
   if (st == nullptr) return kAllocFailed;
 
@@ -117,7 +143,7 @@ extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Ext
   // create_subscriber are not thread-safe against dispatch, but this runs on
   // the loader/game thread with no dispatch in flight (host-vtable rule).
   st->status.Init(*host);
-  st->gnss.Init(*host);
+  st->gnss.Init(*host, map_offset);
   st->control.Init(*host);
   st->engage.Init(*host);
 

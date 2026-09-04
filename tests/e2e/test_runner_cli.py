@@ -14,6 +14,7 @@ import os
 
 import pytest
 
+from runner.__main__ import build_arg_parser, select_spawn_point
 from runner.__main__ import main as runner_main
 from runner.loop import extension_exports_init, run_async_loop, run_sync_loop
 
@@ -104,6 +105,40 @@ def test_main_fails_loudly_on_missing_sensors_calibration(capsys, tmp_path):
     err = capsys.readouterr().err
     assert "--sensors-calibration" in err
     assert str(missing) in err
+
+
+# --- --spawn-index: map-independent selection of a recommended spawn point ---
+
+
+def test_spawn_index_defaults_to_zero():
+    # The historical behaviour was spawn point 0; the new flag must not move it.
+    assert build_arg_parser().parse_args([]).spawn_index == 0
+
+
+def test_spawn_index_parses_as_an_int():
+    assert build_arg_parser().parse_args(["--spawn-index", "42"]).spawn_index == 42
+
+
+def test_select_spawn_point_returns_the_requested_entry():
+    assert select_spawn_point(["a", "b", "c"], 1) == "b"
+
+
+@pytest.mark.parametrize("index", [3, 99])
+def test_select_spawn_point_rejects_an_index_past_the_end(index):
+    with pytest.raises(IndexError, match="out of range; the map has 3 spawn points"):
+        select_spawn_point(["a", "b", "c"], index)
+
+
+def test_select_spawn_point_rejects_a_negative_index():
+    # A negative index would silently WRAP to a different spawn point rather
+    # than fail, which is exactly the kind of quiet mis-start this guards.
+    with pytest.raises(IndexError, match="out of range"):
+        select_spawn_point(["a", "b", "c"], -1)
+
+
+def test_select_spawn_point_rejects_any_index_on_a_map_with_no_spawn_points():
+    with pytest.raises(IndexError, match="the map has 0 spawn points"):
+        select_spawn_point([], 0)
 
 
 # --- tick loop helpers: should_continue wiring against a fake world ---

@@ -51,7 +51,9 @@ the harness does. `run_e2e.sh` preflights the extension `.so` (fresh
 editor artifact, `--extension-check` ABI probe), boots CARLA headless with
 `--ros2 --rmw=cyclonedds --ros2-extension=<so>`, and runs
 `python3 -m runner --host localhost --port 2000 --map NishishinjukuMap` in
-the foreground so it owns `SIGINT` directly. The runner accepts
+the foreground so it owns `SIGINT` directly. `MAP` overrides that map (and with
+it the Autoware bundle and the GNSS converter offset) — see
+[section 7](#7-driving-a-different-map-town10hd_opt). The runner accepts
 `--sensor-kit-calibration`/`--sensors-calibration` (default to the committed
 copies under `runner/config/`), `--initial-pose X_M Y_M Z_M ROLL_DEG
 PITCH_DEG YAW_DEG` (metres/degrees, default = map spawn point 0), and
@@ -190,3 +192,137 @@ this image). Engage latches across re-arms: run
 G1/G3 need no arming: with the stack localizing, run
 `bash scripts/e2e/gate_g1_localization.sh` and
 `bash scripts/e2e/gate_g3_performance.sh` directly.
+
+## 7. Driving a different map (Town10HD_Opt)
+
+Everything above defaults to Nishi-Shinjuku. `MAP` is the single knob:
+`run_e2e.sh` derives from it both the Autoware map bundle (`MAP_DIR`, consumed
+by `launch_autoware.sh` as `map_path:=`) and the extension's GNSS converter
+offset (`CARLA_AUTOWARE_MAP`, see [mgrs-handedness.md](mgrs-handedness.md)), so
+the CARLA map, the pointcloud/lanelet2 it localizes against, and the offset the
+poses are synthesised with cannot drift apart. A `MAP` name that
+`scripts/e2e/map_defaults.sh` does not know is rejected up front — in under a
+second, rather than localizing against the wrong pointcloud or dying two
+minutes later in the extension's `dlopen`.
+
+The same table backs the standalone entry points: run `launch_autoware.sh` or
+`arm_closed_loop.sh` by hand and they derive the bundle (and, for the arm, the
+free-space grid centre and the route goal) from `CARLA_AUTOWARE_MAP`, which is
+the export `run_e2e.sh` prints. Unset still means Nishi-Shinjuku.
+
+Each bundle needs a read-only mount in `docker/compose.yaml`
+(`~/autoware_map/town10:/autoware_map/town10:ro` is already there); fetch it
+with `benchmarks/scripts/fetch_maps.sh`.
+
+```bash
+source docker/env.sh
+export MAP=Town10HD_Opt WITH_AUTOWARE=1
+# On-lanelet start chosen from map geometry (below); metres/degrees, CARLA frame.
+export RUNNER_EXTRA_ARGS="--initial-pose 55.330 141.161 0.5 0 0 0.320"
+bash scripts/e2e/run_e2e.sh
+```
+
+`run_e2e.sh` prints the `export CARLA_AUTOWARE_MAP=...` line the gate scripts
+need: they run in the OPERATOR's shell, which the harness's own export cannot
+reach, and they map CARLA ground truth into the map frame with that same
+per-map offset. So, in that shell:
+
+```bash
+export CARLA_AUTOWARE_MAP=Town10HD_Opt
+# The bundle, the free-space grid centre and the route goal all come from
+# scripts/e2e/map_defaults.sh; GOAL_X/GOAL_Y/GOAL_Z/GOAL_QZ/GOAL_QW still
+# override it if you want a different goal.
+bash scripts/e2e/arm_closed_loop.sh
+bash scripts/e2e/gate_g1_localization.sh
+bash scripts/e2e/gate_g2_closed_loop.sh -101.021 55.014
+```
+
+`SPAWN_INDEX=<n>` selects a recommended spawn point instead of a hand-typed
+`--initial-pose`; the town maps expose dozens where Nishi-Shinjuku exposes one.
+
+### The chosen Town10 start and route
+
+Picked from map geometry only, never from a driven trajectory, so the strict
+1.0 m G2 gate stays honest. The SHORTEST road path start->goal is **420 m** with
+233 degrees of accumulated heading change (several junction turns) — shortest,
+because Autoware plans its own route and a merely-long walked path would not
+bound what it actually drives. Town10's lanelet2 has **no** traffic-light or
+regulatory elements at all (168 lanelets, every one `subtype=road`), so the
+route carries no signal dependence. Start and goal both sit on a lanelet
+centreline (0.194 m and 0.023 m off, headings agreeing to 0.06 degrees), and the
+route never comes within 33.5 m of the goal before arriving, so the gate cannot
+close early on a near miss.
+
+```text
+start  CARLA metres/degrees   x=55.330   y=141.161  z=0.5  yaw=0.320   lanelet 324
+goal   map frame, metres      x=-101.021 y=55.014   z=0.0              lanelet 1942
+```
+
+Reproduce: `CARLA_ROOT=~/src/carla-autoware-integration python3
+scripts/e2e/pick_route.py` — offline, no simulator, it scores the committed
+`.xodr` and prints exactly these two poses. The goal is also the map's
+`MAP_DEFAULT_GOAL` in `scripts/e2e/map_defaults.sh`, so `arm_closed_loop.sh`
+routes here without any `GOAL_*` export.
+
+### Measured result on this route
+
+| Gate            | Threshold             | Measured                                      | Verdict  |
+| --------------- | --------------------- | --------------------------------------------- | -------- |
+| G1 localization | max NDT error < 0.5 m | 0.932 m (mean 0.527, median 0.508, std 0.193) | **FAIL** |
+| G2 closed loop  | goal approach < 1.0 m | 0.164 m, over the planned 420 m route         | **PASS** |
+
+G2 passes: the ego drove the route closed-loop from 254.9 m out and arrived
+0.164 m from the goal. G1 fails because NDT holds a **stable but biased** lock
+here — about 0.5 m off ground truth with ~0.19 m of jitter, never diverging.
+
+The cause was measured, not inferred, by re-seeding NDT from eight initial poses
+spread ±2 m around the parked ego's known pose. That test discriminates the two
+candidate causes, because a shallow cost basin gives seed-dependent convergence
+while a frame offset in the map gives the same error from every seed. **The two
+horizontal axes answer differently, and both effects are real:**
+
+| Axis                              | Across 8 seeds                                                  | Reading                     |
+| --------------------------------- | --------------------------------------------------------------- | --------------------------- |
+| **y** (cross-track, ⟂ the street) | +0.475 m ± 0.010 on the 5 cleanly converged seeds; > 0 on all 8 | systematic **frame offset** |
+| **x** (along-track, ∥ the street) | −5.57 … +3.12 m, std 2.59                                       | shallow **cost basin**      |
+
+The cross-track number reproduces the G1 window's +0.477 m exactly and no seed
+escapes it, so **the Town10 pointcloud is offset ≈ +0.48 m in y relative to the
+lanelet2/CARLA road network**. Note this is an inconsistency _inside_ the map
+bundle: `fit_map_offset.py` only ever compares the `.xodr` against
+`lanelet2_map.osm`, so its 0.00 m median says nothing about the pcd, and NDT
+localizes against the pcd. `benchmarks/scripts/fetch_maps.sh` pulls a pcd named
+for `Town10HD` while CARLA loads `Town10HD_Opt`, which is a plausible origin.
+
+The along-track spread is the sparsity effect, and it is what the pointcloud
+density predicts. Measured within a 30 m disc of the ego, against a ground datum
+taken as the 10th percentile of z in that disc (each map's own datum, since the
+map frames differ by their z offset), normalised by the disc's 2827 m²:
+
+| Points per m² in the 30 m disc            | Town10HD_Opt | Nishi-Shinjuku |
+| ----------------------------------------- | ------------ | -------------- |
+| vertical structure, 0.8–3.0 m above datum | **0.50**     | **4.25**       |
+| within ±0.25 m of datum (ground)          | 137.41       | 12.08          |
+| all points                                | 138.49       | 47.02          |
+
+Nishi carries 8.5× more vertical structure per m², and vertical structure is
+what constrains a horizontal scan match — hence x sliding freely along a street
+whose surface is otherwise a featureless plane.
+
+Practical consequence, and the two are separable: the ≈0.48 m cross-track offset
+is a correctable registration error, so re-registering or regenerating the pcd
+would remove the larger part of G1's error. The along-track slack would remain
+and needs a denser pointcloud. Until then this map is sound for closed-loop
+driving and control-side measurement (G2 passes comfortably) but not for a
+sub-0.5 m localization comparison.
+
+Reproduce: `scripts/e2e/seed_sweep.py`, run inside the `autoware` container
+against a parked ego (its docstring carries the exact `compose exec` line); the
+run that produced the table above is kept as `seed_sweep.log` under the
+untracked `reports/task-15-town10/`.
+
+**If a live run aborts before loading any map** with "modules are missing or
+built with a different engine version", the engine was rebuilt after the Carla
+editor modules; `verify_editor_artifact.sh` now detects that BuildId mismatch in
+under a second, and `cmake --build Build/Development --target carla-unreal-editor`
+(with `CARLA_CCACHE=1`) clears it in about a minute.

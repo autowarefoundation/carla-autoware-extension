@@ -26,8 +26,10 @@ open("/tmp/g1_ndt.txt","w").write("\n".join(rows)+"\n"); print(f"ndt_rows={len(r
 PY' &
 CPID=$!
 # 2) CARLA ground-truth series on the host over the same window (ego = role_name "ego").
-# collect_gt.py maps CARLA metres into the MGRS-local map frame via the pinned affine
-# (verify_mgrs_handedness.CONVERTER_OFFSET, byte-identical to the extension's MgrsOffset.h).
+# collect_gt.py maps CARLA metres into the map frame via the pinned affine
+# (verify_mgrs_handedness.MAP_OFFSETS, byte-identical to the extension's MgrsOffset.h). The active
+# map comes from $CARLA_AUTOWARE_MAP -- export it in THIS shell for a non-default map (run_e2e.sh
+# prints the exact line), or the ground truth lands in the wrong frame.
 PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" \
   python3 -m scripts.e2e.collect_gt --window "$WIN" --out "$GT" &
 GPID=$!

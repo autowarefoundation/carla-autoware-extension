@@ -10,7 +10,7 @@ import math
 import pytest
 
 from scripts.e2e.collect_gt import ego_map_xy, find_ego, goal_distance
-from scripts.e2e.verify_mgrs_handedness import CONVERTER_OFFSET
+from scripts.e2e.verify_mgrs_handedness import CONVERTER_OFFSET, MAP_ENV_VAR, MAP_OFFSETS
 
 
 def test_ego_map_xy_matches_the_pinned_affine():
@@ -26,6 +26,27 @@ def test_goal_distance_is_map_frame_hypot():
     ox, oy, _ = CONVERTER_OFFSET
     # Ego at CARLA (3, -4) -> map (ox+3, oy+4); goal at map (ox, oy) -> distance 5.
     assert math.isclose(goal_distance(3.0, -4.0, ox, oy), 5.0, abs_tol=1e-9)
+
+
+def test_ego_map_xy_accepts_another_maps_offset():
+    town10 = MAP_OFFSETS["Town10HD_Opt"]
+    ox, oy, _ = town10
+    x, y = ego_map_xy(-28.35, -69.72, town10)
+    assert math.isclose(x, ox - 28.35, abs_tol=1e-9)
+    assert math.isclose(y, oy + 69.72, abs_tol=1e-9)  # Y flip still applies
+
+
+def test_goal_distance_accepts_another_maps_offset():
+    town10 = MAP_OFFSETS["Town10HD_Opt"]
+    assert math.isclose(goal_distance(3.0, -4.0, 0.0, 0.0, town10), 5.0, abs_tol=1e-9)
+
+
+def test_defaults_do_not_read_the_environment(monkeypatch):
+    # These are pure affine helpers: an exported map name must not silently move
+    # what a default-argument call returns. main() resolves the active map once.
+    monkeypatch.setenv(MAP_ENV_VAR, "Town10HD_Opt")
+    ox, oy, _ = CONVERTER_OFFSET
+    assert ego_map_xy(0.0, 0.0) == (ox, oy)
 
 
 class _FakeActor:

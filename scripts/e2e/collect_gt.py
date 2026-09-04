@@ -31,23 +31,38 @@ import math
 import sys
 import time
 
-from scripts.e2e.verify_mgrs_handedness import world_m_to_mgrs_local
+from scripts.e2e.verify_mgrs_handedness import (
+    CONVERTER_OFFSET,
+    DEFAULT_MAP,
+    MAP_ENV_VAR,
+    offset_for_map,
+    world_m_to_mgrs_local,
+)
 
 
-def ego_map_xy(x_m: float, y_m: float) -> tuple[float, float]:
-    """CARLA PythonAPI ego position (metres) -> MGRS-local map XY (metres).
+def ego_map_xy(
+    x_m: float, y_m: float, offset: tuple[float, float, float] = CONVERTER_OFFSET
+) -> tuple[float, float]:
+    """CARLA PythonAPI ego position (metres) -> map-frame XY (metres).
 
-    CARLA reports metres; the map frame is the MGRS-local converter frame
-    (single Y flip + offset). This is a pure affine wrapper so the gates share
-    one mapping with the transform verifier and the extension.
+    CARLA reports metres; the map frame is the active map's converter frame
+    (single Y flip + that map's offset). This is a pure affine wrapper so the
+    gates share one mapping with the transform verifier and the extension.
+    ``offset`` defaults to Nishi-Shinjuku; :func:`main` resolves the active map.
     """
-    mgrs_x, mgrs_y, _ = world_m_to_mgrs_local(x_m, y_m, 0.0)
+    mgrs_x, mgrs_y, _ = world_m_to_mgrs_local(x_m, y_m, 0.0, offset)
     return (mgrs_x, mgrs_y)
 
 
-def goal_distance(x_m: float, y_m: float, goal_x: float, goal_y: float) -> float:
+def goal_distance(
+    x_m: float,
+    y_m: float,
+    goal_x: float,
+    goal_y: float,
+    offset: tuple[float, float, float] = CONVERTER_OFFSET,
+) -> float:
     """XY distance (metres) from a CARLA ego position to a map-frame goal."""
-    mgrs_x, mgrs_y = ego_map_xy(x_m, y_m)
+    mgrs_x, mgrs_y = ego_map_xy(x_m, y_m, offset)
     return math.hypot(mgrs_x - goal_x, mgrs_y - goal_y)
 
 
@@ -85,7 +100,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=2000)
+    p.add_argument(
+        "--map",
+        default=None,
+        help=f"map whose converter offset maps CARLA coordinates into the map "
+        f"frame; defaults to ${MAP_ENV_VAR} and then to {DEFAULT_MAP}",
+    )
     args = p.parse_args(argv)
+
+    # Resolved ONCE, before connecting: an unknown map name must fail here, not
+    # after a full collection window has already been recorded in a wrong frame.
+    offset = offset_for_map(args.map)
 
     import carla
 
@@ -99,9 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     while time.time() < end:
         loc = ego.get_transform().location
         if args.goal:
-            rows.append(f"{goal_distance(loc.x, loc.y, args.goal[0], args.goal[1]):.4f}")
+            rows.append(f"{goal_distance(loc.x, loc.y, args.goal[0], args.goal[1], offset):.4f}")
         else:
-            mgrs_x, mgrs_y = ego_map_xy(loc.x, loc.y)
+            mgrs_x, mgrs_y = ego_map_xy(loc.x, loc.y, offset)
             rows.append(f"{time.time():.3f} {mgrs_x:.4f} {mgrs_y:.4f}")
         time.sleep(period)
 

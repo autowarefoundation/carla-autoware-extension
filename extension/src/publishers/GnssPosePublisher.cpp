@@ -19,8 +19,9 @@ namespace autoware {
 static CarlaRos2Qos GnssQos() { return CarlaRos2Qos{/*reliability=*/0u, /*durability=*/0u,
                                                     /*history_depth=*/1u}; }
 
-void GnssPosePublisher::Init(const CarlaRos2Host& host) {
+void GnssPosePublisher::Init(const CarlaRos2Host& host, const MapOffset& offset) {
   host_ = host;
+  offset_ = offset;
   using geometry_msgs::msg::PoseStamped;
   using geometry_msgs::msg::PoseWithCovarianceStamped;
   // create_publisher takes `const CarlaRos2Qos*`; bind an lvalue whose lifetime
@@ -50,7 +51,7 @@ void GnssPosePublisher::OnVehicleStatus(const CarlaRos2VehicleStatusView& v) {
   last_pub_s_ = t;
 
   const auto [mx, my, mz] = world_to_mgrs_local(v.transform.x_cm, v.transform.y_cm,
-                                                v.transform.z_cm);
+                                                v.transform.z_cm, offset_);
   // Orientation: conjugate the ego quaternion by the SAME Y-flip the position
   // uses (MgrsOffset.h owns the sign rule and its derivation).
   const auto [qx, qy, qz, qw] = carla_quat_to_mgrs(v.transform.qx, v.transform.qy, v.transform.qz,

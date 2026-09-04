@@ -1,0 +1,39 @@
+autoware_contents:
+  revision: 062f94b5322e679ee0430e2daa6995dca9f7f0ea
+  town10_pcd_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
+  town10_osm_sha256: cdd0a28664bcf9b5bd8867584a6fa6a02fa0f75a7c3dbb901ca216128ef86a17
+carla_0915:
+  url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
+  sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7
+gezp_wheel:
+  url: https://github.com/gezp/carla_ros/releases/download/carla-0.9.15-ubuntu-22.04/carla-0.9.15-cp310-cp310-linux_x86_64.whl
+  sha256: d8766616df2511a58ac152ccc53e3307a84ccef9e7fb7108006667188d5766f8
+# Bridge cells (E/E0/E-opt). The pinned artifact is the CUDA variant, NOT the
+# CPU-only universe-devel the key name suggests: only that variant resolves
+# autoware_ground_segmentation_cuda, so the bridge's perception can run at all.
+# The key keeps its historical name because the documented build command reads
+# pins['autoware_universe_devel']['digest'].
+# GPU: this pin makes the image GPU-dependent -- every `docker run` of it (and
+# of bridge_bench below) needs `--gpus all` and nvidia-container-toolkit; see
+# benchmarks/patches/python-bridge/README.md.
+autoware_universe_devel:
+  image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda
+  digest: ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee
+# The image built from benchmarks/docker/bridge-bench.Dockerfile with
+# --build-arg BASE=<autoware_universe_devel.digest>. It is never pushed, so the
+# only identifier it has is the LOCAL image digest below (`docker images
+# --digests`): it pins what a run used on this workstation, but it is not a
+# pullable reference, and a rebuild elsewhere must be re-recorded.
+bridge_bench:
+  tag: bridge-bench:latest
+  local_digest: sha256:b734b9af2ac6527284b07d8986261d4c360cf4d0f4d18900be7a13ebb4cb4123
+# Cell B45: the tier4 native path is documented against Autoware 0.45.1 and
+# sensor_model:=awsim_sensor_kit. There is NO universe-devel-cuda-0.45.1 tag;
+# the newest CUDA-enabled 0.45.x is universe-devel-cuda-0.45.0, recorded below
+# as the fallback should B45 turn out to need CUDA perception.
+autoware_045:
+  image: ghcr.io/autowarefoundation/autoware:universe-devel-0.45.1
+  digest: ghcr.io/autowarefoundation/autoware@sha256:6afe9ee4a25a1082685c266f96dabd6041e77424bf10ea729bd488e02ae92175
+  amd64_digest: sha256:61ee4e281df852f63b8085b61d136ea4e9844f5894ba41df949bc7919cda5cba
+  cuda_fallback_image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-0.45.0
+  cuda_fallback_digest: ghcr.io/autowarefoundation/autoware@sha256:3a8d92856174dcb6f4d9a73e946132864b3bd1a74bc603d8aed7536f5b6bcb82

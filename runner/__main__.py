@@ -37,6 +37,22 @@ def _brake_to_stop(ego) -> None:
         pass
 
 
+def select_spawn_point(spawn_points, index: int):
+    """Pick a recommended spawn point by index, or raise with the valid range.
+
+    Split out of ``main()`` so the range check is unit-testable with a plain list
+    and no CARLA egg. It fails with the map's actual spawn-point count because by
+    the time ``main()`` gets here the map is already loaded -- an opaque
+    ``IndexError`` would have cost a full editor boot and still not say what to
+    pick instead.
+    """
+    if not 0 <= index < len(spawn_points):
+        raise IndexError(
+            f"--spawn-index {index} out of range; the map has {len(spawn_points)} spawn points"
+        )
+    return spawn_points[index]
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="runner", description="CARLA ego/sensor spawn + tick runner")
     p.add_argument("--host", default="localhost")
@@ -73,7 +89,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         # centimetres the extension .so sees at the C++ boundary (docs/mgrs-handedness.md
         # "Units caveat") -- this flag feeds carla.Transform directly, so it takes metres.
         help="ego spawn pose in CARLA world coordinates (metres, degrees); "
-        "default = map spawn point 0",
+        "default = the spawn point selected by --spawn-index",
+    )
+    p.add_argument(
+        "--spawn-index",
+        type=int,
+        default=0,
+        # Nishi-Shinjuku exposes exactly ONE spawn point, so this stayed implicit;
+        # the CARLA town maps expose dozens, and picking one by index keeps the
+        # ego ON a recommended spawn (hence on the road network and clear of
+        # geometry), which a hand-typed --initial-pose does not guarantee.
+        # --initial-pose, when given, wins: it is the more specific request.
+        help="index into world.get_map().get_spawn_points(); ignored when "
+        "--initial-pose is given (default: 0)",
     )
     p.add_argument(
         "--async",
@@ -142,7 +170,11 @@ def main(argv: list[str] | None = None) -> int:
             carla.Location(x=x, y=y, z=z), carla.Rotation(roll=roll, pitch=pitch, yaw=yaw)
         )
     else:
-        pose = world.get_map().get_spawn_points()[0]
+        try:
+            pose = select_spawn_point(world.get_map().get_spawn_points(), args.spawn_index)
+        except IndexError as exc:
+            print(f"PREFLIGHT FAIL: {exc} ({args.map})", file=sys.stderr)
+            return 1
 
     stop = {"go": True}
     signal.signal(signal.SIGINT, lambda *_: stop.update(go=False))  # Ctrl-C -> graceful stop

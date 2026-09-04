@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -40,6 +41,95 @@ TEST(mgrs, x_and_z_are_not_flipped_and_scale_by_100) {
   EXPECT_NEAR(x, 81655.73 + 2.50, 1e-3);
   EXPECT_NEAR(y, 50137.43 + 4.00, 1e-3);  // -(-400 cm) = +4 m
   EXPECT_NEAR(z, 42.49998 + 1.75, 1e-3);
+}
+
+// ===========================================================================
+// Per-map converter offset. Only the TRANSLATION is map-specific; the Y flip
+// and the cm->m scale are handedness/unit properties, so selecting a map must
+// change the translation and NOTHING else.
+// ===========================================================================
+TEST(map_offset, nishishinjuku_is_the_default) {
+  EXPECT_DOUBLE_EQ(kDefaultMapOffset.x, kNishishinjukuOffset.x);
+  EXPECT_DOUBLE_EQ(kDefaultMapOffset.y, kNishishinjukuOffset.y);
+  EXPECT_DOUBLE_EQ(kDefaultMapOffset.z, kNishishinjukuOffset.z);
+  EXPECT_DOUBLE_EQ(kNishishinjukuOffset.x, 81655.73);
+  EXPECT_DOUBLE_EQ(kNishishinjukuOffset.y, 50137.43);
+  EXPECT_DOUBLE_EQ(kNishishinjukuOffset.z, 42.49998);
+}
+
+TEST(map_offset, town10hd_opt_is_a_pure_flip_with_zero_translation) {
+  // Measured, not assumed: scripts/e2e/fit_map_offset.py fits (0,0) against the
+  // autoware-contents Town10 lanelet2 with a median residual of 0.000 m.
+  EXPECT_DOUBLE_EQ(kTown10HdOptOffset.x, 0.0);
+  EXPECT_DOUBLE_EQ(kTown10HdOptOffset.y, 0.0);
+  EXPECT_DOUBLE_EQ(kTown10HdOptOffset.z, 0.0);
+}
+
+TEST(map_offset, lookup_resolves_known_names) {
+  MapOffset got{};
+  ASSERT_TRUE(map_offset_for("NishishinjukuMap", &got));
+  EXPECT_DOUBLE_EQ(got.x, kNishishinjukuOffset.x);
+  EXPECT_DOUBLE_EQ(got.y, kNishishinjukuOffset.y);
+  EXPECT_DOUBLE_EQ(got.z, kNishishinjukuOffset.z);
+
+  ASSERT_TRUE(map_offset_for("Town10HD_Opt", &got));
+  EXPECT_DOUBLE_EQ(got.x, 0.0);
+  EXPECT_DOUBLE_EQ(got.y, 0.0);
+  EXPECT_DOUBLE_EQ(got.z, 0.0);
+}
+
+TEST(map_offset, lookup_treats_null_and_empty_as_the_default) {
+  for (const char* name : {static_cast<const char*>(nullptr), ""}) {
+    MapOffset got{};
+    ASSERT_TRUE(map_offset_for(name, &got));
+    EXPECT_DOUBLE_EQ(got.x, kDefaultMapOffset.x);
+    EXPECT_DOUBLE_EQ(got.y, kDefaultMapOffset.y);
+    EXPECT_DOUBLE_EQ(got.z, kDefaultMapOffset.z);
+  }
+}
+
+TEST(map_offset, lookup_rejects_an_unknown_name_without_touching_out) {
+  // No silent fallback: a typo'd map name must fail hard, because a wrong
+  // offset only surfaces downstream as NDT never converging.
+  MapOffset got{1.0, 2.0, 3.0};                            // sentinel, must survive
+  EXPECT_FALSE(map_offset_for("Town10HD", &got));          // near-miss of a real name
+  EXPECT_FALSE(map_offset_for("nishishinjukumap", &got));  // case is significant
+  EXPECT_DOUBLE_EQ(got.x, 1.0);
+  EXPECT_DOUBLE_EQ(got.y, 2.0);
+  EXPECT_DOUBLE_EQ(got.z, 3.0);
+}
+
+TEST(map_offset, lookup_rejects_a_null_out) {
+  EXPECT_FALSE(map_offset_for("NishishinjukuMap", nullptr));
+}
+
+TEST(map_offset, every_table_entry_resolves_to_its_own_offset) {
+  // The table is also what the load-failure message enumerates, so a name
+  // advertised as "known" that did not resolve would be actively misleading.
+  ASSERT_GT(std::size(kMapOffsets), 0u);
+  for (const NamedMapOffset& entry : kMapOffsets) {
+    MapOffset got{};
+    ASSERT_TRUE(map_offset_for(entry.name, &got)) << entry.name;
+    EXPECT_DOUBLE_EQ(got.x, entry.offset.x) << entry.name;
+    EXPECT_DOUBLE_EQ(got.y, entry.offset.y) << entry.name;
+    EXPECT_DOUBLE_EQ(got.z, entry.offset.z) << entry.name;
+  }
+}
+
+TEST(map_offset, transform_under_town10_keeps_the_flip_and_the_cm_scale) {
+  auto [x, y, z] = world_to_mgrs_local(250.0, -400.0, 175.0, kTown10HdOptOffset);
+  EXPECT_NEAR(x, 2.50, 1e-9);
+  EXPECT_NEAR(y, 4.00, 1e-9);  // -(-400 cm) = +4 m -- the same Y flip as Nishi
+  EXPECT_NEAR(z, 1.75, 1e-9);
+}
+
+TEST(map_offset, transform_differs_from_the_default_only_by_the_translation) {
+  const double x_cm = 1234.0, y_cm = -5678.0, z_cm = 910.0;
+  auto [nx, ny, nz] = world_to_mgrs_local(x_cm, y_cm, z_cm, kNishishinjukuOffset);
+  auto [tx, ty, tz] = world_to_mgrs_local(x_cm, y_cm, z_cm, kTown10HdOptOffset);
+  EXPECT_NEAR(nx - tx, kNishishinjukuOffset.x, 1e-9);
+  EXPECT_NEAR(ny - ty, kNishishinjukuOffset.y, 1e-9);
+  EXPECT_NEAR(nz - tz, kNishishinjukuOffset.z, 1e-9);
 }
 
 // ===========================================================================
@@ -241,6 +331,58 @@ TEST_F(GnssPoseTest, on_vehicle_status_publishes_pose_stamped_with_expected_fiel
   EXPECT_DOUBLE_EQ(m.pose.orientation.w, eqw);
   // Exact wire size: 4 encaps + [sec4 nsec4 str(4+4)] + 7*f64 = 4 + 16 + 56 = 76.
   EXPECT_EQ(b.size(), 76u);
+}
+
+// ---------------------------------------------------------------------------
+// (b2) Init(host, offset) makes the publisher use THAT map's offset for both
+// topics, while the default Init(host) still publishes Nishi-Shinjuku poses --
+// so adding Town10 cannot have moved the existing map's output.
+// ---------------------------------------------------------------------------
+TEST_F(GnssPoseTest, init_with_a_map_offset_publishes_in_that_maps_frame) {
+  GnssPosePublisher pub;
+  pub.Init(MakeFakeHost(), kTown10HdOptOffset);
+
+  const double x_cm = 1000.0, y_cm = 2000.0, z_cm = 500.0;
+  pub.OnVehicleStatus(MakeView(0.0, x_cm, y_cm, z_cm, 0.0, 0.0, kS45, kS45));
+  ASSERT_EQ(state_.published.size(), 2u);
+
+  geometry_msgs::msg::PoseStamped ps;
+  ASSERT_TRUE(cdr_deserialize(state_.published[0].second.data(),
+                              state_.published[0].second.size(), ps));
+  EXPECT_DOUBLE_EQ(ps.pose.position.x, 10.0);   // 1000 cm east, zero translation
+  EXPECT_DOUBLE_EQ(ps.pose.position.y, -20.0);  // Y flip still applies
+  EXPECT_DOUBLE_EQ(ps.pose.position.z, 5.0);
+
+  // The covariance topic carries the SAME pose, not a stale default-offset one.
+  geometry_msgs::msg::PoseWithCovarianceStamped pc;
+  ASSERT_TRUE(cdr_deserialize(state_.published[1].second.data(),
+                              state_.published[1].second.size(), pc));
+  EXPECT_DOUBLE_EQ(pc.pose.pose.position.x, ps.pose.position.x);
+  EXPECT_DOUBLE_EQ(pc.pose.pose.position.y, ps.pose.position.y);
+  EXPECT_DOUBLE_EQ(pc.pose.pose.position.z, ps.pose.position.z);
+
+  // Orientation is offset-independent (it comes from the shared Y-flip rule).
+  const auto [eqx, eqy, eqz, eqw] = carla_quat_to_mgrs(0.0, 0.0, kS45, kS45);
+  EXPECT_DOUBLE_EQ(ps.pose.orientation.x, eqx);
+  EXPECT_DOUBLE_EQ(ps.pose.orientation.y, eqy);
+  EXPECT_DOUBLE_EQ(ps.pose.orientation.z, eqz);
+  EXPECT_DOUBLE_EQ(ps.pose.orientation.w, eqw);
+}
+
+TEST_F(GnssPoseTest, init_without_a_map_offset_still_publishes_nishishinjuku) {
+  GnssPosePublisher pub;
+  pub.Init(MakeFakeHost());  // no offset argument -- the historical call site
+
+  const double x_cm = 1000.0, y_cm = 2000.0, z_cm = 500.0;
+  pub.OnVehicleStatus(MakeView(0.0, x_cm, y_cm, z_cm));
+  ASSERT_EQ(state_.published.size(), 2u);
+
+  geometry_msgs::msg::PoseStamped ps;
+  ASSERT_TRUE(cdr_deserialize(state_.published[0].second.data(),
+                              state_.published[0].second.size(), ps));
+  EXPECT_DOUBLE_EQ(ps.pose.position.x, kNishishinjukuOffset.x + 10.0);
+  EXPECT_DOUBLE_EQ(ps.pose.position.y, kNishishinjukuOffset.y - 20.0);
+  EXPECT_DOUBLE_EQ(ps.pose.position.z, kNishishinjukuOffset.z + 5.0);
 }
 
 // ---------------------------------------------------------------------------

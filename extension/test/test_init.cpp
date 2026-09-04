@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <utility>
 #include <vector>
@@ -9,7 +10,9 @@
 #include <autoware_vehicle_msgs/msg/engage.hpp>
 #include <autoware_vehicle_msgs/msg/gear_command.hpp>
 #include <autoware_vehicle_msgs/msg/gear_report.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 
+#include "carla/autoware/geo/MgrsOffset.h"
 #include "carla/autoware/messages/RosIdl.h"
 #include "carla/ros2/extension/CarlaRos2Extension.h"
 
@@ -159,9 +162,33 @@ const std::vector<uint8_t>* PublishedForTopic(const std::string& topic) {
 
 class InitTest : public ::testing::Test {
  protected:
-  void SetUp() override { g_state = &state_; }
-  void TearDown() override { g_state = nullptr; }
+  // HERMETIC $CARLA_AUTOWARE_MAP. The entrypoint reads that variable to pick the
+  // GNSS converter offset, so an operator shell that exports it (the E2E harness
+  // does) must not change what these cases load. Every case starts with it UNSET
+  // -- i.e. on the Nishi-Shinjuku default -- and the cases that exercise it call
+  // SetMapEnv(); the prior value is restored in TearDown.
+  void SetUp() override {
+    g_state = &state_;
+    const char* prev = std::getenv(kMapEnvVar);
+    had_map_env_ = prev != nullptr;
+    if (had_map_env_) prev_map_env_ = prev;
+    unsetenv(kMapEnvVar);
+  }
+  void TearDown() override {
+    if (had_map_env_) {
+      setenv(kMapEnvVar, prev_map_env_.c_str(), 1);
+    } else {
+      unsetenv(kMapEnvVar);
+    }
+    g_state = nullptr;
+  }
+  static void SetMapEnv(const char* value) { setenv(kMapEnvVar, value, 1); }
+
   FakeHostState state_;
+
+ private:
+  bool had_map_env_ = false;
+  std::string prev_map_env_;
 };
 
 }  // namespace
@@ -216,6 +243,135 @@ TEST_F(InitTest, distinct_reject_codes_per_failure_class) {
   EXPECT_NE(null_host, null_out);
   EXPECT_NE(null_host, bad_ver);
   EXPECT_NE(null_out, bad_ver);
+}
+
+// ---------------------------------------------------------------------------
+// $CARLA_AUTOWARE_MAP selects the GNSS converter offset at load time (the frozen
+// C ABI carries no map name). An UNKNOWN name must abort the load with its own
+// distinct code, never fall back to another map's offset -- a wrong offset would
+// otherwise surface far downstream as NDT never converging (MgrsOffset.h).
+// ---------------------------------------------------------------------------
+TEST_F(InitTest, rejects_an_unknown_map_env_with_a_distinct_code) {
+  CarlaRos2Host h = MakeFakeHost();
+  CarlaRos2Extension e{};
+  SetMapEnv("NoSuchMap");
+  // Captured so the deliberate diagnostic (asserted by the next test) does not
+  // pollute this suite's output.
+  testing::internal::CaptureStderr();
+  const int unknown_map = carla_ros2_extension_init(&h, &e);
+  testing::internal::GetCapturedStderr();
+
+  EXPECT_NE(unknown_map, 0);
+  // Rejected BEFORE allocating or touching the host: out stays zeroed and no
+  // endpoint/observer was created (so nothing leaks on this path).
+  EXPECT_EQ(e.api_version, 0u);
+  EXPECT_EQ(e.ext_ctx, nullptr);
+  EXPECT_EQ(e.on_tick, nullptr);
+  EXPECT_EQ(e.on_shutdown, nullptr);
+  EXPECT_TRUE(state_.observers.empty());
+  EXPECT_TRUE(state_.pubs.empty());
+  EXPECT_TRUE(state_.subs.empty());
+
+  // Distinct from every other failure class, so a core log localizes it.
+  CarlaRos2Host bad_version = MakeFakeHost();
+  bad_version.api_version = 999u;
+  EXPECT_NE(unknown_map, carla_ros2_extension_init(nullptr, &e));
+  EXPECT_NE(unknown_map, carla_ros2_extension_init(&h, nullptr));
+  EXPECT_NE(unknown_map, carla_ros2_extension_init(&bad_version, &e));
+}
+
+// ---------------------------------------------------------------------------
+// The rejection must be DIAGNOSABLE, not merely a return code: what the operator
+// actually sees is "every extension topic is missing", which looks nothing like
+// a misspelled environment variable. So the message names the offending value
+// AND enumerates the accepted ones straight from the table.
+// ---------------------------------------------------------------------------
+TEST_F(InitTest, unknown_map_env_reports_the_name_and_the_known_maps) {
+  CarlaRos2Host h = MakeFakeHost();
+  CarlaRos2Extension e{};
+  SetMapEnv("Town10HD");  // a near-miss of a real name
+
+  testing::internal::CaptureStderr();
+  ASSERT_NE(carla_ros2_extension_init(&h, &e), 0);
+  const std::string err = testing::internal::GetCapturedStderr();
+
+  EXPECT_NE(err.find(kMapEnvVar), std::string::npos) << err;
+  EXPECT_NE(err.find("\"Town10HD\""), std::string::npos) << err;
+  // Every table entry is listed. Asserted by iterating the table itself, so a
+  // map added later is covered without anyone remembering to edit this test.
+  for (const NamedMapOffset& entry : kMapOffsets) {
+    EXPECT_NE(err.find(entry.name), std::string::npos) << entry.name << " missing from: " << err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A KNOWN map name loads normally and reaches the GNSS publisher: the synthesized
+// pose lands in that map's frame, end to end across the entrypoint.
+// ---------------------------------------------------------------------------
+TEST_F(InitTest, known_map_env_reaches_the_gnss_publisher) {
+  SetMapEnv("Town10HD_Opt");
+  CarlaRos2Host h = MakeFakeHost();
+  CarlaRos2Extension e{};
+  ASSERT_EQ(carla_ros2_extension_init(&h, &e), 0);
+  ASSERT_EQ(state_.observers.size(), 1u);
+
+  CarlaRos2VehicleStatusView view{};
+  view.actor_id = 7u;
+  view.ros_name = "ego";
+  view.transform.x_cm = 1000.0;  // 10 m east
+  view.transform.y_cm = 2000.0;  // 20 m +Y in CARLA -> -20 m in the map frame
+  view.transform.z_cm = 500.0;
+  view.transform.qw = 1.0;
+  view.sim_time_s = 0.0;
+  CarlaRos2SensorSample sample{};
+  sample.kind = CARLA_ROS2_SENSOR_VEHICLE_STATUS;
+  sample.actor_id = 7u;
+  sample.ros_name = "ego";
+  sample.data = &view;
+  sample.data_size = sizeof(view);
+  state_.observers[0].cb(state_.observers[0].user, &sample);
+
+  const std::vector<uint8_t>* pose_buf = PublishedForTopic("/sensing/gnss/pose");
+  ASSERT_NE(pose_buf, nullptr);
+  geometry_msgs::msg::PoseStamped m;
+  ASSERT_TRUE(cdr_deserialize(pose_buf->data(), pose_buf->size(), m));
+  EXPECT_DOUBLE_EQ(m.pose.position.x, 10.0);   // Town10 translation is zero
+  EXPECT_DOUBLE_EQ(m.pose.position.y, -20.0);  // Y flip still applies
+  EXPECT_DOUBLE_EQ(m.pose.position.z, 5.0);
+
+  e.on_shutdown(e.ext_ctx);
+}
+
+// ---------------------------------------------------------------------------
+// An UNSET $CARLA_AUTOWARE_MAP keeps the historical Nishi-Shinjuku offset, so
+// adding the map table cannot have moved the existing map's published poses.
+// ---------------------------------------------------------------------------
+TEST_F(InitTest, unset_map_env_keeps_the_nishishinjuku_offset) {
+  CarlaRos2Host h = MakeFakeHost();  // SetUp() already unset the variable
+  CarlaRos2Extension e{};
+  ASSERT_EQ(carla_ros2_extension_init(&h, &e), 0);
+  ASSERT_EQ(state_.observers.size(), 1u);
+
+  CarlaRos2VehicleStatusView view{};
+  view.transform.x_cm = 1000.0;
+  view.transform.y_cm = 2000.0;
+  view.transform.z_cm = 500.0;
+  view.transform.qw = 1.0;
+  CarlaRos2SensorSample sample{};
+  sample.kind = CARLA_ROS2_SENSOR_VEHICLE_STATUS;
+  sample.data = &view;
+  sample.data_size = sizeof(view);
+  state_.observers[0].cb(state_.observers[0].user, &sample);
+
+  const std::vector<uint8_t>* pose_buf = PublishedForTopic("/sensing/gnss/pose");
+  ASSERT_NE(pose_buf, nullptr);
+  geometry_msgs::msg::PoseStamped m;
+  ASSERT_TRUE(cdr_deserialize(pose_buf->data(), pose_buf->size(), m));
+  EXPECT_DOUBLE_EQ(m.pose.position.x, kNishishinjukuOffset.x + 10.0);
+  EXPECT_DOUBLE_EQ(m.pose.position.y, kNishishinjukuOffset.y - 20.0);
+  EXPECT_DOUBLE_EQ(m.pose.position.z, kNishishinjukuOffset.z + 5.0);
+
+  e.on_shutdown(e.ext_ctx);
 }
 
 // ---------------------------------------------------------------------------
