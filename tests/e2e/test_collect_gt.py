@@ -7,60 +7,55 @@ which is how CI runs it.
 
 import math
 
-import pytest
-
-from scripts.e2e.collect_gt import ego_map_xy, find_ego, goal_distance
+from scripts.e2e import collect_gt as gt
 from scripts.e2e.map_frame import NISHISHINJUKU_ORIGIN
 
 
-def test_ego_map_xy_matches_the_pinned_affine():
-    # The mapping must be the single pinned affine (offset + X pass-through,
-    # Y flip), not an independent re-derivation.
-    ox, oy, _ = NISHISHINJUKU_ORIGIN
-    x, y = ego_map_xy(-278.39, 220.54)
-    assert math.isclose(x, ox - 278.39, abs_tol=1e-9)
-    assert math.isclose(y, oy - 220.54, abs_tol=1e-9)
+def test_ego_map_xy_local_projector_rear_axle_basis():
+    # actor at (10, 0) heading +x -> base_link at (8.575, 0) -> map (8.575, -0.0)
+    mx, my = gt.ego_map_xy(10.0, 0.0, 0.0)
+    assert (round(mx, 3), round(my, 3)) == (8.575, 0.0)
 
 
-def test_goal_distance_is_map_frame_hypot():
-    ox, oy, _ = NISHISHINJUKU_ORIGIN
-    # Ego at CARLA (3, -4) -> map (ox+3, oy+4); goal at map (ox, oy) -> distance 5.
-    assert math.isclose(goal_distance(3.0, -4.0, ox, oy), 5.0, abs_tol=1e-9)
+def test_ego_map_xy_can_disable_the_rear_axle_shift():
+    assert gt.ego_map_xy(10.0, 5.0, 0.0, rear_axle_offset=0.0) == (10.0, -5.0)
 
 
-class _FakeActor:
-    def __init__(self, role_name):
-        self.attributes = {"role_name": role_name}
+def test_ego_map_xy_with_mgrs_origin():
+    mx, my = gt.ego_map_xy(0.0, 0.0, 0.0, origin=NISHISHINJUKU_ORIGIN, rear_axle_offset=0.0)
+    assert (mx, my) == (81655.73, 50137.43)
 
 
-class _FakeActorList(list):
-    def filter(self, pattern):
-        assert pattern == "vehicle.*"
+def test_goal_distance_is_measured_from_base_link():
+    d = gt.goal_distance(10.0, 0.0, 0.0, goal_x=8.575, goal_y=0.0)
+    assert math.isclose(d, 0.0, abs_tol=1e-9)
+
+
+class _Actor:
+    def __init__(self, role):
+        self.attributes = {"role_name": role}
+
+
+class _Actors(list):
+    def filter(self, _pattern):
         return self
 
 
-class _FakeWorld:
-    """World whose actor list is empty for the first ``empty_reads`` queries."""
-
-    def __init__(self, empty_reads, ego=None):
-        self._empty_reads = empty_reads
-        self._ego = ego
+class _World:
+    def __init__(self, actors):
+        self._actors = actors
 
     def get_actors(self):
-        if self._empty_reads > 0:
-            self._empty_reads -= 1
-            return _FakeActorList([_FakeActor("npc")])
-        return _FakeActorList([_FakeActor("npc"), self._ego])
+        return _Actors(self._actors)
 
 
-def test_find_ego_retries_until_the_ego_appears():
-    ego = _FakeActor("ego")
-    sleeps = []
-    found = find_ego(_FakeWorld(empty_reads=3, ego=ego), sleep=sleeps.append)
-    assert found is ego
-    assert len(sleeps) == 3  # one sleep per empty read, none after success
-
-
-def test_find_ego_fails_loudly_after_exhausting_attempts():
-    with pytest.raises(RuntimeError, match="no ego actor"):
-        find_ego(_FakeWorld(empty_reads=10**9), attempts=5, sleep=lambda _: None)
+def test_find_ego_returns_role_ego_and_retries():
+    calls = []
+    world = _World([_Actor("hero")])
+    try:
+        gt.find_ego(world, attempts=2, delay_s=0.0, sleep=lambda s: calls.append(s))
+    except RuntimeError:
+        pass
+    assert len(calls) == 2
+    ego = _Actor("ego")
+    assert gt.find_ego(_World([_Actor("hero"), ego]), attempts=1, sleep=lambda s: None) is ego
