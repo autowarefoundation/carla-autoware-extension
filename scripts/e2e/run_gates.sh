@@ -15,10 +15,14 @@ OUT="${OUT:-$LOG_DIR/gates}"; mkdir -p "$OUT"
 # so fail now instead of burning the whole --g2-window first.
 [[ -n "$(head -1 "$LOG_DIR/carla_autoware.containers" 2>/dev/null)" ]] \
   || { echo "no Autoware container recorded in $LOG_DIR/carla_autoware.containers" >&2; exit 2; }
-# G2 runs for the whole window in the background; G3 then G1 sample inside it.
+# G2 runs for the whole window in the background; G3 then G1 sample inside it, after
+# SETTLE_S lets the stack settle. SETTLE_S is an env override (same pattern as
+# CARLA_PYTHON) rather than a flag, so tests/e2e/test_run_gates.py can drive the real
+# script with no wait; live runs never set it.
+SETTLE_S="${SETTLE_S:-20}"
 bash "$HERE/gate_g2_closed_loop.sh" --goal "$GOAL" --rpc-port "$PORT" --window "$G2WIN" --out "$OUT" ${ORIGIN:+--map-origin "$ORIGIN"} > "$OUT/g2.log" 2>&1 &
 G2PID=$!
-sleep 20
+sleep "$SETTLE_S"
 bash "$HERE/gate_g3_performance.sh" --log-dir "$LOG_DIR" --domain-id "$DOMAIN" --lidar-hz "$LHZ" --out "$OUT" > "$OUT/g3.log" 2>&1 || true
 bash "$HERE/gate_g1_localization.sh" --log-dir "$LOG_DIR" --rpc-port "$PORT" --domain-id "$DOMAIN" --out "$OUT" ${ORIGIN:+--map-origin "$ORIGIN"} > "$OUT/g1.log" 2>&1 || true
 wait $G2PID || true
