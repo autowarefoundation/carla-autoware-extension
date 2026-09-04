@@ -39,7 +39,44 @@ def inter_arrival_stats(arrival_ns) -> CadenceStats:
 
 def reconcile_drops(expected_count: int, published_count: int, observed_count: int) -> DropStats:
     if expected_count <= 0 or published_count < 0:
-        raise ValueError("counts must be positive")
+        raise ValueError("expected_count must be > 0 and published_count >= 0")
     pub_drop = max(0.0, 1.0 - published_count / expected_count)
-    obs_loss = 0.0 if published_count == 0 else max(0.0, 1.0 - observed_count / published_count)
+    # A zero-throughput run has no denominator to measure observer loss
+    # against; reporting 0.0 would silently read as "no observer loss"
+    # instead of "undefined", so this degenerate case reports NaN.
+    obs_loss = (
+        float("nan") if published_count == 0 else max(0.0, 1.0 - observed_count / published_count)
+    )
     return DropStats(pub_drop, obs_loss)
+
+
+def expected_count(window_s: float, expected_hz: float) -> int:
+    """Expected message count over a `window_s`-second window at
+    `expected_hz` -- `reconcile_drops`'s expected-count term.
+    `max(1, ...)` floors the expectation at one message so a
+    vanishingly short window never compares against a zero
+    denominator.
+
+    TIME DOMAIN. `window_s` is the window's span in SIM seconds, in
+    every caller. The campaign's only expected-rate binding for this
+    term, `lidar_expected_hz`, is sim-domain -- `min(1 / sensor_tick,
+    tick_hz)`, and both a LiDAR's `sensor_tick` and `tick_hz = 1 /
+    fixed_delta_seconds` are periods of simulation time -- so a wall
+    span here would overestimate the count by 1/RTF on any run that is
+    not real-time, silently converting a rate expectation into a
+    pacing measurement. (`benchmarks/README.md`, `achieved_rate_ratio`.)
+
+    Shared arithmetic for both consumers of the M2 three-way
+    reconciliation: `sweep_verdict.py` (window = clock.csv's whole-run
+    SIM extent) and `duel_verdict.py` (window = the run's registered
+    scoring window, `_resolve_window`'s resolved SIM bounds). The two
+    tools differ in WHICH window they resolve and pass in, and in
+    nothing else that reaches this function -- but "different window"
+    never licenses a different DOMAIN: only this one line is shared, so
+    the domain rule above is the caller's to honour and cannot be
+    checked here. Each caller also keeps its own `expected_hz is None`
+    handling; that state means "not pre-registered yet" and must fail
+    loudly on the caller's own terms, so this function only ever
+    receives a real float.
+    """
+    return max(1, round(window_s * expected_hz))

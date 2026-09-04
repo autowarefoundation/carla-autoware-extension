@@ -1,0 +1,11 @@
+--- /opt/autoware/lib/python3.10/site-packages/autoware_carla_interface/modules/carla_utils.py
++++ /opt/autoware/lib/python3.10/site-packages/autoware_carla_interface/modules/carla_utils.py
+@@ -60,7 +60,7 @@
+         header=header,
+         height=1,
+         width=len(points),
+-        is_dense=False,
++        is_dense=True,
+         is_bigendian=False,
+         fields=fields,
+         point_step=cloud_struct.size,

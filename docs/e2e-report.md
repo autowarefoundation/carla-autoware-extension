@@ -31,6 +31,23 @@ geometry, but the substantive capability is proven and sync propulsion is confir
 
 ## Environment
 
+> **Annotation added 2026-07-30 (benchmark campaign Task 13).** `docker/compose.yaml`
+> now bind-mounts a campaign-wide override of
+> `/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml`
+> onto the **same `autoware` service these gates use**, setting
+> `stop_check_enabled: false` (Autoware's own value for simulation). It therefore
+> applies to `scripts/e2e/` runs as well, so it is recorded here rather than only
+> in `benchmarks/README.md`.
+>
+> **No behaviour change is expected on this path, and it is measured, not assumed:**
+> the check gates only `pose_initializer::on_initialize`, and cell A's parked ego was
+> measured at exactly 0.0 m/s on all three `VelocityReport` components with
+> **0 of 400 samples** over the 1e-3 m/s stop threshold — so the check was already
+> passing here and the override removes nothing that was firing. The gate numbers in
+> this document predate the mount and are unaffected. Full reasoning, the source
+> digest and the per-approach measurement that motivated it:
+> `benchmarks/README.md`, "Localization initialization (Task 13)".
+
 | Item                     | Value                                                                                                                                     |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Autoware container image | `ghcr.io/autowarefoundation/autoware:universe-devel`                                                                                      |

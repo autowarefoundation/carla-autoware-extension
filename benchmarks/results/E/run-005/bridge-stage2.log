@@ -1,0 +1,327 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-07-29-22-02-09-764683-youtalk-desktop-338
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [component_container_mt-1]: process started with pid [503]
+[INFO] [robot_state_publisher-2]: process started with pid [505]
+[INFO] [autoware_duplicated_node_checker_node-3]: process started with pid [507]
+[INFO] [processing_time_checker_node-4]: process started with pid [509]
+[INFO] [autoware_pipeline_latency_monitor_node-5]: process started with pid [511]
+[INFO] [service_log_checker_node-6]: process started with pid [513]
+[INFO] [component_container-7]: process started with pid [515]
+[INFO] [component_container-8]: process started with pid [517]
+[INFO] [component_container-9]: process started with pid [519]
+[INFO] [aggregator_node-10]: process started with pid [587]
+[INFO] [converter_node-11]: process started with pid [594]
+[INFO] [autoware_hazard_status_converter_node-12]: process started with pid [598]
+[INFO] [autoware_mrm_handler_node-13]: process started with pid [601]
+[INFO] [logging_node-14]: process started with pid [603]
+[INFO] [component_container_mt-15]: process started with pid [607]
+[INFO] [map_hash_generator-16]: process started with pid [614]
+[INFO] [autoware_map_projection_loader_node-17]: process started with pid [618]
+[INFO] [imu_corrector_node-18]: process started with pid [646]
+[INFO] [gyro_bias_estimator_node-19]: process started with pid [678]
+[INFO] [autoware_vehicle_velocity_converter_node-20]: process started with pid [681]
+[INFO] [autoware_ndt_scan_matcher_node-21]: process started with pid [687]
+[INFO] [autoware_gyro_odometer_node-22]: process started with pid [693]
+[INFO] [autoware_pose_initializer_node-23]: process started with pid [695]
+[INFO] [autoware_automatic_pose_initializer_node-24]: process started with pid [697]
+[INFO] [autoware_ekf_localizer_node-25]: process started with pid [705]
+[INFO] [autoware_stop_filter_node-26]: process started with pid [713]
+[INFO] [autoware_twist2accel_node-27]: process started with pid [720]
+[INFO] [autoware_pose_instability_detector_node-28]: process started with pid [722]
+[INFO] [autoware_localization_error_monitor_node-29]: process started with pid [735]
+[INFO] [shape_estimation_node-30]: process started with pid [739]
+[INFO] [detected_object_feature_remover_node-31]: process started with pid [793]
+[INFO] [detection_by_tracker_node-32]: process started with pid [798]
+[INFO] [obstacle_pointcloud_based_validator_node-33]: process started with pid [805]
+[INFO] [multi_object_tracker_node-34]: process started with pid [807]
+[INFO] [map_based_prediction-35]: process started with pid [811]
+[INFO] [relay-36]: process started with pid [815]
+[INFO] [traffic_light_map_based_detector_node-37]: process started with pid [819]
+[INFO] [component_container_mt-38]: process started with pid [822]
+[INFO] [traffic_light_occlusion_predictor_node-39]: process started with pid [824]
+[INFO] [traffic_light_multi_camera_fusion_node-40]: process started with pid [831]
+[INFO] [traffic_light_arbiter_node-41]: process started with pid [837]
+[INFO] [crosswalk_traffic_light_estimator_node-42]: process started with pid [842]
+[INFO] [traffic_light_map_visualizer_node-43]: process started with pid [849]
+[INFO] [autoware_perception_analytics_publisher_node-44]: process started with pid [871]
+[INFO] [autoware_manual_lane_change_handler_node-45]: process started with pid [874]
+[INFO] [component_container_mt-46]: process started with pid [876]
+[INFO] [goal_pose_visualizer-47]: process started with pid [878]
+[INFO] [autoware_scenario_selector_node-48]: process started with pid [885]
+[INFO] [external_velocity_limit_selector-49]: process started with pid [888]
+[INFO] [component_container-50]: process started with pid [890]
+[INFO] [autoware_hazard_lights_selector_node-51]: process started with pid [893]
+[INFO] [component_container_mt-52]: process started with pid [895]
+[INFO] [component_container_mt-53]: process started with pid [910]
+[INFO] [component_container_mt-54]: process started with pid [919]
+[INFO] [component_container_mt-55]: process started with pid [925]
+[INFO] [planning_evaluator-56]: process started with pid [927]
+[INFO] [autoware_remaining_distance_time_calculator_node-57]: process started with pid [945]
+[INFO] [relay-58]: process started with pid [952]
+[INFO] [component_container_mt-59]: process started with pid [956]
+[INFO] [component_container_mt-60]: process started with pid [964]
+[INFO] [control_evaluator-61]: process started with pid [966]
+[INFO] [component_container_mt-62]: process started with pid [985]
+[INFO] [initial_pose_adaptor_node-63]: process started with pid [995]
+[INFO] [routing_adaptor_node-64]: process started with pid [1023]
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_vector_map' in container '/system/component_state_monitor/container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_pose_twist_fusion_filter_pose' in container '/system/component_state_monitor/container'
+[robot_state_publisher-2] [INFO] [1785362541.529088418] [robot_state_publisher]: got segment CAM_BACK/camera_link
+[robot_state_publisher-2] [INFO] [1785362541.529221006] [robot_state_publisher]: got segment CAM_BACK/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785362541.529229217] [robot_state_publisher]: got segment CAM_BACK_LEFT/camera_link
+[robot_state_publisher-2] [INFO] [1785362541.529232986] [robot_state_publisher]: got segment CAM_BACK_LEFT/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785362541.529236775] [robot_state_publisher]: got segment CAM_BACK_RIGHT/camera_link
+[robot_state_publisher-2] [INFO] [1785362541.529239997] [robot_state_publisher]: got segment CAM_BACK_RIGHT/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785362541.529243223] [robot_state_publisher]: got segment CAM_FRONT/camera_link
+[robot_state_publisher-2] [INFO] [1785362541.529246395] [robot_state_publisher]: got segment CAM_FRONT/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785362541.529249578] [robot_state_publisher]: got segment CAM_FRONT_LEFT/camera_link
+[robot_state_publisher-2] [INFO] [1785362541.529252394] [robot_state_publisher]: got segment CAM_FRONT_LEFT/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785362541.529255483] [robot_state_publisher]: got segment CAM_FRONT_RIGHT/camera_link
+[robot_state_publisher-2] [INFO] [1785362541.529258485] [robot_state_publisher]: got segment CAM_FRONT_RIGHT/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785362541.529261583] [robot_state_publisher]: got segment base_link
+[robot_state_publisher-2] [INFO] [1785362541.529264730] [robot_state_publisher]: got segment gnss_link
+[robot_state_publisher-2] [INFO] [1785362541.529267822] [robot_state_publisher]: got segment sensor_kit_base_link
+[robot_state_publisher-2] [INFO] [1785362541.529270982] [robot_state_publisher]: got segment tamagawa/imu_link
+[robot_state_publisher-2] [INFO] [1785362541.529273792] [robot_state_publisher]: got segment velodyne_top
+[robot_state_publisher-2] [INFO] [1785362541.529276649] [robot_state_publisher]: got segment velodyne_top_base_link
+[autoware_pipeline_latency_monitor_node-5] [INFO] [1785362541.548765501] [system.pipeline_latency_monitor]: PipelineLatencyMonitorNode initialized
+[component_container-7] [INFO] [1785362541.578925928] [system.component_state_monitor.container]: Load Library: /opt/autoware/lib/libautoware_topic_state_monitor.so
+[component_container-7] [INFO] [1785362541.580042483] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.580066435] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.629005512] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.629035063] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.643981267] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.644009641] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.654401327] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_pointcloud_map' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.654427481] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.661699904] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_obstacle_segmentation_pointcloud' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.661726950] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.668757850] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_traffic_light_recognition_traffic_signals' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.668891166] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.668900592] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.675333605] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_initialpose3d' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.675354959] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.683541899] [system.component_state_monitor.container]: Load Library: /opt/autoware/lib/libautoware_component_state_monitor.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_mission_planning_route' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.684312584] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::component_state_monitor::StateMonitor>
+[component_container-7] [INFO] [1785362541.684323195] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::component_state_monitor::StateMonitor>
+[component_container-7] [INFO] [1785362541.695517831] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/component_state_monitor/component' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.695539235] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.703225904] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_object_recognition_objects' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.703247746] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.714094997] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_scenario_planning_trajectory' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.714151238] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.723291303] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_trajectory_follower_control_cmd' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.723316507] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.731560077] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_control_command_control_cmd' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.731583617] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.737357438] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_vehicle_status_velocity_status' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.737373615] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.743083294] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_vehicle_status_steering_status' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.743097864] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785362541.749227726] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_transform_map_to_base_link' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785362541.749242697] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_system_emergency_control_cmd' in container '/system/component_state_monitor/container'
+[component_container_mt-1] [INFO] [1785362542.513419933] [pointcloud_container]: Load Library: /opt/autoware/lib/libpointcloud_preprocessor_filter.so
+[component_container_mt-1] [INFO] [1785362542.567107007] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785362542.567137626] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785362542.567140049] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785362542.567142054] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785362542.573862620] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/localization/util/crop_box_filter_measurement_range' in container '/pointcloud_container'
+[component_container_mt-1] [INFO] [1785362542.573892529] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785362542.573897001] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785362542.573900111] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785362542.581090292] [pointcloud_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/perception/obstacle_segmentation/crop_box_filter' in container 'pointcloud_container'
+[component_container_mt-1] [INFO] [1785362542.581758990] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-1] [INFO] [1785362542.581771814] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-1] [INFO] [1785362542.586526708] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/pointcloud_container/glog_component' in container '/pointcloud_container'
+[component_container_mt-1] [INFO] [1785362542.586552562] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785362542.586555807] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785362542.586557967] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/crop_box_filter_self' in container 'pointcloud_container'
+[component_container_mt-1] [INFO] [1785362542.592835844] [pointcloud_container]: Load Library: /opt/autoware/lib/libpointcloud_based_occupancy_grid_map.so
+[component_container_mt-1] [INFO] [1785362542.596972087] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::occupancy_grid_map::PointcloudBasedOccupancyGridMapNode>
+[component_container_mt-1] [INFO] [1785362542.596989222] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::occupancy_grid_map::PointcloudBasedOccupancyGridMapNode>
+[component_container-8] [INFO] [1785362542.680786385] [system.mrm_comfortable_stop_operator.mrm_comfortable_stop_operator_container]: Load Library: /opt/autoware/lib/libautoware_mrm_comfortable_stop_operator_component.so
+[component_container-9] [INFO] [1785362542.681039557] [system.mrm_emergency_stop_operator.mrm_emergency_stop_operator_container]: Load Library: /opt/autoware/lib/libautoware_mrm_emergency_stop_operator_component.so
+[component_container-8] [INFO] [1785362542.681251068] [system.mrm_comfortable_stop_operator.mrm_comfortable_stop_operator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator>
+[component_container-8] [INFO] [1785362542.681259550] [system.mrm_comfortable_stop_operator.mrm_comfortable_stop_operator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator>
+[component_container-9] [INFO] [1785362542.682002105] [system.mrm_emergency_stop_operator.mrm_emergency_stop_operator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator>
+[component_container-9] [INFO] [1785362542.682020978] [system.mrm_emergency_stop_operator.mrm_emergency_stop_operator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/mrm_emergency_stop_operator' in container '/system/mrm_emergency_stop_operator/mrm_emergency_stop_operator_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/mrm_comfortable_stop_operator' in container '/system/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/perception/occupancy_grid_map/occupancy_grid_map_node' in container 'pointcloud_container'
+[component_container_mt-1] [INFO] [1785362542.777206709] [pointcloud_container]: Load Library: /opt/autoware/lib/libautoware_lidar_centerpoint_component.so
+[component_container_mt-1] [INFO] [1785362542.804812492] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lidar_centerpoint::LidarCenterPointNode>
+[component_container_mt-1] [INFO] [1785362542.804868855] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lidar_centerpoint::LidarCenterPointNode>
+[component_container_mt-1] [I] [TRT] [MemUsageChange] Init CUDA: CPU +0, GPU +0, now: CPU 109, GPU 11701 (MiB)
+[imu_corrector_node-18] [INFO] [1785362543.630479110] [sensing.imu.imu_corrector]: correct_for_static_bias: true
+[imu_corrector_node-18] [INFO] [1785362543.630580777] [sensing.imu.imu_corrector]: correct_for_dynamic_bias: false
+[imu_corrector_node-18] [INFO] [1785362543.630588681] [sensing.imu.imu_corrector]: correct_for_scale: false
+[component_container_mt-53] [37;1m2026-07-29 22:02:23.657 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[autoware_hazard_lights_selector_node-51] [37;1m2026-07-29 22:02:23.657 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[traffic_light_arbiter_node-41] [37;1m2026-07-29 22:02:23.657 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[autoware_map_projection_loader_node-17] Load /autoware_map/town10/map_projector_info.yaml
+[component_container_mt-52] [37;1m2026-07-29 22:02:23.666 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[autoware_scenario_selector_node-48] [37;1m2026-07-29 22:02:23.669 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[detection_by_tracker_node-32] [37;1m2026-07-29 22:02:23.670 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[autoware_remaining_distance_time_calculator_node-57] [37;1m2026-07-29 22:02:23.670 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastrtps_port7455: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+[gyro_bias_estimator_node-19] [WARN] [1785362543.728340590] [sensing.imu.gyro_bias_scale_validator]: failed to get transform from tamagawa/imu_link to base_link: "tamagawa/imu_link" passed to lookupTransform argument target_frame does not exist. 
+[gyro_bias_estimator_node-19] [ERROR] [1785362543.728448722] [sensing.imu.gyro_bias_scale_validator]: Please publish TF base_link to tamagawa/imu_link
+[autoware_mrm_handler_node-13] [INFO] [1785362543.835885766] [system.mrm_handler]: waiting for operation_mode_availability msg...
+[multi_object_tracker_node-34] [INFO] [1785362543.932831797] [perception.object_recognition.tracking.multi_object_tracker]: InputManager::init Initializing centerpoint input stream from /perception/object_recognition/detection/centerpoint/validation/objects
+[multi_object_tracker_node-34] [INFO] [1785362543.936172340] [perception.object_recognition.tracking.multi_object_tracker]: InputManager::init Initializing detection_by_tracker input stream from /perception/object_recognition/detection/detection_by_tracker/objects
+[multi_object_tracker_node-34] [INFO] [1785362543.937723130] [perception.object_recognition.tracking.multi_object_tracker]: InputManager::init Initializing camera_streampetr input stream from /perception/object_recognition/detection/camera_only/objects
+[shape_estimation_node-30] [INFO] [1785362544.085085013] [perception.object_recognition.detection.clustering.shape_estimation]: using boost shape estimation : 0
+[autoware_ekf_localizer_node-25] [WARN] [1785362544.601383594] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[component_container-7] [INFO] [1785362544.754542776] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[imu_corrector_node-18] [WARN] [1785362545.016111528] [sensing.imu.imu_corrector]: failed to get transform from tamagawa/imu_link to base_link: "tamagawa/imu_link" passed to lookupTransform argument target_frame does not exist. 
+[imu_corrector_node-18] [ERROR] [1785362545.016268546] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.029294872] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.119207950] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.143442722] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[autoware_scenario_selector_node-48] [INFO] [1785362545.155304178] [planning.scenario_planning.scenario_selector]: Waiting for current pose.
+[imu_corrector_node-18] [ERROR] [1785362545.192059704] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.209299680] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.265041157] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.321399963] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.427148733] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-54] [INFO] [1785362545.447979943] [planning.scenario_planning.parking.parking_container]: Load Library: /opt/autoware/lib/libcostmap_generator_node.so
+[imu_corrector_node-18] [ERROR] [1785362545.458256268] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container-50] [INFO] [1785362545.517946577] [planning.scenario_planning.velocity_smoother_container]: Load Library: /opt/autoware/lib/libautoware_velocity_smoother_node.so
+[imu_corrector_node-18] [ERROR] [1785362545.526997684] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container-50] [INFO] [1785362545.535126796] [planning.scenario_planning.velocity_smoother_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::velocity_smoother::VelocitySmootherNode>
+[component_container-50] [INFO] [1785362545.535190214] [planning.scenario_planning.velocity_smoother_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::velocity_smoother::VelocitySmootherNode>
+[component_container_mt-54] [INFO] [1785362545.550860209] [planning.scenario_planning.parking.parking_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::costmap_generator::CostmapGenerator>
+[component_container_mt-54] [INFO] [1785362545.550914840] [planning.scenario_planning.parking.parking_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::costmap_generator::CostmapGenerator>
+[component_container_mt-60] [INFO] [1785362545.570093267] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-60] [INFO] [1785362545.571041262] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-60] [INFO] [1785362545.571068371] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[imu_corrector_node-18] [ERROR] [1785362545.651302523] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-53] [INFO] [1785362545.670771246] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-53] [INFO] [1785362545.671508283] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-53] [INFO] [1785362545.671524293] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[imu_corrector_node-18] [ERROR] [1785362545.684654265] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.807847342] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362545.878509697] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-52] [INFO] [1785362545.936436418] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-52] [INFO] [1785362545.939379749] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-52] [INFO] [1785362545.939415663] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-59] [INFO] [1785362545.978440915] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-59] [INFO] [1785362545.979249879] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-59] [INFO] [1785362545.979265646] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/motion_planning/glog_component' in container '/planning/scenario_planning/lane_driving/motion_planning/motion_planning_container'
+[component_container_mt-53] [INFO] [1785362545.992875960] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_path_smoother.so
+[component_container_mt-15] [INFO] [1785362545.994407589] [map.map_container]: Load Library: /opt/autoware/lib/libpointcloud_map_loader_node.so
+[component_container_mt-53] [INFO] [1785362545.995895513] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::path_smoother::ElasticBandSmoother>
+[component_container_mt-53] [INFO] [1785362545.995922808] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::path_smoother::ElasticBandSmoother>
+[imu_corrector_node-18] [ERROR] [1785362546.013370206] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-60] [WARN] [1785362546.018881318] [control.control_check_container.rclcpp]: failed to send response to /control/control_check_container/_container/load_node (timeout): client will not receive response, at ./src/rmw_response.cpp:154, at ./src/rcl/service.c:314
+[component_container_mt-60] [INFO] [1785362546.020509457] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_lane_departure_checker.so
+[component_container_mt-60] [INFO] [1785362546.053719157] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lane_departure_checker::LaneDepartureCheckerNode>
+[component_container_mt-60] [INFO] [1785362546.053771201] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lane_departure_checker::LaneDepartureCheckerNode>
+[component_container_mt-15] [INFO] [1785362546.055328576] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::PointCloudMapLoaderNode>
+[component_container_mt-15] [INFO] [1785362546.055373617] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::PointCloudMapLoaderNode>
+[imu_corrector_node-18] [ERROR] [1785362546.093547301] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362546.167692295] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-38] [INFO] [1785362546.181670428] [perception.traffic_light_recognition.traffic_light.traffic_light_node_container]: Load Library: /opt/autoware/lib/libautoware_traffic_light_classifier.so
+[component_container_mt-55] [INFO] [1785362546.229519323] [planning.planning_validator_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-55] [INFO] [1785362546.230446892] [planning.planning_validator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-55] [INFO] [1785362546.230469744] [planning.planning_validator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-46] [INFO] [1785362546.230044272] [planning.mission_planning.mission_planner_container]: Load Library: /opt/autoware/lib/libautoware_mission_planner_universe_component.so
+[imu_corrector_node-18] [ERROR] [1785362546.241637324] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-46] [INFO] [1785362546.249480540] [planning.mission_planning.mission_planner_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::MissionPlanner>
+[component_container_mt-46] [INFO] [1785362546.249529451] [planning.mission_planning.mission_planner_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::MissionPlanner>
+[imu_corrector_node-18] [ERROR] [1785362546.275104766] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362546.325383164] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-38] [INFO] [1785362546.361814191] [perception.traffic_light_recognition.traffic_light.traffic_light_node_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::traffic_light::TrafficLightClassifierNodelet>
+[component_container_mt-38] [INFO] [1785362546.361870338] [perception.traffic_light_recognition.traffic_light.traffic_light_node_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::traffic_light::TrafficLightClassifierNodelet>
+[component_container_mt-52] [WARN] [1785362546.470276061] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container.rclcpp]: failed to send response to /planning/scenario_planning/lane_driving/behavior_planning/behavior_planning_container/_container/load_node (timeout): client will not receive response, at ./src/rmw_response.cpp:154, at ./src/rcl/service.c:314
+[imu_corrector_node-18] [ERROR] [1785362546.490027448] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-52] [INFO] [1785362546.490034933] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Load Library: /opt/autoware/lib/libautoware_behavior_path_planner_lib.so
+[component_container_mt-52] [INFO] [1785362546.538422940] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_path_planner::BehaviorPathPlannerNode>
+[component_container_mt-52] [INFO] [1785362546.538632827] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_path_planner::BehaviorPathPlannerNode>
+[imu_corrector_node-18] [ERROR] [1785362546.573723942] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/glog_control_container_component' in container '/control/control_container'
+[component_container_mt-59] [INFO] [1785362546.660606058] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_external_cmd_selector_node.so
+[component_container_mt-59] [INFO] [1785362546.663325450] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::external_cmd_selector::ExternalCmdSelector>
+[component_container_mt-59] [INFO] [1785362546.663358542] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::external_cmd_selector::ExternalCmdSelector>
+[imu_corrector_node-18] [ERROR] [1785362546.666867865] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[autoware_ekf_localizer_node-25] [WARN] [1785362546.765030226] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[imu_corrector_node-18] [ERROR] [1785362546.810808648] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/interface' in container '/adapi/container'
+[imu_corrector_node-18] [ERROR] [1785362546.844293094] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/glog_component' in container '/planning/planning_validator_container'
+[imu_corrector_node-18] [ERROR] [1785362546.891046599] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362546.968517728] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[imu_corrector_node-18] [ERROR] [1785362547.027934135] [sensing.imu.imu_corrector]: Please publish TF base_link to tamagawa/imu_link
+[component_container_mt-54] [ERROR] [1785362547.069392115] [planning.scenario_planning.parking.costmap_generator]: "map" passed to lookupTransform argument target_frame does not exist. 
+[component_container_mt-54] [WARN] [1785362547.099990650] [planning.scenario_planning.parking.parking_container.rclcpp]: failed to send response to /planning/scenario_planning/parking/parking_container/_container/load_node (timeout): client will not receive response, at ./src/rmw_response.cpp:154, at ./src/rcl/service.c:314
+[component_container-7] [INFO] [1785362547.978319723] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[logging_node-14] [WARN] [1785362548.075823695] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform STALE
+[logging_node-14]             - /autoware/localization/topic_rate_check/pose_twist_fusion ERROR
+[logging_node-14]             - /autoware/localization/scan_matching_status STALE
+[logging_node-14]             - /autoware/localization/accuracy STALE
+[logging_node-14]             - /autoware/localization/sensor_fusion_status WARN 
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state STALE
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route STALE
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory STALE
+[logging_node-14]             - /autoware/planning/trajectory_validation ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects STALE
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud STALE
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower STALE
+[logging_node-14]         - /autoware/control/topic_rate_check/control_command STALE
+[logging_node-14]         - /autoware/control/node_alive_monitoring/command_gate ERROR
+[logging_node-14]             - /autoware/control/node_alive_monitoring/vehicle_cmd_gate STALE
+[logging_node-14]             - /autoware/control/node_alive_monitoring/control_command_gate STALE
+[logging_node-14]         - /autoware/control/emergency_braking STALE
+[logging_node-14]         - /autoware/control/performance_monitoring/lane_departure STALE
+[logging_node-14]         - /autoware/control/performance_monitoring/control_state STALE
+[logging_node-14]     - /autoware/vehicle ERROR
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/velocity STALE
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/steering STALE
+[logging_node-14]     - /autoware/system ERROR
+[logging_node-14]         - /autoware/system/topic_rate_check/emergency_control_command STALE
+[logging_node-14]         - /autoware/system/emergency_stop_operation ERROR
+[logging_node-14]             - /autoware/system/emergency_stop_operation/vehicle_cmd_gate STALE
+[logging_node-14]             - /autoware/system/emergency_stop_operation/control_command_gate STALE
+[logging_node-14]     - /adapi/mrm_request/delegate STALE
+[logging_node-14] 
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/pointcloud_map_loader' in container '/map/map_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/motion_planning/elastic_band_smoother' in container '/planning/scenario_planning/lane_driving/motion_planning/motion_planning_container'
+[component_container_mt-55] [INFO] [1785362548.254500640] [planning.planning_validator_container]: Load Library: /opt/autoware/lib/libautoware_planning_validator_component.so
+[component_container_mt-53] [INFO] [1785362548.255119128] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_path_optimizer.so
+[component_container_mt-53] [INFO] [1785362548.257020959] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::path_optimizer::PathOptimizer>
+[component_container_mt-53] [INFO] [1785362548.257045008] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::path_optimizer::PathOptimizer>
+[component_container_mt-55] [INFO] [1785362548.270721444] [planning.planning_validator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::planning_validator::PlanningValidatorNode>
+[component_container_mt-55] [INFO] [1785362548.270774250] [planning.planning_validator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::planning_validator::PlanningValidatorNode>
+[component_container_mt-15] [INFO] [1785362548.271070100] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_loader_node.so
+[component_container_mt-15] [INFO] [1785362548.287653212] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::Lanelet2MapLoaderNode>
+[component_container_mt-15] [INFO] [1785362548.287704735] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::Lanelet2MapLoaderNode>
+[component_container_mt-38] [I] [TRT] [MemUsageChange] Init CUDA: CPU +0, GPU +0, now: CPU 64, GPU 12244 (MiB)

@@ -1,0 +1,7 @@
+g1_run: 20260730T035854Z
+map: Town10HD_Opt
+bundle_container_dir: /autoware_map/town10-regen
+bundle_pcd_sha256: c3bc613b0ea3e77528d081792dedc6fa0a22a89ae10aeabe5c72a09afcbfaba3
+window_s: 20
+ndt_series: g1_ndt.txt  gt_series: g1_gt.txt
+G1 NDT: ndt_samples=400 gt_samples=399 max_err=0.089 m threshold=0.5 m -> PASS

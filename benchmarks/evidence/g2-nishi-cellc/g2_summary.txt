@@ -1,0 +1,6 @@
+g2_run: 20260731T000140Z
+map: NishishinjukuMap
+goal_map_xy: 81571.616 50019.827
+window_s: 120
+dist_series: g2_dist.txt  hz_capture: g2_hz.txt
+G2 route: samples=1198 closest_approach=0.046 m tol=1.0 m -> PASS

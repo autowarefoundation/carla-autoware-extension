@@ -1,0 +1,6 @@
+g2_run: 20260730T043903Z
+map: Town10HD_Opt
+goal_map_xy: 74.869 66.891
+window_s: 120
+dist_series: g2_dist.txt  hz_capture: g2_hz.txt
+G2 route: samples=1198 closest_approach=0.244 m tol=1.0 m -> PASS

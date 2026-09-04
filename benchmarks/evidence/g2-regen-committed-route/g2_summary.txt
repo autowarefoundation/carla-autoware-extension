@@ -1,0 +1,6 @@
+g2_run: 20260730T041530Z
+map: Town10HD_Opt
+goal_map_xy: -101.021 55.014
+window_s: 120
+dist_series: g2_dist.txt  hz_capture: g2_hz.txt
+G2 route: samples=1198 closest_approach=1.929 m tol=1.0 m -> FAIL

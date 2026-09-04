@@ -1,0 +1,962 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-07-30-14-39-10-958645-youtalk-desktop-121
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [component_container_mt-1]: process started with pid [293]
+[INFO] [robot_state_publisher-2]: process started with pid [295]
+[INFO] [autoware_duplicated_node_checker_node-3]: process started with pid [297]
+[INFO] [processing_time_checker_node-4]: process started with pid [299]
+[INFO] [autoware_pipeline_latency_monitor_node-5]: process started with pid [301]
+[INFO] [service_log_checker_node-6]: process started with pid [303]
+[INFO] [component_container-7]: process started with pid [305]
+[INFO] [component_container-8]: process started with pid [307]
+[INFO] [component_container-9]: process started with pid [309]
+[INFO] [aggregator_node-10]: process started with pid [311]
+[INFO] [converter_node-11]: process started with pid [381]
+[INFO] [autoware_hazard_status_converter_node-12]: process started with pid [385]
+[INFO] [autoware_mrm_handler_node-13]: process started with pid [389]
+[INFO] [logging_node-14]: process started with pid [392]
+[INFO] [component_container_mt-15]: process started with pid [398]
+[INFO] [map_hash_generator-16]: process started with pid [428]
+[INFO] [autoware_map_projection_loader_node-17]: process started with pid [446]
+[INFO] [component_container-18]: process started with pid [467]
+[INFO] [component_container-19]: process started with pid [478]
+[INFO] [component_container-20]: process started with pid [510]
+[INFO] [imu_corrector_node-21]: process started with pid [513]
+[INFO] [gyro_bias_estimator_node-22]: process started with pid [517]
+[INFO] [autoware_vehicle_velocity_converter_node-23]: process started with pid [551]
+[INFO] [autoware_ndt_scan_matcher_node-24]: process started with pid [581]
+[INFO] [autoware_gyro_odometer_node-25]: process started with pid [586]
+[INFO] [autoware_pose_initializer_node-26]: process started with pid [588]
+[INFO] [autoware_automatic_pose_initializer_node-27]: process started with pid [591]
+[INFO] [autoware_ekf_localizer_node-28]: process started with pid [593]
+[INFO] [autoware_stop_filter_node-29]: process started with pid [600]
+[INFO] [autoware_twist2accel_node-30]: process started with pid [621]
+[INFO] [autoware_pose_instability_detector_node-31]: process started with pid [632]
+[INFO] [autoware_localization_error_monitor_node-32]: process started with pid [681]
+[INFO] [autoware_manual_lane_change_handler_node-33]: process started with pid [730]
+[INFO] [component_container_mt-34]: process started with pid [735]
+[INFO] [goal_pose_visualizer-35]: process started with pid [738]
+[INFO] [autoware_scenario_selector_node-36]: process started with pid [743]
+[INFO] [external_velocity_limit_selector-37]: process started with pid [746]
+[INFO] [component_container-38]: process started with pid [753]
+[INFO] [autoware_hazard_lights_selector_node-39]: process started with pid [756]
+[INFO] [component_container_mt-40]: process started with pid [758]
+[INFO] [component_container_mt-41]: process started with pid [769]
+[INFO] [component_container_mt-42]: process started with pid [783]
+[INFO] [component_container_mt-43]: process started with pid [786]
+[INFO] [planning_evaluator-44]: process started with pid [793]
+[INFO] [autoware_remaining_distance_time_calculator_node-45]: process started with pid [810]
+[INFO] [relay-46]: process started with pid [813]
+[INFO] [component_container_mt-47]: process started with pid [815]
+[INFO] [component_container_mt-48]: process started with pid [818]
+[INFO] [control_evaluator-49]: process started with pid [820]
+[INFO] [component_container_mt-50]: process started with pid [830]
+[INFO] [initial_pose_adaptor_node-51]: process started with pid [838]
+[INFO] [routing_adaptor_node-52]: process started with pid [882]
+[autoware_map_projection_loader_node-17] Load /autoware_map/town10-regen/map_projector_info.yaml
+[component_container_mt-1] [INFO] [1785422358.997727591] [pointcloud_container]: Load Library: /opt/autoware/lib/libpointcloud_preprocessor_filter.so
+[robot_state_publisher-2] [INFO] [1785422358.871842194] [robot_state_publisher]: got segment base_link
+[robot_state_publisher-2] [INFO] [1785422358.871985845] [robot_state_publisher]: got segment camera0/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.871993648] [robot_state_publisher]: got segment camera0/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.871997307] [robot_state_publisher]: got segment camera1/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872000500] [robot_state_publisher]: got segment camera1/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872003536] [robot_state_publisher]: got segment camera2/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872006598] [robot_state_publisher]: got segment camera2/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872009788] [robot_state_publisher]: got segment camera3/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872012735] [robot_state_publisher]: got segment camera3/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872015574] [robot_state_publisher]: got segment camera4/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872018522] [robot_state_publisher]: got segment camera4/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872021430] [robot_state_publisher]: got segment camera5/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872024284] [robot_state_publisher]: got segment camera5/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872027191] [robot_state_publisher]: got segment gnss_link
+[robot_state_publisher-2] [INFO] [1785422358.872030052] [robot_state_publisher]: got segment sensor_kit_base_link
+[robot_state_publisher-2] [INFO] [1785422358.872033145] [robot_state_publisher]: got segment tamagawa/imu_link
+[robot_state_publisher-2] [INFO] [1785422358.872036183] [robot_state_publisher]: got segment traffic_light_left_camera/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872039242] [robot_state_publisher]: got segment traffic_light_left_camera/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872042176] [robot_state_publisher]: got segment traffic_light_right_camera/camera_link
+[robot_state_publisher-2] [INFO] [1785422358.872045120] [robot_state_publisher]: got segment traffic_light_right_camera/camera_optical_link
+[robot_state_publisher-2] [INFO] [1785422358.872048102] [robot_state_publisher]: got segment velodyne_left
+[robot_state_publisher-2] [INFO] [1785422358.872050998] [robot_state_publisher]: got segment velodyne_left_base_link
+[robot_state_publisher-2] [INFO] [1785422358.872053941] [robot_state_publisher]: got segment velodyne_rear
+[robot_state_publisher-2] [INFO] [1785422358.872056708] [robot_state_publisher]: got segment velodyne_rear_base_link
+[robot_state_publisher-2] [INFO] [1785422358.872059528] [robot_state_publisher]: got segment velodyne_right
+[robot_state_publisher-2] [INFO] [1785422358.872062489] [robot_state_publisher]: got segment velodyne_right_base_link
+[robot_state_publisher-2] [INFO] [1785422358.872065404] [robot_state_publisher]: got segment velodyne_top
+[robot_state_publisher-2] [INFO] [1785422358.872068094] [robot_state_publisher]: got segment velodyne_top_base_link
+[autoware_pipeline_latency_monitor_node-5] [INFO] [1785422358.873701696] [system.pipeline_latency_monitor]: PipelineLatencyMonitorNode initialized
+[component_container-8] [INFO] [1785422359.104524872] [system.mrm_comfortable_stop_operator.mrm_comfortable_stop_operator_container]: Load Library: /opt/autoware/lib/libautoware_mrm_comfortable_stop_operator_component.so
+[component_container-8] [INFO] [1785422359.112712090] [system.mrm_comfortable_stop_operator.mrm_comfortable_stop_operator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator>
+[component_container-8] [INFO] [1785422359.112750907] [system.mrm_comfortable_stop_operator.mrm_comfortable_stop_operator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator>
+[component_container-9] [INFO] [1785422359.100865246] [system.mrm_emergency_stop_operator.mrm_emergency_stop_operator_container]: Load Library: /opt/autoware/lib/libautoware_mrm_emergency_stop_operator_component.so
+[component_container-9] [INFO] [1785422359.112541315] [system.mrm_emergency_stop_operator.mrm_emergency_stop_operator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator>
+[component_container-9] [INFO] [1785422359.113343251] [system.mrm_emergency_stop_operator.mrm_emergency_stop_operator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator>
+[imu_corrector_node-21] [INFO] [1785422358.976867358] [sensing.imu.imu_corrector]: correct_for_static_bias: true
+[imu_corrector_node-21] [INFO] [1785422358.977101848] [sensing.imu.imu_corrector]: correct_for_dynamic_bias: false
+[imu_corrector_node-21] [INFO] [1785422358.977113883] [sensing.imu.imu_corrector]: correct_for_scale: false
+[component_container_mt-1] [INFO] [1785422359.236002765] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422359.236049887] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785422359.236054259] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785422359.236057755] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[autoware_mrm_handler_node-13] [INFO] [1785422359.887999043] [system.mrm_handler]: waiting for mrm comfortable stop to become available...
+[autoware_ekf_localizer_node-28] [WARN] [1785422359.940592390] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[autoware_scenario_selector_node-36] [INFO] [1785422359.943135202] [planning.scenario_planning.scenario_selector]: Waiting for current pose.
+[gyro_bias_estimator_node-22] [ERROR] [1785422359.980272717] [sensing.imu.gyro_bias_scale_validator]: Please publish TF base_link to tamagawa/imu_link
+[logging_node-14] [WARN] [1785422360.113768531] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/vector_map STALE
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map STALE
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - /autoware/localization/state STALE
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform STALE
+[logging_node-14]             - /autoware/localization/topic_rate_check/pose_twist_fusion STALE
+[logging_node-14]             - /autoware/localization/scan_matching_status STALE
+[logging_node-14]             - /autoware/localization/accuracy STALE
+[logging_node-14]             - /autoware/localization/sensor_fusion_status STALE
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state STALE
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route STALE
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory STALE
+[logging_node-14]             - /autoware/planning/trajectory_validation ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects STALE
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud STALE
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower STALE
+[logging_node-14]         - /autoware/control/topic_rate_check/control_command STALE
+[logging_node-14]         - /autoware/control/node_alive_monitoring/command_gate ERROR
+[logging_node-14]             - /autoware/control/node_alive_monitoring/vehicle_cmd_gate STALE
+[logging_node-14]             - /autoware/control/node_alive_monitoring/control_command_gate STALE
+[logging_node-14]         - /autoware/control/emergency_braking STALE
+[logging_node-14]         - /autoware/control/performance_monitoring/lane_departure STALE
+[logging_node-14]         - /autoware/control/performance_monitoring/control_state STALE
+[logging_node-14]     - /autoware/vehicle ERROR
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/velocity STALE
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/steering STALE
+[logging_node-14]     - /autoware/system ERROR
+[logging_node-14]         - /autoware/system/topic_rate_check/emergency_control_command STALE
+[logging_node-14]         - /autoware/system/emergency_stop_operation ERROR
+[logging_node-14]             - /autoware/system/emergency_stop_operation/vehicle_cmd_gate STALE
+[logging_node-14]             - /autoware/system/emergency_stop_operation/control_command_gate STALE
+[logging_node-14]     - /adapi/mrm_request/delegate STALE
+[logging_node-14] 
+[gyro_bias_estimator_node-22] [WARN] [1785422360.125367552] [sensing.imu.gyro_bias_scale_validator]: failed to get transform from tamagawa/imu_link to base_link: "tamagawa/imu_link" passed to lookupTransform argument target_frame does not exist. 
+[component_container-7] [INFO] [1785422360.240069611] [system.component_state_monitor.container]: Load Library: /opt/autoware/lib/libautoware_topic_state_monitor.so
+[component_container-7] [INFO] [1785422360.252463766] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422360.252519514] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-18] [INFO] [1785422360.754957847] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-15] [INFO] [1785422360.755241275] [map.map_container]: Load Library: /opt/autoware/lib/libpointcloud_map_loader_node.so
+[component_container_mt-34] [INFO] [1785422360.756093266] [planning.mission_planning.mission_planner_container]: Load Library: /opt/autoware/lib/libautoware_mission_planner_universe_component.so
+[component_container-18] [INFO] [1785422360.761294628] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-18] [INFO] [1785422360.761334064] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-34] [INFO] [1785422360.785475049] [planning.mission_planning.mission_planner_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::MissionPlanner>
+[component_container_mt-34] [INFO] [1785422360.785520763] [planning.mission_planning.mission_planner_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::MissionPlanner>
+[component_container_mt-40] [INFO] [1785422360.806128840] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container-20] [INFO] [1785422360.807224215] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-40] [INFO] [1785422360.807435636] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-40] [INFO] [1785422360.807789257] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-20] [INFO] [1785422360.808267616] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-20] [INFO] [1785422360.808288953] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/mrm_comfortable_stop_operator' in container '/system/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_container'
+[component_container_mt-1] [INFO] [1785422360.824253717] [pointcloud_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-1] [INFO] [1785422360.825143952] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-1] [INFO] [1785422360.825175402] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/mrm_emergency_stop_operator' in container '/system/mrm_emergency_stop_operator/mrm_emergency_stop_operator_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/localization/util/crop_box_filter_measurement_range' in container '/pointcloud_container'
+[component_container_mt-15] [INFO] [1785422360.842794802] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::PointCloudMapLoaderNode>
+[component_container_mt-15] [INFO] [1785422360.842839396] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::PointCloudMapLoaderNode>
+[component_container_mt-41] [INFO] [1785422360.844876501] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-41] [INFO] [1785422360.845641261] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-41] [INFO] [1785422360.845659292] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-7] [INFO] [1785422360.857039937] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422360.857085192] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_vector_map' in container '/system/component_state_monitor/container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/top/glog_component' in container '/sensing/lidar/top/pointcloud_preprocessor/pointcloud_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/behavior_planning/glog_component' in container '/planning/scenario_planning/lane_driving/behavior_planning/behavior_planning_container'
+[component_container_mt-42] [INFO] [1785422360.908618284] [planning.scenario_planning.parking.parking_container]: Load Library: /opt/autoware/lib/libcostmap_generator_node.so
+[component_container_mt-40] [INFO] [1785422360.913853297] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Load Library: /opt/autoware/lib/libautoware_behavior_path_planner_lib.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/right/glog_component' in container '/sensing/lidar/right/pointcloud_preprocessor/pointcloud_container'
+[component_container_mt-43] [INFO] [1785422360.922266949] [planning.planning_validator_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-43] [INFO] [1785422360.926198983] [planning.planning_validator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-43] [INFO] [1785422360.926234827] [planning.planning_validator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-41] [INFO] [1785422360.934558646] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_path_smoother.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/motion_planning/glog_component' in container '/planning/scenario_planning/lane_driving/motion_planning/motion_planning_container'
+[component_container_mt-41] [INFO] [1785422360.938909281] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::path_smoother::ElasticBandSmoother>
+[component_container_mt-41] [INFO] [1785422360.938950541] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::path_smoother::ElasticBandSmoother>
+[component_container_mt-40] [INFO] [1785422360.946094153] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_path_planner::BehaviorPathPlannerNode>
+[component_container_mt-40] [INFO] [1785422360.946133255] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_path_planner::BehaviorPathPlannerNode>
+[component_container_mt-47] [INFO] [1785422360.947705821] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-47] [INFO] [1785422360.948524673] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-47] [INFO] [1785422360.948541267] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-38] [INFO] [1785422360.957749718] [planning.scenario_planning.velocity_smoother_container]: Load Library: /opt/autoware/lib/libautoware_velocity_smoother_node.so
+[component_container_mt-1] [INFO] [1785422360.965536520] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422360.965591958] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785422360.965598270] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785422360.965602550] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container_mt-1] [INFO] [1785422360.965606629] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DualReturnOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422360.965610403] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::Lanelet2MapFilterComponent>
+[component_container_mt-1] [INFO] [1785422360.965614207] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterComponent>
+[component_container_mt-1] [INFO] [1785422360.965617803] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterUInt16Component>
+[component_container_mt-1] [INFO] [1785422360.965621280] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PickupBasedVoxelGridDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422360.965625202] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container_mt-1] [INFO] [1785422360.965629179] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container-38] [INFO] [1785422360.966275413] [planning.scenario_planning.velocity_smoother_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::velocity_smoother::VelocitySmootherNode>
+[component_container-38] [INFO] [1785422360.966311606] [planning.scenario_planning.velocity_smoother_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::velocity_smoother::VelocitySmootherNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/pointcloud_container/glog_component' in container '/pointcloud_container'
+[autoware_mrm_handler_node-13] [INFO] [1785422360.989057421] [system.mrm_handler]: MRM State changed: NORMAL -> MRM_OPERATING
+[autoware_mrm_handler_node-13] [WARN] [1785422360.989439828] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422360.992124032] [system.mrm_handler]: EMERGENCY_STOP is operated.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/glog_component' in container '/planning/planning_validator_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/glog_control_container_component' in container '/control/control_container'
+[component_container_mt-47] [INFO] [1785422361.019683097] [control.control_container]: Load Library: /opt/autoware/lib/libcontroller_node.so
+[component_container_mt-47] [INFO] [1785422361.033443303] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::motion::control::trajectory_follower_node::Controller>
+[component_container_mt-47] [INFO] [1785422361.033490081] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::motion::control::trajectory_follower_node::Controller>
+[component_container-19] [INFO] [1785422361.038070076] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container-19] [INFO] [1785422361.038848218] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-19] [INFO] [1785422361.038864583] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/mission_planning/mission_planner' in container '/planning/mission_planning/mission_planner_container'
+[component_container_mt-42] [INFO] [1785422361.049747510] [planning.scenario_planning.parking.parking_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::costmap_generator::CostmapGenerator>
+[component_container_mt-42] [INFO] [1785422361.049805647] [planning.scenario_planning.parking.parking_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::costmap_generator::CostmapGenerator>
+[component_container_mt-48] [INFO] [1785422361.050905438] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-48] [INFO] [1785422361.052546562] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-48] [INFO] [1785422361.052586592] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[autoware_mrm_handler_node-13] [WARN] [1785422361.087228531] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-34] [INFO] [1785422361.087973265] [planning.mission_planning.mission_planner]: waiting lanelet map... Route API is not ready.
+[component_container_mt-41] [INFO] [1785422361.097949899] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_path_optimizer.so
+[component_container_mt-41] [INFO] [1785422361.102412090] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::path_optimizer::PathOptimizer>
+[component_container_mt-41] [INFO] [1785422361.102455049] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::path_optimizer::PathOptimizer>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/motion_planning/elastic_band_smoother' in container '/planning/scenario_planning/lane_driving/motion_planning/motion_planning_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/left/glog_component' in container '/sensing/lidar/left/pointcloud_preprocessor/pointcloud_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/glog_control_check_container_component' in container '/control/control_check_container'
+[component_container_mt-48] [INFO] [1785422361.129426787] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_lane_departure_checker.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/pointcloud_map_loader' in container '/map/map_container'
+[component_container_mt-48] [INFO] [1785422361.144769278] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lane_departure_checker::LaneDepartureCheckerNode>
+[component_container_mt-48] [INFO] [1785422361.144818422] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lane_departure_checker::LaneDepartureCheckerNode>
+[component_container-7] [INFO] [1785422361.145326630] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[component_container-7] [INFO] [1785422361.145460175] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422361.145469629] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container_mt-1] [INFO] [1785422361.152444592] [sensing.lidar.concatenate_data]: Utilize advanced matching strategy
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_obstacle_segmentation_pointcloud' in container '/system/component_state_monitor/container'
+[autoware_mrm_handler_node-13] [WARN] [1785422361.187009747] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/concatenate_data' in container 'pointcloud_container'
+[component_container_mt-1] [INFO] [1785422361.199289707] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199339081] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785422361.199344200] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199347486] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container_mt-1] [INFO] [1785422361.199350542] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DualReturnOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199387360] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::Lanelet2MapFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199390512] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199393386] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterUInt16Component>
+[component_container_mt-1] [INFO] [1785422361.199396189] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PickupBasedVoxelGridDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199399773] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container_mt-1] [INFO] [1785422361.199402427] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenationComponent>
+[component_container_mt-1] [INFO] [1785422361.199405379] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDataSynchronizerComponent>
+[component_container_mt-1] [INFO] [1785422361.199408421] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDensifierNode>
+[component_container_mt-1] [INFO] [1785422361.199411133] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointcloudAccumulatorComponent>
+[component_container_mt-1] [INFO] [1785422361.199413828] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolarVoxelOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199416862] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolygonRemoverComponent>
+[component_container_mt-1] [INFO] [1785422361.199419501] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RadiusSearch2DOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199422127] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RandomDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199424660] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199427264] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::VectorMapInsideAreaFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199429973] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::VoxelGridDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.199432860] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::VoxelGridDownsampleFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/parking/costmap_generator' in container '/planning/scenario_planning/parking/parking_container'
+[component_container-18] [INFO] [1785422361.220523367] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Load Library: /opt/autoware/lib/libpointcloud_preprocessor_filter.so
+[component_container-7] [INFO] [1785422361.251541671] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_scenario_planning_trajectory' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422361.251581160] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/velocity_smoother' in container '/planning/scenario_planning/velocity_smoother_container'
+[component_container-20] [INFO] [1785422361.272601676] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Load Library: /opt/autoware/lib/libpointcloud_preprocessor_filter.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/interface' in container '/adapi/container'
+[component_container_mt-43] [INFO] [1785422361.282306103] [planning.planning_validator_container]: Load Library: /opt/autoware/lib/libautoware_planning_validator_component.so
+[autoware_mrm_handler_node-13] [WARN] [1785422361.287064164] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-42] [ERROR] [1785422361.289281022] [planning.scenario_planning.parking.costmap_generator]: "map" passed to lookupTransform argument target_frame does not exist. 
+[component_container_mt-43] [INFO] [1785422361.303514156] [planning.planning_validator_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::planning_validator::PlanningValidatorNode>
+[component_container_mt-43] [INFO] [1785422361.303572418] [planning.planning_validator_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::planning_validator::PlanningValidatorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/trajectory_follower/lane_departure_checker_node' in container '/control/control_check_container'
+[component_container_mt-48] [INFO] [1785422361.308891091] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_control_validator_component.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/localization/util/voxel_grid_downsample_filter' in container '/pointcloud_container'
+[component_container_mt-34] [INFO] [1785422361.315329979] [planning.mission_planning.mission_planner_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::MissionPlanner>
+[component_container_mt-34] [INFO] [1785422361.315377361] [planning.mission_planning.mission_planner_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::RouteSelector>
+[component_container_mt-34] [INFO] [1785422361.315384418] [planning.mission_planning.mission_planner_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::mission_planner_universe::RouteSelector>
+[component_container_mt-48] [INFO] [1785422361.319147989] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::control_validator::ControlValidator>
+[component_container_mt-48] [INFO] [1785422361.319216630] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::control_validator::ControlValidator>
+[component_container-18] [INFO] [1785422361.351010504] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-18] [INFO] [1785422361.351063929] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-18] [INFO] [1785422361.351070122] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-18] [INFO] [1785422361.351074823] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-47] [INFO] [1785422361.358532822] [control.trajectory_follower.controller_node_exe]: Waiting for acceleration data
+[component_container_mt-47] [INFO] [1785422361.359166993] [control.trajectory_follower.controller_node_exe]: Control is skipped since input data is not ready.
+[component_container-20] [INFO] [1785422361.362086760] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-20] [INFO] [1785422361.362138175] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-20] [INFO] [1785422361.362144533] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-20] [INFO] [1785422361.362149496] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-47] [INFO] [1785422361.363384622] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_external_cmd_selector_node.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_trajectory_follower_control_cmd' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422361.363819163] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422361.363843170] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container_mt-47] [INFO] [1785422361.368130801] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::external_cmd_selector::ExternalCmdSelector>
+[component_container_mt-47] [INFO] [1785422361.368174943] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::external_cmd_selector::ExternalCmdSelector>
+[component_container-19] [INFO] [1785422361.372612183] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Load Library: /opt/autoware/lib/libpointcloud_preprocessor_filter.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/trajectory_follower/controller_node_exe' in container '/control/control_container'
+[component_container_mt-15] [INFO] [1785422361.379406810] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_loader_node.so
+[autoware_mrm_handler_node-13] [WARN] [1785422361.386916321] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-15] [INFO] [1785422361.389603849] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::Lanelet2MapLoaderNode>
+[component_container_mt-15] [INFO] [1785422361.389649292] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::map_loader::Lanelet2MapLoaderNode>
+[component_container_mt-48] [INFO] [1785422361.393068877] [control.trajectory_follower.lane_departure_checker_node]: waiting for current_twist msg...
+[component_container-19] [INFO] [1785422361.446646954] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-19] [INFO] [1785422361.446700901] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-19] [INFO] [1785422361.446707183] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-19] [INFO] [1785422361.446711956] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/top/crop_box_filter_self' in container '/sensing/lidar/top/pointcloud_preprocessor/pointcloud_container'
+[component_container_mt-42] [INFO] [1785422361.459467369] [planning.scenario_planning.parking.parking_container]: Load Library: /opt/autoware/lib/libfreespace_planner_node.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/right/crop_box_filter_self' in container '/sensing/lidar/right/pointcloud_preprocessor/pointcloud_container'
+[component_container-7] [INFO] [1785422361.465059929] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_mission_planning_route' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422361.465097042] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container_mt-42] [INFO] [1785422361.467324638] [planning.scenario_planning.parking.parking_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::freespace_planner::FreespacePlannerNode>
+[component_container_mt-42] [INFO] [1785422361.467375136] [planning.scenario_planning.parking.parking_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::freespace_planner::FreespacePlannerNode>
+[component_container-38] [INFO] [1785422361.472217930] [planning.scenario_planning.velocity_smoother_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container-38] [INFO] [1785422361.473153177] [planning.scenario_planning.velocity_smoother_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-38] [INFO] [1785422361.473185694] [planning.scenario_planning.velocity_smoother_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/lanelet2_map_loader' in container '/map/map_container'
+[autoware_mrm_handler_node-13] [WARN] [1785422361.487421373] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-1] [INFO] [1785422361.491482355] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491536446] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container_mt-1] [INFO] [1785422361.491542721] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491547428] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container_mt-1] [INFO] [1785422361.491551245] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DualReturnOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491555458] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::Lanelet2MapFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491558871] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491596423] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterUInt16Component>
+[component_container_mt-1] [INFO] [1785422361.491602182] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PickupBasedVoxelGridDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491606917] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container_mt-1] [INFO] [1785422361.491610893] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenationComponent>
+[component_container_mt-1] [INFO] [1785422361.491615247] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDataSynchronizerComponent>
+[component_container_mt-1] [INFO] [1785422361.491619536] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDensifierNode>
+[component_container_mt-1] [INFO] [1785422361.491631126] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointcloudAccumulatorComponent>
+[component_container_mt-1] [INFO] [1785422361.491635266] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolarVoxelOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491639326] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolygonRemoverComponent>
+[component_container_mt-1] [INFO] [1785422361.491643242] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RadiusSearch2DOutlierFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491646958] [pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RandomDownsampleFilterComponent>
+[component_container_mt-1] [INFO] [1785422361.491650882] [pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RandomDownsampleFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/mission_planning/route_selector' in container '/planning/mission_planning/mission_planner_container'
+[component_container-18] [INFO] [1785422361.534243751] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-18] [INFO] [1785422361.534294688] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-18] [INFO] [1785422361.534301146] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-18] [INFO] [1785422361.534305887] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/glog_component' in container '/planning/scenario_planning/velocity_smoother_container'
+[component_container_mt-15] [WARN] [1785422361.543241643] [map.lanelet2_map_loader]: /autoware_map/town10-regen/lanelet2_map.osm has no format_version(null) or non semver-style format_version(null) information
+[component_container_mt-15] [INFO] [1785422361.543421289] [map.lanelet2_map_loader]: Loaded map format_version: null
+[component_container-20] [INFO] [1785422361.553709852] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-20] [INFO] [1785422361.553752099] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-20] [INFO] [1785422361.553757288] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-20] [INFO] [1785422361.553760622] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/left/crop_box_filter_self' in container '/sensing/lidar/left/pointcloud_preprocessor/pointcloud_container'
+[component_container_mt-15] [INFO] [1785422361.563353531] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_visualization_node.so
+[component_container_mt-15] [INFO] [1785422361.565810550] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+[component_container_mt-15] [INFO] [1785422361.565854278] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+[component_container_mt-15] [INFO] [1785422361.572157051] [map.lanelet2_map_loader]: Succeeded to load lanelet2_map. Map is published.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/localization/util/random_downsample_filter' in container '/pointcloud_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_pointcloud_map' in container '/system/component_state_monitor/container'
+[component_container_mt-34] [INFO] [1785422361.589728196] [planning.mission_planning.mission_planner_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-34] [INFO] [1785422361.592538102] [planning.mission_planning.mission_planner_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-34] [INFO] [1785422361.592577275] [planning.mission_planning.mission_planner_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container-7] [INFO] [1785422361.590173014] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422361.590201503] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[autoware_mrm_handler_node-13] [WARN] [1785422361.590602538] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-42] [INFO] [1785422361.590792633] [planning.scenario_planning.parking.freespace_planner]: initialize planning algorithm: astar
+[component_container-19] [INFO] [1785422361.600222161] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-19] [INFO] [1785422361.600275449] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-19] [INFO] [1785422361.600282262] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-19] [INFO] [1785422361.600286933] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/motion_planning/path_optimizer' in container '/planning/scenario_planning/lane_driving/motion_planning/motion_planning_container'
+[component_container_mt-41] [INFO] [1785422361.607010535] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Load Library: /opt/autoware/lib/libautoware_motion_velocity_planner_lib.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/localization' in container '/adapi/container'
+[component_container_mt-41] [INFO] [1785422361.674723791] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::motion_velocity_planner::MotionVelocityPlannerNode>
+[component_container_mt-41] [INFO] [1785422361.675680327] [planning.scenario_planning.lane_driving.motion_planning.motion_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::motion_velocity_planner::MotionVelocityPlannerNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/top/crop_box_filter_mirror' in container '/sensing/lidar/top/pointcloud_preprocessor/pointcloud_container'
+[autoware_mrm_handler_node-13] [WARN] [1785422361.686614378] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/mission_planning/glog_component' in container '/planning/mission_planning/mission_planner_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/control_validator' in container '/control/control_check_container'
+[component_container-18] [INFO] [1785422361.701485452] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-18] [INFO] [1785422361.702010031] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-18] [INFO] [1785422361.702017239] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-18] [INFO] [1785422361.702021542] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-18] [INFO] [1785422361.702025618] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container_mt-48] [INFO] [1785422361.705587761] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_autonomous_emergency_braking_node.so
+[autoware_scenario_selector_node-36] [WARN] [1785422361.710115259] [route_handler]: setMap() for invalid version map: 
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/right/crop_box_filter_mirror' in container '/sensing/lidar/right/pointcloud_preprocessor/pointcloud_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/left/crop_box_filter_mirror' in container '/sensing/lidar/left/pointcloud_preprocessor/pointcloud_container'
+[component_container-7] [INFO] [1785422361.747273210] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_initialpose3d' in container '/system/component_state_monitor/container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/lanelet2_map_visualization' in container '/map/map_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/parking/freespace_planner' in container '/planning/scenario_planning/parking/parking_container'
+[component_container-7] [INFO] [1785422361.747313574] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-20] [INFO] [1785422361.754739563] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-20] [INFO] [1785422361.754789063] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-20] [INFO] [1785422361.754795816] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-20] [INFO] [1785422361.754800679] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-20] [INFO] [1785422361.754805369] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-19] [INFO] [1785422361.757558164] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-19] [INFO] [1785422361.757604033] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-19] [INFO] [1785422361.757610296] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-19] [INFO] [1785422361.757614933] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-19] [INFO] [1785422361.757619780] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container_mt-15] [INFO] [1785422361.764501678] [map.map_container]: Load Library: /opt/autoware/lib/libvector_map_tf_generator_node.so
+[component_container_mt-15] [INFO] [1785422361.767748140] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::map_tf_generator::VectorMapTFGeneratorNode>
+[component_container_mt-15] [INFO] [1785422361.767802703] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::map_tf_generator::VectorMapTFGeneratorNode>
+[component_container_mt-15] [INFO] [1785422361.771262918] [map.lanelet2_map_visualization]: Map is loaded
+[component_container_mt-15] 
+[autoware_mrm_handler_node-13] [WARN] [1785422361.787779146] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/external_cmd_selector' in container '/control/control_container'
+[component_container_mt-47] [INFO] [1785422361.807557546] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_external_cmd_converter.so
+[autoware_manual_lane_change_handler_node-33] [WARN] [1785422361.808037011] [route_handler]: setMap() for invalid version map: 
+[component_container_mt-47] [INFO] [1785422361.811563322] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::external_cmd_converter::ExternalCmdConverterNode>
+[component_container_mt-47] [INFO] [1785422361.811603787] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::external_cmd_converter::ExternalCmdConverterNode>
+[component_container_mt-15] [1;33mCould not find valid vertex for ear clipping triangulation. Triangulation result might be invalid[0m
+[component_container_mt-15] [1;33mCould not find valid vertex for ear clipping triangulation. Triangulation result might be invalid[0m
+[component_container_mt-15] [1;33mCould not find valid vertex for ear clipping triangulation. Triangulation result might be invalid[0m
+[component_container_mt-15] [1;33mCould not find valid vertex for ear clipping triangulation. Triangulation result might be invalid[0m
+[component_container_mt-48] [INFO] [1785422361.837138880] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::motion::control::autonomous_emergency_braking::AEB>
+[component_container_mt-48] [INFO] [1785422361.837201255] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::motion::control::autonomous_emergency_braking::AEB>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/top/distortion_corrector_node' in container '/sensing/lidar/top/pointcloud_preprocessor/pointcloud_container'
+[component_container_mt-34] [WARN] [1785422361.858832391] [route_handler]: setMap() for invalid version map: 
+[component_container-18] [INFO] [1785422361.867442553] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-18] [INFO] [1785422361.867493347] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-18] [INFO] [1785422361.867500090] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-18] [INFO] [1785422361.867728630] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-18] [INFO] [1785422361.867740175] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DualReturnOutlierFilterComponent>
+[component_container-18] [INFO] [1785422361.867744700] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::Lanelet2MapFilterComponent>
+[component_container-18] [INFO] [1785422361.867749331] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterComponent>
+[component_container-18] [INFO] [1785422361.867753334] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterUInt16Component>
+[component_container-18] [INFO] [1785422361.867757542] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PickupBasedVoxelGridDownsampleFilterComponent>
+[component_container-18] [INFO] [1785422361.867761866] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container-18] [INFO] [1785422361.867765967] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenationComponent>
+[component_container-18] [INFO] [1785422361.867770066] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDataSynchronizerComponent>
+[component_container-18] [INFO] [1785422361.867774017] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDensifierNode>
+[component_container-18] [INFO] [1785422361.867778017] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointcloudAccumulatorComponent>
+[component_container-18] [INFO] [1785422361.867781943] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolarVoxelOutlierFilterComponent>
+[component_container-18] [INFO] [1785422361.867788276] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolygonRemoverComponent>
+[component_container-18] [INFO] [1785422361.867792268] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RadiusSearch2DOutlierFilterComponent>
+[component_container-18] [INFO] [1785422361.867796324] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RandomDownsampleFilterComponent>
+[component_container-18] [INFO] [1785422361.867800298] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[component_container-18] [INFO] [1785422361.867804829] [sensing.lidar.top.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[autoware_mrm_handler_node-13] [WARN] [1785422361.888561532] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/routing' in container '/adapi/container'
+[component_container_mt-34] [INFO] [1785422361.914393233] [planning.mission_planning.mission_planner]: waiting odometry... Route API is not ready.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/planning_validator' in container '/planning/planning_validator_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/left/distortion_corrector_node' in container '/sensing/lidar/left/pointcloud_preprocessor/pointcloud_container'
+[component_container-19] [INFO] [1785422361.929019880] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-19] [INFO] [1785422361.929067465] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-19] [INFO] [1785422361.929073847] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-19] [INFO] [1785422361.929121888] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-19] [INFO] [1785422361.929128082] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DualReturnOutlierFilterComponent>
+[component_container-19] [INFO] [1785422361.929132741] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::Lanelet2MapFilterComponent>
+[component_container-19] [INFO] [1785422361.929136936] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterComponent>
+[component_container-19] [INFO] [1785422361.929141241] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterUInt16Component>
+[component_container-19] [INFO] [1785422361.929145039] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PickupBasedVoxelGridDownsampleFilterComponent>
+[component_container-19] [INFO] [1785422361.929149432] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container-19] [INFO] [1785422361.929153532] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenationComponent>
+[component_container-19] [INFO] [1785422361.929157779] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDataSynchronizerComponent>
+[component_container-19] [INFO] [1785422361.929166088] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDensifierNode>
+[component_container-19] [INFO] [1785422361.929170612] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointcloudAccumulatorComponent>
+[component_container-19] [INFO] [1785422361.929174537] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolarVoxelOutlierFilterComponent>
+[component_container-19] [INFO] [1785422361.929178527] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolygonRemoverComponent>
+[component_container-19] [INFO] [1785422361.929182293] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RadiusSearch2DOutlierFilterComponent>
+[component_container-19] [INFO] [1785422361.929186298] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RandomDownsampleFilterComponent>
+[component_container-19] [INFO] [1785422361.929190383] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[component_container-19] [INFO] [1785422361.929195930] [sensing.lidar.left.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[autoware_ekf_localizer_node-28] [WARN] [1785422361.940591092] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_control_command_control_cmd' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422361.964084204] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422361.965271172] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/vector_map_tf_generator' in container '/map/map_container'
+[component_container_mt-47] [INFO] [1785422361.985659877] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_shift_decider_node.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/external_cmd_converter' in container '/control/control_container'
+[component_container_mt-47] [INFO] [1785422361.989200899] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::shift_decider::ShiftDecider>
+[component_container_mt-47] [INFO] [1785422361.989241686] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::shift_decider::ShiftDecider>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/right/distortion_corrector_node' in container '/sensing/lidar/right/pointcloud_preprocessor/pointcloud_container'
+[autoware_mrm_handler_node-13] [WARN] [1785422361.990258605] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container-20] [INFO] [1785422362.006978672] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::ApproximateDownsampleFilterComponent>
+[component_container-20] [INFO] [1785422362.007025664] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::BlockageDiagComponent>
+[component_container-20] [INFO] [1785422362.007031665] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::CropBoxFilterComponent>
+[component_container-20] [INFO] [1785422362.007067616] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DistortionCorrectorComponent>
+[component_container-20] [INFO] [1785422362.007071604] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::DualReturnOutlierFilterComponent>
+[component_container-20] [INFO] [1785422362.007075362] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::Lanelet2MapFilterComponent>
+[component_container-20] [INFO] [1785422362.007078890] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterComponent>
+[component_container-20] [INFO] [1785422362.007082181] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PassThroughFilterUInt16Component>
+[component_container-20] [INFO] [1785422362.007085399] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PickupBasedVoxelGridDownsampleFilterComponent>
+[component_container-20] [INFO] [1785422362.007088967] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenateDataSynchronizerComponent>
+[component_container-20] [INFO] [1785422362.007092394] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudConcatenationComponent>
+[component_container-20] [INFO] [1785422362.007095636] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDataSynchronizerComponent>
+[component_container-20] [INFO] [1785422362.007098852] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointCloudDensifierNode>
+[component_container-20] [INFO] [1785422362.007102361] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PointcloudAccumulatorComponent>
+[component_container-20] [INFO] [1785422362.007105353] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolarVoxelOutlierFilterComponent>
+[component_container-20] [INFO] [1785422362.007108830] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::PolygonRemoverComponent>
+[component_container-20] [INFO] [1785422362.007111840] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RadiusSearch2DOutlierFilterComponent>
+[component_container-20] [INFO] [1785422362.007114946] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RandomDownsampleFilterComponent>
+[component_container-20] [INFO] [1785422362.007117951] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[component_container-20] [INFO] [1785422362.007121000] [sensing.lidar.right.pointcloud_preprocessor.pointcloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::pointcloud_preprocessor::RingOutlierFilterComponent>
+[autoware_pose_initializer_node-26] [INFO] [1785422362.039070716] [localization.util.pose_initializer]: EKF triggering service is not available, waiting...
+[component_container_mt-15] [INFO] [1785422362.044299326] [map.vector_map_tf_generator]: broadcast static tf. map_frame:map, viewer_frame:viewer, x:-9.0952, y:-32.2807, z:0
+[autoware_mrm_handler_node-13] [WARN] [1785422362.087633216] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/autoware_state' in container '/adapi/container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/autonomous_emergency_braking' in container '/control/control_check_container'
+[component_container_mt-48] [INFO] [1785422362.131167589] [control.control_check_container]: Load Library: /opt/autoware/lib/libautoware_collision_detector.so
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/autoware_shift_decider' in container '/control/control_container'
+[component_container_mt-48] [INFO] [1785422362.135950590] [control.control_check_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::collision_detector::CollisionDetectorNode>
+[component_container_mt-48] [INFO] [1785422362.135997769] [control.control_check_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::collision_detector::CollisionDetectorNode>
+[autoware_pose_initializer_node-26] [INFO] [1785422362.140024170] [localization.util.pose_initializer]: EKF triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422362.143734187] [localization.util.pose_initializer]: EKF Deactivation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422362.144358892] [localization.util.pose_initializer]: NDT triggering service is available!
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/top/ring_outlier_filter' in container '/sensing/lidar/top/pointcloud_preprocessor/pointcloud_container'
+[component_container_mt-47] [INFO] [1785422362.148569656] [control.control_container]: Load Library: /opt/autoware/lib/libvehicle_cmd_gate_node.so
+[autoware_pose_initializer_node-26] [INFO] [1785422362.150060417] [localization.util.pose_initializer]: NDT Deactivation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422362.151293903] [localization.util.pose_initializer]: Call align server.
+[component_container_mt-47] [INFO] [1785422362.159088860] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::vehicle_cmd_gate::VehicleCmdGate>
+[component_container_mt-47] [INFO] [1785422362.159142811] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::vehicle_cmd_gate::VehicleCmdGate>
+[autoware_mrm_handler_node-13] [WARN] [1785422362.186694947] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/right/ring_outlier_filter' in container '/sensing/lidar/right/pointcloud_preprocessor/pointcloud_container'
+[autoware_mrm_handler_node-13] [WARN] [1785422362.289230742] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/diagnostics' in container '/adapi/container'
+[autoware_mrm_handler_node-13] [WARN] [1785422362.390236632] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_object_recognition_objects' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422362.452920996] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422362.452961873] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/sensing/lidar/left/ring_outlier_filter' in container '/sensing/lidar/left/pointcloud_preprocessor/pointcloud_container'
+[autoware_mrm_handler_node-13] [WARN] [1785422362.489585306] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422362.587028197] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422362.689836255] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/fail_safe' in container '/adapi/container'
+[component_container-7] [INFO] [1785422362.752406667] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422362.752480316] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_vehicle_status_velocity_status' in container '/system/component_state_monitor/container'
+[autoware_mrm_handler_node-13] [WARN] [1785422362.787629396] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/collision_detector' in container '/control/control_check_container'
+[component_container_mt-48] [INFO] [1785422362.834217493] [control.collision_detector]: waiting for current odometry...
+[autoware_mrm_handler_node-13] [WARN] [1785422362.886724417] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422362.988020306] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422363.086872176] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422363.187827190] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[logging_node-14] [WARN] [1785422363.187932475] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - /autoware/localization/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform STALE
+[logging_node-14]             - /autoware/localization/topic_rate_check/pose_twist_fusion STALE
+[logging_node-14]             - /autoware/localization/scan_matching_status STALE
+[logging_node-14]             - /autoware/localization/accuracy STALE
+[logging_node-14]             - /autoware/localization/sensor_fusion_status WARN 
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state STALE
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud ERROR
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/control_command ERROR
+[logging_node-14]         - /autoware/control/node_alive_monitoring/command_gate ERROR
+[logging_node-14]             - /autoware/control/node_alive_monitoring/vehicle_cmd_gate STALE
+[logging_node-14]             - /autoware/control/node_alive_monitoring/control_command_gate STALE
+[logging_node-14]     - /autoware/vehicle ERROR
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/steering STALE
+[logging_node-14]     - /autoware/system ERROR
+[logging_node-14]         - /autoware/system/topic_rate_check/emergency_control_command STALE
+[logging_node-14]         - /autoware/system/emergency_stop_operation ERROR
+[logging_node-14]             - /autoware/system/emergency_stop_operation/vehicle_cmd_gate STALE
+[logging_node-14]             - /autoware/system/emergency_stop_operation/control_command_gate STALE
+[logging_node-14]     - /adapi/mrm_request/delegate STALE
+[logging_node-14] 
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_vehicle_status_steering_status' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422363.219596147] [system.component_state_monitor.container]: Load Library: /opt/autoware/lib/libautoware_component_state_monitor.so
+[component_container-7] [INFO] [1785422363.221670370] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::component_state_monitor::StateMonitor>
+[component_container-7] [INFO] [1785422363.221748000] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::component_state_monitor::StateMonitor>
+[autoware_mrm_handler_node-13] [WARN] [1785422363.287240362] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422363.387878849] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/vehicle_cmd_gate' in container '/control/control_container'
+[component_container_mt-47] [WARN] [1785422363.463267840] [control.vehicle_cmd_gate]: Emergency!
+[autoware_mrm_handler_node-13] [WARN] [1785422363.487517397] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422363.587324757] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/component_state_monitor/component' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422363.680905886] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422363.680954425] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[autoware_mrm_handler_node-13] [WARN] [1785422363.686756969] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422363.786610409] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container-7] [WARN] [1785422363.853795607] [system.topic_state_monitor_vehicle_status_steering_status]: /vehicle/status/steering_status topic is timeout. Set ERROR in diagnostics.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_system_emergency_control_cmd' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422363.854939221] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422363.854963471] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[autoware_mrm_handler_node-13] [WARN] [1785422363.888099169] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-42] [INFO] [1785422363.920558878] [planning.scenario_planning.parking.parking_container]: Load Library: /opt/autoware/lib/libautoware_glog_component.so
+[component_container_mt-42] [INFO] [1785422363.921528023] [planning.scenario_planning.parking.parking_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[component_container_mt-42] [INFO] [1785422363.921557039] [planning.scenario_planning.parking.parking_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::glog_component::GlogComponent>
+[autoware_ekf_localizer_node-28] [WARN] [1785422363.939483494] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/heartbeat' in container '/adapi/container'
+[autoware_mrm_handler_node-13] [WARN] [1785422363.990023808] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/parking/glog_component' in container '/planning/scenario_planning/parking/parking_container'
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_traffic_light_recognition_traffic_signals' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422364.025075790] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422364.025123286] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[autoware_mrm_handler_node-13] [WARN] [1785422364.088879316] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422364.188122446] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_pose_twist_fusion_filter_pose' in container '/system/component_state_monitor/container'
+[component_container-7] [INFO] [1785422364.193952242] [system.component_state_monitor.container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[component_container-7] [INFO] [1785422364.193991623] [system.component_state_monitor.container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::topic_state_monitor::TopicStateMonitorNode>
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/manual/local' in container '/adapi/container'
+[autoware_mrm_handler_node-13] [WARN] [1785422364.287670238] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-47] [WARN] [1785422364.295151346] [control.vehicle_cmd_gate]: Emergency!
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/system/topic_state_monitor_transform_map_to_base_link' in container '/system/component_state_monitor/container'
+[autoware_mrm_handler_node-13] [WARN] [1785422364.388065776] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422364.489918213] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/manual/remote' in container '/adapi/container'
+[component_container-7] [INFO] [1785422364.517672255] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[autoware_ndt_scan_matcher_node-24] [WARN] [1785422364.557843745] [localization.pose_estimator.ndt_scan_matcher]: No InputSource. Please check the input lidar topic
+[autoware_mrm_handler_node-13] [WARN] [1785422364.589606413] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422364.686824705] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container-18] [WARN] [1785422364.746577424] [sensing.lidar.top.crop_box_filter_self]: Invalid PointCloud: is_dense is false. The point cloud should be organized (dense) and contain only valid points. This will be an ERROR starting in 2026 JulyFrame: 'velodyne_top', Stamp: 21.684099436
+[autoware_mrm_handler_node-13] [WARN] [1785422364.789031669] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422364.889406282] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_pose_initializer_node-26] [INFO] [1785422364.910885902] [localization.util.pose_initializer]: EKF triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422364.913267027] [localization.util.pose_initializer]: EKF Deactivation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422364.913811454] [localization.util.pose_initializer]: NDT triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422364.914350060] [localization.util.pose_initializer]: NDT Deactivation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422364.914435135] [localization.util.pose_initializer]: fit_target: pointcloud_map, frame: map
+[component_container-18] [WARN] [1785422364.942912472] [sensing.lidar.top.distortion_corrector_node]: Twist time_stamp is too late. Could not interpolate.
+[component_container_mt-1] [WARN] [1785422364.983405185] [localization.util.crop_box_filter_measurement_range]: Invalid PointCloud: row_step mismatch. Expected: 99856 (width 6241 * point_step 16), Got: 0. Frame: 'base_link', Stamp: 21.684099436 Please fill in the `cloud->row_step` field accordingly. This will be an ERROR starting in 2026 July
+[autoware_scenario_selector_node-36] [INFO] [1785422364.986849214] [planning.scenario_planning.scenario_selector]: Waiting for current pose.
+[autoware_mrm_handler_node-13] [WARN] [1785422364.987843835] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422365.086663130] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-1] [WARN] [1785422365.140827979] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422365.140894810] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[autoware_mrm_handler_node-13] [WARN] [1785422365.188640027] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_pose_initializer_node-26] [INFO] [1785422365.261011212] [localization.util.pose_initializer]: Call align server.
+[autoware_mrm_handler_node-13] [WARN] [1785422365.288270989] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422365.387374835] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422365.487576093] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-47] [WARN] [1785422365.593698086] [control.vehicle_cmd_gate]: Emergency!
+[autoware_mrm_handler_node-13] [WARN] [1785422365.598250908] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422365.688005273] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422365.791666023] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-40] added a slot with 1 modules
+[component_container_mt-40] external_request_lane_change_left registered in slot_configuration is not registered, skipping
+[component_container_mt-40] external_request_lane_change_right registered in slot_configuration is not registered, skipping
+[component_container_mt-40] added a slot with 6 modules
+[component_container_mt-40] added a slot with 1 modules
+[component_container_mt-40] dynamic_obstacle_avoidance registered in slot_configuration is not registered, skipping
+[autoware_mrm_handler_node-13] [WARN] [1785422365.886855212] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_ekf_localizer_node-28] [WARN] [1785422365.937175927] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[autoware_mrm_handler_node-13] [WARN] [1785422365.990256102] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422366.086727509] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422366.186800222] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[logging_node-14] [WARN] [1785422366.286790594] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - /autoware/localization/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/pose_twist_fusion ERROR
+[logging_node-14]             - /autoware/localization/scan_matching_status STALE
+[logging_node-14]             - /autoware/localization/accuracy STALE
+[logging_node-14]             - /autoware/localization/sensor_fusion_status WARN 
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud ERROR
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/control_command WARN 
+[logging_node-14]         - /autoware/control/performance_monitoring/control_state STALE
+[logging_node-14]     - /autoware/vehicle WARN 
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/velocity WARN 
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/steering WARN 
+[logging_node-14]     - /adapi/mrm_request/delegate STALE
+[logging_node-14] 
+[autoware_mrm_handler_node-13] [WARN] [1785422366.287040835] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-42] [ERROR] [1785422366.287117620] [planning.scenario_planning.parking.costmap_generator]: Could not find a connection between 'map' and 'base_link' because they are not part of the same tree.Tf has two or more unconnected trees.
+[autoware_pose_initializer_node-26] [INFO] [1785422366.340171876] [localization.util.pose_initializer]: align server succeeded.
+[autoware_pose_initializer_node-26] [INFO] [1785422366.340861818] [localization.util.pose_initializer]: EKF triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422366.344170186] [localization.util.pose_initializer]: EKF Activation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422366.344600648] [localization.util.pose_initializer]: NDT triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422366.346174815] [localization.util.pose_initializer]: NDT Activation succeeded
+[component_container_mt-47] [INFO] [1785422366.355034241] [control.trajectory_follower.controller_node_exe]: Waiting for acceleration data
+[component_container_mt-47] [INFO] [1785422366.355121733] [control.trajectory_follower.controller_node_exe]: Control is skipped since input data is not ready.
+[autoware_mrm_handler_node-13] [WARN] [1785422366.389236978] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-48] [INFO] [1785422366.397324243] [control.trajectory_follower.lane_departure_checker_node]: waiting for current_twist msg...
+[component_container_mt-1] [WARN] [1785422366.445812083] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422366.445879565] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[autoware_ndt_scan_matcher_node-24] [INFO] [1785422366.446658055] [localization.pose_estimator.ndt_scan_matcher]: Mismatch between pose timestamp and current timestamp
+[component_container_mt-48] [WARN] [1785422366.454193688] [control.collision_detector]: waiting for dynamic object info...
+[autoware_mrm_handler_node-13] [INFO] [1785422366.487118165] [system.mrm_handler]: MRM State changed: MRM_OPERATING -> MRM_SUCCEEDED
+[autoware_scenario_selector_node-36] [INFO] [1785422366.487928001] [planning.scenario_planning.scenario_selector]: Waiting for route.
+[component_container_mt-48] [INFO] [1785422366.497436180] [control.trajectory_follower.lane_departure_checker_node]: waiting for lanelet_map msg...
+[autoware_pose_initializer_node-26] [INFO] [1785422366.562906720] [localization.util.pose_initializer]: EKF triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422366.564063609] [localization.util.pose_initializer]: EKF Deactivation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422366.564270828] [localization.util.pose_initializer]: NDT triggering service is available!
+[planning_evaluator-44] [WARN] [1785422366.564296963] [route_handler]: setMap() for invalid version map: 
+[autoware_pose_initializer_node-26] [INFO] [1785422366.566729076] [localization.util.pose_initializer]: NDT Deactivation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422366.567828692] [localization.util.pose_initializer]: Call align server.
+[control_evaluator-49] [WARN] [1785422366.574556143] [route_handler]: setMap() for invalid version map: 
+[autoware_mrm_handler_node-13] [WARN] [1785422366.587919486] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-47] [WARN] [1785422366.650462706] [control.vehicle_cmd_gate]: Emergency!
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner' in container '/planning/scenario_planning/lane_driving/behavior_planning/behavior_planning_container'
+[component_container_mt-40] [INFO] [1785422366.675550376] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Load Library: /opt/autoware/lib/libautoware_behavior_velocity_planner_lib.so
+[component_container_mt-40] [INFO] [1785422366.687047036] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_velocity_planner::BehaviorVelocityPlannerNode>
+[component_container_mt-40] [INFO] [1785422366.688132034] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_velocity_planner::experimental::BehaviorVelocityPlannerNode>
+[component_container_mt-40] [INFO] [1785422366.688145708] [planning.scenario_planning.lane_driving.behavior_planning.behavior_planning_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::behavior_velocity_planner::experimental::BehaviorVelocityPlannerNode>
+[component_container_mt-1] [WARN] [1785422366.844041875] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422366.844104895] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-47] [INFO] [1785422366.898143712] [control.control_container]: Load Library: /opt/autoware/lib/libautoware_operation_mode_transition_manager_node.so
+[component_container_mt-47] [INFO] [1785422366.906450647] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::operation_mode_transition_manager::AutonomousModeTransitionFlagNode>
+[component_container_mt-47] [INFO] [1785422366.906506501] [control.control_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::operation_mode_transition_manager::OperationModeTransitionManager>
+[component_container_mt-47] [INFO] [1785422366.906512696] [control.control_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::operation_mode_transition_manager::OperationModeTransitionManager>
+[component_container-7] [WARN] [1785422367.075200903] [system.topic_state_monitor_control_command_control_cmd]: /control/command/control_cmd topic rate has dropped to the warning level. Set WARN in diagnostics.
+[component_container_mt-48] [INFO] [1785422367.193594123] [control.autonomous_emergency_braking]: [AEB] waiting for object pointcloud message
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/control/autoware_operation_mode_transition_manager' in container '/control/control_container'
+[component_container-7] [INFO] [1785422367.521742406] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[component_container_mt-1] [WARN] [1785422367.745865050] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422367.745938734] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-47] [WARN] [1785422367.863119402] [control.vehicle_cmd_gate]: system_emergency heartbeat is timeout.
+[component_container_mt-40] [INFO] [1785422367.916800462] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::CrosswalkModulePlugin' is loaded.
+[autoware_ekf_localizer_node-28] [WARN] [1785422367.937976196] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner' in container '/planning/scenario_planning/lane_driving/motion_planning/motion_planning_container'
+[component_container_mt-40] [INFO] [1785422368.059451669] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::WalkwayModulePlugin' is loaded.
+[autoware_mrm_handler_node-13] [WARN] [1785422368.087513513] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-40] [INFO] [1785422368.240717863] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::TrafficLightModulePlugin' is loaded.
+[autoware_mrm_handler_node-13] [WARN] [1785422368.288550290] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-47] [WARN] [1785422368.289253610] [control.vehicle_cmd_gate]: Emergency!
+[autoware_mrm_handler_node-13] [WARN] [1785422368.394219372] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422368.489501563] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422368.590145649] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422368.687108292] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-40] [INFO] [1785422368.790334781] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::IntersectionModulePlugin' is loaded.
+[autoware_mrm_handler_node-13] [WARN] [1785422368.793698772] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422368.887807561] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422368.991678582] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-1] [WARN] [1785422369.043657489] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422369.043728039] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[autoware_mrm_handler_node-13] [WARN] [1785422369.086739151] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-40] [INFO] [1785422369.097931402] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::BlindSpotModulePlugin' is loaded.
+[autoware_mrm_handler_node-13] [WARN] [1785422369.187276720] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-1] [WARN] [1785422369.245869464] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422369.245948204] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[logging_node-14] [WARN] [1785422369.286688893] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - /autoware/localization/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/pose_twist_fusion ERROR
+[logging_node-14]             - /autoware/localization/scan_matching_status STALE
+[logging_node-14]             - /autoware/localization/accuracy STALE
+[logging_node-14]             - /autoware/localization/sensor_fusion_status WARN 
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state STALE
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud ERROR
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/control_command WARN 
+[logging_node-14]         - /autoware/control/performance_monitoring/control_state STALE
+[logging_node-14]     - /autoware/vehicle WARN 
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/velocity WARN 
+[logging_node-14]         - /autoware/vehicle/topic_rate_check/steering WARN 
+[logging_node-14]     - /adapi/mrm_request/delegate STALE
+[logging_node-14] 
+[autoware_mrm_handler_node-13] [WARN] [1785422369.286943978] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-47] [WARN] [1785422369.290127289] [control.vehicle_cmd_gate]: Emergency!
+[component_container_mt-1] [WARN] [1785422369.341087232] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422369.341169253] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-40] [INFO] [1785422369.356935919] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::DetectionAreaModulePlugin' is loaded.
+[autoware_mrm_handler_node-13] [WARN] [1785422369.389001453] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[autoware_mrm_handler_node-13] [WARN] [1785422369.486892554] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-48] [INFO] [1785422369.503887785] [control.control_validator]: waiting for /planning/trajectory
+[autoware_mrm_handler_node-13] [WARN] [1785422369.587766298] [system.mrm_handler]: no mrm operation available: operate emergency_stop
+[component_container_mt-40] [INFO] [1785422369.671438534] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::VirtualTrafficLightModulePlugin' is loaded.
+[component_container-18] [WARN] [1785422369.904785851] [sensing.lidar.top.crop_box_filter_self]: Invalid PointCloud: is_dense is false. The point cloud should be organized (dense) and contain only valid points. This will be an ERROR starting in 2026 JulyFrame: 'velodyne_top', Stamp: 26.834099513
+[autoware_ekf_localizer_node-28] [WARN] [1785422369.944038155] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[component_container-7] [WARN] [1785422370.039819472] [system.topic_state_monitor_control_command_control_cmd]: /control/command/control_cmd topic rate has dropped to the warning level. Set WARN in diagnostics.
+[component_container_mt-40] [INFO] [1785422370.052319482] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::NoStoppingAreaModulePlugin' is loaded.
+[component_container_mt-40] [INFO] [1785422370.207397216] [planning.scenario_planning.lane_driving.behavior_planning.behavior_velocity_planner]: The scene plugin 'autoware::behavior_velocity_planner::experimental::StopLineModulePlugin' is loaded.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner' in container '/planning/scenario_planning/lane_driving/behavior_planning/behavior_planning_container'
+[component_container_mt-47] [WARN] [1785422370.439129431] [control.vehicle_cmd_gate]: Emergency!
+[component_container-7] [INFO] [1785422370.689261528] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[component_container_mt-1] [WARN] [1785422370.807376087] [localization.util.crop_box_filter_measurement_range]: Invalid PointCloud: row_step mismatch. Expected: 100928 (width 6308 * point_step 16), Got: 0. Frame: 'base_link', Stamp: 27.734099527 Please fill in the `cloud->row_step` field accordingly. This will be an ERROR starting in 2026 July
+[component_container_mt-1] [WARN] [1785422370.989440326] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422370.989505332] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-47] [INFO] [1785422371.338215429] [control.trajectory_follower.controller_node_exe]: Waiting for trajectory data
+[component_container_mt-47] [INFO] [1785422371.338288053] [control.trajectory_follower.controller_node_exe]: Control is skipped since input data is not ready.
+[component_container_mt-47] [WARN] [1785422371.439231832] [control.vehicle_cmd_gate]: Emergency!
+[autoware_scenario_selector_node-36] [INFO] [1785422371.487745708] [planning.scenario_planning.scenario_selector]: Waiting for route.
+[component_container_mt-48] [INFO] [1785422371.488379129] [control.trajectory_follower.lane_departure_checker_node]: waiting for lanelet_map msg...
+[component_container_mt-40] [INFO] [1785422371.589056410] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+[component_container_mt-1] [WARN] [1785422371.586851107] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422371.589400145] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422371.688117330] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422371.688176908] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[autoware_ekf_localizer_node-28] [WARN] [1785422371.937497751] [localization.pose_twist_fusion_filter.ekf_localizer]: The node is not activated. Provide initial pose to pose_initializer
+[component_container_mt-48] [INFO] [1785422372.186988864] [control.autonomous_emergency_braking]: [AEB] waiting for object pointcloud message
+[logging_node-14] [WARN] [1785422372.286762010] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - /autoware/localization/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/pose_twist_fusion ERROR
+[logging_node-14]             - /autoware/localization/scan_matching_status STALE
+[logging_node-14]             - /autoware/localization/accuracy STALE
+[logging_node-14]             - /autoware/localization/sensor_fusion_status WARN 
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud ERROR
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower ERROR
+[logging_node-14]     - /adapi/mrm_request/delegate STALE
+[logging_node-14] 
+[autoware_pose_initializer_node-26] [INFO] [1785422372.301232001] [localization.util.pose_initializer]: align server succeeded.
+[autoware_pose_initializer_node-26] [INFO] [1785422372.301871760] [localization.util.pose_initializer]: EKF triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422372.304256056] [localization.util.pose_initializer]: EKF Activation succeeded
+[autoware_pose_initializer_node-26] [INFO] [1785422372.304649104] [localization.util.pose_initializer]: NDT triggering service is available!
+[autoware_pose_initializer_node-26] [INFO] [1785422372.305945191] [localization.util.pose_initializer]: NDT Activation succeeded
+[component_container_mt-47] [WARN] [1785422372.440411074] [control.vehicle_cmd_gate]: Emergency!
+[component_container_mt-48] [WARN] [1785422372.537474038] [control.collision_detector]: waiting for dynamic object info...
+[component_container_mt-1] [WARN] [1785422372.588171607] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422372.588227186] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[autoware_ndt_scan_matcher_node-24] [INFO] [1785422372.589196889] [localization.pose_estimator.ndt_scan_matcher]: Mismatch between pose timestamp and current timestamp
+[component_container_mt-1] [WARN] [1785422372.687102163] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422372.687176604] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[gyro_bias_estimator_node-22] [ERROR] [1785422372.719471883] [sensing.imu.gyro_bias_scale_validator]: DT_pose is zero
+[component_container_mt-1] [WARN] [1785422372.786944318] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422372.787029053] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/motion' in container '/adapi/container'
+[component_container-7] [WARN] [1785422373.037664827] [system.topic_state_monitor_transform_map_to_base_link]: /tf topic is timeout. Set ERROR in diagnostics.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/mrm_request' in container '/adapi/container'
+[component_container_mt-47] [WARN] [1785422373.583369335] [control.vehicle_cmd_gate]: Emergency!
+[component_container-7] [INFO] [1785422373.692438604] [system.topic_state_monitor_vector_map]: /map/vector_map has not received. Set ERROR in diagnostics.
+[component_container_mt-48] [INFO] [1785422374.219168731] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+[component_container_mt-48] [INFO] [1785422374.596390654] [control.control_validator]: waiting for /planning/trajectory
+[component_container_mt-1] [WARN] [1785422374.688750130] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422374.688838640] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-47] [WARN] [1785422374.747546360] [control.vehicle_cmd_gate]: Emergency!
+[component_container_mt-1] [WARN] [1785422374.838416840] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422374.838483411] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[autoware_ndt_scan_matcher_node-24] [INFO] [1785422374.839870070] [localization.pose_estimator.ndt_scan_matcher]: Mismatch between pose timestamp and current timestamp
+[component_container_mt-1] [WARN] [1785422374.890803607] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422374.890873547] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container-18] [WARN] [1785422375.098279382] [sensing.lidar.top.crop_box_filter_self]: Invalid PointCloud: is_dense is false. The point cloud should be organized (dense) and contain only valid points. This will be an ERROR starting in 2026 JulyFrame: 'velodyne_top', Stamp: 32.034099591
+[component_container-18] [WARN] [1785422375.099097612] [sensing.lidar.top.distortion_corrector_node]: Twist time_stamp is too late. Could not interpolate.
+[logging_node-14] [WARN] [1785422375.286612915] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform ERROR
+[logging_node-14]             - /autoware/localization/sensor_fusion_status WARN 
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud ERROR
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower ERROR
+[logging_node-14] 
+[component_container_mt-1] [WARN] [1785422375.289259341] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422375.289328575] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-47] [WARN] [1785422375.651433684] [control.vehicle_cmd_gate]: Emergency!
+[component_container-7] [WARN] [1785422376.087980742] [system.topic_state_monitor_transform_map_to_base_link]: /tf topic is timeout. Set ERROR in diagnostics.
+[autoware_scenario_selector_node-36] [INFO] [1785422376.488017841] [planning.scenario_planning.scenario_selector]: Waiting for route.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/operation_mode' in container '/adapi/container'
+[component_container_mt-40] [INFO] [1785422376.639041879] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+[component_container-7] [INFO] [1785422376.686848512] [system.topic_state_monitor_trajectory_follower_control_cmd]: /control/trajectory_follower/control_cmd has not received. Set ERROR in diagnostics.
+[component_container_mt-47] [INFO] [1785422376.688648024] [control.trajectory_follower.controller_node_exe]: Waiting for trajectory data
+[component_container_mt-47] [INFO] [1785422376.688686355] [control.trajectory_follower.controller_node_exe]: Control is skipped since input data is not ready.
+[component_container_mt-47] [WARN] [1785422376.939499545] [control.vehicle_cmd_gate]: system_emergency heartbeat is timeout.
+[autoware_ekf_localizer_node-28] [WARN] [1785422377.037623785] [localization.pose_twist_fusion_filter.ekf_localizer]: EKF period may be too slow to finish pose smoothing!! (0.1000 sec)
+[component_container_mt-47] [WARN] [1785422377.041356950] [control.vehicle_cmd_gate]: Emergency!
+[component_container_mt-48] [INFO] [1785422377.187946992] [control.autonomous_emergency_braking]: [AEB] waiting for object pointcloud message
+[component_container_mt-1] [WARN] [1785422377.202325740] [localization.util.crop_box_filter_measurement_range]: Invalid PointCloud: row_step mismatch. Expected: 100080 (width 6255 * point_step 16), Got: 0. Frame: 'base_link', Stamp: 34.134099622 Please fill in the `cloud->row_step` field accordingly. This will be an ERROR starting in 2026 July
+[component_container_mt-1] [WARN] [1785422377.389474376] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422377.389544042] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422377.687299746] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422377.687377290] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422378.087792663] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422378.087847788] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[logging_node-14] [WARN] [1785422378.286883042] [logging_diag_graph]: The target mode is not available for the following reasons:
+[logging_node-14] - /autoware/modes/autonomous ERROR
+[logging_node-14]     - /autoware/map ERROR
+[logging_node-14]         - /autoware/map/topic_rate_check/pointcloud_map ERROR
+[logging_node-14]     - /autoware/localization ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/localization/topic_rate_check/transform ERROR
+[logging_node-14]             - /autoware/localization/sensor_fusion_status ERROR
+[logging_node-14]     - /autoware/planning ERROR
+[logging_node-14]         - /autoware/planning/routing/state ERROR
+[logging_node-14]         - [anonymous group] ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/route ERROR
+[logging_node-14]             - /autoware/planning/topic_rate_check/trajectory ERROR
+[logging_node-14]     - /autoware/perception ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/objects ERROR
+[logging_node-14]         - /autoware/perception/topic_rate_check/pointcloud ERROR
+[logging_node-14]     - /autoware/control ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/trajectory_follower ERROR
+[logging_node-14]         - /autoware/control/topic_rate_check/control_command WARN 
+[logging_node-14] 
+[component_container_mt-47] [WARN] [1785422378.292462081] [control.vehicle_cmd_gate]: Emergency!
+[component_container_mt-1] [WARN] [1785422378.889339575] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422378.889398656] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/perception' in container '/adapi/container'
+[component_container-7] [WARN] [1785422379.097806662] [system.topic_state_monitor_transform_map_to_base_link]: /tf topic rate has dropped to the error level. Set ERROR in diagnostics.
+[autoware_ekf_localizer_node-28] [WARN] [1785422379.188718956] [localization.pose_twist_fusion_filter.ekf_localizer]: EKF period may be too slow to finish pose smoothing!! (0.1000 sec)
+[component_container_mt-48] [INFO] [1785422379.202000934] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/planning' in container '/adapi/container'
+[component_container_mt-47] [WARN] [1785422379.437460578] [control.vehicle_cmd_gate]: Emergency!
+[autoware_mrm_handler_node-13] [INFO] [1785422379.488633963] [system.mrm_handler]: MRM State changed: MRM_SUCCEEDED -> NORMAL
+[autoware_mrm_handler_node-13] [WARN] [1785422379.491366049] [system.mrm_handler]: EMERGENCY_STOP is canceled.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/vehicle_status' in container '/adapi/container'
+[component_container_mt-47] [INFO] [1785422379.598869335] [control.vehicle_cmd_gate]: The operation mode is changed, but the GearCommand is not received yet:
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/vehicle_command' in container '/adapi/container'
+[component_container-7] [INFO] [1785422379.837731447] [system.topic_state_monitor_trajectory_follower_control_cmd]: /control/trajectory_follower/control_cmd has not received. Set ERROR in diagnostics.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/vehicle_metrics' in container '/adapi/container'
+[component_container-18] [WARN] [1785422380.108298122] [sensing.lidar.top.crop_box_filter_self]: Invalid PointCloud: is_dense is false. The point cloud should be organized (dense) and contain only valid points. This will be an ERROR starting in 2026 JulyFrame: 'velodyne_top', Stamp: 37.034099665
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/adapi/node/vehicle_info' in container '/adapi/container'
+[component_container_mt-1] [WARN] [1785422380.187219562] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422380.188419299] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422380.286986506] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422380.287068437] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422380.987890799] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/right/pointcloud_before_sync] is nullptr, skipping pointcloud publish.
+[component_container_mt-1] [WARN] [1785422380.987963485] [sensing.lidar.concatenate_data]: transformed_raw_points[/sensing/lidar/left/pointcloud_before_sync] is nullptr, skipping pointcloud publish.

@@ -1,0 +1,14 @@
+# M3 process map for cell C (extension approach, NishishinjukuMap).
+#
+# Same tree, same launch recipe (scripts/e2e/run_e2e.sh) as cell A --
+# only the map argument differs, and MAP is not part of any pattern
+# here, so the process identities are identical to A.yaml. See A.yaml
+# for the full grounding/evidence notes (uproject path, injector,
+# compose container name, and the observer-container-name caveat).
+processes:
+  - label: carla-server
+    pattern: carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  - { label: runner, pattern: python3 -m runner }
+  - { label: injector, pattern: dummy_perception }
+  - { label: autoware, container: autoware }
+  - { label: observer, container: bench-observer }

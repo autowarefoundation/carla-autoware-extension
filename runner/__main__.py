@@ -16,8 +16,22 @@ import signal
 import sys
 
 from runner.kit import DEFAULT_SENSOR_KIT_CALIBRATION, DEFAULT_SENSORS_CALIBRATION, load_kit
-from runner.loop import extension_exports_init, run_async_loop, run_sync_loop
-from runner.spawn import spawn_ego, spawn_sensors
+from runner.loop import (
+    DEFAULT_FIXED_DELTA,
+    apply_substep_config,
+    extension_exports_init,
+    load_physics_config,
+    run_async_loop,
+    run_sync_loop,
+)
+from runner.spawn import (
+    CAMERA_DEFAULT_HEIGHT,
+    CAMERA_DEFAULT_SENSOR_TICK,
+    CAMERA_DEFAULT_WIDTH,
+    spawn_cameras,
+    spawn_ego,
+    spawn_sensors,
+)
 
 
 def _brake_to_stop(ego) -> None:
@@ -51,6 +65,27 @@ def select_spawn_point(spawn_points, index: int):
             f"--spawn-index {index} out of range; the map has {len(spawn_points)} spawn points"
         )
     return spawn_points[index]
+
+
+def build_lidar_overrides(args: argparse.Namespace) -> dict[str, str]:
+    """Build the top-LiDAR attribute-overrides dict from the ``--lidar-*`` CLI flags.
+
+    Split out of ``main()`` so the flag -> override-key mapping is unit-testable without a
+    CARLA connection (same rationale as ``select_spawn_point``). Only a flag the caller
+    actually passed (non-None) becomes a key -- an omitted flag must NOT appear in the
+    dict, so ``top_lidar_attributes(overrides=build_lidar_overrides(args))`` reproduces
+    today's exact dict when no ``--lidar-*`` flag is given (the regression pin).
+    """
+    overrides: dict[str, str] = {}
+    if args.lidar_channels is not None:
+        overrides["channels"] = str(args.lidar_channels)
+    if args.lidar_pps is not None:
+        overrides["points_per_second"] = str(args.lidar_pps)
+    if args.lidar_rotation_hz is not None:
+        overrides["rotation_frequency"] = str(args.lidar_rotation_hz)
+    if args.lidar_range is not None:
+        overrides["range"] = str(args.lidar_range)
+    return overrides
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -111,6 +146,86 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "valid drive command (445 m closed-loop drive, 2026-07-23), while async breaks NDT "
         "(0/34 samples within 1.0 m under a ~140 Hz free-running /clock)",
     )
+
+    # --- M4 knobs: sweep-class, camera, pacing, substepping (spec: M4 load sweep) ---
+    # Every default below preserves today's exact rig/loop/physics behaviour: an omitted
+    # flag must leave the Nishi/Town10 gates byte-identical (see
+    # runner/spawn.py::top_lidar_attributes / runner/loop.py::run_sync_loop for the pins).
+    p.add_argument(
+        "--lidar-channels",
+        type=int,
+        default=None,
+        help="override the top LiDAR's channels attribute (unset: today's 128); "
+        "benchmarks/config/cells.yaml sweep_classes: vlp16=16, 32ch=32, 128ch=128",
+    )
+    p.add_argument(
+        "--lidar-pps",
+        type=int,
+        default=None,
+        help="override the top LiDAR's points_per_second attribute (unset: the "
+        "sensor.lidar.ray_cast blueprint default, 600000); sweep_classes: vlp16=288000, "
+        "32ch=1200000, 128ch=4600000",
+    )
+    p.add_argument(
+        "--lidar-rotation-hz",
+        type=float,
+        default=None,
+        help="override the top LiDAR's rotation_frequency attribute, Hz (unset: today's 10)",
+    )
+    p.add_argument(
+        "--lidar-range",
+        type=float,
+        default=None,
+        help="override the top LiDAR's range attribute, metres (unset: today's 120.0)",
+    )
+    p.add_argument(
+        "--cameras",
+        type=int,
+        default=0,
+        help="number of native ROS 2 cameras to spawn, indexed "
+        "/sensing/camera/camera<N>/image_raw (default: 0, no cameras -- today's exact rig)",
+    )
+    p.add_argument(
+        "--camera-width",
+        type=int,
+        default=CAMERA_DEFAULT_WIDTH,
+        help=f"camera image_size_x, pixels (default: {CAMERA_DEFAULT_WIDTH}, matches "
+        "cam1/cam3/cam6)",
+    )
+    p.add_argument(
+        "--camera-height",
+        type=int,
+        default=CAMERA_DEFAULT_HEIGHT,
+        help=f"camera image_size_y, pixels (default: {CAMERA_DEFAULT_HEIGHT}, matches "
+        "cam1/cam3/cam6)",
+    )
+    p.add_argument(
+        "--camera-tick",
+        type=float,
+        default=CAMERA_DEFAULT_SENSOR_TICK,
+        help=f"camera sensor_tick, seconds (default: {CAMERA_DEFAULT_SENSOR_TICK} = 20 fps, "
+        "the tick ceiling -- a higher request is silently clamped, P1 Verdict 4)",
+    )
+    p.add_argument(
+        "--fixed-delta",
+        type=float,
+        default=DEFAULT_FIXED_DELTA,
+        help=f"world fixed_delta_seconds, seconds (default: {DEFAULT_FIXED_DELTA}, today's "
+        "exact cadence); for A-hf, pass 0.01",
+    )
+    p.add_argument(
+        "--unpaced",
+        action="store_true",
+        help="tick as fast as possible: skip the tick loop's real-time pacing sleep. Sync "
+        "mode itself is unchanged -- only the wall-clock throttle is skipped",
+    )
+    p.add_argument(
+        "--substep-config",
+        default=None,
+        help="path to a physics.yaml (benchmarks/config/physics.yaml schema: "
+        "max_substep_delta_time, max_substeps); applied to world settings before the run "
+        "when given (default: unset, today's CARLA physics-substep defaults)",
+    )
     return p
 
 
@@ -146,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         sensor_kit_calibration=args.sensor_kit_calibration,
         sensors_calibration=args.sensors_calibration,
     )
+    lidar_overrides = build_lidar_overrides(args)
 
     # carla is imported here, lazily -- everything above this line (arg parsing, the
     # --extension-check path, the kit-yaml preflight + parse) must stay importable and
@@ -162,6 +278,12 @@ def main(argv: list[str] | None = None) -> int:
     # spawning any actor, so map->odom->base_link is never double-published on /tf alongside
     # the Autoware-side TF that Autoware itself generates from these same kit yamls.
     world.set_publish_tf(False)
+
+    # --substep-config: physics substepping parity (A-hf/tier4 comparison), applied to world
+    # settings before any actor spawns or the tick loop starts. Unset (the default) leaves
+    # CARLA's own physics-substep defaults untouched -- today's exact behaviour.
+    if args.substep_config:
+        apply_substep_config(world, load_physics_config(args.substep_config))
 
     bpl = world.get_blueprint_library()
     if args.initial_pose:
@@ -192,10 +314,28 @@ def main(argv: list[str] | None = None) -> int:
     sensors = []
     try:
         ego = spawn_ego(world, bpl, pose)
-        sensors = spawn_sensors(world, bpl, ego, kit)
+        sensors = spawn_sensors(world, bpl, ego, kit, lidar_overrides=lidar_overrides)
+        # --cameras (default 0): a SEPARATE fan-out from the LiDAR/IMU rig above, appended to
+        # the SAME teardown list -- spawn_cameras is its own partial-spawn-safe call (see its
+        # docstring), so if it raises after spawn_sensors already succeeded, `sensors` still
+        # holds exactly the LiDAR/IMU actors and this `+=` never executes.
+        sensors += spawn_cameras(
+            world,
+            bpl,
+            ego,
+            args.cameras,
+            args.camera_width,
+            args.camera_height,
+            args.camera_tick,
+        )
 
         loop = run_async_loop if args.async_mode else run_sync_loop
-        loop(world, should_continue=lambda: stop["go"])
+        loop(
+            world,
+            fixed_delta=args.fixed_delta,
+            should_continue=lambda: stop["go"],
+            paced=not args.unpaced,
+        )
         return 0
     finally:
         # Teardown order is load-bearing: brake to a stop

@@ -1,7 +1,9 @@
 import json
+import sys
 
 import numpy as np
 import pytest
+from benchmarks import report
 from benchmarks.analysis.manifest import RunManifest
 from benchmarks.report import render_cell, summarize_run
 
@@ -29,6 +31,12 @@ def _make_run(
         started_at_ns=0,
         excluded=excluded,
         exclusion_reason=exclusion_reason,
+        placement={
+            "run_mode": "editor-game",
+            "container_image": "img@sha256:x",
+            "observer_env": "bench-observer:universe-devel",
+            "engine_build_id": "b4c93e55-fc8f-42fc-b377-358910364e1c",
+        },
     ).save(d / "manifest.json")
     sim = np.arange(0, 5_000_000_000, 100_000_000, dtype=np.int64)
     wall = 1_000_000_000_000 + sim
@@ -85,9 +93,63 @@ def test_bytes_per_s_out_of_order_arrivals_matches_ascending(tmp_path):
 
 
 def test_render_cell_marks_excluded_run(tmp_path):
-    cell = _make_run(tmp_path, name="run-002", excluded=True, exclusion_reason="sensor dropout")
+    cell = _make_run(tmp_path, name="run-002", excluded=True, exclusion_reason="crash:observer")
     md = render_cell(cell)
     assert "run-002 (EXCLUDED)" in md
+
+
+def test_render_cell_survives_a_run_with_no_observer_output(tmp_path):
+    """Regression: one aborted run must not make its whole cell unrenderable.
+
+    An excluded run whose observer never started has no clock.csv, so
+    summarize_run raises FileNotFoundError on it. render_cell used to
+    propagate that, which meant the first bring-up failure in a cell made
+    EVERY later healthy run of that cell report as not contract-valid -- and
+    in an interleaved duel, two such runs aborted the duel. Excluded runs
+    stay in the tree by pre-registration (exclusions.md), so this is the
+    normal steady state, not a corner case.
+    """
+    cell = _make_run(tmp_path, name="run-002")  # healthy
+    broken = cell / "run-001"
+    broken.mkdir(parents=True)
+    RunManifest(
+        **{
+            **json.loads((cell / "run-002" / "manifest.json").read_text()),
+            "run_index": 1,
+            "excluded": True,
+            "exclusion_reason": "crash:cell-launch",
+        }
+    ).save(broken / "manifest.json")
+
+    md = render_cell(cell)
+
+    # The healthy run still renders...
+    assert "| run-002 " in md and "/lidar" in md
+    # ...and the broken one is REPORTED, by name and by cause, not skipped.
+    assert "run-001" in md
+    assert "RENDER FAILED: FileNotFoundError" in md
+
+
+def test_render_cell_reports_a_run_with_no_manifest_at_all(tmp_path):
+    """The other route into the same state: a directory created before its
+    manifest was written. render_cell must name it rather than raise."""
+    cell = _make_run(tmp_path, name="run-002")
+    (cell / "run-001").mkdir(parents=True)
+
+    md = render_cell(cell)
+
+    assert "| run-002 " in md
+    assert "run-001" in md and "RENDER FAILED" in md
+
+
+def test_summarize_run_still_raises_on_a_broken_run(tmp_path):
+    """render_cell's tolerance must not have loosened summarize_run: the
+    harness's post-run smoke calls it on THIS run and needs it to raise."""
+    cell = _make_run(tmp_path, name="run-002")
+    broken = cell / "run-001"
+    broken.mkdir(parents=True)
+    with pytest.raises(FileNotFoundError):
+        summarize_run(broken)
 
 
 def test_summarize_run_rejects_an_invalid_manifest(tmp_path):
@@ -102,3 +164,79 @@ def test_summarize_run_rejects_an_invalid_manifest(tmp_path):
     path.write_text(json.dumps(doc))
     with pytest.raises(ValueError, match="cell"):
         summarize_run(cell / "run-001")
+
+
+def test_render_cell_tags_an_excluded_runs_render_failure(tmp_path):
+    """A run that is both excluded AND unrenderable (no observer output, the
+    normal shape of a run aborted before the window) must carry the same
+    (EXCLUDED) tag a successfully-summarized excluded run gets -- otherwise a
+    reader (and main()'s exit code, below) cannot tell it apart from an
+    unexplained failure."""
+    cell = _make_run(tmp_path, name="run-002")  # healthy
+    broken = cell / "run-001"
+    broken.mkdir(parents=True)
+    RunManifest(
+        **{
+            **json.loads((cell / "run-002" / "manifest.json").read_text()),
+            "run_index": 1,
+            "excluded": True,
+            "exclusion_reason": "crash:cell-launch",
+        }
+    ).save(broken / "manifest.json")
+
+    md = render_cell(cell)
+
+    row = next(line for line in md.splitlines() if "run-001" in line)
+    assert "(EXCLUDED)" in row
+    assert "RENDER FAILED" in row
+
+
+def test_render_cell_escapes_pipe_in_render_failed_message(tmp_path):
+    """The exception message is interpolated into a markdown table cell: a
+    '|' in it (e.g. from a path) must not be read as an extra column
+    separator, and must not change the row's column count."""
+    cell = tmp_path / "A|weird"
+    (cell / "run-001").mkdir(parents=True)  # no manifest.json at all
+
+    md = render_cell(cell)
+
+    row = next(line for line in md.splitlines() if "RENDER FAILED" in line)
+    assert "\\|" in row  # the path's "|" was escaped, not left bare
+    # 7 columns -> 8 unescaped "|" delimiters -> 9 elements once split; the
+    # same shape every other row in the table has (checked against the
+    # header row so this does not silently drift from it).
+    header = "| run | topic | hz | p95 ms | 1-hop p50 ms | 1-hop p99 ms | MB/s |"
+    assert len(row.replace("\\|", "").split("|")) == len(header.split("|"))
+
+
+def test_main_exits_nonzero_on_an_unexplained_render_failure(tmp_path, monkeypatch):
+    """report.main() used to exit 0 even when every row RENDER FAILED; a run
+    with no manifest at all (so `_best_effort_excluded` cannot vouch for it)
+    must fail the process, not just print a table nobody is required to
+    read."""
+    (tmp_path / "A" / "run-001").mkdir(parents=True)
+    monkeypatch.setattr(sys, "argv", ["report", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc_info:
+        report.main()
+    assert exc_info.value.code != 0
+
+
+def test_main_exits_zero_when_every_failure_is_excluded(tmp_path, monkeypatch, capsys):
+    """The counterpart to the test above: a RENDER FAILED row that IS tagged
+    (EXCLUDED) is the expected steady state of an aborted, pre-registered
+    run, not something that should stop a script piping this output."""
+    cell = _make_run(tmp_path, name="run-002")  # healthy
+    broken = cell / "run-001"
+    broken.mkdir(parents=True)
+    RunManifest(
+        **{
+            **json.loads((cell / "run-002" / "manifest.json").read_text()),
+            "run_index": 1,
+            "excluded": True,
+            "exclusion_reason": "crash:cell-launch",
+        }
+    ).save(broken / "manifest.json")
+
+    monkeypatch.setattr(sys, "argv", ["report", str(tmp_path)])
+    report.main()  # must not raise SystemExit
+    assert "RENDER FAILED" in capsys.readouterr().out

@@ -2,6 +2,148 @@ autoware_contents:
   revision: 062f94b5322e679ee0430e2daa6995dca9f7f0ea
   town10_pcd_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
   town10_osm_sha256: cdd0a28664bcf9b5bd8867584a6fa6a02fa0f75a7c3dbb901ca216128ef86a17
+# The Town10 pointcloud, rigid-shifted by dy_m to correct the +0.475 m
+# cross-track offset the P1 seed sweep localized to this file (see
+# task-11-brief.md / task-S2-brief.md). Reproducible from this pin alone:
+# fetch autoware_contents' town10 revision, then re-run
+# `tool`@`tool_commit` with `--dy <dy_m>` against the file matching
+# `source_sha256`.
+# Note: `sha256` is the OUTPUT file's hash -- it is not comparable to
+# `source_sha256` on size or bytes. The source is compressed `DATA
+# binary_compressed` (110 MiB); shift_pcd.py never re-compresses, so the
+# shifted output is uncompressed `DATA binary` and larger (~114 MiB) even
+# though it holds the same point count. Sizes are MiB here and in
+# shift_pcd.py -- the unit `ls -h` prints, so the two agree with each
+# other and with the files on disk.
+town10_pcd_shifted:
+  source_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
+  dy_m: -0.475
+  tool: benchmarks/scripts/shift_pcd.py
+  tool_commit: 5dd60d1
+  sha256: bed9c2cd7045d12891b1da892939565d73a4b733e6e24e3475d1027f3fa9dab2
+# The G1 ladder's rung-1 REFIT of the block above, measured live on
+# 2026-07-29 (Task 11). The dy = -0.475 bundle left a clean constant
+# cross-track residual of +0.132 m -- read, as the pre-shift sweep read it,
+# on the cleanly-converged seeds (4/8 with |err_dx| < 0.5: err_dy mean
+# +0.1318, std 0.0123, against +0.005 across all 8) -- so rung 1's
+# precondition fired and this is the re-shift by that new mean.
+#
+# dy_m is the TOTAL offset from the SOURCE, not an increment on the block
+# above: -0.475 + (-0.132) = -0.607, applied single-hop to the file
+# matching `source_sha256`, so this block reproduces on its own exactly
+# like its predecessor and the provenance chain stays one hop deep.
+#
+# tool_commit deliberately DIFFERS from the block above: shift_pcd.py was
+# modified after 5dd60d1 (eda5f4f length-check, b2e1223, 67cd3c4), so the
+# tool that produced THIS output is the one at the commit below, and
+# reusing 5dd60d1 here would name a tool revision that did not run.
+#
+# WHY A SECOND BLOCK RATHER THAN AN EDIT: both blocks describe candidate
+# contents of the ONE path map_defaults.sh resolves and docker/compose.yaml
+# mounts (~/autoware_map/town10-shifted/pointcloud_map.pcd), and exactly
+# one can be installed there at a time. Overwriting the block above would
+# have destroyed the only record of the bundle both recorded G1 windows and
+# the recorded G2 run were measured against. So the invariant a reader and
+# a preflight can both rely on is: the file at that path hashes to the
+# `sha256` of EXACTLY ONE block here, and that block is the bundle the run
+# used. It is not "whichever block is listed last".
+#
+# The dy = -0.475 bytes are retained on disk as
+# ~/autoware_map/town10-shifted/.pointcloud_map.dy-0.475.bak (kept, not
+# deleted: it is the byte-exact artifact the block above pins, it makes
+# reverting the ladder a move rather than a re-derivation, and 114 MiB is
+# free on a filesystem with 420 GB spare).
+town10_pcd_refit:
+  source_sha256: 7ed7890ebe983b324758835336264dcc6b7f736e51498101262e91de49eee95b
+  dy_m: -0.607
+  tool: benchmarks/scripts/shift_pcd.py
+  tool_commit: 13a3719
+  sha256: 38b10c3a8f4e50f4b828222562d4d9ff04de71f8e1711a21d4b2c0b3145c0401
+# The G1 ladder's RUNG-2 bundle, and the one the Town10 cells now localize
+# against (scripts/e2e/map_defaults.sh points Town10HD_Opt at it). Rebuilt from
+# ground-truth-registered LiDAR sweeps rather than RE-REGISTERED: rung 1's rigid
+# refit above still measured max NDT error 0.570 m against the 0.5 m absolute
+# gate, and this bundle measures 0.089 m. It lives in its own directory
+# (~/autoware_map/town10-regen) rather than displacing a rigid variant, because
+# it is not a re-registration of that source at all.
+#
+# NOT reproducible from this pin alone, and that is a property of the METHOD,
+# not an omission: the input is a live 100 s drive, so a rebuild yields a
+# different point set. What the pin fixes is WHICH FILE a run used (`sha256`)
+# plus the parameters that shaped it, which is the same standard
+# bench_observer_images' local_digest already documents for a non-content hash.
+#
+# COVERAGE IS BOUNDED BY WHERE THE EGO DROVE. The collection drive reached
+# ~292 m of the then-438.9 m route before the rigid bundle's own localization
+# stopped it, so this bundle is dense along that corridor and thins beyond it.
+# The RETAINED evidence for that is the closed-loop outcome, not a point count:
+# on the full 438.9 m route the ego closed only to 1.929 m and was stopped
+# before arrival (benchmarks/evidence/g2-regen-committed-route/), while on the
+# re-picked 258.9 m route -- entirely inside the collection corridor -- it
+# reached 0.244 m (benchmarks/evidence/g2-regen-repicked-route/). Both numbers
+# are recomputable from the retained distance series.
+# An earlier revision of this comment also cited an NDT-score breach
+# distribution over that drive. That was observed live but its source log lived
+# inside a container that has since been removed, so it is NOT retained and is
+# no longer offered as evidence here.
+# This bound is why the Town10 route was re-picked to end at station 258.9 m
+# (config/routes/Town10HD_Opt.yaml), and why a future full-route bundle needs a
+# second collection pass over the remainder.
+town10_pcd_regen:
+  built_on_bundle_sha256: 38b10c3a8f4e50f4b828222562d4d9ff04de71f8e1711a21d4b2c0b3145c0401
+  tool: benchmarks/scripts/build_pcd_from_gt.py
+  tool_commit: 85d6d45
+  window_s: 100
+  voxel_m: 0.2
+  lidar_channels: 128
+  lidar_points_per_second: 2200000
+  lidar_range_m: 100
+  sweeps: 1996
+  points: 1990168
+  sha256: c3bc613b0ea3e77528d081792dedc6fa0a22a89ae10aeabe5c72a09afcbfaba3
+# The Nishi-Shinjuku bundle cells C/D localize against
+# (~/autoware_map/nishishinjuku, via scripts/e2e/map_defaults.sh). Added
+# 2026-07-29 so those cells have registered provenance at all: the bundle-pin
+# check is scoped per bundle DIRECTORY and an unregistered directory SKIPS
+# rather than fails, so without this block C/D would run with no provenance
+# recorded and nothing would notice the bundle changing under them.
+#
+# UPSTREAM IS RECORDED, and an earlier revision of this comment wrongly said it
+# was not. docs/nishishinjuku-map.md and docs/e2e-report.md both name the source
+# -- AWSIM v2.0.0 `Shinjuku-Map.zip`, 129,585,415 bytes, with the release URL --
+# so `upstream` below is filled from them rather than left null. Recorded as the
+# correction it is: the claim of absence was made without reading the docs that
+# hold it, which is the same class of error as citing evidence that does not
+# exist, in its inverted form.
+#
+# WHAT REMAINS A GAP, narrowly: there is no fetch-and-verify script for this
+# bundle (fetch_maps.sh covers Town10 only), so nothing re-derives these digests
+# from `url` the way autoware_contents' are re-derived. The zip's own byte size
+# is pinned below as the one upstream-side check available without a fetcher.
+# A Nishi equivalent of fetch_maps.sh is future work and belongs with whoever
+# owns that map.
+#
+# ENFORCEMENT, stated exactly: only `pcd_sha256` has a consumer --
+# benchmarks/scripts/bundle_pin.py checks it via BUNDLE_REGISTRY, so an edited
+# or swapped POINTCLOUD is refused rather than measured and silently attributed
+# to the map C/D's numbers are filed under. `osm_sha256`,
+# `projector_info_sha256` and `zip_bytes` are RECORDED BUT NOT ENFORCED: nothing
+# reads them today, so a changed lanelet2 map or projector info would not be
+# caught here. They are kept because recording them costs nothing and a later
+# consumer can adopt them, not because they are currently checked.
+nishishinjuku_bundle:
+  # The enforced one (bundle_pin.py / BUNDLE_REGISTRY).
+  pcd_sha256: 78b6cf81047489efb1f008a44238d497241da64bb158c824a3f18f23eb50e9d3
+  # Recorded, NOT enforced -- no consumer reads the three below.
+  osm_sha256: a064a60cc6d866ff2cfec8d3100886b5e7fd5fa83019b2729d9413809c62d39e
+  projector_info_sha256: c735f3f8ebb08f3a891b914c19d7d5f7d6c7cb0a83177dd57798d1eafaaa6d4f
+  zip_bytes: 129585415
+  package_name: shinjuku_map
+  upstream: https://github.com/autowarefoundation/AWSIM/releases/download/v2.0.0/Shinjuku-Map.zip
+  upstream_release: AWSIM v2.0.0
+  # License travels with the data; the bundle is referenced in place, never
+  # committed (docs/nishishinjuku-map.md).
+  license: CC BY-NC 4.0
 carla_0915:
   url: https://carla-releases.s3.us-east-005.backblazeb2.com/Linux/CARLA_0.9.15.tar.gz
   sha256: 7b2f432ce74b251593f95dcc8dee6d99ad9625c2a71a2d6d48f24d879de19ef7
@@ -27,13 +169,112 @@ autoware_universe_devel:
 bridge_bench:
   tag: bridge-bench:latest
   local_digest: sha256:b734b9af2ac6527284b07d8986261d4c360cf4d0f4d18900be7a13ebb4cb4123
+# The image built from benchmarks/docker/bridge-bench-patched.Dockerfile:
+# bridge_bench above plus the two committed python-bridge patches (0001, the
+# pre-registered named exception in benchmarks/README.md, and 0002, the
+# harmonized sensor config). Cells E and E-opt run THIS image; cell E0 keeps
+# the unpatched bridge_bench, which is the whole point of having two tags.
+# Like bridge_bench it is never pushed, so the only identifier it has is the
+# LOCAL image digest below (`docker image inspect --format '{{.Id}}'`, the same
+# identifier kind as bridge_bench.local_digest): it pins what a run used on
+# this workstation, but it is not a pullable reference, and a rebuild elsewhere
+# must be re-recorded.
+# GPU: inherits bridge_bench's CUDA base, so every `docker run` of it needs
+# `--gpus all` and nvidia-container-toolkit.
+bridge_bench_patched:
+  tag: bridge-bench-patched:latest
+  local_digest: sha256:6d65be77784dfa0cf85da1ba7bf8e877f0ec4c0d6a50e339eb81204d27e14220
+  patches:
+    - 0001-lidar-is-dense.patch
+    - 0002-sensor-config-harmonized.patch
+  patches_sha256:
+    0001-lidar-is-dense.patch: b7fa7e84e958f9a15f16754aab686ac9e2a87f72a189eb778d550f6bfff2b637
+    0002-sensor-config-harmonized.patch: 93aaaff414ba032a6965a95735244e51f44aed725db269c1ce5c57053dc60298
+# Images built from benchmarks/docker/bench-observer.Dockerfile, one label
+# per pinned base. Never pushed, so the only identifier each has is the
+# LOCAL image digest below (`docker images --digests`): it pins what a run
+# used on this workstation, but it is not a pullable reference, and a
+# rebuild elsewhere must be re-recorded. Unlike bridge_bench/
+# autoware_universe_devel, the container never touches CUDA (rclcpp-only
+# recording/publishing nodes), so building and running it needs no
+# --gpus all / nvidia-container-toolkit -- verified live (see task-5
+# report): both `docker build` and the contract test's `docker run`
+# succeeded with no GPU flags against the CUDA base image.
+bench_observer_images:
+  universe-devel:
+    base: autoware_universe_devel.digest # built now (serves cells A/B/C/D/E/CAL)
+    tag: bench-observer:universe-devel
+    # REBUILT 2026-07-29 (R3), same base digest, new observer source:
+    # bench_observer.cpp gained the typed `pose` kind (the NDT pose ->
+    # pose.csv, without which M5's registered pose_error had no data source at
+    # all) and the typed `tf` kind (child_frame_id-filtered -> tf.csv), and it
+    # now writes odometry/pose positions in fixed 4-decimal notation instead of
+    # std::ostream's default 6 significant digits. The previous digest for this
+    # label was
+    # sha256:805d2e345d0b33a0a6dadfe06fa76d8caa99a737ebe94a3d4d9748ed190af54b;
+    # it writes neither new file, so no P3 measurement run may use it.
+    # MEASURED while re-pinning this: the local digest is NOT reproducible from
+    # the source alone even when every layer is a cache hit -- BuildKit stamps a
+    # fresh creation time and attestation into the manifest, so a second
+    # `docker build` of byte-identical content yields a different id. The value
+    # below is the image the contract test
+    # (BENCH_E2E=1 tests/benchmarks/test_observer_contract.py) was run green
+    # against; treat it as "which build a run used", never as a content hash.
+    local_digest: sha256:b78ec01af5c4229b2fe803abcb11be298699bed2eb1de7700f934c476d6a5385
+    # bench-observer:045, base = autoware_045.digest: NEVER BUILT. It was
+    # Task 21's, and cell B45 was STRUCK 2026-07-30 by the owner's core-duel
+    # scope cut (config/cells.yaml `dropped:`; README's 2026-07-30
+    # amendment), which took Task 21 with it. No `045` observer image exists
+    # and none is coming, so run.sh's B45 branch is unreachable in practice.
+    # If B45 is ever revived, build it from THIS observer source so it
+    # carries the two new kinds as well.
 # Cell B45: the tier4 native path is documented against Autoware 0.45.1 and
 # sensor_model:=awsim_sensor_kit. There is NO universe-devel-cuda-0.45.1 tag;
 # the newest CUDA-enabled 0.45.x is universe-devel-cuda-0.45.0, recorded below
 # as the fallback should B45 turn out to need CUDA perception.
+#
+# The pins below STAY, though cell B45 is struck: they record which release
+# the dropped hard-fork-maintenance measurement would have been taken against,
+# which is part of stating precisely what was given up. Nothing was ever
+# measured against them -- the absence of a result is a scope decision, not a
+# failure of this image or of the fork.
 autoware_045:
   image: ghcr.io/autowarefoundation/autoware:universe-devel-0.45.1
   digest: ghcr.io/autowarefoundation/autoware@sha256:6afe9ee4a25a1082685c266f96dabd6041e77424bf10ea729bd488e02ae92175
   amd64_digest: sha256:61ee4e281df852f63b8085b61d136ea4e9844f5894ba41df949bc7919cda5cba
   cuda_fallback_image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-0.45.0
   cuda_fallback_digest: ghcr.io/autowarefoundation/autoware@sha256:3a8d92856174dcb6f4d9a73e946132864b3bd1a74bc603d8aed7536f5b6bcb82
+# A carla-unreal-editor rebuild in ANY tree relinks the shared engine's
+# own modules too (UnrealEditor.modules bumps a fresh unified BuildId
+# across the engine AND every downstream Carla tree it touches) -- this
+# is a known, budgeted side effect (P1 Verdict 3 / decision D8), not a
+# deliberate engine build. This pin is the BuildId every preflight must
+# match against; a mismatch means that tree's editor modules are stale
+# and need their own carla-unreal-editor rebuild before it will boot.
+# This value settled after two follow-up rounds past Task 4's own
+# rebuild (extension rebuild bumped it again, tier4 rebuild held it
+# steady) -- see the Task 4 report's fix-report section. No further
+# engine relink is permitted from here on (D8).
+engine:
+  build_id: 4210e602-78ec-46e1-8f2f-03fadbe036a3 # settled value, all 3 trees agree
+extension_carla_fork:
+  path: ~/src/carla-autoware-integration
+  branch: feat/autoware-seminative-phase-b
+  sha: ae166d80d022f838b78f4a2daab1ca2880a7c8aa
+tier4_carla_fork:
+  path: ~/src/carla-autoware-native
+  branch: tier4/autoware-support
+  sha: 6315b856f
+  # Two build fixes tier4/autoware-support needs on this host, plus the
+  # PythonAPI parameterization a measurement run needs (0003, added
+  # 2026-07-30 by Task 13: PythonAPI only, no rebuild). See
+  # benchmarks/patches/tier4-native/README.md for the full recipe and for
+  # 0003's verified default-by-default byte-equality.
+  patches:
+    - 0001-toolchain-libm.patch
+    - 0002-glibc-compat.patch
+    - 0003-autoware-demo-params.patch
+  patches_sha256:
+    0001-toolchain-libm.patch: d6988200b7091d32405d2164a3adbb3be8aa0766a8388e1cda4ad1f0194b543c
+    0002-glibc-compat.patch: bb28dbc408aec8c6f0579aa173d3b14f8aa806dd317b14187c4fa0cfcebff6fa
+    0003-autoware-demo-params.patch: 59aa46380133228a3ad4887cd34ac2e88e6e2e308bf1bbaf0fbbf8ae67b87774

@@ -14,9 +14,16 @@ import os
 
 import pytest
 
-from runner.__main__ import build_arg_parser, select_spawn_point
+from runner.__main__ import build_arg_parser, build_lidar_overrides, select_spawn_point
 from runner.__main__ import main as runner_main
-from runner.loop import extension_exports_init, run_async_loop, run_sync_loop
+from runner.loop import (
+    apply_substep_config,
+    extension_exports_init,
+    load_physics_config,
+    run_async_loop,
+    run_sync_loop,
+)
+from runner.spawn import camera_attributes
 
 # --- --extension-check: negative path (mandatory) ---
 
@@ -139,6 +146,182 @@ def test_select_spawn_point_rejects_a_negative_index():
 def test_select_spawn_point_rejects_any_index_on_a_map_with_no_spawn_points():
     with pytest.raises(IndexError, match="the map has 0 spawn points"):
         select_spawn_point([], 0)
+
+
+# --- M4 knobs: sweep-class, camera, pacing, substepping CLI flags ---
+#
+# Regression pins first: every new flag must default to "no override" / today's exact
+# runner behaviour when omitted, so the existing Nishi/Town10 gates stay green.
+
+
+def test_lidar_override_flags_default_to_none():
+    args = build_arg_parser().parse_args([])
+    assert args.lidar_channels is None
+    assert args.lidar_pps is None
+    assert args.lidar_rotation_hz is None
+    assert args.lidar_range is None
+
+
+def test_lidar_override_flags_parse():
+    args = build_arg_parser().parse_args(
+        [
+            "--lidar-channels",
+            "16",
+            "--lidar-pps",
+            "288000",
+            "--lidar-rotation-hz",
+            "10",
+            "--lidar-range",
+            "100",
+        ]
+    )
+    assert args.lidar_channels == 16
+    assert args.lidar_pps == 288000
+    assert args.lidar_rotation_hz == 10.0
+    assert args.lidar_range == 100.0
+
+
+# --- build_lidar_overrides: the flag-name -> attribute-key seam ---
+#
+# CLI parsing (above) and top_lidar_attributes(overrides=...)'s merge behaviour (in
+# test_runner_kit.py) are both covered elsewhere; this is the mapping BETWEEN them
+# (args.lidar_channels -> "channels", args.lidar_pps -> "points_per_second", ... + the
+# str() conversion) -- exercised directly so a silent key-name typo or a missing str()
+# cannot flow straight into the P4 sweep-class results uncaught.
+
+
+def test_build_lidar_overrides_empty_when_every_flag_omitted():
+    # No key present at all (not a key with a None value) -- this is what makes
+    # top_lidar_attributes(overrides=build_lidar_overrides(args)) a true no-op by default.
+    args = build_arg_parser().parse_args([])
+    assert build_lidar_overrides(args) == {}
+
+
+def test_build_lidar_overrides_maps_every_flag_to_its_attribute_key_as_str():
+    args = build_arg_parser().parse_args(
+        [
+            "--lidar-channels",
+            "16",
+            "--lidar-pps",
+            "288000",
+            "--lidar-rotation-hz",
+            "10",
+            "--lidar-range",
+            "100",
+        ]
+    )
+    overrides = build_lidar_overrides(args)
+    assert overrides == {
+        "channels": "16",
+        "points_per_second": "288000",
+        "rotation_frequency": "10.0",
+        "range": "100.0",
+    }
+    assert all(isinstance(v, str) for v in overrides.values())
+
+
+def test_build_lidar_overrides_partial_combination_yields_only_given_keys():
+    # Only --lidar-channels/--lidar-range given -> only those two keys, nothing for the
+    # two omitted flags (--lidar-pps/--lidar-rotation-hz).
+    args = build_arg_parser().parse_args(["--lidar-channels", "32", "--lidar-range", "50"])
+    assert build_lidar_overrides(args) == {"channels": "32", "range": "50.0"}
+
+
+def test_build_lidar_overrides_single_flag_given():
+    args = build_arg_parser().parse_args(["--lidar-pps", "4600000"])
+    assert build_lidar_overrides(args) == {"points_per_second": "4600000"}
+
+
+def test_cameras_defaults_to_zero_no_cameras():
+    # Today's exact rig spawns no cameras at all -- the M4 camera arm is opt-in.
+    args = build_arg_parser().parse_args([])
+    assert args.cameras == 0
+    assert args.camera_width == 1600
+    assert args.camera_height == 900
+    assert args.camera_tick == 0.05  # 1/20 fps, the tick ceiling
+
+
+def test_fixed_delta_defaults_to_todays_0_05():
+    assert build_arg_parser().parse_args([]).fixed_delta == 0.05
+
+
+def test_unpaced_defaults_to_false():
+    assert build_arg_parser().parse_args([]).unpaced is False
+
+
+def test_unpaced_flag_sets_true():
+    assert build_arg_parser().parse_args(["--unpaced"]).unpaced is True
+
+
+def test_substep_config_defaults_to_none():
+    assert build_arg_parser().parse_args([]).substep_config is None
+
+
+def test_cameras_two_produces_two_camera_specs_with_indexed_topics():
+    # The brief's Step 1 CLI test: --cameras 2 -> two camera specs, indexed ros_name/
+    # ros_topic_name, sensor_tick from --camera-tick. Built the same way __main__.main()
+    # builds them (camera_attributes per index, driven by the parsed CLI args), but
+    # exercised here pure-Python -- no CARLA connection needed.
+    args = build_arg_parser().parse_args(["--cameras", "2", "--camera-tick", "0.1"])
+    specs = [
+        camera_attributes(i, args.camera_width, args.camera_height, args.camera_tick)
+        for i in range(args.cameras)
+    ]
+    assert len(specs) == 2
+    assert specs[0]["ros_topic_name"] == specs[0]["ros_name"] == "/sensing/camera/camera0/image_raw"
+    assert specs[1]["ros_topic_name"] == specs[1]["ros_name"] == "/sensing/camera/camera1/image_raw"
+    assert specs[0]["sensor_tick"] == specs[1]["sensor_tick"] == "0.1"
+    assert specs[0]["image_size_x"] == "1600"
+    assert specs[0]["image_size_y"] == "900"
+
+
+# --- physics.yaml substep-config loading + application ---
+
+
+def test_load_physics_config_reads_both_keys(tmp_path):
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time: 0.01\nmax_substeps: 10\n")
+    config = load_physics_config(str(physics_yaml))
+    assert config == {"max_substep_delta_time": 0.01, "max_substeps": 10}
+
+
+def test_load_physics_config_names_key_file_and_cause_when_null(tmp_path):
+    # The committed benchmarks/config/physics.yaml ships with both keys null (Task 13
+    # fills them in) -- pointing --substep-config at it as-is must fail loudly, naming the
+    # missing key and the file, not a bare TypeError from float(None).
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time:\nmax_substeps: 10\n")
+    with pytest.raises(ValueError) as exc:
+        load_physics_config(str(physics_yaml))
+    msg = str(exc.value)
+    assert "max_substep_delta_time" in msg  # names the missing key
+    assert str(physics_yaml) in msg  # names the file
+
+
+def test_load_physics_config_names_key_file_and_cause_when_key_missing_entirely(tmp_path):
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time: 0.01\n")  # max_substeps absent
+    with pytest.raises(ValueError, match="max_substeps"):
+        load_physics_config(str(physics_yaml))
+
+
+def test_load_physics_config_names_key_file_and_cause_when_malformed(tmp_path):
+    physics_yaml = tmp_path / "physics.yaml"
+    physics_yaml.write_text("max_substep_delta_time: not_a_number\nmax_substeps: 10\n")
+    with pytest.raises(ValueError) as exc:
+        load_physics_config(str(physics_yaml))
+    msg = str(exc.value)
+    assert "max_substep_delta_time" in msg
+    assert "not_a_number" in msg
+    assert str(physics_yaml) in msg
+
+
+def test_apply_substep_config_sets_world_settings():
+    world = _FakeWorld()
+    apply_substep_config(world, {"max_substep_delta_time": 0.005, "max_substeps": 16})
+    settings = world.get_settings()
+    assert settings.max_substep_delta_time == 0.005
+    assert settings.max_substeps == 16
 
 
 # --- tick loop helpers: should_continue wiring against a fake world ---
@@ -288,3 +471,56 @@ def test_run_async_loop_sets_asynchronous_mode():
 
     assert world.applied_settings[0][0] is False
     assert world.get_settings().synchronous_mode is False
+
+
+# --- --unpaced: skip the real-time pacing sleep, tick as fast as possible ---
+#
+# ``paced`` defaults to True on both loops -- today's exact real-time-paced behaviour --
+# so every EXISTING test above (which never passes ``paced``) is itself a regression pin.
+
+
+def test_run_sync_loop_paced_by_default_sleeps_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    # perf_counter() called twice per iteration (t0, then after tick+on_tick); a 0.0 delta
+    # between them means the tick "ran instantly", well under fixed_delta -- the pacing sleep
+    # must fire to hold the 20 Hz cadence.
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_sync_loop(world, fixed_delta=0.05, should_continue=_stop_after(1))
+
+    assert sleep_calls == [0.05]
+
+
+def test_run_sync_loop_unpaced_never_sleeps_even_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_sync_loop(world, fixed_delta=0.05, should_continue=_stop_after(1), paced=False)
+
+    assert sleep_calls == []
+
+
+def test_run_async_loop_paced_by_default_sleeps_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_async_loop(world, fixed_delta=0.05, should_continue=_stop_after(1))
+
+    assert sleep_calls == [0.05]
+
+
+def test_run_async_loop_unpaced_never_sleeps_even_when_the_tick_ran_fast(monkeypatch):
+    world = _FakeWorld()
+    sleep_calls = []
+    monkeypatch.setattr("runner.loop.time.sleep", lambda s: sleep_calls.append(s))
+    monkeypatch.setattr("runner.loop.time.perf_counter", lambda: 0.0)
+
+    run_async_loop(world, fixed_delta=0.05, should_continue=_stop_after(1), paced=False)
+
+    assert sleep_calls == []

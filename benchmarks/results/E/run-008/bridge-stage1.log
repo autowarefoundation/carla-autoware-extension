@@ -1,0 +1,22 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-07-29-22-22-12-930458-youtalk-desktop-110
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [autoware_carla_interface-1]: process started with pid [144]
+[INFO] [autoware_raw_vehicle_cmd_converter_node-2]: process started with pid [146]
+[INFO] [relay-3]: process started with pid [148]
+[INFO] [relay-4]: process started with pid [150]
+[INFO] [republish-5]: process started with pid [152]
+[INFO] [republish-6]: process started with pid [154]
+[INFO] [republish-7]: process started with pid [162]
+[INFO] [republish-8]: process started with pid [168]
+[INFO] [republish-9]: process started with pid [170]
+[INFO] [republish-10]: process started with pid [172]
+[INFO] [republish-11]: process started with pid [174]
+[autoware_carla_interface-1] [INFO] [1785363733.282583975] [autoware_carla_interface]: Using Autoware sensor kit calibration: carla_sensor_kit_description
+[autoware_carla_interface-1] [INFO] [1785363733.284954949] [autoware_carla_interface]: Registered sensor: top (type: sensor.lidar.ray_cast, topic: /sensing/lidar/top/pointcloud_raw_ex)
+[autoware_carla_interface-1] [INFO] [1785363733.285098949] [autoware_carla_interface]: Registered sensor: gnss (type: sensor.other.gnss, topic: /sensing/gnss/pose_with_covariance)
+[autoware_carla_interface-1] [INFO] [1785363733.285230365] [autoware_carla_interface]: Registered sensor: imu (type: sensor.other.imu, topic: /sensing/imu/tamagawa/imu_raw)
+[autoware_carla_interface-1] [INFO] [1785363733.288655290] [autoware_carla_interface]: Created LiDAR publisher: /sensing/lidar/top/pointcloud_raw_ex
+[autoware_carla_interface-1] [INFO] [1785363733.289820231] [autoware_carla_interface]: Created GNSS publisher: /sensing/gnss/pose_with_covariance
+[autoware_carla_interface-1] [INFO] [1785363733.290252011] [autoware_carla_interface]: Created IMU publisher: /sensing/imu/tamagawa/imu_raw
+[autoware_carla_interface-1] [INFO] [1785363733.290389173] [autoware_carla_interface]: Configured 3 sensors from mapping
+[republish-11] [WARN] [1785363766.720407671] [traffic_light_republish]: New publisher discovered on topic '/sensing/camera/traffic_light/image_raw', offering incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY

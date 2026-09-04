@@ -1,0 +1,74 @@
+# bench_observer topic list for cell B (tier4-native approach).
+#
+# Identical to the extension cells' list: both approaches publish the
+# Autoware-side topic names, so M2/M5 compare like with like. The
+# control topic is the GATED /control/command/control_cmd, not the raw
+# /control/trajectory_follower/control_cmd.
+#
+# CONFIRMED ON THE WIRE by Task 9 (wire-visibility diagnostic): the
+# LiDAR row's name is emitted exactly as written here by the fork
+# (`ros_topic_name=/sensing/lidar/top/pointcloud_raw_ex` -> DDS topic
+# `rt/sensing/lidar/top/pointcloud_raw_ex`), recorded live at 10.1 Hz
+# by the stock bench_observer. No name needed correcting. P1 Verdict
+# 8.4's "invisible to every ros2 CLI" was the CONSUMER's transport:
+# this cell MUST run `--rmw rmw_fastrtps_cpp --shm off`, because the
+# fork announces SHM-only user-data locators that ROS 2 Humble's
+# Fast-DDS 2.6.11 matches but cannot read. See
+# benchmarks/patches/tier4-native/README.md, "ROS 2 wire visibility".
+#
+# PublishedTime: DISCOVERED LIVE 2026-07-30 (Task 13), on this cell's own
+# running stack -- `ros2 topic list --no-daemon | grep published_time` inside
+# the pinned universe-devel-cuda container during results/B/run-002. This is
+# the LAST pre-registration edit to this file. Seven topics existed:
+#
+#   /control/command/control_cmd/debug/published_time           <- registered
+#   /sensing/lidar/top/self_cropped/pointcloud_ex/debug/published_time
+#   /sensing/lidar/top/mirror_cropped/pointcloud_ex/debug/published_time
+#   /sensing/lidar/top/pointcloud_before_sync/debug/published_time
+#   /localization/util/measurement_range/pointcloud/debug/published_time
+#   /localization/util/voxel_grid_downsample/pointcloud/debug/published_time
+#   /localization/util/downsample/pointcloud/debug/published_time
+#
+# The type was read off the wire for one of them
+# (/localization/util/measurement_range/... -> autoware_internal_msgs/msg/
+# PublishedTime, confirming the plan's assumption of
+# autoware_internal_debug_msgs was wrong); the other six carry the same type
+# because a single PublishedTimePublisher implementation emits all of them,
+# which is an INFERENCE, not a second measurement.
+#
+# ONE row is added -- the control one -- because it is the only PublishedTime
+# topic a registered metric reads: control_staleness_ms (M1b) keys
+# published_time.csv by metrics.control_published_time_topic. The rest are
+# recorded above rather than subscribed; each would be another observer
+# subscription on the measured host, feeding a number nothing computes.
+#
+# A FINDING, stated rather than left as an absence: this cell's lidar_topic
+# /sensing/lidar/top/pointcloud_raw_ex has NO PublishedTime companion, and
+# cannot have one in either approach, because it is published by CARLA rather
+# than by an Autoware node -- PublishedTimePublisher is an Autoware-side
+# facility. The first PublishedTime in the sensing chain is
+# self_cropped/pointcloud_ex, one filter stage downstream. A publisher-side
+# stamp AT the injection point is therefore unavailable by construction, and
+# one_hop_wall_ms -- which needs no publisher stamp -- is what covers that hop.
+#
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
+# (benchmarks/observer/src/bench_observer.cpp). `generic` records serialized
+# size. The typed kinds record the 0 size sentinel in observer.csv and also
+# write their own file: `odometry` -> odometry.csv, `pose` -> pose.csv, `tf` ->
+# tf.csv (whose fourth field is the child_frame_id it filters on).
+# out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+#
+# AMENDED 2026-07-29 (R3, before any P3 run), extending the history above: the
+# NDT pose line's kind is the typed `pose` kind, not `generic`. A generic
+# subscription records stamp + serialized size only, so no NDT x/y was
+# recorded anywhere in the campaign and M5's registered `pose_error_m` -- NDT
+# pose minus CARLA ground truth -- had no data source at all.
+/**:
+  ros__parameters:
+    topics:
+      - /sensing/lidar/top/pointcloud_raw_ex|sensor_msgs/msg/PointCloud2|generic
+      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|pose
+      - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
+      - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic
+      - /control/command/control_cmd/debug/published_time|autoware_internal_msgs/msg/PublishedTime|published_time

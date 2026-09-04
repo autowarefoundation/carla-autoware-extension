@@ -1,0 +1,35 @@
+# bench_observer topic list for cell CAL-seam (calibration approach).
+#
+# DELIBERATELY EMPTY -- the topics do not exist yet.
+#
+# CAL-seam measures the extension's in-core seam against an equivalent
+# out-of-core publisher, and that publisher PAIR is Task 14 ("CAL-seam
+# publisher pair"), which has not been written. Nothing committed anywhere in
+# this repo names the topics it will publish on, so any entry here would be a
+# guess -- and a guessed topic name records as silence (zero rows), which
+# reads downstream as "this transport delivered nothing" instead of as a
+# configuration error. An empty list is the honest state: the observer still
+# records /clock.
+#
+# AND IT IS NOW THE FINAL STATE. Cell CAL-seam was STRUCK 2026-07-30 by the
+# owner's core-duel scope cut (cells.yaml `dropped:`; benchmarks/README.md's
+# 2026-07-30 amendment), which took Task 14's live half and Task 17 with it.
+# Nothing will fill this file in, no CAL-seam run will be filed, and C1(a)
+# seam overhead is UNMEASURED. An owner TIME-BUDGET decision, not a technical
+# block: Task 14's CODE half landed and its spec DOES name the pair's topics
+# (/bench/seam_cloud and /bench/incore_cloud --
+# benchmarks/patches/extension/README.md), so they are no longer unknown; they
+# are simply never going to carry traffic, and registering them here would
+# claim an instrument this campaign will not run.
+#
+# benchmarks/cells/calibration.sh REFUSES to launch CAL-seam for the same
+# reason, naming Task 14 -- so this file cannot be reached with an empty list
+# by an actual measurement run.
+#
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
+# (benchmarks/observer/src/bench_observer.cpp). out_dir is supplied by run.sh
+# as -p out_dir:=/out, not from this file.
+/**:
+  ros__parameters:
+    topics: []

@@ -4,12 +4,17 @@
 // calls this function, and -- on a 0 return with a matching out->api_version --
 // keeps the returned CarlaRos2Extension vtable for the episode lifetime.
 //
-// This TU is the one place the four otherwise-independent subsystems are wired
+// This TU is the one place the five otherwise-independent subsystems are wired
 // together:
 //   StatusPublishers   -- 6x /vehicle/status/* publishers
 //   GnssPosePublisher  -- 2x /sensing/gnss/pose* publishers
 //   ControlSubscribers -- 4x /control/command/* subscribers
 //   EngageStateMachine -- 1x /autoware/engage subscriber
+//   BenchCloudPublisher -- 1x /bench/seam_cloud publisher, env-gated on
+//     $CARLA_BENCH_SEAM_CLOUD (CAL-seam isolation instrument; see
+//     BenchCloudPublisher.h). Unlike the other four, it is driven from
+//     on_tick, not from the VEHICLE_STATUS observer -- it has no ego-status
+//     dependency, synthetic or otherwise.
 // The status stream is synthesized from ONE host observer
 // (CARLA_ROS2_SENSOR_VEHICLE_STATUS): each frame, this file threads the engage
 // machine's control mode and the control subscribers' cached command bytes into
@@ -31,6 +36,7 @@
 
 #include "carla/autoware/geo/MgrsOffset.h"
 #include "engage/EngageStateMachine.h"
+#include "publishers/BenchCloudPublisher.h"
 #include "publishers/GnssPosePublisher.h"
 #include "publishers/StatusPublishers.h"
 #include "subscribers/ControlSubscribers.h"
@@ -45,6 +51,7 @@ struct ExtensionState {
   carla::autoware::GnssPosePublisher gnss;
   carla::autoware::ControlSubscribers control;
   carla::autoware::EngageStateMachine engage;
+  carla::autoware::BenchCloudPublisher bench_cloud;  // CAL-seam, $CARLA_BENCH_SEAM_CLOUD-gated
 };
 
 // Distinct nonzero return codes per failure class. The header
@@ -91,11 +98,19 @@ void ext_on_status(void* user, const CarlaRos2SensorSample* sample) {
   st->gnss.OnVehicleStatus(*v);
 }
 
-// on_tick: the UE world-clock per-frame hook. This extension is fully
-// event-driven -- status is synthesized from the observer, actuation from the
-// DDS subscriber callbacks -- so there is deliberately nothing to do per tick.
-// A no-op here is contract-legal (the mock extension's on_tick is likewise a no-op).
-void ext_on_tick(void* /*ext_ctx*/, double /*sim_time_s*/) {}
+// on_tick: the UE world-clock per-frame hook. Status is synthesized from the
+// observer and actuation from the DDS subscriber callbacks, so this hook has
+// nothing production-facing to do -- EXCEPT drive BenchCloudPublisher, the
+// one subsystem that has no observer to hang off (CAL-seam has no sensor,
+// synthetic or otherwise). BenchCloudPublisher::OnTick() is itself a no-op
+// unless $CARLA_BENCH_SEAM_CLOUD=1, so a production run (env var unset) sees
+// exactly the no-op behaviour this hook always had (the mock extension's
+// on_tick is likewise a no-op).
+void ext_on_tick(void* ext_ctx, double /*sim_time_s*/) {
+  auto* st = static_cast<ExtensionState*>(ext_ctx);
+  if (st == nullptr) return;
+  st->bench_cloud.OnTick();
+}
 
 // on_shutdown: core has already run TeardownExtensionEndpoints() (host-owned
 // endpoint lifetime), so no publisher/subscriber handle is live here. Just
@@ -138,7 +153,7 @@ extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Ext
   auto* st = new (std::nothrow) ExtensionState();
   if (st == nullptr) return kAllocFailed;
 
-  // Create every endpoint FIRST (all four subsystems), so the state is fully
+  // Create every endpoint FIRST (all five subsystems), so the state is fully
   // constructed before any callback can fire into it. create_publisher /
   // create_subscriber are not thread-safe against dispatch, but this runs on
   // the loader/game thread with no dispatch in flight (host-vtable rule).
@@ -146,6 +161,7 @@ extern "C" int carla_ros2_extension_init(const CarlaRos2Host* host, CarlaRos2Ext
   st->gnss.Init(*host, map_offset);
   st->control.Init(*host);
   st->engage.Init(*host);
+  st->bench_cloud.Init(*host);  // no-op unless $CARLA_BENCH_SEAM_CLOUD=1
 
   // Register the observer LAST: once registered, the host may
   // dispatch a status sample into ext_on_status at any time, so nothing may run

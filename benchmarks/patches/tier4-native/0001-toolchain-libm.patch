@@ -1,0 +1,13 @@
+diff --git a/CMake/Toolchain.cmake b/CMake/Toolchain.cmake
+index 8045356de..f97a79047 100644
+--- a/CMake/Toolchain.cmake
++++ b/CMake/Toolchain.cmake
+@@ -199,7 +199,7 @@ set (
+ 
+ set (
+ 	CMAKE_CXX_STANDARD_LIBRARIES
+-	"${UE_LIBS}/libc++.a ${UE_LIBS}/libc++abi.a"
++	"${UE_LIBS}/libc++.a ${UE_LIBS}/libc++abi.a -lm"
+ )
+ 
+ set (

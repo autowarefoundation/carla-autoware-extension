@@ -1,0 +1,17 @@
+# M3 process map for cell E-opt (python-bridge approach, CARLA 0.9.15,
+# Town10HD_Opt, closed-loop only -- local packer-optimized sensitivity
+# variant of cell E; cells.yaml, non-mandatory).
+#
+# Same tree/recipe/patch (0001-lidar-is-dense) as cell E; "optimized"
+# refers to packer/build tuning, not a different process set. See
+# E.yaml for the full grounding notes and the two open caveats (bridge
+# container name not yet fixed by a committed script; no dummy
+# injector in the current recipe).
+# Container names re-grounded in Task 8 alongside E.yaml: the bridge
+# container is created as `--name bridge-bench` by
+# benchmarks/cells/python-bridge.sh, the observer as `--name
+# bench-observer` by benchmarks/run.sh step 6.
+processes:
+  - { label: carla-server, pattern: CarlaUE4-Linux-Shipping }
+  - { label: autoware, container: bridge-bench }
+  - { label: observer, container: bench-observer }

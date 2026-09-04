@@ -1,5 +1,123 @@
 # Workload matrix (spec: Benchmark design). A sweep point is a cell and
 # inherits n >= 3 (>= 5 at the ceiling class); primary duel n >= 10.
+#
+# Each cell's `metrics:` block is the machine-readable binding every analysis
+# tool must read instead of hardcoding a topic, a process label or a rate
+# (definitions: benchmarks/README.md, "Primary-duel metric definitions").
+# Reached with benchmarks.scripts.cell_info.metrics_for(doc, <cell-id>).
+#
+#   lidar_topic                     the cell's as-emitted pointcloud topic --
+#                                   the M2/M4 primary topic and the topic
+#                                   one_hop_wall_ms / achieved_rate_ratio /
+#                                   lidar_to_ndt_sim_ms are computed on.
+#   ndt_topic                       NDT pose output (lidar_to_ndt_sim_ms).
+#   control_topic                   the GATED control command (M5/M1b).
+#   control_published_time_topic    the PublishedTime companion of
+#                                   control_topic; the KEY of the
+#                                   published_time.csv rows control_staleness_ms
+#                                   reads, which is the PublishedTime topic
+#                                   name, NOT control_topic itself.
+#   cpu_process_label               the resources.csv `process` value
+#                                   carla_process_cpu_pct reads; always a
+#                                   `label` registered in
+#                                   config/processes/<cell>.yaml.
+#   tick_hz                         paced WORLD-TICK target,
+#                                   1/fixed_delta_seconds.
+#   lidar_expected_hz               SENSOR publish target, the denominator of
+#                                   achieved_rate_ratio and the only correct
+#                                   basis for an expected message COUNT.
+#   ndt_expected_hz                 NDT pose-output target, the denominator of
+#                                   the M5 gate's "NDT rate >= 90% of expected"
+#                                   criterion (analysis/quality.py) and the
+#                                   `expected_ndt_hz` key of quality.json.
+#   ladder_branch                   which branch of the pre-registered G1
+#                                   localization ladder applies to this cell:
+#                                   `absolute` or `relative`. quality.json's
+#                                   `ladder_branch` key is written from here.
+#   abs_pose_gate_m                 the absolute branch's max-pose_error
+#                                   threshold in metres (evaluate_quality's
+#                                   `abs_pose_gate_m`). Non-null iff
+#                                   ladder_branch is `absolute`.
+#
+# The two ladder keys are ONE binding in two fields, and they are two fields
+# rather than one on purpose. `evaluate_quality(abs_pose_gate_m=None)` means
+# "apply the RELATIVE branch", so a single nullable threshold could not
+# distinguish "the relative branch was selected" from "nothing has selected a
+# branch yet" -- and defaulting an unselected cell into the relative branch
+# would silently report an UNGATED cell as gated, the worst outcome available
+# to this gate. So `ladder_branch` carries the selection and `abs_pose_gate_m`
+# carries only the absolute branch's number, giving three states the M5 gate
+# step discriminates mechanically:
+#
+#   ladder_branch: absolute  + abs_pose_gate_m: <float>  -> absolute branch
+#   ladder_branch: relative  + abs_pose_gate_m: null     -> relative branch
+#   ladder_branch: null                                  -> REFUSE to gate
+#
+# Any other combination (absolute with a null threshold, relative with a
+# non-null one, an unrecognised branch name) is an inconsistent registration
+# and is refused by name, not repaired.
+#
+# WHICH branch a cell gets is a property of THE MAP BUNDLE THAT CELL
+# LOCALIZED AGAINST, not of whether a registration fix landed somewhere in
+# the campaign (benchmarks/README.md, "M5 definitions", and the 2026-07-28
+# amendment that keyed it on the bundle). That is why this is a per-cell
+# binding and not one campaign-wide constant: gating cell E at 0.5 m against
+# the deliberately unshifted bundle cells/python-bridge.sh pins would fail it
+# by ~0.475 m of map registration, under a reason a reader would attribute to
+# the bridge.
+#
+# tick_hz, lidar_expected_hz and ndt_expected_hz are DIFFERENT numbers that
+# happen to coincide at 20.0 on the extension cells; tick_hz diverges on the
+# high-frequency cells. Never substitute one for the other. ndt_expected_hz
+# tracks the SENSOR rate rather than the tick rate, and is registered
+# separately so a cell whose chain decimates cannot be missed.
+#
+# A `null` binding is NOT a default to fill in at analysis time: it means the
+# value is not pre-registered yet, so the metric is UNAVAILABLE for that cell
+# and a tool must say so rather than invent one. The task that owes each null
+# is named beside it. The bar for a NON-null value is that committed evidence
+# in THIS repo fixes it (a constant in committed code, or a live measurement
+# recorded in a committed document); an out-of-repo script's literal is not
+# enough, whichever direction it would move the number.
+#
+# `dropped:` -- SCOPE, NOT FEASIBILITY (added 2026-07-30). A cell carrying
+# this key is one the owner's 2026-07-30 core-duel scope cut removed from
+# what this campaign will MEASURE. It is deliberately a SEPARATE key rather
+# than a flip of `mandatory:`, because the two answer different questions and
+# this file needs both answers at once:
+#
+#   mandatory: true  + no `dropped:`  -> owed; a campaign result rests on it
+#   mandatory: true  + `dropped:`     -> WAS owed, struck by the 2026-07-30
+#                                        pre-registration amendment
+#                                        (CAL-seam, B45). `mandatory: true`
+#                                        STAYS, so the record still shows
+#                                        what was given up.
+#   mandatory: false + `dropped:`     -> pre-registered as owner-strikable
+#                                        and now struck (D, E-opt, A-hf,
+#                                        B-hf): a note, not a matrix change.
+#   mandatory: false + no `dropped:`  -> optional and still in scope
+#
+# Flipping `mandatory` to false instead would have collapsed rows 2 and 3
+# into one value, so the file would read as if CAL-seam and B45 had always
+# been optional -- which is false, and is exactly the misstatement this
+# amendment exists to avoid. Same shape of argument as `ladder_branch` /
+# `abs_pose_gate_m` above: two distinct states one flag cannot carry.
+#
+# NONE of the dropped cells was technically infeasible, blocked or
+# unmeasurable. The reason is an owner TIME-BUDGET decision taken on two
+# measurements, stated per item in benchmarks/README.md's
+# `## Amendments made so far` (2026-07-30, the core-duel scope cut). B45 in
+# particular was expected to surface a hard-fork-maintenance result; the
+# campaign is choosing NOT TO LOOK, which is a different statement from "it
+# failed" or "it could not be measured".
+#
+# No consumer reads either key to decide completeness, so neither the strike
+# nor this new key can make a tool report a false "all mandatory cells
+# measured": `cell_info.merge` copies both into its JSON and `run.sh` reads
+# only approach / map / carla / has_sim_clock / arms / sweep_arms from it;
+# `analysis/manifest.py` reads `id` alone. tests/benchmarks/test_cell_info.py
+# pins the table above instead, so a later silent strike of a MANDATORY cell
+# fails a test rather than passing review.
 cells:
   - id: A
     approach: extension
@@ -7,74 +125,677 @@ cells:
     map: Town10HD_Opt
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20, after live discovery
+      cpu_process_label: carla-server
+      tick_hz: 20.0 # runner/loop.py DEFAULT_FIXED_DELTA = 0.05
+      # runner/spawn.py _SENSOR_TICK = "0.05" on the top LiDAR, and the
+      # effective sensor rate is min(1/sensor_tick, tick_hz) -- the relation
+      # P1 Verdict 4 measured live. A sweep class changes channels/points,
+      # never sensor_tick, so this is a per-cell and not a per-class value.
+      lidar_expected_hz: 20.0
+      # MEASURED, not inferred: docs/e2e-report.md's live re-run records this
+      # rig localizing at "NDT ~20 Hz (400 samples)" with the ekf-fused
+      # kinematic_state at 19.97 Hz and the sensing chain feeding it alive at
+      # ~20 Hz. That gate ran on the Nishi-Shinjuku map (cell C); the rate is a
+      # property of the rig and tick, not of the map, so cell A inherits it --
+      # the same reasoning lidar_expected_hz already uses across A/C. (The
+      # mechanism -- one NDT pose per input cloud, rate-preserving chain --
+      # explains the number but is an assertion about Autoware, not evidence
+      # from this repo, so it is not what this binding rests on.)
+      ndt_expected_hz: 20.0
+      # SELECTED by Task 11's live G1 re-gate (2026-07-29). This cell
+      # localizes against the ladder's RUNG-2 bundle (pins.yaml
+      # town10_pcd_regen, via map_defaults.sh), which IS registered to the
+      # world it runs in, so branch (a) applies. MEASURED on that bundle: max
+      # NDT error 0.089 m over 400 static samples -- 411 mm inside the 0.5 m
+      # gate, bias (dx, dy) = (+0.021, -0.038) m, per-axis jitter std 0.019 /
+      # 0.013 m. Raw NDT + ground-truth series and the bundle's own sha256 are
+      # TRACKED under benchmarks/evidence/g1-rung2-regen/, so the number that
+      # selects this threshold is recomputable from the repo rather than merely
+      # asserted. (It previously cited the .gitignore'd reports/ path, where it
+      # existed on one workstation only and no fresh clone would have it.)
+      #
+      # The ladder was walked in order; the earlier rungs are kept because
+      # they bound what re-registration alone can do:
+      #   dy = -0.475 (town10_pcd_shifted): max 0.824 m; 0.749 m on a second
+      #     window.
+      #   dy = -0.607 (town10_pcd_refit, rung 1's refit): max 0.570 m.
+      # Those three are TRACKED and recomputable too, under
+      # benchmarks/evidence/g1-ladder-rigid/ (see its PROVENANCE.md), so the
+      # FAIL rungs are checkable and not only the PASS.
+      # Both MISSED the absolute gate; all three windows pass the relative
+      # criteria. Rung 2 closed it, for a reason no rigid shift reproduces:
+      # it rebuilds the cloud from ground-truth-registered sweeps, so it fixes
+      # point DENSITY and not merely a frame offset.
+      #
+      # How close rigid registration got, stated as only what is verified: on
+      # the refit window, subtracting the CHEBYSHEV-OPTIMAL 2-D offset (the
+      # minimum-enclosing-circle centre -- the offset that actually minimises
+      # the max) leaves max 0.5041 m, over the gate by 4 mm, on a statistic
+      # whose same-bundle window-to-window spread was 0.075 m (0.824 vs
+      # 0.749) -- both derived from the refit series in
+      # benchmarks/evidence/g1-ladder-rigid/refit/, so recomputable.
+      # Rigid registration therefore came MARGINALLY short; it was
+      # never shown to be decisively excluded. Two earlier claims here were
+      # wrong and are corrected rather than quietly dropped: a 0.635 m "floor"
+      # from centroid subtraction was an UPPER bound (a centroid minimises
+      # RMS, not max) and the refit's own 0.570 m came in under it; and the
+      # residual was attributed to along-track jitter, which the data does not
+      # support -- the dominant jitter axis SWAPPED between windows (dx 0.097 /
+      # dy 0.171 on the dy = -0.475 window against dx 0.229 / dy 0.094 on the
+      # refit). What IS established: the residual max is within-lock jitter
+      # rather than a frame offset, and Town10 carries 0.50 vertical
+      # points/m^2 in the 0.8-3.0 m band against Nishi-Shinjuku's 4.25.
+      #
+      # CONFOUND (README, "Known confounds"): this bundle is built from THIS
+      # rig's own sweeps, including at the pose G1 measures, so 0.089 m is
+      # optimistic relative to an independently-sourced map and is NOT
+      # directly comparable to Nishi-Shinjuku's 0.078 m on cell C.
+      # SOURCE of that 0.078 m: docs/e2e-report.md's "Post-refactor regression
+      # re-run (2026-07-24)" table, G1 NDT localization row -- max_err =
+      # 0.078 m, 400 samples, threshold 0.5 m. Inline-cited because a recorded
+      # number must name its source; Task 11 filed this gap for the final
+      # review pass, and Task 15 closes it instead since this file freezes at
+      # Task 16. The 0.089 m above is tracked at
+      # benchmarks/evidence/g1-rung2-regen/.
+      # POINTER (2026-07-30, Task 15): cell C's number is now a TRACKED
+      # 0.062 m from its own live re-gate on the current engine state
+      # (benchmarks/evidence/g1-nishi-bundle/, and cell C's own comment
+      # below). The 0.078 m above (cited to e2e-report.md there) stands --
+      # both are real static windows on
+      # the same Nishi bundle, 16 mm apart on a max statistic -- but 0.062 m
+      # is the one cell C's threshold rests on, so read the pair rather than
+      # either alone. The non-comparability claim is unaffected: it is about
+      # this bundle's provenance, not about which Nishi window is cited.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: B
     approach: tier4-native
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      # REGISTERED 2026-07-30 (Task 13) from LIVE discovery on this cell's own
+      # stack -- `ros2 topic list --no-daemon | grep published_time` inside the
+      # pinned container during results/B/run-002. Type
+      # autoware_internal_msgs/msg/PublishedTime (NOT the plan's assumed
+      # autoware_internal_debug_msgs). observer_topics/B.yaml lists the other
+      # six PublishedTime topics that exist and says why only this one is
+      # subscribed; cell A's stays unregistered because its IMAGE differs and
+      # Task 20 owes that observation.
+      control_published_time_topic: /control/command/control_cmd/debug/published_time
+      cpu_process_label: carla-server
+      # REGISTERED 2026-07-30 (Task 13), all three SOURCED from the launcher
+      # arguments the same commit landed -- benchmarks/cells/tier4_autoware.sh's
+      # TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ, which are what a B-family run
+      # actually passes to the fork's (patch-0003) autoware_demo.py. They are
+      # committed constants in this repo, not transcriptions from a report, and
+      # not the demo's own defaults: the demo defaults to --hz_rate 100.
+      #
+      # tick_hz: `--hz_rate 20` -> fixed_delta_seconds 0.05, harmonized to cell
+      # A's runner/loop.py DEFAULT_FIXED_DELTA. The demo's own 100 Hz default
+      # would have put a 5x physics-step difference inside every M3 CPU and RTF
+      # comparison of the primary duel.
+      tick_hz: 20.0
+      # lidar_expected_hz: `--lidar-rotation-hz 10.0` -> sensor_tick 0.1, the
+      # demo's OWN value, deliberately NOT harmonized to cell A's 20 Hz. The
+      # demo derives points_per_second FROM that period ("horizontal_fov /
+      # horizontal_resolution / sensor_tick * channels"), so halving the period
+      # at a fixed 288000 pts/s halves the angular resolution -- a fidelity
+      # change dressed as harmonization -- while doubling pts/s specifies a
+      # different sensor than the VLP16 the demo documents. The M4 sweep
+      # classes (sweep_classes below, applying to A and B alike) are where the
+      # two rigs ARE equalized. CORROBORATED live before this registration:
+      # Task 9 measured the same rig at 10.002 Hz CARLA-side (3300 frames) and
+      # 10.006/10.070 Hz on the wire, and the stock bench_observer recorded 243
+      # rows in 24 s (10.1 Hz) -- benchmarks/patches/tier4-native/README.md.
+      lidar_expected_hz: 10.0
+      # ndt_expected_hz: the SENSOR rate, not the tick rate (see this file's
+      # header) -- one NDT pose per input cloud is the target, so registering
+      # 10.0 is the conservative choice: a chain that decimates fails the M5
+      # NDT-rate criterion instead of hiding inside a lower expectation. The
+      # mechanism (rate-preserving sensing chain) is an assertion about
+      # Autoware; what backs the NUMBER is cell B's own closed-loop gate run,
+      # whose measured ndt_rate_ratio is recorded with the run
+      # (results/B/run-001/quality.json) and in the Task 13 report.
+      ndt_expected_hz: 10.0
+      # SELECTED 2026-07-30 (Task 13) from THE BUNDLE THIS CELL MOUNTS, which
+      # is the pre-registered rule (README, "M5 definitions"): the branch is a
+      # property of the bundle, and cells/tier4_autoware.sh resolves its bundle
+      # through scripts/e2e/map_defaults.sh -- the SAME table cells A/A-hf read
+      # -- so Town10HD_Opt is pins.yaml `town10_pcd_regen`, the ladder's rung-2
+      # bundle. The MEASUREMENT backing the absolute branch on that bundle is
+      # Task 11's, tracked under benchmarks/evidence/g1-rung2-regen/ (max NDT
+      # error 0.089 m over 400 static samples, 411 mm inside the gate); cell A
+      # carries its full ladder walk. Cell B's own run confirms it against the
+      # same 0.5 m threshold rather than re-deriving it.
+      #
+      # Task 11 deliberately left this null because the branch DIFFERS BY
+      # BUNDLE, not by map -- town10-regen -> absolute 0.5, while
+      # town10-shifted / the unshifted ~/autoware_map/town10 -> relative
+      # (measured max 0.570 m and 0.824 m) -- so it could not be settled until
+      # Task 13 chose one. That choice is now made and it is A's bundle, which
+      # is also what keeps README confound C4 a cross-map caveat instead of
+      # escalating it to a duel-level confound.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: C
     approach: extension
     carla: 0.10-fork
     map: NishishinjukuMap
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: 20.0 # same rig as cell A; only the map differs
+      # docs/e2e-report.md's ~20 Hz NDT measurement is from the Nishi-Shinjuku
+      # e2e gate, i.e. THIS cell's map, and cell A inherits it as the same rig.
+      ndt_expected_hz: 20.0
+      # SELECTED 2026-07-30 (Task 15) by THIS CELL'S OWN live G1 re-gate on
+      # the current engine state -- Task 11's re-gate is Town10 and could not
+      # settle this one, because the branch is a property of the BUNDLE (this
+      # file's header; README "M5 definitions"). The bundle is the
+      # map_defaults.sh NishishinjukuMap entry, container
+      # /autoware_map/nishishinjuku, pointcloud_map.pcd sha256
+      # 78b6cf81047489efb1f008a44238d497241da64bb158c824a3f18f23eb50e9d3, and
+      # it IS registered to the world it runs in, so branch (a) applies.
+      #
+      # MEASURED on that bundle: max NDT error 0.062 m over 400 static
+      # samples in a 19.98 s window -- 438 mm inside the 0.5 m gate -- mean
+      # 0.031 m, median 0.030 m, bias (dx, dy) = (-0.004, +0.021) m, per-axis
+      # jitter std 0.021 / 0.012 m. The 21 mm bias is the point of contrast
+      # with cell A's ladder: there is no map-registration offset here of the
+      # kind Town10's rigid bundles carry (+0.475 m cross-track), so no
+      # ladder had to be walked -- the first and only rung passed.
+      # Raw NDT + ground-truth series, the bundle digest and the boot's
+      # engine BuildId / fork SHA / extension .so digest are TRACKED under
+      # benchmarks/evidence/g1-nishi-bundle/, so this threshold's selecting
+      # number is recomputable from the repo. The same boot's G2 is
+      # benchmarks/evidence/g2-nishi-cellc/ (closest approach 0.046 m on the
+      # 230.5 m pre-registered route -- config/routes/NishishinjukuMap.yaml's
+      # own recorded total length. The retained distance series OPENS at
+      # 222.110 m, ~5.2 m after engage, because the gate's control_cmd
+      # liveness check runs before collection starts; that PROVENANCE.md
+      # keeps the three distances apart.)
+      #
+      # NOT the historical figure: docs/e2e-report.md records 0.078 m on this
+      # map -- its "Post-refactor regression re-run (2026-07-24)" table, G1 NDT
+      # localization row (max_err = 0.078 m, 400 samples, threshold 0.5 m); the
+      # same table's G2 row is the 0.064 m closest approach. Cell A's comment
+      # above cites the same number and location. Both are static
+      # windows on this bundle, 16 mm apart on a max statistic; 0.062 m is
+      # what the branch rests on because it is measured on the CURRENT engine
+      # state and its series are tracked. Cell A's 0.089 m stays NOT directly
+      # comparable for the reason stated there (its bundle is rebuilt from
+      # that rig's own sweeps; this one is independently sourced).
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: D
     approach: tier4-native
     carla: 0.10-tier4
     map: NishishinjukuMap
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut (see `dropped:` in
+    # this file's header, and README's 2026-07-30 amendment). Owner
+    # time-budget, NOT infeasibility: whether the tier4 tree can cook this
+    # map was never tested, so the cross-map tier4 question this cell exists
+    # to answer stays OPEN and UNMEASURED rather than answered either way.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [static, closed-loop] # only if the map cooks in the tier4 tree
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # REGISTERED 2026-07-30 (Task 13), as cell B: this cell runs the SAME
+      # launcher with the same TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ -- only
+      # BENCH_MAP differs, and neither constant is per-map. See cell B for what
+      # each number is sourced from and why the LiDAR is not re-rated.
+      # Whether the tier4 tree can cook this cell's MAP at all is separate and
+      # still open (`mandatory: false` above); these three describe what a run
+      # would apply, which is what the binding is for.
+      tick_hz: 20.0
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: 10.0
+      # DELIBERATELY LEFT NULL 2026-07-30 (Task 15), and this is the last
+      # window in which it could have been filled: the pre-registration
+      # deadline is the first P3 measurement run. Nothing owes it any more --
+      # the earlier note here named Task 15 as the owner, and Task 15's answer
+      # is that this slot stays unfilled. Three facts, kept apart on purpose:
+      #
+      #  1. The BUNDLE this cell would mount is now measured. Task 15's live
+      #     G1 on the map_defaults.sh NishishinjukuMap entry -- the same entry
+      #     cell C reads, and the one tier4_autoware.sh resolves for this map
+      #     since Task 13 -- came out at max 0.062 m
+      #     (benchmarks/evidence/g1-nishi-bundle/). So the null is NOT an
+      #     information gap about the bundle, and this comment is not hiding
+      #     one.
+      #  2. This cell was STRUCK (`dropped:` above), so it will never produce
+      #     a run to gate, and no G1 will ever be measured THROUGH this
+      #     cell's own stack. Copying cell C's `absolute` / 0.5 across -- the
+      #     move Task 13 legitimately made for cell B, which DOES run -- would
+      #     make this row read as a gated, ready cell whose threshold had been
+      #     established for it. It has not: whether the tier4 tree can cook
+      #     this map at all was never tested, so it was never shown that this
+      #     cell can localize against that bundle, or produce a pose series
+      #     to compare a threshold against.
+      #  3. `ladder_branch: null` is the state the M5 gate step REFUSES to
+      #     gate on (this file's header), which is the correct mechanical
+      #     behaviour for a cell in that position -- it fails closed rather
+      #     than silently applying a threshold to a run whose existence was
+      #     never demonstrated. That is the same reason the header gives for
+      #     splitting the two keys in the first place.
+      #
+      # If the strike were ever reversed, the selection is not open: the
+      # branch would follow this bundle's measurement above (`absolute`, 0.5),
+      # confirmed by the cell's own G1 the way Task 13 confirmed cell B's.
+      # That is a statement about what a future measurement would decide, and
+      # it is written here rather than in the value, because the cross-map
+      # tier4 question this cell exists to answer stays OPEN and UNMEASURED.
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E
     approach: python-bridge
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: true
     arms: [static, closed-loop]
+    metrics:
+      # AMENDED 2026-07-29 (Task 10). Cell E runs the PATCHED bridge image, and
+      # 0002-sensor-config-harmonized.patch sets the bridge's `topic_suffix` to
+      # /pointcloud_raw_ex -- the spec's injection topic in every cell -- so
+      # this is now where E emits. The patch has to move
+      # carla_sensor_kit_launch's crop_box_filter_self input with it (that
+      # launch file HARDCODES the old name), or the chain would be severed.
+      # Cell E0, on the unpatched image, still emits /pointcloud_before_sync
+      # and keeps that binding: the two are deliberately different.
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # patches/python-bridge/README.md: the bridge drives CARLA in
+      # synchronous mode with fixed_delta_seconds = 0.05, verified live.
+      tick_hz: 20.0
+      # NOT REGISTERED: the bridge's own sensor rig, re-grounded live by
+      # Task 10/20 before any E-family P3 run. P1 measured 8.59 Hz as-emitted
+      # on an unpatched run, which is a MEASUREMENT, not a target.
+      lidar_expected_hz:
+      ndt_expected_hz: # Task 10/20, with lidar_expected_hz
+      # cell E's re-gate: which pcd variant E localizes against is
+      # MEASURED first (README, M5 definitions).
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E0
     approach: python-bridge
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: true
-    arms: [closed-loop] # as-shipped defaults
+    # Amended 2026-07-28 (P1 Verdict 1): the as-shipped bridge cannot close
+    # the loop (is_dense rejection + sync-tick stall, both source-level).
+    # E0 measures the as-shipped configuration to its failure point: raw-topic
+    # transport + process cost, static arm only. The closed loop is cell E's
+    # (patched, see patches/python-bridge/0001) and the failure itself is E0's
+    # reported result.
+    arms: [static]
+    metrics:
+      # STAYS /pointcloud_before_sync: this cell runs the UNPATCHED image, so
+      # the bridge's shipped `topic_suffix` applies. E/E-opt were amended to
+      # /pointcloud_raw_ex by Task 10's 0002; E0 must not follow, or it would
+      # read a topic its own image never publishes on.
+      lidar_topic: /sensing/lidar/top/pointcloud_before_sync
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: # Task 10/20, as cell E
+      ndt_expected_hz: # Task 10/20, as cell E
+      # cell E's re-gate: which pcd variant E localizes against is
+      # MEASURED first (README, M5 definitions).
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: E-opt
     approach: python-bridge
     carla: 0.9.15
     map: Town10HD_Opt
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut (owner
+    # time-budget; README's 2026-07-30 amendment). The bridge's local
+    # packer-optimized sensitivity arm goes unmeasured. Cells E (patched) and
+    # E0 (as-shipped) both stay in scope, so C2 keeps its evidence; what is
+    # lost is only the sensitivity of E's numbers to the local packer.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop] # local packer-optimized sensitivity
+    metrics:
+      # AMENDED 2026-07-29 (Task 10), as cell E: E-opt runs the same patched
+      # image, so 0002's /pointcloud_raw_ex applies here too.
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      tick_hz: 20.0
+      lidar_expected_hz: # Task 10/20, as cell E
+      ndt_expected_hz: # Task 10/20, as cell E
+      # cell E's re-gate: which pcd variant E localizes against is
+      # MEASURED first (README, M5 definitions).
+      ladder_branch:
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: CAL-rmw
     approach: calibration
     carla: none
     map: none
     mandatory: true
     arms: [static]
+    metrics:
+      # bench_pub's synthetic PointCloud2; cells/calibration.sh passes the
+      # same default bench_pub.cpp declares.
+      lidar_topic: /bench/cloud
+      # No Autoware in this cell, so none of the stack-side topics exist and
+      # none is coming (observer_topics/CAL-rmw.yaml says the same).
+      ndt_topic:
+      control_topic:
+      control_published_time_topic:
+      # No simulator process: processes/CAL-rmw.yaml registers bench-pub and
+      # the observer only, so there is no CARLA CPU series to compare.
+      cpu_process_label:
+      tick_hz: # no simulator, no world tick, no /clock
+      # cells/calibration.sh's PUB_RATE_HZ DEFAULT. That script also honours a
+      # BENCH_PUB_RATE_HZ override, so a run that sets it invalidates this
+      # binding: the override must be registered here (before P3) rather than
+      # left to diverge, or achieved_rate_ratio silently divides by 10.0 on a
+      # cell that published at something else.
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: # no localization stack in this cell
+      ladder_branch: # no localization stack in this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: CAL-seam
     approach: calibration
     carla: 0.10-fork
     map: Town10HD_Opt
     mandatory: true
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut. This is one of
+    # the TWO strikes that make that cut a pre-registration amendment:
+    # `mandatory: true` above is deliberately UNCHANGED, so the record still
+    # shows that a mandatory cell was given up (see `dropped:` in this file's
+    # header).
+    #
+    # CONSEQUENCE: C1(a) seam overhead is now UNMEASURED, and there is no
+    # weaker evidence standing in for it -- this cell's paired seam-vs-in-core
+    # delta was "the only measurement the seam-overhead claim rests on"
+    # (scripts/cal_report.py's own opening paragraph).
+    #
+    # Owner time-budget, NOT infeasibility. Task 14's CODE half landed: the
+    # extension-side publisher (extension/src/publishers/BenchCloudPublisher.
+    # {h,cpp}), its ExtensionInit registration, scripts/cal_report.py and
+    # their unit tests are all committed and green. They will simply never be
+    # exercised by a measurement, and that is disclosed rather than tidied
+    # away -- nothing here is deleted.
+    dropped: owner-time-budget-2026-07-30
     arms: [static]
+    metrics:
+      # NOT REGISTERED: the seam/in-core publisher pair is Task 14 and names
+      # no topic yet; observer_topics/CAL-seam.yaml is deliberately empty for
+      # the same reason, and cells/calibration.sh refuses to launch the cell.
+      lidar_topic:
+      ndt_topic:
+      control_topic:
+      control_published_time_topic:
+      cpu_process_label: carla-server
+      # NOT REGISTERED either: Task 14 owns what ticks this cell's world, if
+      # anything does -- it is a transport/serialization calibration, not a
+      # drive, and cells/calibration.sh refuses to launch it today. Registering
+      # the extension cells' 20.0 here would assert a tick nothing commits to.
+      tick_hz:
+      lidar_expected_hz: # Task 14
+      ndt_expected_hz: # no localization stack in this cell
+      ladder_branch: # no localization stack in this cell
+      abs_pose_gate_m: # non-null iff ladder_branch is absolute (README: 0.5)
   - id: A-hf
     approach: extension
     carla: 0.10-fork
     map: Town10HD_Opt
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut (owner
+    # time-budget; README's 2026-07-30 amendment): no 100 Hz sensitivity
+    # result on either high-frequency cell. This is EXACTLY the end state the
+    # `tick_hz` comment below already pre-registered -- "If the owner strikes
+    # Task 26 the cell is dropped and these stay null permanently -- a
+    # legitimate end state, not a gap" -- so the three null rate bindings are
+    # now permanent, and the sensor_tick question that comment raises with the
+    # plan owner is closed as never-to-be-applied rather than answered.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop] # fixed_delta 0.01
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # ALL THREE NOT REGISTERED: owed by TASK 26 ("Optional cells -- E-opt,
+      # A-hf/B-hf", owner-strikable), whose Step 2 is this cell's whole
+      # configuration. If the owner strikes Task 26 the cell is dropped and
+      # these stay null permanently -- a legitimate end state, not a gap.
+      #
+      # tick_hz: an earlier revision registered 100.0, reasoning that the
+      # MECHANISM is committed -- runner/__main__.py's --fixed-delta, Task 12,
+      # landed -- unlike B-hf, where no launcher exists at all. But a committed
+      # mechanism nothing invokes is not a setting: cells/extension.sh passes
+      # no fixed-delta argument, so an A-hf run today ticks at the runner's
+      # 0.05 default while the binding claimed 100.0 -- a registered number no
+      # run is obliged to honour and nothing checks, which is the
+      # silent-wrong-number class this campaign exists to avoid.
+      #
+      # lidar_expected_hz/ndt_expected_hz: an earlier revision registered 20.0
+      # for both, reasoning that --fixed-delta moves the world tick and not the
+      # rig's sensor_tick, so A-hf inherits cell A's 0.05. THAT REASONING DOES
+      # NOT HOLD FOR THIS CELL: Task 26 Step 2 configures A-hf's LiDAR
+      # sensor_tick EXPLICITLY and separately from the tick, to a value that is
+      # neither cell A's 0.05 nor the tick period -- so the sensor rate is not
+      # cell A's and cannot be derived from the tick rate even once the tick is
+      # known. Task 26 registers all three from what it actually applies, and
+      # must state the sensor_tick it used. Its own stated point is per-run
+      # rate verification, which is exactly the check an earlier revision of
+      # this comment asked for without knowing whose it was.
+      #
+      # CONFIRM THE INTENDED SENSOR_TICK BEFORE APPLYING IT. Task 26 Step 2
+      # writes A-hf's LiDAR sensor_tick as 0.1 -- 10 Hz, which is HALF cell
+      # A's 20 Hz, on a cell whose entire purpose is HIGHER frequency, and
+      # alongside an IMU at 0.01 on the same line. 0.1 is also exactly the
+      # TIER4 demo's unpatched baseline (see cell B above: "P1 measured the
+      # unpatched demo at sensor_tick=0.1 (10 Hz) against the extension's
+      # 0.05"), so a tier4-side figure may have been carried into the
+      # extension-side line. This records the question; it does NOT answer it.
+      # 0.1 and 0.01 are both coherent readings and nothing in this repo
+      # discriminates between them, so registering either would be a guess
+      # presented as a fact -- unlike control_staleness_ms's clock-domain
+      # branches, which a run's own data decides. Raised with the plan owner.
+      #
+      # `arms: [closed-loop] # fixed_delta 0.01` above still records the cell's
+      # INTENT; these keys record what a run will actually do, and today
+      # nothing does any of it.
+      tick_hz:
+      lidar_expected_hz:
+      ndt_expected_hz:
+      # SELECTED by Task 11 (2026-07-29), as cell A: this cell runs the same
+      # cells/extension.sh launcher against the same Town10 bundle
+      # (town10-regen), and the branch is a property of that bundle, not of
+      # the tick or sensor rate Task 26 still owes above. See cell A for the
+      # measured numbers, the ladder walk and the self-built-map confound.
+      # The three null rate bindings above still make this cell un-gateable
+      # until Task 26 registers them; that is independent of this pair.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: B-hf
     approach: tier4-native
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: false
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut, with cell A-hf and
+    # for the same reason (owner time-budget; README's 2026-07-30 amendment):
+    # the 100 Hz sensitivity axis is a PAIR, so striking one half would have
+    # left a one-sided result. The three null rate bindings below are now
+    # permanent, on the end state cell A-hf's comment pre-registered.
+    # Already `mandatory: false`, so this is a note and not a matrix change.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop]
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # STILL NOT REGISTERED, and Task 13 deliberately did not fill these.
+      # Task 13's launcher now exists (benchmarks/cells/tier4_autoware.sh), so
+      # the mechanism is no longer the blocker -- but that launcher applies cell
+      # B's 20 Hz tick, and this cell's INTENT is the A-hf counterpart at 100 Hz
+      # with sensor ticks "to match". Task 26 Step 2 owns that configuration,
+      # and until it exists, registering 100.0 here would be an intent no run is
+      # obliged to honour and nothing checks -- the same silent-wrong-number
+      # class cell A-hf's comment records. Like A-hf, the sensor ticks are set
+      # explicitly there, so none of the three can be derived from the tick
+      # rate: Task 26 registers all three from what it actually applies.
+      tick_hz:
+      lidar_expected_hz:
+      ndt_expected_hz:
+      # SELECTED 2026-07-30 (Task 13), as cell B and for the same reason cell
+      # A-hf inherits cell A's: this cell runs the same launcher, which resolves
+      # Town10HD_Opt through map_defaults.sh to pins.yaml `town10_pcd_regen`,
+      # and the branch is a property of that bundle rather than of the tick or
+      # sensor rate Task 26 still owes above. See cell B for the measurement.
+      # The three null rate bindings still make this cell un-gateable until Task
+      # 26 registers them; that is independent of this pair.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
   - id: B45
     approach: tier4-native
     carla: 0.10-tier4
     map: Town10HD_Opt
     mandatory: true
+    # STRUCK 2026-07-30 by the owner's core-duel scope cut. The SECOND of the
+    # two strikes that make that cut a pre-registration amendment (see
+    # CAL-seam above): `mandatory: true` stays, so the record shows what was
+    # given up.
+    #
+    # CONSEQUENCE: no hard-fork-maintenance finding. This cell existed to
+    # measure what it costs to carry the tier4 fork against a DIFFERENT
+    # Autoware release (pins.yaml `autoware_045`, universe-devel-0.45.1) and
+    # it was expected to surface a real result -- that is why it was
+    # mandatory.
+    #
+    # Owner time-budget, NOT infeasibility, and the distinction matters most
+    # here: the campaign is choosing NOT TO LOOK. That is not the same
+    # statement as "carrying the fork across releases failed", and nothing in
+    # this record may be read as the latter. Nothing about this cell was ever
+    # measured and found wanting; the one open prerequisite on it (its
+    # pinned image is not on this workstation, so the pose_initializer param
+    # comparison config/autoware/pose_initializer.param.yaml records was never
+    # made) is a logistics item, not a defect of the approach.
+    dropped: owner-time-budget-2026-07-30
     arms: [closed-loop] # Autoware 0.45.x image
+    metrics:
+      lidar_topic: /sensing/lidar/top/pointcloud_raw_ex
+      ndt_topic: /localization/pose_estimator/pose_with_covariance
+      control_topic: /control/command/control_cmd
+      control_published_time_topic: # Tasks 13/20
+      cpu_process_label: carla-server
+      # REGISTERED 2026-07-30 (Task 13), as cell B: identical CARLA-side recipe
+      # (same launcher, same TIER4_TICK_HZ / TIER4_LIDAR_ROTATION_HZ). Only the
+      # Autoware IMAGE differs (pins.yaml autoware_045), and none of these three
+      # is a property of the image. See cell B for the sourcing.
+      tick_hz: 20.0
+      lidar_expected_hz: 10.0
+      ndt_expected_hz: 10.0
+      # SELECTED 2026-07-30 (Task 13), as cell B: same launcher, same
+      # map_defaults.sh entry, so the same rung-2 bundle (pins.yaml
+      # `town10_pcd_regen`) and therefore the same branch. See cell B.
+      ladder_branch: absolute
+      abs_pose_gate_m: 0.5
+# `32ch` and `128ch` STRUCK 2026-07-30 by the owner's core-duel scope cut: the
+# M4 LiDAR-load sweep is reduced to a ceiling CONFIRMATION at the duel size,
+# so `vlp16` is the class this campaign measures FIRST. Owner time-budget, on
+# the two measurements README's 2026-07-30 amendment states -- the duel size
+# already consumes 91% of 24 cores with perception off, so the sweep's premise
+# (baseline below the ceiling, heavier classes probing upward) is likely false
+# at its starting point; and Task 16's margin formula consumes only the duel
+# size, so the other two sizes were sweep context and go with the sweep.
+# NOT infeasibility: both classes are ordinary sensor configurations and
+# either would have run.
+#
+# BOTH BRANCHES ARE PRE-REGISTERED HERE, because which one applies is decided
+# MECHANICALLY BY THE DATA -- the campaign's standing rule, the same one the
+# `ladder_branch` / `abs_pose_gate_m` pair above follows, and the reason the
+# `-hf` cells' rate bindings stay null rather than guessing. The M4 claim's
+# second registered falsifier is "Whether the M4 ceiling criterion actually
+# fires at vlp16" (README, "Registered claim (Task 13)"), so:
+#
+#   ceiling criterion FIRES at vlp16   -> `vlp16` alone is SUFFICIENT. The
+#     spec's M4 success criterion is a fired ceiling criterion OR the 128-ch
+#     class, and the first disjunct is met, so no step-up is needed and both
+#     struck classes stay struck. This is the branch the strike assumes.
+#   ceiling criterion DOES NOT FIRE at vlp16 -> the claim is FALSIFIED and the
+#     ceiling has not been located, so a STEP-UP class is needed to find where
+#     it is. `32ch` is that step-up, pre-registered as such HERE and now.
+#     Reinstating it in that case is an ANTICIPATED amendment, not a novel
+#     one: the branch and its trigger are registered before any P3 run, so
+#     acting on it is not a definition settled after seeing data.
+#
+# `128ch` stays struck on EITHER branch: once the criterion fires at a lower
+# class nothing needs it, and if it does not fire at `vlp16` the informative
+# next probe is the adjacent class, not the extreme one.
+#
+# Recorded as a COMMENT rather than a per-entry `dropped:` field, unlike the
+# cells above: `cell_info.merge` copies every non-meta class key into the
+# merged cell JSON at TOP level, so a class-level `dropped:` would read there
+# as if the CELL were dropped. Both entries stay REGISTERED -- struck is not
+# deleted, and `cell_info --class 32ch` still resolves, so taking the step-up
+# branch needs no edit to THIS file.
+#
+# It DOES need operator work, and the record says so rather than implying
+# turnkey: both sweep launchers REFUSE a --class whose sensor arguments are not
+# spelled out, because nothing maps a class id onto them
+# (cells/tier4-native.sh's BENCH_TIER4_SWEEP_ARGS refusal, cells/extension.sh's
+# BENCH_RUNNER_SWEEP_ARGS one -- a sweep run that quietly used the baseline
+# VLP16 rig would be filed as a 32ch measurement). That mapping was owed to
+# Task 26, which is struck, so it has NO owner now and the refusal stands until
+# someone writes it. So reinstating `32ch` is a DECISION rather than an
+# amendment -- which is what "anticipated" means above -- but not a decision
+# with zero operator cost.
 sweep_classes:
   - { id: vlp16, channels: 16, points_per_second: 288000, applies_to: [A, B, E] }
   - { id: 32ch, channels: 32, points_per_second: 1200000, applies_to: [A, B, E] }
   - { id: 128ch, channels: 128, points_per_second: 4600000, applies_to: [A, B, E] }
 sweep_arms: [paced, unpaced, ablation] # ablation = publish-disabled baseline
+# M4 camera-load arm (spec: M4): each approach's native camera path, observer
+# as the only consumer, topic names as-emitted. 20 fps == the 20 Hz tick
+# ceiling (P1 Verdict 4: a higher request would be silently clamped).
+#
+# STRUCK IN FULL 2026-07-30 by the owner's core-duel scope cut (owner
+# time-budget; README's 2026-07-30 amendment): this campaign has NO
+# camera-load axis, on any approach. All three classes stay registered for the
+# same reason the sweep classes above do, recorded as a comment for the same
+# `cell_info.merge` reason, and `runner/spawn.py`'s native camera spawn plus
+# `runner/__main__.py`'s --cameras/--camera-* flags stay committed and
+# unexercised by this campaign.
+camera_classes:
+  - { id: cam1, cameras: 1, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }
+  - { id: cam3, cameras: 3, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }
+  - { id: cam6, cameras: 6, width: 1600, height: 900, fps: 20, applies_to: [A, B, E] }

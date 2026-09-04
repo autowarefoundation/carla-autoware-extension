@@ -1,0 +1,47 @@
+# bench_observer topic list for cell B-hf (tier4-native approach).
+#
+# Identical to the extension cells' list: both approaches publish the
+# Autoware-side topic names, so M2/M5 compare like with like. The
+# control topic is the GATED /control/command/control_cmd, not the raw
+# /control/trajectory_follower/control_cmd.
+#
+# CONFIRMED ON THE WIRE by Task 9 (wire-visibility diagnostic): the
+# LiDAR row's name is emitted exactly as written here by the fork
+# (`ros_topic_name=/sensing/lidar/top/pointcloud_raw_ex` -> DDS topic
+# `rt/sensing/lidar/top/pointcloud_raw_ex`), recorded live at 10.1 Hz
+# by the stock bench_observer. No name needed correcting. P1 Verdict
+# 8.4's "invisible to every ros2 CLI" was the CONSUMER's transport:
+# this cell MUST run `--rmw rmw_fastrtps_cpp --shm off`, because the
+# fork announces SHM-only user-data locators that ROS 2 Humble's
+# Fast-DDS 2.6.11 matches but cannot read. See
+# benchmarks/patches/tier4-native/README.md, "ROS 2 wire visibility".
+#
+# PublishedTime topics are NOT listed here yet. They are appended in
+# Tasks 13/20, after live discovery on the running stack
+# (`ros2 topic list | grep published_time`) -- a pre-P3 registration step,
+# because a guessed name records silence as "no publisher-side stamps"
+# rather than as a wrong topic. On the pinned universe-devel-cuda image the
+# message is autoware_internal_msgs/msg/PublishedTime (verified against the
+# image; NOT autoware_internal_debug_msgs), so an appended line reads:
+#   - "<topic>|autoware_internal_msgs/msg/PublishedTime|published_time"
+#
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
+# (benchmarks/observer/src/bench_observer.cpp). `generic` records serialized
+# size. The typed kinds record the 0 size sentinel in observer.csv and also
+# write their own file: `odometry` -> odometry.csv, `pose` -> pose.csv, `tf` ->
+# tf.csv (whose fourth field is the child_frame_id it filters on).
+# out_dir is supplied by run.sh as -p out_dir:=/out, not from this file.
+#
+# AMENDED 2026-07-29 (R3, before any P3 run), extending the history above: the
+# NDT pose line's kind is the typed `pose` kind, not `generic`. A generic
+# subscription records stamp + serialized size only, so no NDT x/y was
+# recorded anywhere in the campaign and M5's registered `pose_error_m` -- NDT
+# pose minus CARLA ground truth -- had no data source at all.
+/**:
+  ros__parameters:
+    topics:
+      - /sensing/lidar/top/pointcloud_raw_ex|sensor_msgs/msg/PointCloud2|generic
+      - /localization/pose_estimator/pose_with_covariance|geometry_msgs/msg/PoseWithCovarianceStamped|pose
+      - /localization/kinematic_state|nav_msgs/msg/Odometry|odometry
+      - /control/command/control_cmd|autoware_control_msgs/msg/Control|generic

@@ -109,17 +109,36 @@ TOP_LIDAR_ROS_NAME = "velodyne_top"
 # verbatim ros_topic_name override, so the slash never reaches DDS topic construction.
 IMU_ROS_NAME = IMU_FRAME
 
-# LiDAR ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay
-# (the concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans.
-_LIDAR_QOS_RELIABILITY = "best_effort"
-_LIDAR_QOS_DURABILITY = "volatile"
-_LIDAR_QOS_HISTORY_DEPTH = "5"
+# ROS 2 QoS: best_effort / volatile / depth 5 to match the AWSIM top-lidar relay (the
+# concatenate/relay node subscribes best_effort). depth 5 buffers a few 10 Hz scans. Shared
+# by the top LiDAR and, best-effort, by the camera path's cameras
+# (camera_attributes below) -- it is the one AWSIM-relay QoS profile, not two
+# independent ones.
+#
+# The cameras were the M4 camera-load arm's. That arm was STRUCK
+# 2026-07-30 by the owner's core-duel scope cut
+# (benchmarks/config/cells.yaml `camera_classes`), so this campaign
+# exercises the LiDAR half only. Nothing about the profile changes, and
+# the camera path stays supported for any other caller.
+_QOS_RELIABILITY = "best_effort"
+_QOS_DURABILITY = "volatile"
+_QOS_HISTORY_DEPTH = "5"
 
 # Velodyne VLS-128 top lidar: 128 channels, 10 Hz spin (the AWSIM top-lidar publish rate,
 # NOT a naively-assumed 20 -- the Autoware topic contract is 10 Hz best_effort).
 _TOP_LIDAR_CHANNELS = "128"
 _TOP_LIDAR_ROTATION_FREQUENCY = "10"
 _TOP_LIDAR_RANGE = "120.0"
+
+# points_per_second was, until Task 12, left UNSET here: the top lidar silently inherited
+# the sensor.lidar.ray_cast blueprint's own default (600000 -- RecommendedValues[0] on the
+# "points_per_second" FActorVariation in ActorBlueprintFunctionLibrary.cpp::MakeLidarDefinition,
+# Id == "ray_cast"; verified against the fork build this runner targets, not CARLA 0.9's
+# unrelated 56000 default). Pinning that SAME value here, explicitly, keeps every existing
+# spawn byte-identical (regression pin: tests/e2e/test_runner_kit.py) while giving the M4
+# sweep classes (vlp16/32ch/128ch, benchmarks/config/cells.yaml) a key to drive via
+# --lidar-pps -> top_lidar_attributes(overrides=...).
+_TOP_LIDAR_POINTS_PER_SECOND = "600000"
 
 # sensor_tick pins the capture period (sim seconds) so each cloud is a fixed 0.05 s
 # accumulation REGARDLESS of the host loop mode. In sync (0.05 fixed delta) this matches the
@@ -131,6 +150,16 @@ _TOP_LIDAR_RANGE = "120.0"
 # restores full 0.05 s clouds (~15k points) at 20 Hz in async too, so NDT locks the same as
 # sync. Verified live 2026-07-23. Applied to the IMU as well so it does not flood at ~140 Hz.
 _SENSOR_TICK = "0.05"
+
+
+def _with_overrides(attrs: dict[str, str], overrides: dict[str, str] | None) -> dict[str, str]:
+    """Merge ``overrides`` into ``attrs`` last (explicit wins). ``None`` or an empty mapping
+    is a true no-op, so every attribute-builder function's default call (no ``overrides``
+    argument) reproduces today's exact dict -- the regression pin the M4 sweep-class/camera
+    CLI flags rest on (tests/e2e/test_runner_kit.py)."""
+    if not overrides:
+        return attrs
+    return {**attrs, **overrides}
 
 
 def ego_attributes() -> dict[str, str]:
@@ -146,9 +175,17 @@ def ego_attributes() -> dict[str, str]:
     }
 
 
-def top_lidar_attributes() -> dict[str, str]:
-    """Native ROS 2 attributes + geometry for the top LiDAR (all values are strings)."""
-    return {
+def top_lidar_attributes(overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Native ROS 2 attributes + geometry for the top LiDAR (all values are strings).
+
+    ``overrides`` (merged last, explicit wins -- see ``_with_overrides``) is how the M4
+    sweep-class CLI flags (--lidar-channels/--lidar-pps/--lidar-rotation-hz/--lidar-range)
+    drive the LiDAR class matrix (benchmarks/config/cells.yaml ``sweep_classes``: vlp16/
+    32ch/128ch) without touching this function's own defaults. Called with no ``overrides``
+    (the default), this reproduces today's EXACT dict -- pinned in
+    tests/e2e/test_runner_kit.py.
+    """
+    attrs = {
         # Required native-build discriminator attrs first: `_apply_attributes` raises its named,
         # actionable error on these BEFORE mutating the blueprint, so a stock build lacking
         # the native-ROS2 patches fails loudly rather than half-configured. `ros_name`
@@ -157,14 +194,16 @@ def top_lidar_attributes() -> dict[str, str]:
         "ros_topic_name": TOP_LIDAR_TOPIC,
         "ros2_extended_lidar": "true",
         "ros_name": TOP_LIDAR_ROS_NAME,
-        "ros2_qos_reliability": _LIDAR_QOS_RELIABILITY,
-        "ros2_qos_durability": _LIDAR_QOS_DURABILITY,
-        "ros2_qos_history_depth": _LIDAR_QOS_HISTORY_DEPTH,
+        "ros2_qos_reliability": _QOS_RELIABILITY,
+        "ros2_qos_durability": _QOS_DURABILITY,
+        "ros2_qos_history_depth": _QOS_HISTORY_DEPTH,
         "channels": _TOP_LIDAR_CHANNELS,
         "rotation_frequency": _TOP_LIDAR_ROTATION_FREQUENCY,
         "range": _TOP_LIDAR_RANGE,
+        "points_per_second": _TOP_LIDAR_POINTS_PER_SECOND,
         "sensor_tick": _SENSOR_TICK,
     }
+    return _with_overrides(attrs, overrides)
 
 
 def imu_attributes() -> dict[str, str]:
@@ -189,21 +228,48 @@ _REQUIRED_NATIVE_ATTRS = ("ros_topic_name", "ros2_extended_lidar")
 # falls back to direct VehicleControl), so this one keeps the has_attribute skip.
 _OPTIONAL_ATTRS = ("ros2_ackermann_control",)
 
+# Camera policy. Written for the M4 camera-load arm, which was STRUCK
+# 2026-07-30 by the owner's core-duel scope cut
+# (benchmarks/config/cells.yaml `camera_classes`), so no benchmark cell
+# drives this path any more: it stays committed and unexercised by the
+# campaign. The policy below is unchanged and still correct for any
+# other caller of --cameras.
+#
+# ros_topic_name is still the one load-bearing native
+# attr to fail loudly on. ros2_extended_lidar has no camera meaning, so it is NOT in the
+# camera required set. Unlike the LiDAR, sensor.camera.rgb does not declare ros2_qos_* at
+# all (only MakeLidarDefinition does) -- so the QoS trio is genuinely best-effort here:
+# applied where the native path accepts them, skipped (as-emitted default QoS) otherwise.
+_CAMERA_REQUIRED_ATTRS = ("ros_topic_name",)
+_CAMERA_OPTIONAL_ATTRS = ("ros2_qos_reliability", "ros2_qos_durability", "ros2_qos_history_depth")
 
-def _apply_attributes(blueprint, attrs: dict[str, str]) -> None:
+
+def _apply_attributes(
+    blueprint,
+    attrs: dict[str, str],
+    required: tuple[str, ...] = _REQUIRED_NATIVE_ATTRS,
+    optional: tuple[str, ...] = _OPTIONAL_ATTRS,
+) -> None:
     """Apply ``attrs`` to ``blueprint``, failing loudly on missing load-bearing native attrs.
 
     Policy (run_g0.sh preflight style -- name the attribute, the blueprint, and the cause):
-      * ``_REQUIRED_NATIVE_ATTRS`` (ros_topic_name / ros2_extended_lidar): RAISE if the
-        blueprint does not declare them -- a build lacking the fork's native-ROS2 publisher
-        patches must not silently produce a stock-layout cloud on the Autoware topic.
-      * ``_OPTIONAL_ATTRS`` (ros2_ackermann_control): SKIP if absent (genuinely optional).
+      * ``required`` (default ``_REQUIRED_NATIVE_ATTRS``: ros_topic_name /
+        ros2_extended_lidar): RAISE if the blueprint does not declare them -- a build
+        lacking the fork's native-ROS2 publisher patches must not silently produce a
+        stock-layout cloud on the Autoware topic.
+      * ``optional`` (default ``_OPTIONAL_ATTRS``: ros2_ackermann_control): SKIP if absent
+        (genuinely optional).
       * everything else (role_name / ros2_qos_* / channels / rotation_frequency / range):
         set unconditionally -- stock geometry attrs always exist, and a missing native QoS
         attr surfaces loudly as CARLA's own set_attribute error.
+
+    The camera spawn path (spawn_camera) passes its own ``required``/``optional`` --
+    ``_CAMERA_REQUIRED_ATTRS``/``_CAMERA_OPTIONAL_ATTRS`` -- because sensor.camera.rgb does
+    not declare ros2_qos_* at all, so those must be best-effort-skipped rather than raising.
+    The LiDAR/IMU/ego callers all keep the module defaults above, unchanged.
     """
     for key, value in attrs.items():
-        if key in _REQUIRED_NATIVE_ATTRS and not blueprint.has_attribute(key):
+        if key in required and not blueprint.has_attribute(key):
             raise RuntimeError(
                 f"blueprint {blueprint.id!r} does not declare the required native ROS 2 "
                 f"attribute {key!r}: this CARLA build lacks the native-ROS2 publisher "
@@ -212,7 +278,7 @@ def _apply_attributes(blueprint, attrs: dict[str, str]) -> None:
                 f"topic and silently mis-feed the NDT/detection gates. Rebuild CARLA with the "
                 f"native-ROS2 layer, or verify the blueprint id."
             )
-        if key in _OPTIONAL_ATTRS and not blueprint.has_attribute(key):
+        if key in optional and not blueprint.has_attribute(key):
             continue
         blueprint.set_attribute(key, value)
 
@@ -224,19 +290,31 @@ def spawn_ego(world, blueprint_library, spawn_transform):
     return world.spawn_actor(blueprint, spawn_transform)
 
 
-def _spawn_sensor(world, blueprint_library, ego, blueprint_id, attrs, location, rotation):
+def _spawn_sensor(
+    world,
+    blueprint_library,
+    ego,
+    blueprint_id,
+    attrs,
+    location,
+    rotation,
+    required: tuple[str, ...] = _REQUIRED_NATIVE_ATTRS,
+    optional: tuple[str, ...] = _OPTIONAL_ATTRS,
+):
     """Attach a sensor to ``ego`` at (``location`` [m], ``rotation`` [deg]) with ``attrs``.
 
     ``rotation`` is the CARLA/UE Rotator (roll, pitch, yaw) in degrees from
     ``runner.kit.carla_attach_rotation`` -- the composed kit mount rotation, applied here so
     the physical CARLA sensor frame matches the TF Autoware generates from the same kit yamls.
     ``carla`` is imported lazily HERE (never at module top level) so the pure attribute /
-    transform math stays importable under bare pytest with no CARLA egg.
+    transform math stays importable under bare pytest with no CARLA egg. ``required``/
+    ``optional`` pass straight through to ``_apply_attributes`` (default: the LiDAR/IMU/ego
+    native-attr policy; spawn_camera passes its own -- see ``_CAMERA_REQUIRED_ATTRS``).
     """
     import carla
 
     blueprint = blueprint_library.find(blueprint_id)
-    _apply_attributes(blueprint, attrs)
+    _apply_attributes(blueprint, attrs, required=required, optional=optional)
     transform = carla.Transform(
         carla.Location(x=location[0], y=location[1], z=location[2]),
         carla.Rotation(roll=rotation[0], pitch=rotation[1], yaw=rotation[2]),
@@ -244,9 +322,10 @@ def _spawn_sensor(world, blueprint_library, ego, blueprint_id, attrs, location, 
     return world.spawn_actor(blueprint, transform, attach_to=ego)
 
 
-def spawn_top_lidar(world, blueprint_library, ego, kit: KitConfig):
+def spawn_top_lidar(world, blueprint_library, ego, kit: KitConfig, overrides=None):
     """Spawn the top LiDAR at its kit-derived pose (translation + mount rotation) with native
-    ROS 2 attributes."""
+    ROS 2 attributes. ``overrides`` (default None -- today's exact rig) feeds
+    ``top_lidar_attributes`` for the M4 sweep-class CLI flags."""
     location = carla_attach_location(kit, TOP_LIDAR_FRAME)
     rotation = carla_attach_rotation(kit, TOP_LIDAR_FRAME)
     return _spawn_sensor(
@@ -254,7 +333,7 @@ def spawn_top_lidar(world, blueprint_library, ego, kit: KitConfig):
         blueprint_library,
         ego,
         TOP_LIDAR_BLUEPRINT,
-        top_lidar_attributes(),
+        top_lidar_attributes(overrides=overrides),
         location,
         rotation,
     )
@@ -271,11 +350,15 @@ def spawn_imu(world, blueprint_library, ego, kit: KitConfig):
     )
 
 
-def spawn_sensors(world, blueprint_library, ego, kit: KitConfig):
+def spawn_sensors(world, blueprint_library, ego, kit: KitConfig, lidar_overrides=None):
     """Spawn the native sensor rig (top LiDAR + IMU) attached to ``ego``.
 
     Returns the spawned sensor actors. The GNSS pose is supplied by the extension, so no
-    CARLA GNSS sensor is spawned.
+    CARLA GNSS sensor is spawned. ``lidar_overrides`` (default None -- today's exact rig)
+    threads through to ``spawn_top_lidar``/``top_lidar_attributes`` for the M4 sweep-class
+    CLI flags (--lidar-channels/--lidar-pps/--lidar-rotation-hz/--lidar-range); it never
+    touches the IMU. Cameras are a SEPARATE fan-out (``spawn_cameras``), not part of this
+    function -- see ``runner.__main__.main``.
 
     Spawned ONE AT A TIME and accumulated in ``spawned`` as each succeeds, rather than built
     as a single list-literal return: if a LATER sensor spawn raises (e.g. the IMU spawn fails
@@ -291,8 +374,129 @@ def spawn_sensors(world, blueprint_library, ego, kit: KitConfig):
     """
     spawned = []
     try:
-        spawned.append(spawn_top_lidar(world, blueprint_library, ego, kit))
+        spawned.append(
+            spawn_top_lidar(world, blueprint_library, ego, kit, overrides=lidar_overrides)
+        )
         spawned.append(spawn_imu(world, blueprint_library, ego, kit))
+    except Exception:
+        for actor in spawned:
+            try:
+                actor.destroy()
+            except Exception:
+                pass
+        raise
+    return spawned
+
+
+# --- M4 camera-load arm: native camera spawn (mirrors the LiDAR pattern above) ---
+
+CAMERA_BLUEPRINT = "sensor.camera.rgb"
+
+# Defaults mirror benchmarks/config/cells.yaml's camera_classes (cam1/cam3/cam6: all
+# 1600x900 @ 20 fps -- the tick ceiling; a higher request is silently clamped, P1 Verdict 4).
+CAMERA_DEFAULT_WIDTH = 1600
+CAMERA_DEFAULT_HEIGHT = 900
+CAMERA_DEFAULT_SENSOR_TICK = "0.05"  # 1 / 20 fps
+
+# All spawned cameras attach at this single, deliberately simple pose (ego origin, identity
+# rotation) rather than the kit's per-camera frames (camera0/camera_link .. camera5/
+# camera_link in runner/config/sensor_kit_calibration.yaml). Those are OFF-centreline, and
+# runner/kit.py's own module docstring flags that reusing carla_attach_location/_rotation for
+# an off-centre sensor needs a Y-flip fix at the CARLA boundary that is NOT implemented ("...
+# out of scope here and flagged rather than silently applied, because the live gross-error
+# gate ... cannot verify a Y flip"). The M4 camera arm measures camera-COUNT/resolution/rate
+# throughput with the observer as the only consumer and topic names as-emitted -- not mount
+# fidelity -- so silently reusing the flagged-wrong kit frames here would be exactly the
+# silent misuse that docstring warns against, for no benefit to what this arm measures.
+CAMERA_LOCATION = (0.0, 0.0, 0.0)
+CAMERA_ROTATION = (0.0, 0.0, 0.0)
+
+
+def camera_topic(index: int) -> str:
+    """The indexed Autoware-style camera topic ``/sensing/camera/camera<N>/image_raw``."""
+    return f"/sensing/camera/camera{index}/image_raw"
+
+
+def camera_attributes(
+    index: int,
+    width: int = CAMERA_DEFAULT_WIDTH,
+    height: int = CAMERA_DEFAULT_HEIGHT,
+    sensor_tick: float | str = CAMERA_DEFAULT_SENSOR_TICK,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Native ROS 2 attributes for the ``index``-th camera (all values are strings).
+
+    Mirrors ``top_lidar_attributes()``: ``ros_topic_name`` is the native per-actor topic
+    override; here it is set to the SAME indexed string as ``ros_name``
+    (``/sensing/camera/camera<N>/image_raw``) -- there is no per-camera Autoware TF frame
+    contract for this M4 load arm to key off of (observer as the only consumer, topic names
+    as-emitted), unlike the top LiDAR/IMU's frame_id-mangling fix (``ros_name`` ==
+    "velodyne_top"/kit frame there). QoS attrs are the SAME best_effort/volatile/depth-5
+    profile as the LiDAR, applied best-effort: ``sensor.camera.rgb`` does not declare
+    ``ros2_qos_*`` at all, so ``spawn_camera`` passes ``_CAMERA_OPTIONAL_ATTRS`` to
+    ``_apply_attributes`` and these are silently skipped rather than raising -- the camera
+    then publishes with its as-emitted default QoS.
+    """
+    topic = camera_topic(index)
+    attrs = {
+        "ros_topic_name": topic,
+        "ros_name": topic,
+        "ros2_qos_reliability": _QOS_RELIABILITY,
+        "ros2_qos_durability": _QOS_DURABILITY,
+        "ros2_qos_history_depth": _QOS_HISTORY_DEPTH,
+        "image_size_x": str(width),
+        "image_size_y": str(height),
+        "sensor_tick": str(sensor_tick),
+    }
+    return _with_overrides(attrs, overrides)
+
+
+def spawn_camera(
+    world,
+    blueprint_library,
+    ego,
+    index: int,
+    width: int = CAMERA_DEFAULT_WIDTH,
+    height: int = CAMERA_DEFAULT_HEIGHT,
+    sensor_tick: float | str = CAMERA_DEFAULT_SENSOR_TICK,
+):
+    """Spawn the ``index``-th camera attached to ``ego`` (see ``camera_attributes``)."""
+    return _spawn_sensor(
+        world,
+        blueprint_library,
+        ego,
+        CAMERA_BLUEPRINT,
+        camera_attributes(index, width, height, sensor_tick),
+        CAMERA_LOCATION,
+        CAMERA_ROTATION,
+        required=_CAMERA_REQUIRED_ATTRS,
+        optional=_CAMERA_OPTIONAL_ATTRS,
+    )
+
+
+def spawn_cameras(
+    world,
+    blueprint_library,
+    ego,
+    count: int,
+    width: int = CAMERA_DEFAULT_WIDTH,
+    height: int = CAMERA_DEFAULT_HEIGHT,
+    sensor_tick: float | str = CAMERA_DEFAULT_SENSOR_TICK,
+):
+    """Spawn ``count`` cameras (indices ``0``..``count - 1``) attached to ``ego``
+    (``--cameras``, default 0 -- no cameras, today's exact rig).
+
+    Same partial-spawn safety as ``spawn_sensors`` (see that function's docstring for the
+    full rationale): on any exception, every camera already spawned IN THIS CALL is
+    destroyed (each destroy in its own try/except) before re-raising, so the caller never
+    has to reconcile a partially-spawned camera fan-out.
+    """
+    spawned = []
+    try:
+        for index in range(count):
+            spawned.append(
+                spawn_camera(world, blueprint_library, ego, index, width, height, sensor_tick)
+            )
     except Exception:
         for actor in spawned:
             try:

@@ -1,0 +1,5 @@
+n=180
+linear (x,y,z) first: (-1.4666111207428667e-12, 0.002172556472942233, 0.0)
+|v| min=0.00216644 max=0.00217256  threshold=1e-3
+over_threshold=180/180
+angular.z first=9.98365e-05

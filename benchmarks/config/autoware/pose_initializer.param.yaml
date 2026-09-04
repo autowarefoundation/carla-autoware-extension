@@ -1,0 +1,123 @@
+# pose_initializer.param.yaml -- Autoware's own SIMULATION value for the
+# pose_initializer stop check, applied uniformly to EVERY cell of this
+# campaign.
+#
+# This is a shared MEASUREMENT-ENVIRONMENT configuration, not an
+# approach-side change. It is bind-mounted read-only over the image's own
+# copy of the same path, identically in all three cell families:
+#   docker/compose.yaml                  cells A / A-hf / C
+#   benchmarks/cells/tier4_autoware.sh   cells B / B-hf / B45 / D
+#   benchmarks/cells/python-bridge.sh    cells E / E0 / E-opt
+# A mount present for B but absent for A would make it an approach-side
+# change, so identical-in-all-three is a requirement and not a convenience.
+#
+# SOURCE -- verbatim, except for the single line named below:
+#   path    /opt/autoware/share/autoware_launch/config/localization/
+#           pose_initializer.param.yaml
+#   sha256  a7ed49a2fabad3e46d023969f16b63d3d1ab3d66a555d88f5914f3ef48baeee2
+#   image   ghcr.io/autowarefoundation/autoware at sha256:5c22369a312f1cd8
+#           a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee
+#           (benchmarks/pins.yaml autoware_universe_devel.digest)
+#
+#   VERIFIED byte-identical -- same sha256 -- in the other three images a
+#   mounting cell family actually runs: autoware:universe-devel (cells
+#   A/A-hf/C, docker/compose.yaml), bridge-bench:latest (cell E0) and
+#   bridge-bench-patched:latest (cells E/E-opt). So this copy is a ONE-LINE
+#   change in every family that mounts it, not a cross-version file swap.
+#   NEVER verified for cell B45: its pinned autoware:universe-devel-0.45.1
+#   (pins.yaml autoware_045) is not on this workstation, and the comparison
+#   is now MOOT rather than owed -- cell B45 was STRUCK 2026-07-30 by the
+#   owner's core-duel scope cut (cells.yaml `dropped:`), which took Task 21
+#   with it, so no B45 run will be filed and this mount never reaches that
+#   image. Recorded rather than deleted: if B45 is ever revived, re-read
+#   that image's own copy and compare before filing a run. Note what this
+#   is NOT -- the unverified comparison is a logistics gap (the image is
+#   absent from this box), never a finding about the 0.45 image or about
+#   carrying the tier4 fork across releases.
+#
+# THE SINGLE CHANGED LINE -- same key, same indentation, same position:
+#   source:  stop_check_enabled: <the launch substitution for the variable
+#            of the same name>
+#   here:    stop_check_enabled: false
+#
+#   The source's text is described in words rather than reproduced
+#   literally ON PURPOSE: launch_ros substitutes over this file as TEXT,
+#   comments included. ParameterFile.evaluate does
+#   perform_substitutions(context, parse_substitution(f.read())) on the
+#   whole file -- this image's
+#   /opt/ros/humble/lib/python3.10/site-packages/launch_ros/
+#   parameter_descriptions.py, lines 239-243 -- so a substitution written
+#   literally in a comment would itself be substituted.
+#
+# WHY THIS IS NOT RELAXING A SAFETY CHECK -- Autoware itself ships this
+# value for simulation:
+#   tier4_simulator_launch/launch/simulator.launch.xml:193 and :211 both
+#     pass stop_check_enabled with value false;
+#   tier4_localization_launch/launch/pose_twist_estimator/
+#     pose_twist_estimator.launch.xml:5-6 derives it true for
+#     system_run_mode == online and FALSE for logging_simulation, under
+#     Autoware's own comment on the line above them -- "only when running
+#     with a real vehicle, the pose_initializer judges the stop".
+# The e2e_simulator path this campaign uses simply defaults system_run_mode
+# to online (autoware_launch/launch/autoware.launch.xml:37) and never
+# forwards an override, so it lands on the real-vehicle branch by default.
+# This file therefore applies upstream's own simulator configuration; it
+# does not invent a relaxation.
+#
+# WHY NOT system_run_mode:=logging_simulation INSTEAD: e2e_simulator.
+# launch.xml does not forward that argument, so it is unreachable from the
+# launch command line, and it has a SECOND consumer --
+# autoware_launch/launch/components/tier4_system_component.launch.xml:10
+# passes it on as run_mode -- so flipping it would change a second thing
+# inside the measured system.
+#
+# WHY IT CHANGES NO MEASURED QUANTITY: the stop check gates only
+# pose_initializer::on_initialize, an initialization PRECONDITION rather
+# than an acceptance threshold; no registered metric reads it; and it
+# already PASSES on cell A (measured: 0.0 m/s on all three VelocityReport
+# components, 0 of 400 samples over the 1e-3 m/s threshold) and on the E
+# family, which localizes today. So it removes a false positive on cell B
+# and changes nothing observable elsewhere.
+#
+# The finding it works around is PRESERVED, not laundered:
+# benchmarks/README.md, "Localization initialization (Task 13)", keeps cell
+# B's 2.17-2.41 mm/s parked lateral velocity beside cell A's exact 0.0 as a
+# per-approach interop observation, and carries this override's disclosure
+# beside it.
+/**:
+  ros__parameters:
+    user_defined_initial_pose:
+      enable: $(var user_defined_initial_pose/enable)
+      pose: $(var user_defined_initial_pose/pose)
+
+    gnss_pose_timeout: 3.0 # [sec]
+    stop_check_duration: 3.0 # [sec]
+    pose_error_threshold: 5.0 # [m]
+    pose_error_check_enabled: false
+    ekf_enabled: $(var ekf_enabled)
+    gnss_enabled: $(var gnss_enabled)
+    yabloc_enabled: $(var yabloc_enabled)
+    ndt_enabled: $(var ndt_enabled)
+    stop_check_enabled: false
+
+    # from gnss
+    gnss_particle_covariance:
+      [
+        1.0, 0.0, 0.0,  0.0,  0.0,  0.0,
+        0.0, 1.0, 0.0,  0.0,  0.0,  0.0,
+        0.0, 0.0, 0.01, 0.0,  0.0,  0.0,
+        0.0, 0.0, 0.0,  0.01, 0.0,  0.0,
+        0.0, 0.0, 0.0,  0.0,  0.01, 0.0,
+        0.0, 0.0, 0.0,  0.0,  0.0,  10.0,
+      ]
+
+    # output
+    output_pose_covariance:
+      [
+        1.0, 0.0, 0.0,  0.0,  0.0,  0.0,
+        0.0, 1.0, 0.0,  0.0,  0.0,  0.0,
+        0.0, 0.0, 0.01, 0.0,  0.0,  0.0,
+        0.0, 0.0, 0.0,  0.01, 0.0,  0.0,
+        0.0, 0.0, 0.0,  0.0,  0.01, 0.0,
+        0.0, 0.0, 0.0,  0.0,  0.0,  0.2,
+      ]

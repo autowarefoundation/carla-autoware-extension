@@ -1,0 +1,46 @@
+# M3 process map for cell A (extension approach, Town10HD_Opt).
+#
+# Grounding for every entry below (repo evidence, checked live against
+# scripts/e2e/run_e2e.sh, docker/compose.yaml and pins.yaml -- not the
+# schema example in the task-6 brief, which shows a packaged
+# "CarlaUnreal-Linux-" Shipping binary that this campaign never
+# produces: every UE5-tree cell in this evaluation runs the shared
+# engine's UnrealEditor in -game mode (manifest placement.run_mode =
+# "editor-game", tests/benchmarks/test_manifest.py), never a packaged
+# build. Using the brief's literal pattern here would match ZERO
+# processes and silently read as "carla-server used no CPU" -- exactly
+# the failure mode this file's header comments exist to head off.
+processes:
+  # UnrealEditor -game, extension fork tree (pins.yaml
+  # extension_carla_fork.path = ~/src/carla-autoware-integration).
+  # run_e2e.sh's exact invocation is:
+  #   "$CARLA_UNREAL_ENGINE_PATH/.../UnrealEditor" \
+  #     "$CARLA_ROOT/Unreal/CarlaUnreal/CarlaUnreal.uproject" "$MAP" -game ...
+  # The tree-path segment disambiguates from the tier4-native fork
+  # (~/src/carla-autoware-native), which uses the identical uproject
+  # filename in a sibling tree (see B.yaml).
+  - label: carla-server
+    pattern: carla-autoware-integration/Unreal/CarlaUnreal/CarlaUnreal.uproject
+  # Host-side spawn+tick runner (repo-root runner/__main__.py), invoked
+  # by run_e2e.sh's final line as `python3 -m runner --host ...`.
+  - { label: runner, pattern: python3 -m runner }
+  # Clear-road/all-green injector, run identically in every sim cell
+  # (Task 7 brief: "Makes the dummy-perception injector a first-class
+  # harness component run identically in every cell"; Task 8 brief
+  # step 8: "injector via docker exec ... identical invocation every
+  # cell"). Currently scripts/e2e/dummy_perception.py; Task 7 moves it
+  # to benchmarks/injector/dummy_perception.py -- the pattern matches
+  # either location since pgrep -f matches the filename substring.
+  - { label: injector, pattern: dummy_perception }
+  # Autoware stack container. docker/compose.yaml pins container_name:
+  # autoware, and Task 8's benchmarks/cells/extension.sh brings up that
+  # exact service (`docker compose -f docker/compose.yaml up -d
+  # autoware`), so this name is created by committed code for this cell.
+  - { label: autoware, container: autoware }
+  # bench_observer/bench_pub recorder (Task 5). RE-GROUNDED in Task 8:
+  # benchmarks/run.sh step 6 runs
+  #   docker run -d --name "$OBSERVER_CONTAINER" ...
+  # with OBSERVER_CONTAINER=bench-observer, and
+  # benchmarks/scripts/teardown.sh stops that same name. The container
+  # name is now fixed by committed code rather than by design intent.
+  - { label: observer, container: bench-observer }

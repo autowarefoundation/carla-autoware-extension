@@ -1,0 +1,21 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-07-29-22-01-58-899981-youtalk-desktop-111
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [autoware_carla_interface-1]: process started with pid [145]
+[INFO] [autoware_raw_vehicle_cmd_converter_node-2]: process started with pid [147]
+[INFO] [relay-3]: process started with pid [149]
+[INFO] [relay-4]: process started with pid [151]
+[INFO] [republish-5]: process started with pid [153]
+[INFO] [republish-6]: process started with pid [155]
+[INFO] [republish-7]: process started with pid [163]
+[INFO] [republish-8]: process started with pid [169]
+[INFO] [republish-9]: process started with pid [171]
+[INFO] [republish-10]: process started with pid [174]
+[INFO] [republish-11]: process started with pid [177]
+[autoware_carla_interface-1] [INFO] [1785362519.252178001] [autoware_carla_interface]: Using Autoware sensor kit calibration: carla_sensor_kit_description
+[autoware_carla_interface-1] [INFO] [1785362519.254555601] [autoware_carla_interface]: Registered sensor: top (type: sensor.lidar.ray_cast, topic: /sensing/lidar/top/pointcloud_raw_ex)
+[autoware_carla_interface-1] [INFO] [1785362519.254692677] [autoware_carla_interface]: Registered sensor: gnss (type: sensor.other.gnss, topic: /sensing/gnss/pose_with_covariance)
+[autoware_carla_interface-1] [INFO] [1785362519.254809059] [autoware_carla_interface]: Registered sensor: imu (type: sensor.other.imu, topic: /sensing/imu/tamagawa/imu_raw)
+[autoware_carla_interface-1] [INFO] [1785362519.257480281] [autoware_carla_interface]: Created LiDAR publisher: /sensing/lidar/top/pointcloud_raw_ex
+[autoware_carla_interface-1] [INFO] [1785362519.258666741] [autoware_carla_interface]: Created GNSS publisher: /sensing/gnss/pose_with_covariance
+[autoware_carla_interface-1] [INFO] [1785362519.259103362] [autoware_carla_interface]: Created IMU publisher: /sensing/imu/tamagawa/imu_raw
+[autoware_carla_interface-1] [INFO] [1785362519.259247227] [autoware_carla_interface]: Configured 3 sensors from mapping

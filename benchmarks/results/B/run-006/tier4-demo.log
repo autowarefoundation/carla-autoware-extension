@@ -1,0 +1,19 @@
+[INFO]: Deployed PostProcess profile: /home/youtalk/src/carla-autoware-native/Unreal/CarlaUnreal/Content/Carla/Config/PostProcess/autoware_demo.json
+Map 'None' is already loaded — skipping reload.
+Loaded map: Not set yet
+[INFO]: Applied settings:
+	synchronous mode: True
+	fixed time step: 20 (in Hz)
+	simulation dt: 0.05 (in seconds)
+	physics substepping: True
+	time scale: 1.00
+	pure step execution: False
+[INFO]: Ego spawned!
+[WARNING]: Kill this script before stopping simulation!
+[WARNING]: Simulation is 88.7 ms behind schedule
+[WARNING]: Simulation is 71.3 ms behind schedule
+[WARNING]: Simulation is 148.9 ms behind schedule
+[WARNING]: Simulation is 111.4 ms behind schedule
+[WARNING]: Simulation is 103.4 ms behind schedule
+[WARNING]: Simulation is 75.7 ms behind schedule
+[WARNING]: Simulation is 60.8 ms behind schedule

@@ -17,14 +17,15 @@
 # run_e2e.sh, launch_autoware.sh and arm_closed_loop.sh all source this file,
 # and an unknown map name is refused loudly in each rather than defaulted.
 #
-# WHAT IT DOES NOT COVER: scripts/e2e/dummy_perception.py runs container-side
-# under rclpy, where a bash function cannot be sourced, so it keeps two module
-# constants as BARE-INVOCATION fallbacks -- DEFAULT_MAP (from $MAP_DIR, itself
-# exported by the callers above) and EGO_X/EGO_Y, which duplicate
-# Nishi-Shinjuku's MAP_DEFAULT_GRID_CENTRE below. arm_closed_loop.sh always
-# overrides both (MAP_DIR via the container environment, the centre via
-# --ego-xy), so they apply only to a hand-run node -- but they are duplicates,
-# and keeping them in step with this table is manual.
+# WHAT IT DOES NOT COVER: benchmarks/injector/dummy_perception.py runs
+# container-side under rclpy, where a bash function cannot be sourced, so it
+# keeps two module constants as BARE-INVOCATION fallbacks -- DEFAULT_MAP
+# (from $MAP_DIR, itself exported by the callers above) and EGO_X/EGO_Y,
+# which duplicate Nishi-Shinjuku's MAP_DEFAULT_GRID_CENTRE below.
+# arm_closed_loop.sh always overrides both (MAP_DIR via the container
+# environment, the centre/size via --grid-center/--grid-size), so they
+# apply only to a hand-run node -- but they are duplicates, and keeping
+# them in step with this table is manual.
 #
 # carla_autoware_map_defaults <map-name> sets, for the caller to consume:
 #   MAP_DEFAULT_DIR          container-side Autoware bundle ("" = unknown map)
@@ -62,9 +63,25 @@ carla_autoware_map_defaults() {
       MAP_DEFAULT_GOAL="81571.616 50019.827 42.07 0.090888 0.995861"
       ;;
     Town10HD_Opt)
-      MAP_DEFAULT_DIR=/autoware_map/town10
+      # town10-REGEN, not town10-shifted, since 2026-07-29 (Task 11): the
+      # ladder's rung-2 bundle is the only Town10 bundle measured to clear the
+      # 0.5 m absolute G1 gate (0.089 m, against 0.824 m on the dy = -0.475
+      # rigid shift and 0.570 m on the dy = -0.607 refit), and the only one on
+      # which the ego completes a closed-loop route. pins.yaml
+      # town10_pcd_regen; the rigid variants stay mounted and pinned as the
+      # provenance record they are.
+      MAP_DEFAULT_DIR=/autoware_map/town10-regen
       MAP_DEFAULT_GRID_CENTRE=""
-      MAP_DEFAULT_GOAL="-101.021 55.014 0.0 -0.910299 0.413952"
+      # RE-PICKED 2026-07-29 (Task 11) from (-101.021, 55.014): the original
+      # 438.9 m route's final stretch is not NDT-viable on any Town10 bundle
+      # measured, so the goal moved to station 258.9 m of the same polyline.
+      # yaw_rad 2.926174 -> qz = sin(yaw/2) = 0.994205, qw = cos(yaw/2) =
+      # 0.107501. MUST stay in step with
+      # benchmarks/config/routes/Town10HD_Opt.yaml's `goal:` --
+      # arm_closed_loop.sh reads THIS table, not the route file, so a stale
+      # entry here silently routes to the old goal while every other component
+      # believes the new one.
+      MAP_DEFAULT_GOAL="74.869 66.891 0.0 0.994205 0.107501"
       ;;
     *)
       MAP_DEFAULT_DIR=""

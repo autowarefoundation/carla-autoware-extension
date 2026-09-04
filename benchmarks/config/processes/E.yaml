@@ -1,0 +1,34 @@
+# M3 process map for cell E (python-bridge approach, CARLA 0.9.15,
+# Town10HD_Opt, closed-loop; runs WITH
+# patches/python-bridge/0001-lidar-is-dense.patch, per
+# benchmarks/README.md's named exception).
+processes:
+  # CARLA 0.9.15's packaged UE4 Shipping binary (pins.yaml carla_0915,
+  # a released .tar.gz -- unlike the UE5 forks used by A/B/C/D, this
+  # approach genuinely ships a Shipping build, not an editor -game
+  # process). Confirmed live in a prior campaign pass:
+  # .superpowers/sdd/2026-07-27-.../task-12-report.md:
+  #   "youtalk 334349 274% CPU ... CarlaUE4/Binaries/Linux/
+  #    CarlaUE4-Linux-Shipping CarlaUE4 -RenderOffScreen ..."
+  - { label: carla-server, pattern: CarlaUE4-Linux-Shipping }
+  # RE-GROUNDED in Task 8: benchmarks/cells/python-bridge.sh runs the
+  # bridge + stack container as
+  #   docker run -d --name "$AW_CONTAINER" ...
+  # with AW_CONTAINER=bridge-bench, replacing the README's unnamed
+  # interactive `docker run -it`. The name below is therefore created by
+  # committed code. What still varies per cell is the IMAGE, not the
+  # name: E0 uses the pinned bridge-bench:latest, while E/E-opt need
+  # Task 10's patched image (the launcher refuses those cells until
+  # BENCH_BRIDGE_IMAGE names it).
+  - { label: autoware, container: bridge-bench }
+  # No injector entry, and that is now SETTLED rather than provisional:
+  # unlike A/B (dummy-perception clear-road stand-in), this recipe runs
+  # Autoware's REAL CUDA perception stack (perception left at its
+  # default ON, per the "Pin update" section of
+  # patches/python-bridge/README.md), and Task 8's
+  # benchmarks/cells/python-bridge.sh writes INJECTOR_ENABLED=0 so
+  # run.sh does not inject on top of it.
+  #
+  # The observer's container name is RE-GROUNDED (run.sh step 6's
+  # `--name bench-observer`), like every other cell's.
+  - { label: observer, container: bench-observer }

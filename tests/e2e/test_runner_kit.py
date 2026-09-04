@@ -28,12 +28,15 @@ from runner.kit import (
     sensor_rotation_in_base_link,
 )
 from runner.spawn import (
+    CAMERA_BLUEPRINT,
     EGO_BLUEPRINT,
     IMU_ROS_NAME,
     IMU_TOPIC,
     TOP_LIDAR_ROS_NAME,
     TOP_LIDAR_TOPIC,
     _apply_attributes,
+    camera_attributes,
+    camera_topic,
     ego_attributes,
     imu_attributes,
     top_lidar_attributes,
@@ -125,6 +128,79 @@ def test_top_lidar_attributes_native():
     assert all(isinstance(v, str) for v in attrs.values())
 
 
+# --- M4 regression pins: no-override defaults must reproduce today's EXACT dict ---
+#
+# These are what proves the sweep/camera/pacing/substep work (Task 12) cannot silently
+# change the existing Nishi/Town10 gates: every attribute-builder function called with no
+# arguments must keep emitting the identical dict it did before this task touched the file.
+
+
+def test_top_lidar_attributes_default_is_todays_exact_dict():
+    # points_per_second is a REAL addition to this dict (previously absent -> the top lidar
+    # silently inherited the sensor.lidar.ray_cast blueprint's own default). Pinned here at
+    # "600000", the blueprint's own RecommendedValues[0]
+    # (ActorBlueprintFunctionLibrary.cpp::MakeLidarDefinition, Id == "ray_cast") -- so adding
+    # the key explicitly changes NOTHING about what CARLA actually applies.
+    assert top_lidar_attributes() == {
+        "ros_topic_name": "/sensing/lidar/top/pointcloud_raw_ex",
+        "ros2_extended_lidar": "true",
+        "ros_name": "velodyne_top",
+        "ros2_qos_reliability": "best_effort",
+        "ros2_qos_durability": "volatile",
+        "ros2_qos_history_depth": "5",
+        "channels": "128",
+        "rotation_frequency": "10",
+        "range": "120.0",
+        "points_per_second": "600000",
+        "sensor_tick": "0.05",
+    }
+
+
+def test_ego_attributes_default_is_todays_exact_dict():
+    assert ego_attributes() == {
+        "role_name": "ego",
+        "ros2_ackermann_control": "true",
+    }
+
+
+def test_imu_attributes_default_is_todays_exact_dict():
+    assert imu_attributes() == {
+        "ros_topic_name": "/sensing/imu/tamagawa/imu_raw",
+        "ros_name": "tamagawa/imu_link",
+        "sensor_tick": "0.05",
+    }
+
+
+def test_top_lidar_attributes_overrides_merge_last_and_leave_others_untouched():
+    # The M4 sweep-class flags (--lidar-channels/--lidar-pps) drive this: overrides win over
+    # the builder's own defaults, and every attribute the caller did NOT override -- QoS,
+    # topic, ros_name -- stays exactly as today's default.
+    attrs = top_lidar_attributes(overrides={"channels": "16", "points_per_second": "288000"})
+    assert attrs["channels"] == "16"
+    assert attrs["points_per_second"] == "288000"
+    # Untouched: ros_topic_name, ros_name, QoS, rotation_frequency, range, sensor_tick.
+    defaults = top_lidar_attributes()
+    for key in (
+        "ros_topic_name",
+        "ros2_extended_lidar",
+        "ros_name",
+        "ros2_qos_reliability",
+        "ros2_qos_durability",
+        "ros2_qos_history_depth",
+        "rotation_frequency",
+        "range",
+        "sensor_tick",
+    ):
+        assert attrs[key] == defaults[key]
+
+
+def test_top_lidar_attributes_no_overrides_argument_matches_empty_dict_argument():
+    # None (the default) and {} must both be a true no-op -- neither silently mutates
+    # the returned dict away from the pinned default above.
+    assert top_lidar_attributes(overrides=None) == top_lidar_attributes()
+    assert top_lidar_attributes(overrides={}) == top_lidar_attributes()
+
+
 def test_top_lidar_ros_name_sets_the_tf_frame():
     # Frame_id-mangling blocker #1 (docs/e2e-report.md): the raw cloud flowed at 20 Hz but its
     # header.frame_id defaulted to the mangled blueprint id "ray_cast__", which is NOT
@@ -172,6 +248,84 @@ def test_imu_ros_name_sets_the_tf_frame():
     attrs = imu_attributes()
     assert attrs["ros_name"] == IMU_ROS_NAME == "tamagawa/imu_link"
     assert IMU_ROS_NAME == IMU_FRAME
+
+
+# --- M4 camera-load arm: attribute assembly (mirrors the LiDAR pattern) ---
+#
+# benchmarks/config/cells.yaml's camera_classes (cam1/cam3/cam6) are all 1600x900 @ 20 fps
+# (the tick ceiling, P1 Verdict 4): observer as the only consumer, topic names as-emitted.
+# Cameras attach at a single deliberately simple pose (runner.spawn.CAMERA_LOCATION/
+# _ROTATION), not the kit's per-camera off-centreline frames -- see spawn.py for why.
+
+
+def test_camera_blueprint_is_native_rgb():
+    assert CAMERA_BLUEPRINT == "sensor.camera.rgb"
+
+
+def test_camera_topic_is_indexed_autoware_style():
+    assert camera_topic(0) == "/sensing/camera/camera0/image_raw"
+    assert camera_topic(5) == "/sensing/camera/camera5/image_raw"
+
+
+def test_camera_attributes_ros_name_and_topic_share_the_indexed_string():
+    # No per-camera Autoware TF frame contract for this load arm to key off of (unlike the
+    # top LiDAR/IMU frame_id fix) -- ros_name and ros_topic_name are the SAME indexed string.
+    attrs = camera_attributes(2)
+    assert attrs["ros_topic_name"] == attrs["ros_name"] == "/sensing/camera/camera2/image_raw"
+
+
+def test_camera_attributes_defaults_match_cam_classes():
+    attrs = camera_attributes(0)
+    assert attrs["image_size_x"] == "1600"
+    assert attrs["image_size_y"] == "900"
+    assert attrs["sensor_tick"] == "0.05"  # 1/20 fps, the tick ceiling
+    # Same best_effort/volatile/depth-5 profile as the LiDAR, applied best-effort.
+    assert attrs["ros2_qos_reliability"] == "best_effort"
+    assert attrs["ros2_qos_durability"] == "volatile"
+    assert attrs["ros2_qos_history_depth"] == "5"
+    assert all(isinstance(v, str) for v in attrs.values())
+
+
+def test_camera_attributes_width_height_tick_from_arguments():
+    attrs = camera_attributes(1, width=800, height=600, sensor_tick=0.1)
+    assert attrs["image_size_x"] == "800"
+    assert attrs["image_size_y"] == "600"
+    assert attrs["sensor_tick"] == "0.1"
+
+
+def test_camera_attributes_overrides_merge_last():
+    attrs = camera_attributes(0, overrides={"image_size_x": "3840"})
+    assert attrs["image_size_x"] == "3840"
+    assert attrs["ros_topic_name"] == "/sensing/camera/camera0/image_raw"  # untouched
+
+
+# --- M4 camera-load arm: fail-loud / best-effort attribute application policy ---
+
+
+def test_apply_attributes_camera_fails_loud_on_missing_ros_topic_name():
+    # Mirrors the LiDAR's fail-loud test, with the camera's own required set: a camera
+    # blueprint lacking ros_topic_name must still refuse to spawn silently.
+    stock = _FakeBlueprint(declared={"image_size_x", "image_size_y", "sensor_tick"})
+    with pytest.raises(RuntimeError) as exc:
+        _apply_attributes(stock, camera_attributes(0), required=("ros_topic_name",), optional=())
+    assert "ros_topic_name" in str(exc.value)
+
+
+def test_apply_attributes_camera_qos_is_best_effort_when_blueprint_lacks_it():
+    # sensor.camera.rgb does NOT declare ros2_qos_* (only sensor.lidar.ray_cast does) -- the
+    # native path accepting QoS is the LiDAR-only case; for the camera these must be skipped
+    # rather than raising, exactly like the ackermann-control optional-attr precedent.
+    bp = _FakeBlueprint(
+        declared={"ros_topic_name", "ros_name", "image_size_x", "image_size_y", "sensor_tick"}
+    )
+    _apply_attributes(
+        bp,
+        camera_attributes(0),
+        required=("ros_topic_name",),
+        optional=("ros2_qos_reliability", "ros2_qos_durability", "ros2_qos_history_depth"),
+    )
+    assert "ros2_qos_reliability" not in bp.applied
+    assert bp.applied["ros_topic_name"] == "/sensing/camera/camera0/image_raw"
 
 
 # --- ROS rpy -> CARLA/UE Rotator conversion pins (Y-flip M-conjugation) ---
@@ -368,7 +522,7 @@ def test_spawn_sensors_destroys_already_spawned_actor_on_partial_failure(monkeyp
 
     first_actor = _FakeActor()
 
-    def fake_spawn_top_lidar(world, blueprint_library, ego, kit):
+    def fake_spawn_top_lidar(world, blueprint_library, ego, kit, overrides=None):
         return first_actor
 
     def fake_spawn_imu(world, blueprint_library, ego, kit):
@@ -381,3 +535,70 @@ def test_spawn_sensors_destroys_already_spawned_actor_on_partial_failure(monkeyp
         spawn_mod.spawn_sensors(world=None, blueprint_library=None, ego=None, kit=load_kit())
 
     assert first_actor.destroyed is True
+
+
+def test_spawn_sensors_threads_lidar_overrides_to_top_lidar(monkeypatch):
+    # --lidar-channels/--lidar-pps/etc (Task 12) reach the top LiDAR through spawn_sensors'
+    # own ``lidar_overrides`` argument -- proven here at the spawn_top_lidar call boundary
+    # (same fake-at-the-module-function-boundary technique as the partial-failure test above).
+    import runner.spawn as spawn_mod
+
+    seen = {}
+
+    def fake_spawn_top_lidar(world, blueprint_library, ego, kit, overrides=None):
+        seen["overrides"] = overrides
+        return object()
+
+    def fake_spawn_imu(world, blueprint_library, ego, kit):
+        return object()
+
+    monkeypatch.setattr(spawn_mod, "spawn_top_lidar", fake_spawn_top_lidar)
+    monkeypatch.setattr(spawn_mod, "spawn_imu", fake_spawn_imu)
+
+    spawn_mod.spawn_sensors(
+        world=None,
+        blueprint_library=None,
+        ego=None,
+        kit=load_kit(),
+        lidar_overrides={"channels": "16"},
+    )
+
+    assert seen["overrides"] == {"channels": "16"}
+
+
+# --- spawn_cameras partial-spawn safety (mirrors spawn_sensors above) ---
+
+
+def test_spawn_cameras_destroys_already_spawned_cameras_on_partial_failure(monkeypatch):
+    import runner.spawn as spawn_mod
+
+    class _FakeActor:
+        def __init__(self):
+            self.destroyed = False
+
+        def destroy(self):
+            self.destroyed = True
+
+    spawned_actors = []
+
+    def fake_spawn_camera(world, blueprint_library, ego, index, width, height, sensor_tick):
+        if index == 1:
+            raise RuntimeError("camera 1 spawn exploded")
+        actor = _FakeActor()
+        spawned_actors.append(actor)
+        return actor
+
+    monkeypatch.setattr(spawn_mod, "spawn_camera", fake_spawn_camera)
+
+    with pytest.raises(RuntimeError, match="camera 1 spawn exploded"):
+        spawn_mod.spawn_cameras(world=None, blueprint_library=None, ego=None, count=3)
+
+    assert len(spawned_actors) == 1  # only camera 0 spawned before camera 1 raised
+    assert spawned_actors[0].destroyed is True
+
+
+def test_spawn_cameras_zero_count_spawns_nothing():
+    # --cameras defaults to 0 (no cameras): today's exact rig, no camera spawn at all.
+    import runner.spawn as spawn_mod
+
+    assert spawn_mod.spawn_cameras(world=None, blueprint_library=None, ego=None, count=0) == []
