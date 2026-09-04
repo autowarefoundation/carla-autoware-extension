@@ -1,0 +1,17 @@
+ts=2026-07-31T21:08:35Z before_pair=1 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=1.00 target=6 ceiling_s=300
+ts=2026-07-31T21:13:15Z before_pair=2 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=4.25 target=6 ceiling_s=300
+ts=2026-07-31T21:17:52Z before_pair=2 before_cell=A floor_s=120 topup_s=15 total_wait_s=135 loadavg_end=5.72 target=6 ceiling_s=300
+ts=2026-07-31T21:22:20Z before_pair=3 before_cell=A floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=0.93 target=6 ceiling_s=300
+ts=2026-07-31T21:26:48Z before_pair=3 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=0.80 target=6 ceiling_s=300
+ts=2026-07-31T21:31:39Z before_pair=4 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=4.52 target=6 ceiling_s=300
+ts=2026-07-31T21:36:04Z before_pair=4 before_cell=A floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=4.51 target=6 ceiling_s=300
+ts=2026-07-31T21:40:27Z before_pair=5 before_cell=A floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=0.53 target=6 ceiling_s=300
+ts=2026-07-31T21:44:52Z before_pair=5 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=0.74 target=6 ceiling_s=300
+ts=2026-07-31T21:49:22Z before_pair=6 before_cell=B floor_s=120 topup_s=5 total_wait_s=125 loadavg_end=5.66 target=6 ceiling_s=300
+ts=2026-07-31T21:53:59Z before_pair=6 before_cell=A floor_s=120 topup_s=15 total_wait_s=135 loadavg_end=5.67 target=6 ceiling_s=300
+ts=2026-07-31T21:58:22Z before_pair=7 before_cell=A floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=0.78 target=6 ceiling_s=300
+ts=2026-07-31T22:02:47Z before_pair=7 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=1.51 target=6 ceiling_s=300
+ts=2026-07-31T22:07:28Z before_pair=8 before_cell=B floor_s=120 topup_s=20 total_wait_s=140 loadavg_end=5.62 target=6 ceiling_s=300
+ts=2026-07-31T22:12:00Z before_pair=8 before_cell=A floor_s=120 topup_s=10 total_wait_s=130 loadavg_end=5.61 target=6 ceiling_s=300
+ts=2026-07-31T22:16:27Z before_pair=9 before_cell=A floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=2.25 target=6 ceiling_s=300
+ts=2026-07-31T22:20:56Z before_pair=9 before_cell=B floor_s=120 topup_s=0 total_wait_s=120 loadavg_end=1.74 target=6 ceiling_s=300

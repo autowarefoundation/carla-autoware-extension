@@ -1,0 +1,39 @@
+{
+  "cell": "CAL-rmw",
+  "approach": "calibration",
+  "map_name": "none",
+  "run_index": 12,
+  "arm": "static",
+  "harness_git_sha": "efb03b32f14ce817342dcc13b86222d649019df1-dirty",
+  "patches_git_sha": "ccff4f946a9b33dc1d5cfacac0c6217656bbe10a-dirty",
+  "transport": {
+    "rmw": "rmw_fastrtps_cpp",
+    "shm_enabled": false,
+    "dds_profile_sha256": "9886f7445306632b168763acc2c96a9f643329eb5d1ccf2da77e061466565098"
+  },
+  "carla_version": "none",
+  "autoware_image": "none",
+  "started_at_ns": 1785464441625280077,
+  "excluded": false,
+  "exclusion_reason": "",
+  "placement": {
+    "container_image": "none",
+    "cpu_governor": "powersave",
+    "free_gb": "467",
+    "loadavg": "0.37",
+    "map_bundle_pin": "skipped:no-map:-",
+    "nproc": "24",
+    "observer_env": {
+      "image": "bench-observer:universe-devel",
+      "rmw": "rmw_fastrtps_cpp",
+      "shm": "off",
+      "topics_file": "CAL-rmw.yaml"
+    },
+    "results_fs": "/home",
+    "run_mode": "container-only",
+    "shm_root_cleared": "0",
+    "shm_root_remaining": "0",
+    "shm_user_cleared": "0"
+  },
+  "duel_admissible": false
+}

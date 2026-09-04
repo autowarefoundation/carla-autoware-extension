@@ -1,0 +1,198 @@
+=== waiting for container autoware ===
+container up at t=1785601080.083201011
+probe assets copied at t=1785601080.123018840
+=== waiting for /map/vector_map in the graph (max 600s) ===
+topic present (or timed out) at t=1785601090.943479539
+
+########## Q1 topic info -v /map/vector_map  [t=1785601090.944620691]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && ros2 topic info -v --no-daemon /map/vector_map'
+Type: autoware_map_msgs/msg/LaneletMapBin
+
+Publisher count: 0
+
+Subscription count: 1
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.38.04.4b.94.00.00.00.00.00.00.2d.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+########## exit=0  [t=1785601092.385594765]
+
+########## Q3 node info behavior_path_planner  [t=1785601092.387472201]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && ros2 node info --no-daemon /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner'
+Unable to find node '/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner'
+########## exit=1  [t=1785601093.927167487]
+
+########## Q2a late transient_local+reliable subscriber -> /map/vector_map (40s), STOCK udp_only profile  [t=1785601093.932882591]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && VT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/vector_map /{gsub(/[][]/,\"\",\$2); print \$2}");
+    PT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/map_projector_info /{gsub(/[][]/,\"\",\$2); print \$2}");
+    echo "resolved types: vector_map=$VT map_projector_info=$PT"; python3 /tmp/map_probe.py /map/vector_map $VT transient_local 40'
+resolved types: vector_map=autoware_map_msgs/msg/LaneletMapBin map_projector_info=
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=0.173 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=0.17
+########## exit=0  [t=1785601097.507008838]
+
+########## Q2b same probe, 16MiB UDP socket buffers (40s)  [t=1785601097.508004679]
+$ docker exec -e ROS_DOMAIN_ID=0 -e FASTRTPS_DEFAULT_PROFILES_FILE=/tmp/udp_big.xml autoware bash -lc '<AW_ENV> && VT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/vector_map /{gsub(/[][]/,\"\",\$2); print \$2}");
+    PT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/map_projector_info /{gsub(/[][]/,\"\",\$2); print \$2}");
+    echo "resolved types: vector_map=$VT map_projector_info=$PT"; python3 /tmp/map_probe.py /map/vector_map $VT transient_local 40'
+resolved types: vector_map=autoware_map_msgs/msg/LaneletMapBin map_projector_info=
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=0.951 data_bytes=1305281 publishers_at_start=1 publishers_at_end=1 wall_waited_s=0.95
+########## exit=0  [t=1785601101.387098515]
+
+########## Q4 late transient_local subscriber -> /map/map_projector_info (SMALL, 15s)  [t=1785601101.388140649]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && VT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/vector_map /{gsub(/[][]/,\"\",\$2); print \$2}");
+    PT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/map_projector_info /{gsub(/[][]/,\"\",\$2); print \$2}");
+    echo "resolved types: vector_map=$VT map_projector_info=$PT"; python3 /tmp/map_probe.py /map/map_projector_info $PT transient_local 15'
+resolved types: vector_map=autoware_map_msgs/msg/LaneletMapBin map_projector_info=autoware_map_msgs/msg/MapProjectorInfo
+PROBE topic=/map/map_projector_info durability=transient_local result=RECEIVED t_first_s=3.224 data_bytes=-1 publishers_at_start=0 publishers_at_end=1 wall_waited_s=3.22
+########## exit=0  [t=1785601107.534924985]
+
+########## Q5 component_state_monitor live verdict on the map topics (15s)  [t=1785601107.536106373]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && python3 /tmp/diag_probe.py 15'
+DIAG topic_state_monitor_pointcloud_map: map_topic_status level=b'\x02' message='Error' topic=/map/pointcloud_map status=NotReceived warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=50.27 [s] last_message_time=0.00 [s]
+DIAG topic_state_monitor_vector_map: map_topic_status level=b'\x00' message='OK' topic=/map/vector_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=50.27 [s] last_message_time=28.17 [s]
+########## exit=0  [t=1785601123.506908996]
+
+########## Q6 transport env + profile actually in force  [t=1785601123.510208590]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && printenv RMW_IMPLEMENTATION FASTRTPS_DEFAULT_PROFILES_FILE; echo '--- /dds-profile.xml ---'; cat /dds-profile.xml'
+rmw_fastrtps_cpp
+/dds-profile.xml
+--- /dds-profile.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udp_only</transport_id>
+        <type>UDPv4</type>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="udp_only_participant" is_default_profile="true">
+      <rtps>
+        <userTransports><transport_id>udp_only</transport_id></userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>
+########## exit=0  [t=1785601124.022585822]
+
+########## Q7 topic info -v /map/map_projector_info and /map/pointcloud_map  [t=1785601124.024301091]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && ros2 topic info -v --no-daemon /map/map_projector_info; echo ---; ros2 topic info -v --no-daemon /map/pointcloud_map'
+Unknown topic '/map/map_projector_info'
+---
+Type: sensor_msgs/msg/PointCloud2
+
+Publisher count: 0
+
+Subscription count: 1
+
+Node name: topic_state_monitor_pointcloud_map
+Node namespace: /system
+Topic type: sensor_msgs/msg/PointCloud2
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.6c.02.12.98.00.00.00.00.00.00.e0.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+########## exit=0  [t=1785601126.423160993]
+
+########## Q8 late VOLATILE subscriber -> /map/vector_map (10s, durability contrast)  [t=1785601126.424093284]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && VT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/vector_map /{gsub(/[][]/,\"\",\$2); print \$2}");
+    PT=$(ros2 topic list -t --no-daemon | awk "/^\\/map\\/map_projector_info /{gsub(/[][]/,\"\",\$2); print \$2}");
+    echo "resolved types: vector_map=$VT map_projector_info=$PT"; python3 /tmp/map_probe.py /map/vector_map $VT volatile 10'
+resolved types: vector_map=autoware_map_msgs/msg/LaneletMapBin map_projector_info=autoware_map_msgs/msg/MapProjectorInfo
+PROBE topic=/map/vector_map durability=volatile result=TIMEOUT t_first_s=- data_bytes=- publishers_at_start=0 publishers_at_end=1 wall_waited_s=10.05
+########## exit=0  [t=1785601139.347379320]
+
+########## Q9 ros2 topic echo --once, transient_local+reliable (30s)  [t=1785601139.348903735]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && timeout 30 ros2 topic echo --once --no-daemon --no-arr --qos-durability transient_local --qos-reliability reliable /map/vector_map; echo rc=$?'
+header:
+  stamp:
+    sec: 16
+    nanosec: 715411101
+  frame_id: map
+version_map_format: ''
+version_map: ''
+name_map: ''
+data: '<sequence type: uint8, length: 1305281>'
+---
+rc=0
+########## exit=0  [t=1785601144.120387121]
+
+########## Q10 ros2 topic echo --once, DEFAULT qos (20s)  [t=1785601144.121908562]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && timeout 20 ros2 topic echo --once --no-daemon --no-arr /map/vector_map; echo rc=$?'
+header:
+  stamp:
+    sec: 16
+    nanosec: 715411101
+  frame_id: map
+version_map_format: ''
+version_map: ''
+name_map: ''
+data: '<sequence type: uint8, length: 1305281>'
+---
+rc=0
+########## exit=0  [t=1785601145.742215411]
+
+########## Q11 live launch-log map/waiting lines  [t=1785601145.744085946]
+$ docker exec -e ROS_DOMAIN_ID=0 autoware bash -lc '<AW_ENV> && grep -n 'waiting for\|Succeeded to load lanelet2_map\|topic_rate_check/vector_map' /tmp/tier4-autoware.log 2>/dev/null | tail -40'
+753:[component_container_mt-48] [INFO] [1785601099.686987218] [control.trajectory_follower.lane_departure_checker_node]: waiting for current_twist msg...
+777:[component_container_mt-48] [INFO] [1785601100.623959671] [control.autonomous_emergency_braking]: [AEB] waiting for object pointcloud message
+784:[component_container_mt-48] [INFO] [1785601101.107288552] [control.collision_detector]: waiting for current odometry...
+788:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+818:[component_container_mt-48] [INFO] [1785601101.875899560] [control.control_validator]: waiting for /planning/trajectory
+828:[component_container_mt-48] [INFO] [1785601102.124709145] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+839:[component_container_mt-40] [INFO] [1785601103.526027704] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+881:[component_container_mt-48] [INFO] [1785601105.673702622] [control.autonomous_emergency_braking]: [AEB] waiting for object pointcloud message
+894:[component_container_mt-48] [INFO] [1785601106.982616639] [control.control_validator]: waiting for /planning/trajectory
+898:[component_container_mt-48] [INFO] [1785601107.194223564] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+934:[component_container_mt-40] [INFO] [1785601108.780476101] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+977:[component_container_mt-48] [INFO] [1785601112.009430008] [control.control_validator]: waiting for /planning/trajectory
+980:[component_container_mt-48] [INFO] [1785601112.230598934] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1012:[component_container_mt-48] [WARN] [1785601114.023658399] [control.collision_detector]: waiting for operation mode info...
+1015:[component_container_mt-40] [INFO] [1785601114.270200086] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+1024:[component_container_mt-48] [INFO] [1785601115.274011026] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+1066:[component_container_mt-48] [INFO] [1785601116.995775692] [control.control_validator]: waiting for /planning/trajectory
+1069:[component_container_mt-48] [INFO] [1785601117.247434871] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1083:[component_container_mt-40] [INFO] [1785601119.324461232] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+1111:[component_container_mt-48] [INFO] [1785601120.277397740] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+1119:[component_container_mt-48] [INFO] [1785601122.095347530] [control.control_validator]: waiting for /planning/trajectory
+1120:[component_container_mt-48] [INFO] [1785601122.285345792] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1159:[component_container_mt-40] [INFO] [1785601124.574393843] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+1176:[component_container_mt-48] [INFO] [1785601125.275175085] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+1218:[component_container_mt-48] [INFO] [1785601127.200476370] [control.control_validator]: waiting for /planning/trajectory
+1219:[component_container_mt-48] [INFO] [1785601127.332729047] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1256:[component_container_mt-40] [INFO] [1785601129.723869769] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+1264:[component_container_mt-48] [INFO] [1785601130.443244398] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+1297:[component_container_mt-48] [INFO] [1785601132.325611185] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1298:[component_container_mt-48] [INFO] [1785601132.328356480] [control.control_validator]: waiting for /planning/trajectory
+1347:[component_container_mt-40] [INFO] [1785601135.474684562] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+1348:[component_container_mt-48] [INFO] [1785601135.475553863] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+1366:[component_container_mt-48] [INFO] [1785601137.431737389] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1367:[component_container_mt-48] [INFO] [1785601137.596824275] [control.control_validator]: waiting for /planning/trajectory
+1415:[component_container_mt-48] [WARN] [1785601140.423744072] [control.collision_detector]: waiting for operation mode info...
+1418:[component_container_mt-48] [INFO] [1785601140.473757404] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+1449:[component_container_mt-40] [INFO] [1785601141.216348374] [planning.scenario_planning.lane_driving.behavior_planning.behavior_path_planner]: waiting for scenario_topic
+1462:[component_container_mt-48] [INFO] [1785601142.430586983] [control.trajectory_follower.lane_departure_checker_node]: waiting for route msg...
+1473:[component_container_mt-48] [INFO] [1785601143.134084606] [control.control_validator]: waiting for /planning/trajectory
+1522:[component_container_mt-48] [INFO] [1785601145.474471662] [control.autonomous_emergency_braking]: [AEB] waiting for control predicted trajectory
+########## exit=0  [t=1785601146.293405972]
+
+=== in-run prober done at t=1785601146.297176170 ===

@@ -1,0 +1,63 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "0.00 [s]",
+          "level": 2,
+          "status": "NotReceived"
+        }
+      },
+      "verified": false,
+      "verify_wait_s": 60.048
+    },
+    {
+      "attempt": 2,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "0.00 [s]",
+          "level": 2,
+          "status": "NotReceived"
+        }
+      },
+      "verified": false,
+      "verify_wait_s": 60.022
+    },
+    {
+      "attempt": 3,
+      "monitor": {
+        "topic_state_monitor_vector_map: map_topic_status": {
+          "last_message_time": "0.00 [s]",
+          "level": 2,
+          "status": "NotReceived"
+        }
+      },
+      "verified": false,
+      "verify_wait_s": 60.027
+    }
+  ],
+  "capture_wait_s": 6.0,
+  "captured": true,
+  "data_bytes": 1305281,
+  "exit_code": 5,
+  "matching_settled": true,
+  "monitor_final": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "0.00 [s]",
+      "level": 2,
+      "status": "NotReceived"
+    }
+  },
+  "pre_republish_delivered": false,
+  "pre_republish_monitor": {
+    "topic_state_monitor_vector_map: map_topic_status": {
+      "last_message_time": "0.00 [s]",
+      "level": 2,
+      "status": "NotReceived"
+    }
+  },
+  "subscriber_count": 16,
+  "topic": "/map/vector_map",
+  "verified": false
+}

@@ -1,0 +1,2 @@
+gt base_link anchor: -1.42500000 m (body frame) for approach 'python-bridge'
+carla client=0.9.15 server=0.9.15

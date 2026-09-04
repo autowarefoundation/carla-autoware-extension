@@ -45,6 +45,30 @@ READY_TIMEOUT_S=300                         # bounded; a slow cold container can
 # node's own output_frame), so the relay needs no transform. (The concat node is left with its
 # stock 3-topic config; it stays silent with a single publisher, so the relay
 # is the sole publisher on the concatenated topic -- verified live after bring-up.)
+#
+# ^^^ TWO CLAIMS ABOVE ARE REFUTED BY MEASUREMENT. Kept as written, with the
+# refutation attached, per the convention that a claim stays in the record with the
+# diagnostic that corrected it. Registered at benchmarks/results/PROVENANCE.md S6.6
+# and deferred to the P3 wrap task, which is what landed this note; comment-only, no
+# executable change.
+#
+#   1. "HARD-REQUIRES >= 2 input topics ... and never loads" is FALSE on this rig.
+#      Phase 0's P1 publisher census measured /sensing/lidar/concatenate_data LOADED
+#      and ADVERTISING a publisher on RELAY_OUT alongside //relay -- 2 advertisers,
+#      not 1 (PROVENANCE S6.1, S6.5; benchmarks/evidence/p3-phase0/).
+#   2. "the relay is the sole publisher on the concatenated topic" is therefore FALSE
+#      as stated. What the comment gets right in SUBSTANCE though not in MECHANISM is
+#      that the concat node is SILENT: measured on the same stack state, RELAY_OUT /
+#      RELAY_IN message ratio 0.995 (398/400), ZERO RELAY_OUT stamps absent from
+#      RELAY_IN, ZERO duplicate stamps, and ros2 topic hz 19.957 on RELAY_OUT against
+#      19.960 on RELAY_IN. So every message here IS a relay forward -- but the concat
+#      node is silent WHILE HOLDING A PUBLISHER, not by failing to load.
+#
+# Nothing in this file was changed on the strength of that. The relay stays; it is the
+# sole EMITTER, which is the property the localization chain actually depends on. The
+# cell-B counterpart of this comment (benchmarks/cells/tier4_autoware.sh, "THAT PREMISE
+# IS REFUTED") already carries its own refutation in place and needed no change --
+# there, unlike here, the concat node emits too (2 emitters, 72 duplicate stamps).
 RELAY_IN=/sensing/lidar/top/pointcloud_before_sync
 RELAY_OUT=/sensing/lidar/concatenated/pointcloud
 
@@ -80,24 +104,55 @@ compose_exec() {
     autoware bash -lc "$1"
 }
 
-# --stop: tear the launch down (kill the recorded container-side ros2-launch PID). Uses the
-# PID file, NEVER pkill -f, which self-matches the exec's own command line (project gotcha).
+# Run a HOST script inside the container by piping it in on stdin
+# (`bash -s --`), so no bind mount has to exist for it to work.
+# docker/compose.yaml does mount ../scripts read-only at /work/scripts, but
+# --stop is the one path that must still work against a container started
+# from an older compose file, and a teardown that could not find its own
+# helper would silently leave the stack up -- the very failure this replaces.
+compose_exec_script() {
+  local script="$1"
+  shift
+  docker compose -f "$COMPOSE" exec -T -e ROS_DOMAIN_ID=0 \
+    autoware bash -s -- "$@" <"$script"
+}
+
+# --stop: tear the launch down. Uses the recorded container-side PIDs, NEVER
+# pkill -f, which self-matches the exec's own command line (project gotcha).
+#
+# MEASURED DEFECT this now fixes (Task 15, 2026-07-30). The previous form
+# SIGTERMed the recorded `ros2 launch` PID, waited 20 s, SIGKILLed it, and
+# printed "autoware launch + concat relay stopped" unconditionally. It did
+# NOT stop the stack. Ten minutes after such a teardown, with CARLA gone and
+# port 2000 free: `ros2 node list --no-daemon` -> 169 nodes, container
+# `ps -e` -> 74 processes, /proc/loadavg -> 42.16 26.66 13.45 (they spin hard
+# because /clock no longer advances). `docker compose down` cleared it and the
+# host settled to 2.44.
+#
+# ROOT CAUSE, measured 2026-07-31 against a real `ros2 launch` started by
+# THIS script's own `nohup ... &` pattern -- and it is worse than "launch
+# orphans on SIGTERM". That launch has SigIgn 0x1001007 (SIGHUP, SIGINT and
+# SIGQUIT all ignored, because a shell without job control sets exactly those
+# to SIG_IGN for a background job, and SIG_IGN survives exec) and SigCgt with
+# NO signal 1-31 caught, so launch's own handlers never install. SIGINT is a
+# verified no-op; SIGTERM kills it by default action with no launch code
+# running at all -- not even launch_service.py's own "using SIGTERM ... can
+# result in orphaned processes" warning appears -- and its children keep
+# running. No signal sent to the recorded PID can both reach it and take its
+# children with it.
+#
+# So stop_launch_tree.sh signals the CHILDREN: it snapshots the recorded PID's
+# own descendants BEFORE the first signal and escalates
+# SIGINT -> SIGINT -> SIGTERM -> SIGKILL over that set and nothing wider. It
+# never refuses and never exits non-zero -- a teardown that blocks a
+# legitimate measurement is worse than one that under-reports -- and it prints
+# the container's post-stop running/defunct counts, so this is a reported
+# observation rather than an unconditional claim. See that file's header for
+# the full measurement, for the launch-side change deliberately NOT made here,
+# and for the one case it cannot claim (processes already orphaned by an
+# earlier SIGTERM-only stop).
 if [ "${1:-}" = "--stop" ]; then
-  # $AW_PIDFILE/$RELAY_PIDFILE/$pid are expanded IN THE CONTAINER (compose_exec passes them via
-  # -e); the single quotes are deliberate so the host does not expand them first.
-  # shellcheck disable=SC2016
-  compose_exec '
-    for pf in "$RELAY_PIDFILE" "$AW_PIDFILE"; do
-      [ -f "$pf" ] || continue
-      pid="$(cat "$pf")"
-      if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-        for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
-      fi
-      rm -f "$pf"
-    done
-    echo "autoware launch + concat relay stopped"'
+  compose_exec_script "$HERE/stop_launch_tree.sh" "$RELAY_PIDFILE" "$AW_PIDFILE"
   exit 0
 fi
 
@@ -152,6 +207,54 @@ compose_exec '
     simulator_type:=carla launch_vehicle_interface:=false use_sim_time:=true \
     perception:=false rviz:=false >"$AW_LOG" 2>&1 &
   echo $! >"$AW_PIDFILE"
+  # Sidecar for stop_launch_tree.sh pid-reuse guard: the command line this pid
+  # was recorded WITH. A pid names a process only until it exits, and --stop
+  # KEEPS the pid file when it could not clear a tree, so a later --stop in a
+  # long-lived container could otherwise sweep a strangers subtree. Best
+  # effort: a missing sidecar only means the guard is skipped.
+  #
+  # FORK/EXEC RACE (Task 18b). $! is valid the instant the shell forks this
+  # background job, but nohup has not yet exec-ed into ros2 -- an immediate
+  # cmdline read can land on the PRE-exec argv ("nohup ros2 launch ..."),
+  # while stop_launch_tree.sh later reads the POST-exec form
+  # ("/usr/bin/python3 .../ros2 launch ..."). An exact mismatch trips the
+  # pid-reuse guard and skips a real teardown -- MEASURED live on 5/10 cell-B
+  # static runs, via the identical shape benchmarks/cells/tier4_autoware.sh
+  # copied from this file.
+  #
+  # Fixed by polling for the cmdline to hold STEADY for 2 continuous seconds
+  # -- 21 identical reads (aw_stable starts at 0 and needs 20 MATCHES
+  # against the read before it, so the 21st read is the first that counts),
+  # 0.1s apart -- rewriting the sidecar each time a new steady value is
+  # reached rather than stopping at the first one: if a still-settling read
+  # gets mistaken for final and written, a later real change is still
+  # caught and the sidecar is corrected, as long as the true post-exec
+  # value itself goes steady with >= 2s left in the budget. Capped at 50
+  # polls so a stuck read cannot hang the launch; that cap is a FLOOR, not
+  # a ceiling -- the polls, forks and sleeps measured ~5.17s idle even with
+  # nothing to wait for, and load stretches it further, never shortens it.
+  # Past the cap the sidecar can be left holding a STALE pre-exec value,
+  # not merely absent (fix round 1, F6.2) -- in theory, but this was not
+  # observed even at effectively ZERO added delay before this fix existed
+  # -- real exec latency here is orders of magnitude under the 2s
+  # threshold. Touches only /proc for the pid already recorded; the
+  # launched process itself is not touched (no ptrace/strace attach, which
+  # would itself be a launch-timing change).
+  aw_cmd="" aw_prev="" aw_stable=0 aw_tries=0
+  while [ "$aw_tries" -lt 50 ]; do
+    aw_cmd="$(tr "\0" " " </proc/$(cat "$AW_PIDFILE")/cmdline 2>/dev/null)"
+    if [ -n "$aw_cmd" ] && [ "$aw_cmd" = "$aw_prev" ]; then
+      aw_stable=$((aw_stable + 1))
+      if [ "$aw_stable" -ge 20 ]; then
+        printf "%s" "$aw_cmd" >"$AW_PIDFILE.cmd" 2>/dev/null
+      fi
+    else
+      aw_stable=0
+    fi
+    aw_prev="$aw_cmd"
+    aw_tries=$((aw_tries + 1))
+    sleep 0.1
+  done
   echo "autoware launch pid $(cat "$AW_PIDFILE")"'
 
 # Block until the stack is up AND carla_interface has fired-and-died. Two conditions,
@@ -175,6 +278,34 @@ while [ "$elapsed" -lt "$READY_TIMEOUT_S" ]; do
       # does not exist until the runner spawns the LiDAR moments from now -- topic_tools relay
       # waits for the publisher and begins forwarding once it appears, so starting it here (ego
       # not yet up) is correct. Record its PID for --stop.
+      #
+      # SAME FORK/EXEC RACE AS THE AW_PIDFILE WRITE ABOVE (fix round 1, F3)
+      # -- this is `nohup ... &` too, so it gets the identical hold-STEADY-
+      # for-2s, capped-at-50-polls loop; see the AW_PIDFILE comment above
+      # for the full mechanism. Ends the same way that block does -- `done`
+      # with no trailing `|| true` -- because the trailing `echo "concat
+      # relay pid ..."` after it is what pins compose_exec's own exit
+      # status here, exactly as it already does for the AW_PIDFILE block
+      # above (confirmed unaffected by fix round 1, F1); do not remove that
+      # echo without adding `|| true` to the loop in its place.
+      #
+      # BLAST RADIUS, stated so this reads as scoped rather than alarming
+      # (fix round 1, F3): a surviving relay keeps publishing onto
+      # $RELAY_OUT, NDT's own input topic -- worse than an ordinary
+      # survivor. Under the BENCHMARK harness (cells/extension.sh:148 sets
+      # AW_COMPOSE="$COMPOSE") it is bounded ONCE: teardown.sh:357-359 takes
+      # `docker compose down --remove-orphans` regardless of whether this
+      # sidecar guard ever skips. Under the OPERATOR path (run_e2e.sh:254's
+      # `launch_autoware.sh --stop`) there is NO such backstop: nothing
+      # removes the compose container, and the NEXT launch overwrites this
+      # exact pidfile with the new relay's pid, so a survivor becomes
+      # referenced by no pid file at all and stop_launch_tree.sh can never
+      # reach it again -- CLAUDE.md's recorded "DDS ghost nodes accumulate"
+      # gotcha, mechanised. That is the real exposure this fix closes; the
+      # duel itself (which runs under the harness, not run_e2e.sh directly)
+      # is not at cross-run risk from it. What a survivor does to a single
+      # run's own NDT rate is not established from code and needs a live
+      # stack, correctly left open by this round.
       echo "OK: starting single-LiDAR concat relay $RELAY_IN -> $RELAY_OUT"
       # $RELAY_* / $! expand IN THE CONTAINER (passed via -e); single quotes intentional.
       # shellcheck disable=SC2016
@@ -182,6 +313,22 @@ while [ "$elapsed" -lt "$READY_TIMEOUT_S" ]; do
         source /opt/ros/humble/setup.bash 2>/dev/null; export ROS_DOMAIN_ID=0
         nohup ros2 run topic_tools relay "$RELAY_IN" "$RELAY_OUT" >/tmp/e2e-concat-relay.log 2>&1 &
         echo $! >"$RELAY_PIDFILE"
+        rel_cmd="" rel_prev="" rel_stable=0 rel_tries=0
+        while [ "$rel_tries" -lt 50 ]; do
+          rel_cmd="$(tr "\0" " " \
+            </proc/$(cat "$RELAY_PIDFILE")/cmdline 2>/dev/null)"
+          if [ -n "$rel_cmd" ] && [ "$rel_cmd" = "$rel_prev" ]; then
+            rel_stable=$((rel_stable + 1))
+            if [ "$rel_stable" -ge 20 ]; then
+              printf "%s" "$rel_cmd" >"$RELAY_PIDFILE.cmd" 2>/dev/null
+            fi
+          else
+            rel_stable=0
+          fi
+          rel_prev="$rel_cmd"
+          rel_tries=$((rel_tries + 1))
+          sleep 0.1
+        done
         echo "concat relay pid $(cat "$RELAY_PIDFILE")"'
       exit 0
     fi

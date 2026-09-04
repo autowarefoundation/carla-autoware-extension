@@ -1,0 +1,50 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-08-01-22-38-01-940881-youtalk-desktop-112
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [autoware_carla_interface-1]: process started with pid [146]
+[INFO] [autoware_raw_vehicle_cmd_converter_node-2]: process started with pid [148]
+[INFO] [relay-3]: process started with pid [150]
+[INFO] [relay-4]: process started with pid [152]
+[INFO] [republish-5]: process started with pid [154]
+[INFO] [republish-6]: process started with pid [156]
+[INFO] [republish-7]: process started with pid [168]
+[INFO] [republish-8]: process started with pid [170]
+[INFO] [republish-9]: process started with pid [172]
+[INFO] [republish-10]: process started with pid [176]
+[INFO] [republish-11]: process started with pid [178]
+[autoware_carla_interface-1] [INFO] [1785623882.287886211] [autoware_carla_interface]: Using Autoware sensor kit calibration: carla_sensor_kit_description
+[autoware_carla_interface-1] [INFO] [1785623882.290288957] [autoware_carla_interface]: Registered sensor: top (type: sensor.lidar.ray_cast, topic: /sensing/lidar/top/pointcloud_raw_ex)
+[autoware_carla_interface-1] [INFO] [1785623882.290425432] [autoware_carla_interface]: Registered sensor: gnss (type: sensor.other.gnss, topic: /sensing/gnss/pose_with_covariance)
+[autoware_carla_interface-1] [INFO] [1785623882.290541894] [autoware_carla_interface]: Registered sensor: imu (type: sensor.other.imu, topic: /sensing/imu/tamagawa/imu_raw)
+[autoware_carla_interface-1] [INFO] [1785623882.293167837] [autoware_carla_interface]: Created LiDAR publisher: /sensing/lidar/top/pointcloud_raw_ex
+[autoware_carla_interface-1] [INFO] [1785623882.294357303] [autoware_carla_interface]: Created GNSS publisher: /sensing/gnss/pose_with_covariance
+[autoware_carla_interface-1] [INFO] [1785623882.294795043] [autoware_carla_interface]: Created IMU publisher: /sensing/imu/tamagawa/imu_raw
+[autoware_carla_interface-1] [INFO] [1785623882.294941158] [autoware_carla_interface]: Configured 3 sensors from mapping
+[republish-11] [WARN] [1785623915.698373204] [traffic_light_republish]: New publisher discovered on topic '/sensing/camera/traffic_light/image_raw', offering incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623978.731981848] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623982.688266184] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623984.385646543] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623991.799856712] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623994.169344813] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623995.844467540] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623998.017091977] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785623999.209405904] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624001.439608467] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624003.253716113] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624007.310740342] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624010.122179052] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624011.349442187] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624012.702642387] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624017.474147835] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624022.816703510] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624024.225753432] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624027.936506826] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624029.918727283] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624032.963281454] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624036.219190338] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624038.615491896] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624040.041659645] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.182101. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624041.884510848] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624043.197694193] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624044.320931305] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624047.501088073] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785624048.684642362] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.

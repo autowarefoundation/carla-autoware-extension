@@ -1,0 +1,110 @@
+
+################################################################
+### PASS-2 VARIANT W-udp_only-STOCK-early-vs-late   [t=1785601829.229628133]
+################################################################
+--- env in force ---
+rmw_fastrtps_cpp
+/dds-profile.xml
+--- profile ---
+<?xml version="1.0" encoding="UTF-8"?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udp_only</transport_id>
+        <type>UDPv4</type>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="udp_only_participant" is_default_profile="true">
+      <rtps>
+        <userTransports><transport_id>udp_only</transport_id></userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>
+--- launching e2e_simulator [t=1785601832.903966070] ---
+launch issued at wall=1785601834.961373530
+--- map published; marker line: ---
+260:[component_container_mt-15] [INFO] [1785601841.636853240] [map.lanelet2_map_loader]: Succeeded to load lanelet2_map. Map is published.
+--- settling 100s ---
+
+--- W1 EARLY-joining transient_local probe result [t=1785601942.515085926] ---
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=11.446 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=11.45
+
+--- W2 LATE-joining transient_local probe (30s) [t=1785601943.011270077] ---
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=2.643 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=2.64
+
+--- W3 in-stack monitor verdict now (15s) ---
+DIAG topic_state_monitor_pointcloud_map: map_topic_status level=b'\x00' message='OK' topic=/map/pointcloud_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601962.02 [s] last_message_time=1785601841.51 [s]
+DIAG topic_state_monitor_vector_map: map_topic_status level=b'\x00' message='OK' topic=/map/vector_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601962.03 [s] last_message_time=1785601841.69 [s]
+
+--- W4 diag watch history ---
+WATCH start wall=1785601830.235 window=200s
+WATCH wall=1785601840.860 name=topic_state_monitor_vector_map: map_topic_status level=OK status=None now=None last_message_time=None
+WATCH wall=1785601841.287 name=topic_state_monitor_vector_map: map_topic_status level=ERROR status=NotReceived now=1785601841.29 [s] last_message_time=0.00 [s]
+WATCH wall=1785601841.753 name=topic_state_monitor_vector_map: map_topic_status level=OK status=OK now=1785601841.75 [s] last_message_time=1785601841.69 [s]
+
+--- W5 diag-graph blocks listing vector_map ---
+blocks: 12
+vector_map entries: 1
+### PASS-2 VARIANT W-udp_only-STOCK-early-vs-late torn down [t=1785601963.378893675]
+
+################################################################
+### PASS-2 VARIANT W-udp_only-16MiB-BUFFERS-whole-stack   [t=1785601973.381359099]
+################################################################
+--- env in force ---
+rmw_fastrtps_cpp
+/dds-profile.xml
+--- profile ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PROBE-ONLY variant of benchmarks/observer/config/udp_only.xml.
+     Identical UDPv4-only transport, plus explicit socket buffers. Used by a
+     probe subscriber only; no harness file is modified and this is not
+     mounted into any measured process. -->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udp_big</transport_id>
+        <type>UDPv4</type>
+        <sendBufferSize>16777216</sendBufferSize>
+        <receiveBufferSize>16777216</receiveBufferSize>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="udp_big_participant" is_default_profile="true">
+      <rtps>
+        <userTransports><transport_id>udp_big</transport_id></userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>
+--- launching e2e_simulator [t=1785601977.042250555] ---
+launch issued at wall=1785601979.094449756
+--- map published; marker line: ---
+403:[component_container_mt-15] [INFO] [1785601985.519656159] [map.lanelet2_map_loader]: Succeeded to load lanelet2_map. Map is published.
+--- settling 100s ---
+
+--- W1 EARLY-joining transient_local probe result [t=1785602086.641214751] ---
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=11.161 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=11.16
+
+--- W2 LATE-joining transient_local probe (30s) [t=1785602086.934818628] ---
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=0.107 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=0.11
+
+--- W3 in-stack monitor verdict now (15s) ---
+DIAG topic_state_monitor_pointcloud_map: map_topic_status level=b'\x00' message='OK' topic=/map/pointcloud_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785602102.86 [s] last_message_time=1785601985.24 [s]
+DIAG topic_state_monitor_vector_map: map_topic_status level=b'\x00' message='OK' topic=/map/vector_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785602102.92 [s] last_message_time=1785601985.63 [s]
+
+--- W4 diag watch history ---
+WATCH start wall=1785601974.372 window=200s
+WATCH wall=1785601984.822 name=topic_state_monitor_vector_map: map_topic_status level=OK status=None now=None last_message_time=None
+WATCH wall=1785601985.008 name=topic_state_monitor_vector_map: map_topic_status level=ERROR status=NotReceived now=1785601985.01 [s] last_message_time=0.00 [s]
+WATCH wall=1785601985.732 name=topic_state_monitor_vector_map: map_topic_status level=OK status=OK now=1785601985.73 [s] last_message_time=1785601985.63 [s]
+
+--- W5 diag-graph blocks listing vector_map ---
+blocks: 1
+vector_map entries: 1
+### PASS-2 VARIANT W-udp_only-16MiB-BUFFERS-whole-stack torn down [t=1785602103.854581844]
+
+=== replica pass 2 done at t=1785602113.856846555 ===

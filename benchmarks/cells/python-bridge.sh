@@ -90,30 +90,6 @@ fail() {
   (run benchmarks/scripts/fetch_bridge_deps.sh, or set BENCH_CARLA_0915_ROOT)"
 [ -d "$MAP_BUNDLE_HOST" ] || fail "Autoware map bundle missing: $MAP_BUNDLE_HOST"
 
-# The base_link anchor, checked against the BRIDGE'S OWN SOURCE inside the
-# image rather than trusted from the harness registry. This family's bridge
-# subtracts DEFAULT_WHEELBASE/2 when it places sensors, so gt.csv corrects for
-# it (benchmarks/analysis/gt_anchor.py registers -1.425 m). A stale registered
-# value biases every E-family pose_error by the difference and would read as a
-# localization result rather than a harness bug. Added by fix round 1 (I-2):
-# the other two families already had this guard while the record claimed "each
-# launcher re-reads that source" -- true for two of three.
-BRIDGE_KIT_LOADER=/opt/autoware/lib/python3.10/site-packages/autoware_carla_interface/modules/sensor_kit_loader.py
-docker run --rm --entrypoint cat "$IMAGE" "$BRIDGE_KIT_LOADER" 2>/dev/null |
-  PYTHONPATH="$BENCH_REPO" python3 -c '
-import sys
-
-from benchmarks.analysis.gt_anchor import offset_for_approach, verify_registered_offset
-
-verify_registered_offset("python-bridge", sys.stdin.read())
-print("OK: base_link anchor {:+.8f} m matches the image".format(
-    offset_for_approach("python-bridge")))
-' || fail "the bridge's base_link anchor no longer matches
-  benchmarks/analysis/gt_anchor.py's registered value for approach
-  python-bridge (message above), or $BRIDGE_KIT_LOADER could not be read from
-  $IMAGE. Do NOT edit the registry to silence this without quoting the new
-  source line: it anchors every E-family pose_error."
-
 # Checked as a FILE before the mount, not trusted: `docker run -v` on a missing
 # host path silently creates a DIRECTORY at the container target, so the stack
 # would read the image's own copy (or fail on a directory) while the mount
@@ -169,6 +145,39 @@ IMAGE="${BENCH_BRIDGE_IMAGE:-${BENCH_AUTOWARE_IMAGE:-}}"
   fail "no bridge image resolved: run.sh exports BENCH_AUTOWARE_IMAGE, and
   BENCH_BRIDGE_IMAGE overrides it for a hand-driven launch"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || fail "image not present locally: $IMAGE"
+
+# The base_link anchor, checked against the BRIDGE'S OWN SOURCE inside the
+# image rather than trusted from the harness registry. This family's bridge
+# subtracts DEFAULT_WHEELBASE/2 when it places sensors, so gt.csv corrects for
+# it (benchmarks/analysis/gt_anchor.py registers -1.425 m). A stale registered
+# value biases every E-family pose_error by the difference and would read as a
+# localization result rather than a harness bug. Added by fix round 1 (I-2):
+# the other two families already had this guard while the record claimed "each
+# launcher re-reads that source" -- true for two of three.
+#
+# POSITION IS LOAD-BEARING, and cost cell E its Task 4 smoke: fix round 1
+# (ad56308, "No live run") placed this block 65 lines ABOVE the `IMAGE=`
+# resolution, so under `set -u` every python-bridge cell (E, E0, E-opt) aborted
+# `plan` with `IMAGE: unbound variable` -- and the empty pipe then made the
+# anchor check report the misleading "no DEFAULT_WHEELBASE assignment found in
+# the bridge source" on top of it. It must stay BELOW the resolution and its
+# `docker image inspect`; the guard reads the image, so it cannot precede the
+# statement that decides which image that is.
+BRIDGE_KIT_LOADER=/opt/autoware/lib/python3.10/site-packages/autoware_carla_interface/modules/sensor_kit_loader.py
+docker run --rm --entrypoint cat "$IMAGE" "$BRIDGE_KIT_LOADER" 2>/dev/null |
+  PYTHONPATH="$BENCH_REPO" python3 -c '
+import sys
+
+from benchmarks.analysis.gt_anchor import offset_for_approach, verify_registered_offset
+
+verify_registered_offset("python-bridge", sys.stdin.read())
+print("OK: base_link anchor {:+.8f} m matches the image".format(
+    offset_for_approach("python-bridge")))
+' || fail "the bridge's base_link anchor no longer matches
+  benchmarks/analysis/gt_anchor.py's registered value for approach
+  python-bridge (message above), or $BRIDGE_KIT_LOADER could not be read from
+  $IMAGE. Do NOT edit the registry to silence this without quoting the new
+  source line: it anchors every E-family pose_error."
 
 # Observer transport. MEASURED 2026-07-29 (Task 10) with the REAL bench_observer
 # binary against a live bridge, 20 s dwell per row, patches/python-bridge/
@@ -249,7 +258,26 @@ AW_COMPOSE=""
 # build (pins.yaml gezp_wheel) and the container's python3.10 is the only
 # interpreter on this host that can load it. /out is the run directory.
 GT_ENABLED="1"
-GT_CMD="docker exec -e PYTHONPATH=/work $AW_CONTAINER python3 -m benchmarks.scripts.collect_gt"
+# PYTHONUNBUFFERED=1 is OBSERVABILITY, not behaviour, and it closes a recorded
+# gap: every python-bridge run filed a 0-byte gt.log while its gt.csv was fully
+# populated (PROVENANCE.md 7.5), so this family left NO filed record of which
+# base_link anchor collect_gt.py applied -- the exact fact the plan-phase guard
+# above exists to establish, and the one every E-family pose_error rests on.
+#
+# ROOT-CAUSED 2026-08-01 (Task 8), measured rather than reasoned. collect_gt.py
+# prints its anchor line and the client/server versions at start-up, but
+# python's stdout is BLOCK-buffered over a non-TTY pipe, and docker exec is
+# not a TTY here. run.sh's teardown SIGTERMs GT_PID, which is the host-side
+# docker exec CLIENT and not the in-container interpreter, so the buffer is
+# never flushed anywhere the redirect can see. Reproduced both ways against
+# this image: a buffered exec killed after 4 s left 0 bytes, the identical exec
+# with PYTHONUNBUFFERED=1 left the line. The UE5 families never hit this because
+# their collector is a HOST process that receives the SIGTERM itself, runs its
+# handler and exits cleanly -- which is why only this family was affected.
+#
+# It changes nothing measured: the collector prints three lines in total, none
+# per row, and gt.csv was already flushed per row (collect_gt.py's own comment).
+GT_CMD="docker exec -e PYTHONPATH=/work -e PYTHONUNBUFFERED=1 $AW_CONTAINER python3 -m benchmarks.scripts.collect_gt"
 GT_OUT_DIR="/out"
 # NEVER 1 here: the bridge publishes FROM its own sensor.listen callback and
 # CARLA keeps one callback per sensor, so a counter would displace it and

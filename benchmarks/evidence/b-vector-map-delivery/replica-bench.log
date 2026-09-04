@@ -1,0 +1,835 @@
+
+################################################################
+### VARIANT V1-fastrtps-udp_only-STOCK-CELL-B   [t=1785601411.992448772]
+################################################################
+$ docker run -d --name aw-replica --gpus all --net=host --ipc=host -e ROS_DOMAIN_ID=0 -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/observer/config/udp_only.xml:/dds-profile.xml:ro -v /home/youtalk/autoware_map/town10-regen:/autoware_map/town10-regen:ro -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/autoware/pose_initializer.param.yaml:/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml:ro ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee sleep infinity
+--- env in force ---
+rmw_fastrtps_cpp
+/dds-profile.xml
+(CYCLONEDDS_URI unset)
+--- launching e2e_simulator (cells/tier4_autoware.sh line, use_sim_time:=false) [t=1785601412.550663475] ---
+launch issued at wall=1785601414.601500735
+--- waiting up to 180s for 'Succeeded to load lanelet2_map' ---
+map-load marker seen at wall=1785601421.748385491
+103:[autoware_map_projection_loader_node-17] Load /autoware_map/town10-regen/map_projector_info.yaml
+288:[component_container_mt-15] [INFO] [1785601421.342502441] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_loader_node.so
+335:[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/lanelet2_map_loader' in container '/map/map_container'
+341:[component_container_mt-15] [INFO] [1785601421.450801979] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_visualization_node.so
+342:[component_container_mt-15] [INFO] [1785601421.452167630] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+343:[component_container_mt-15] [INFO] [1785601421.452202709] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+351:[component_container_mt-15] [WARN] [1785601421.511444268] [map.lanelet2_map_loader]: /autoware_map/town10-regen/lanelet2_map.osm has no format_version(null) or non semver-style format_version(null) information
+352:[component_container_mt-15] [INFO] [1785601421.511498847] [map.lanelet2_map_loader]: Loaded map format_version: null
+--- settling 75s so discovery is complete and every probe is a LATE joiner ---
+
+--- R1 topic info -v /map/vector_map  (ALL endpoints + QoS) [t=1785601497.280704717] ---
+Type: autoware_map_msgs/msg/LaneletMapBin
+
+Publisher count: 0
+
+Subscription count: 15
+
+Node name: manual_lane_change_handler
+Node namespace: /planning/mission_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.17.02.8f.f6.00.00.00.00.00.00.14.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: mission_planner
+Node namespace: /planning/mission_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.19.02.b2.f4.00.00.00.00.00.00.21.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: mission_planner
+Node namespace: /planning/mission_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.19.02.b2.f4.00.00.00.00.00.00.24.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.1d.02.a0.26.00.00.00.00.00.00.14.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.2a.02.0a.e3.00.00.00.00.00.00.1b.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.2a.02.0a.e3.00.00.00.00.00.00.d1.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.34.02.34.b5.00.00.00.00.00.00.6d.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: topic_state_monitor_vector_map
+Node namespace: /system
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.3d.01.54.8f.00.00.00.00.00.00.f6.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: costmap_generator
+Node namespace: /planning/scenario_planning/parking
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.47.02.38.f9.00.00.00.00.00.00.21.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.49.02.7d.09.00.00.00.00.00.00.2a.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: planning_evaluator
+Node namespace: /planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.4c.02.bc.11.00.00.00.00.00.00.18.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.4f.02.d6.dd.00.00.00.00.00.00.13.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.58.02.4c.55.00.00.00.00.00.00.2a.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.ac.01.73.eb.00.00.00.00.00.00.3f.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: _NODE_NAME_UNKNOWN_
+Node namespace: _NODE_NAMESPACE_UNKNOWN_
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.ac.01.73.eb.00.00.00.00.00.00.50.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+
+--- R2 node info /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner [t=1785601498.723314002] ---
+Unable to find node '/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner'
+
+--- R3 late transient_local subscriber -> /map/vector_map (60s) [t=1785601500.051325885] ---
+type=autoware_map_msgs/msg/LaneletMapBin
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=0.807 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=0.81
+
+--- R4 late VOLATILE subscriber -> /map/vector_map (15s) [t=1785601502.575290287] ---
+PROBE topic=/map/vector_map durability=volatile result=TIMEOUT t_first_s=- data_bytes=- publishers_at_start=0 publishers_at_end=1 wall_waited_s=15.04
+
+--- R5 component_state_monitor verdict now (15s) [t=1785601519.373446929] ---
+DIAG topic_state_monitor_pointcloud_map: map_topic_status level=b'\x02' message='Error' topic=/map/pointcloud_map status=NotReceived warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601534.97 [s] last_message_time=0.00 [s]
+DIAG topic_state_monitor_vector_map: map_topic_status level=b'\x02' message='Error' topic=/map/vector_map status=NotReceived warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601534.89 [s] last_message_time=0.00 [s]
+
+--- R6 diag watch history (when the in-stack early joiner first got it) ---
+WATCH start wall=1785601414.992 window=200s
+WATCH wall=1785601422.391 name=topic_state_monitor_vector_map: map_topic_status level=OK status=None now=None last_message_time=None
+WATCH wall=1785601422.570 name=topic_state_monitor_vector_map: map_topic_status level=ERROR status=NotReceived now=1785601422.57 [s] last_message_time=0.00 [s]
+
+--- R7 planner-side waiting histogram ---
+     23 waiting for current_twist msg
+     23 waiting for current odometry
+     22 waiting for ego velocity
+     21 waiting for scenario_topic
+      4 waiting for
+      1 waiting for operation_mode_availability msg
+      1 waiting for mrm comfortable stop to become available
+
+--- R8 vector_map lines in the launch log ---
+8
+114:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map STALE
+519:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+579:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+...
+1063:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+1141:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+1208:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map ERROR
+### VARIANT V1-fastrtps-udp_only-STOCK-CELL-B torn down [t=1785601536.811278454]
+
+################################################################
+### VARIANT V1b-fastrtps-udp_only-REPEAT   [t=1785601546.814335959]
+################################################################
+$ docker run -d --name aw-replica --gpus all --net=host --ipc=host -e ROS_DOMAIN_ID=0 -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/observer/config/udp_only.xml:/dds-profile.xml:ro -v /home/youtalk/autoware_map/town10-regen:/autoware_map/town10-regen:ro -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/autoware/pose_initializer.param.yaml:/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml:ro ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee sleep infinity
+--- env in force ---
+rmw_fastrtps_cpp
+/dds-profile.xml
+(CYCLONEDDS_URI unset)
+--- launching e2e_simulator (cells/tier4_autoware.sh line, use_sim_time:=false) [t=1785601547.402481487] ---
+launch issued at wall=1785601549.452681647
+--- waiting up to 180s for 'Succeeded to load lanelet2_map' ---
+map-load marker seen at wall=1785601556.634014194
+58:[autoware_map_projection_loader_node-17] Load /autoware_map/town10-regen/map_projector_info.yaml
+281:[component_container_mt-15] [INFO] [1785601556.022791006] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_loader_node.so
+295:[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/lanelet2_map_loader' in container '/map/map_container'
+298:[component_container_mt-15] [INFO] [1785601556.067513213] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_visualization_node.so
+299:[component_container_mt-15] [INFO] [1785601556.068893073] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+300:[component_container_mt-15] [INFO] [1785601556.068922930] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+316:[component_container_mt-15] [WARN] [1785601556.102440720] [map.lanelet2_map_loader]: /autoware_map/town10-regen/lanelet2_map.osm has no format_version(null) or non semver-style format_version(null) information
+317:[component_container_mt-15] [INFO] [1785601556.102495965] [map.lanelet2_map_loader]: Loaded map format_version: null
+--- settling 75s so discovery is complete and every probe is a LATE joiner ---
+
+--- R1 topic info -v /map/vector_map  (ALL endpoints + QoS) [t=1785601632.104301716] ---
+Type: autoware_map_msgs/msg/LaneletMapBin
+
+Publisher count: 0
+
+Subscription count: 3
+
+Node name: planning_validator
+Node namespace: /planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.1a.03.a6.87.00.00.00.00.00.00.2a.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: remaining_distance_time_calculator
+Node namespace: /planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.33.03.95.c6.00.00.00.00.00.00.13.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: lane_departure_checker_node
+Node namespace: /control/trajectory_follower
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.0f.85.82.03.cd.d4.00.00.00.00.00.00.2a.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+
+--- R2 node info /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner [t=1785601633.456130422] ---
+Unable to find node '/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner'
+
+--- R3 late transient_local subscriber -> /map/vector_map (60s) [t=1785601634.811058370] ---
+type=autoware_map_msgs/msg/LaneletMapBin
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=0.287 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=0.29
+
+--- R4 late VOLATILE subscriber -> /map/vector_map (15s) [t=1785601636.786240803] ---
+PROBE topic=/map/vector_map durability=volatile result=TIMEOUT t_first_s=- data_bytes=- publishers_at_start=0 publishers_at_end=1 wall_waited_s=15.03
+
+--- R5 component_state_monitor verdict now (15s) [t=1785601653.484956997] ---
+DIAG topic_state_monitor_pointcloud_map: map_topic_status level=b'\x00' message='OK' topic=/map/pointcloud_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601669.01 [s] last_message_time=1785601559.11 [s]
+DIAG topic_state_monitor_vector_map: map_topic_status level=b'\x00' message='OK' topic=/map/vector_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601668.96 [s] last_message_time=1785601557.10 [s]
+
+--- R6 diag watch history (when the in-stack early joiner first got it) ---
+WATCH start wall=1785601549.839 window=200s
+WATCH wall=1785601555.166 name=topic_state_monitor_vector_map: map_topic_status level=OK status=None now=None last_message_time=None
+WATCH wall=1785601555.778 name=topic_state_monitor_vector_map: map_topic_status level=ERROR status=NotReceived now=1785601555.78 [s] last_message_time=0.00 [s]
+WATCH wall=1785601557.158 name=topic_state_monitor_vector_map: map_topic_status level=OK status=OK now=1785601557.16 [s] last_message_time=1785601557.10 [s]
+
+--- R7 planner-side waiting histogram ---
+     23 waiting for current_twist msg
+     23 waiting for current odometry
+     22 waiting for ego velocity
+     21 waiting for scenario_topic
+      1 waiting for operation_mode_availability msg
+      1 waiting for mrm comfortable stop to become available
+
+--- R8 vector_map lines in the launch log ---
+3
+125:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map STALE
+...
+125:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map STALE
+### VARIANT V1b-fastrtps-udp_only-REPEAT torn down [t=1785601670.772751200]
+
+################################################################
+### VARIANT V2-cyclonedds-CELLS-A-C-CONTROL   [t=1785601680.776134325]
+################################################################
+$ docker run -d --name aw-replica --gpus all --net=host --ipc=host -e ROS_DOMAIN_ID=0 -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp -v /home/youtalk/autoware_map/town10-regen:/autoware_map/town10-regen:ro -v /home/youtalk/src/carla-autoware-extension-worktrees/bench-p0/benchmarks/config/autoware/pose_initializer.param.yaml:/opt/autoware/share/autoware_launch/config/localization/pose_initializer.param.yaml:ro ghcr.io/autowarefoundation/autoware@sha256:5c22369a312f1cd8a03fb65b30c1ab542919c2c7a2cbd18e799956daef3ae8ee sleep infinity
+--- env in force ---
+rmw_cyclonedds_cpp
+(FASTRTPS_DEFAULT_PROFILES_FILE unset)
+(CYCLONEDDS_URI unset)
+--- launching e2e_simulator (cells/tier4_autoware.sh line, use_sim_time:=false) [t=1785601681.366935103] ---
+launch issued at wall=1785601683.429229304
+--- waiting up to 180s for 'Succeeded to load lanelet2_map' ---
+map-load marker seen at wall=1785601690.398544102
+62:[autoware_map_projection_loader_node-17] Load /autoware_map/town10-regen/map_projector_info.yaml
+431:[component_container_mt-15] [INFO] [1785601689.578286111] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_loader_node.so
+475:[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/lanelet2_map_loader' in container '/map/map_container'
+496:[component_container_mt-15] [INFO] [1785601689.637392606] [map.map_container]: Load Library: /opt/autoware/lib/liblanelet2_map_visualization_node.so
+498:[component_container_mt-15] [INFO] [1785601689.639047580] [map.map_container]: Found class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+499:[component_container_mt-15] [INFO] [1785601689.639082860] [map.map_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<autoware::lanelet2_map_visualizer::Lanelet2MapVisualizationNode>
+504:[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/map/lanelet2_map_visualization' in container '/map/map_container'
+506:[component_container_mt-15] [WARN] [1785601689.681834508] [map.lanelet2_map_loader]: /autoware_map/town10-regen/lanelet2_map.osm has no format_version(null) or non semver-style format_version(null) information
+--- settling 75s so discovery is complete and every probe is a LATE joiner ---
+
+--- R1 topic info -v /map/vector_map  (ALL endpoints + QoS) [t=1785601765.697910549] ---
+Type: autoware_map_msgs/msg/LaneletMapBin
+
+Publisher count: 1
+
+Node name: lanelet2_map_loader
+Node namespace: /map
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: PUBLISHER
+GID: 01.10.70.e9.22.0c.fb.72.d8.2e.7e.f1.00.00.51.03.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Subscription count: 16
+
+Node name: planning_evaluator
+Node namespace: /planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.0c.93.06.f5.87.0d.f4.c0.14.82.00.00.1b.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: control_evaluator
+Node namespace: /control
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.0e.3a.54.73.5b.da.78.71.71.b2.00.00.19.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: scenario_selector
+Node namespace: /planning/scenario_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.1c.c8.0d.d6.94.cc.2e.fb.44.66.00.00.17.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: motion_velocity_planner
+Node namespace: /planning/scenario_planning/lane_driving/motion_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.1d.36.a3.d6.af.60.37.07.e9.42.00.00.29.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (10)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: behavior_velocity_planner
+Node namespace: /planning/scenario_planning/lane_driving/behavior_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.22.08.fa.af.1f.ef.41.44.23.3c.00.00.36.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: behavior_path_planner
+Node namespace: /planning/scenario_planning/lane_driving/behavior_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.22.08.fa.af.1f.ef.41.44.23.3c.00.00.ad.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: costmap_generator
+Node namespace: /planning/scenario_planning/parking
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.2c.40.0d.87.f9.08.cc.e0.1b.cc.00.00.24.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: manual_lane_change_handler
+Node namespace: /planning/mission_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.39.27.ab.ba.b4.c4.56.85.fc.f6.00.00.17.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (10)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: mission_planner
+Node namespace: /planning/mission_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.4c.b3.2a.c7.59.7c.be.df.ff.af.00.00.24.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (10)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: mission_planner
+Node namespace: /planning/mission_planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.4c.b3.2a.c7.59.7c.be.df.ff.af.00.00.27.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: remaining_distance_time_calculator
+Node namespace: /planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.61.91.a1.bc.4c.bd.ee.87.00.65.00.00.16.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: lane_departure_checker_node
+Node namespace: /control/trajectory_follower
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.6c.d9.81.f6.34.d4.b4.3f.13.b7.00.00.2d.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: lanelet2_map_visualization
+Node namespace: /map
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.70.e9.22.0c.fb.72.d8.2e.7e.f1.00.00.41.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: vector_map_tf_generator
+Node namespace: /map
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.70.e9.22.0c.fb.72.d8.2e.7e.f1.00.00.53.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: planning_validator
+Node namespace: /planning
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.9b.f4.2a.a3.02.64.cd.4e.f3.1b.00.00.2d.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: topic_state_monitor_vector_map
+Node namespace: /system
+Topic type: autoware_map_msgs/msg/LaneletMapBin
+Endpoint type: SUBSCRIPTION
+GID: 01.10.d5.51.32.02.52.b5.5a.14.25.36.00.00.82.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (1)
+  Durability: TRANSIENT_LOCAL
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+
+--- R2 node info /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner [t=1785601766.878091676] ---
+/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner
+  Subscribers:
+    /localization/acceleration: geometry_msgs/msg/AccelWithCovarianceStamped
+    /localization/kinematic_state: nav_msgs/msg/Odometry
+    /map/vector_map: autoware_map_msgs/msg/LaneletMapBin
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /perception/object_recognition/objects: autoware_perception_msgs/msg/PredictedObjects
+    /perception/occupancy_grid_map/map: nav_msgs/msg/OccupancyGrid
+    /perception/traffic_light_recognition/traffic_signals: autoware_perception_msgs/msg/TrafficLightGroupArray
+    /planning/mission_planning/route: autoware_planning_msgs/msg/LaneletRoute
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/input/lateral_offset: tier4_planning_msgs/msg/LateralOffset
+    /planning/scenario_planning/max_velocity: autoware_internal_planning_msgs/msg/VelocityLimit
+    /planning/scenario_planning/parking/costmap_generator/occupancy_grid: nav_msgs/msg/OccupancyGrid
+    /planning/scenario_planning/scenario: autoware_internal_planning_msgs/msg/Scenario
+    /system/operation_mode/state: autoware_adapi_v1_msgs/msg/OperationModeState
+  Publishers:
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /planning/auto_mode_status/avoidance_by_lane_change_left: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/avoidance_by_lane_change_right: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/goal_planner: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/lane_change_left: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/lane_change_right: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/start_planner: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/static_obstacle_avoidance_left: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/auto_mode_status/static_obstacle_avoidance_right: tier4_rtc_msgs/msg/AutoModeStatus
+    /planning/behavior_path_planner/hazard_lights_cmd: autoware_vehicle_msgs/msg/HazardLightsCommand
+    /planning/cooperate_status/avoidance_by_lane_change_left: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/avoidance_by_lane_change_right: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/goal_planner: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/lane_change_left: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/lane_change_right: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/start_planner: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/static_obstacle_avoidance_left: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/cooperate_status/static_obstacle_avoidance_right: tier4_rtc_msgs/msg/CooperateStatusArray
+    /planning/debug/objects_of_interest/avoidance_by_lane_change_left: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/avoidance_by_lane_change_right: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/goal_planner: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/lane_change_left: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/lane_change_right: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/start_planner: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/static_obstacle_avoidance_left: visualization_msgs/msg/MarkerArray
+    /planning/debug/objects_of_interest/static_obstacle_avoidance_right: visualization_msgs/msg/MarkerArray
+    /planning/path_candidate/avoidance_by_lane_change: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/bidirectional_traffic: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/goal_planner: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/lane_change_left: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/lane_change_right: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/side_shift: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/start_planner: autoware_planning_msgs/msg/Path
+    /planning/path_candidate/static_obstacle_avoidance: autoware_planning_msgs/msg/Path
+    /planning/path_reference/avoidance_by_lane_change: autoware_planning_msgs/msg/Path
+    /planning/path_reference/bidirectional_traffic: autoware_planning_msgs/msg/Path
+    /planning/path_reference/goal_planner: autoware_planning_msgs/msg/Path
+    /planning/path_reference/lane_change_left: autoware_planning_msgs/msg/Path
+    /planning/path_reference/lane_change_right: autoware_planning_msgs/msg/Path
+    /planning/path_reference/side_shift: autoware_planning_msgs/msg/Path
+    /planning/path_reference/start_planner: autoware_planning_msgs/msg/Path
+    /planning/path_reference/static_obstacle_avoidance: autoware_planning_msgs/msg/Path
+    /planning/planning_factors/avoidance_by_lane_change: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/behavior_path_planner: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/bidirectional_traffic: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/goal_planner: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/lane_change_left: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/lane_change_right: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/side_shift: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/start_planner: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/planning_factors/static_obstacle_avoidance: autoware_internal_planning_msgs/msg/PlanningFactorArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/avoidance_by_lane_change: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/avoidance_debug_message_array: tier4_planning_msgs/msg/AvoidanceDebugMsgArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/bidirectional_traffic: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/bound: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/goal_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/lane_change_left: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/lane_change_right: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/avoidance_by_lane_change: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/bidirectional_traffic: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/goal_planner: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/lane_change_left: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/lane_change_right: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/side_shift: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/start_planner: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/processing_time_detail_ms/static_obstacle_avoidance: autoware_internal_debug_msgs/msg/ProcessingTimeTree
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/side_shift: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/start_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/static_obstacle_avoidance: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/turn_signal_info: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/avoidance_by_lane_change: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/bidirectional_traffic: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/goal_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/lane_change_left: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/lane_change_right: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/side_shift: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/start_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_lanes/static_obstacle_avoidance: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/avoidance_by_lane_change: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/bidirectional_traffic: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/goal_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/lane_change_left: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/lane_change_right: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/side_shift: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/start_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/info/static_obstacle_avoidance: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/output/is_reroute_available: tier4_planning_msgs/msg/RerouteAvailability
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/avoidance_by_lane_change: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/bidirectional_traffic: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/goal_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/lane_change_left: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/lane_change_right: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/side_shift: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/start_planner: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/virtual_wall/static_obstacle_avoidance: visualization_msgs/msg/MarkerArray
+    /planning/scenario_planning/lane_driving/behavior_planning/path_with_lane_id: autoware_internal_planning_msgs/msg/PathWithLaneId
+    /planning/scenario_planning/modified_goal: autoware_planning_msgs/msg/PoseWithUuidStamped
+    /planning/turn_indicators_cmd: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    /rosout: rcl_interfaces/msg/Log
+  Service Servers:
+    /planning/cooperate_commands/avoidance_by_lane_change_left: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/avoidance_by_lane_change_right: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/goal_planner: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/lane_change_left: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/lane_change_right: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/start_planner: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/static_obstacle_avoidance_left: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/cooperate_commands/static_obstacle_avoidance_right: tier4_rtc_msgs/srv/CooperateCommands
+    /planning/enable_auto_mode/avoidance_by_lane_change_left: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/avoidance_by_lane_change_right: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/goal_planner: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/lane_change_left: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/lane_change_right: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/start_planner: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/static_obstacle_avoidance_left: tier4_rtc_msgs/srv/AutoMode
+    /planning/enable_auto_mode/static_obstacle_avoidance_right: tier4_rtc_msgs/srv/AutoMode
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/config_logger: logging_demo/srv/ConfigLogger
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/describe_parameters: rcl_interfaces/srv/DescribeParameters
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/get_parameter_types: rcl_interfaces/srv/GetParameterTypes
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/get_parameters: rcl_interfaces/srv/GetParameters
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/list_parameters: rcl_interfaces/srv/ListParameters
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/set_parameters: rcl_interfaces/srv/SetParameters
+    /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/set_parameters_atomically: rcl_interfaces/srv/SetParametersAtomically
+  Service Clients:
+
+  Action Servers:
+
+  Action Clients:
+
+
+--- R3 late transient_local subscriber -> /map/vector_map (60s) [t=1785601768.029876912] ---
+type=autoware_map_msgs/msg/LaneletMapBin
+PROBE topic=/map/vector_map durability=transient_local result=RECEIVED t_first_s=0.028 data_bytes=1305281 publishers_at_start=0 publishers_at_end=1 wall_waited_s=0.03
+
+--- R4 late VOLATILE subscriber -> /map/vector_map (15s) [t=1785601769.542683445] ---
+PROBE topic=/map/vector_map durability=volatile result=TIMEOUT t_first_s=- data_bytes=- publishers_at_start=0 publishers_at_end=1 wall_waited_s=15.02
+
+--- R5 component_state_monitor verdict now (15s) [t=1785601786.058049803] ---
+DIAG topic_state_monitor_pointcloud_map: map_topic_status level=b'\x00' message='OK' topic=/map/pointcloud_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601801.38 [s] last_message_time=1785601690.07 [s]
+DIAG topic_state_monitor_vector_map: map_topic_status level=b'\x00' message='OK' topic=/map/vector_map status=OK warn_rate=0.00 [Hz] error_rate=0.00 [Hz] timeout=0.00 [s] measured_rate=100000.00 [Hz] now=1785601801.34 [s] last_message_time=1785601689.98 [s]
+
+--- R6 diag watch history (when the in-stack early joiner first got it) ---
+WATCH start wall=1785601683.809 window=200s
+WATCH wall=1785601689.303 name=topic_state_monitor_vector_map: map_topic_status level=OK status=None now=None last_message_time=None
+WATCH wall=1785601689.361 name=topic_state_monitor_vector_map: map_topic_status level=ERROR status=NotReceived now=1785601689.36 [s] last_message_time=0.00 [s]
+WATCH wall=1785601690.036 name=topic_state_monitor_vector_map: map_topic_status level=OK status=OK now=1785601690.04 [s] last_message_time=1785601689.98 [s]
+
+--- R7 planner-side waiting histogram ---
+     23 waiting for current_twist msg
+     23 waiting for current odometry
+     22 waiting for scenario_topic
+     22 waiting for ego velocity
+      1 waiting for operation_mode_availability msg
+      1 waiting for mrm comfortable stop to become available
+
+--- R8 vector_map lines in the launch log ---
+1
+187:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map STALE
+...
+187:[logging_node-14]         - /autoware/map/topic_rate_check/vector_map STALE
+### VARIANT V2-cyclonedds-CELLS-A-C-CONTROL torn down [t=1785601802.722925297]
+
+=== replica bench done at t=1785601812.725361919 ===

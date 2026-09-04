@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
-"""CAL-seam report tool: the C1(a) isolation-instrument table.
+"""CAL report tool: a calibration cell's per-topic latency/rate table.
 
     python3 -m benchmarks.scripts.cal_report <run_dir>
 
-CAMPAIGN STATUS -- DEAD CODE, AND DELIBERATELY KEPT (2026-07-30). Cell
-CAL-seam was STRUCK by the owner's core-duel scope cut (config/cells.yaml
-`dropped:`; benchmarks/README.md's 2026-07-30 amendment), so THIS TOOL WILL
-NEVER BE RUN AGAINST A MEASUREMENT in this campaign and there is no C1(a)
-table in the results. C1(a) seam overhead is UNMEASURED -- not weakly
-measured. It is an owner TIME-BUDGET decision, not a technical block: this
-module and its unit tests (tests/benchmarks/test_cal_report.py) are complete
-and green, and so is the extension-side publisher they were written for
+SCOPE -- the CALIBRATION-approach cells, not CAL-seam alone. It reads one run
+directory's observer.csv + resources.csv and renders a per-topic one-hop/rate
+table plus a per-process CPU table; nothing in it is specific to either CAL
+cell. `benchmarks/run.sh`'s step 15 names this module as the renderer for
+every `carla: none` cell, which today means CAL-rmw.
+
+    SCOPE CORRECTED 2026-07-31 (Task 16). This docstring's first line and its
+    campaign-status note used to scope the tool to CAL-seam and to state that
+    it "will never be run against a measurement". Task 16 falsified that: all
+    fifteen `benchmarks/results/CAL-rmw/run-*` directories were rendered
+    through `summarize_run`, and the frozen `one_hop_wall_ms` margin in
+    `benchmarks/config/margins.yaml` is derived from those p50s. The tool is
+    LIVE; only its SEAM use is dead. See results/CAL-rmw/PROVENANCE.md.
+
+WHAT IS DEAD is the C1(a) seam half, and it is deliberately kept
+(2026-07-30). Cell CAL-seam was STRUCK by the owner's core-duel scope cut
+(config/cells.yaml `dropped:`; benchmarks/README.md's 2026-07-30 amendment),
+so there is no C1(a) table in the results and C1(a) seam overhead is
+UNMEASURED -- not weakly measured. An owner TIME-BUDGET decision, not a
+technical block: this module and its unit tests
+(tests/benchmarks/test_cal_report.py) are complete and green, and so is the
+extension-side publisher they were written for
 (extension/src/publishers/BenchCloudPublisher.{h,cpp}, registered in
-ExtensionInit.cpp). Nothing is deleted, so a later campaign can pick the
-instrument up; nobody should read its presence as evidence that it ran.
+ExtensionInit.cpp). Nothing is deleted, so a later campaign can pick the seam
+instrument up; nobody should read its presence as evidence that the SEAM was
+measured.
 
 CAL-seam pairs the SAME synthetic sensor_msgs/PointCloud2 message published
 two ways on one CARLA fork process -- through the extension's C-ABI seam .so
@@ -87,14 +102,20 @@ def summarize_run(run_dir) -> dict:
 
 
 def render_report(run_dir) -> str:
-    """Markdown C1(a) table for one CAL run directory: a per-topic latency/
-    rate table (the seam-vs-in-core paired comparison) and a per-process
-    publish-CPU table, in the order `summarize_run`'s two sections list
-    them."""
+    """Markdown table for one CAL run directory: a per-topic latency/rate
+    table and a per-process publish-CPU table, in the order `summarize_run`'s
+    two sections list them. On CAL-seam the per-topic table would be the
+    seam-vs-in-core paired comparison; on CAL-rmw it is the single synthetic
+    cloud, one row.
+
+    The heading names no cell. It used to read "CAL-seam report" and was
+    LABELLING CAL-RMW RUNS WITH ANOTHER CELL'S NAME -- corrected 2026-07-31
+    (Task 16), which is the first task to have rendered a real run through
+    here. Text only: no percentile, rate or CPU value changes."""
     run_dir = Path(run_dir)
     s = summarize_run(run_dir)
     lines = [
-        f"## CAL-seam report: {run_dir.name}",
+        f"## CAL report: {run_dir.name}",
         "",
         "### One-hop wall latency (arrival_system_ns - header_stamp_ns)",
         "",
@@ -121,7 +142,7 @@ def render_report(run_dir) -> str:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Render the CAL-seam C1(a) table for one run directory."
+        description="Render the CAL latency/rate table for one run directory."
     )
     p.add_argument(
         "run_dir",

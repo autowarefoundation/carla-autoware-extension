@@ -1,0 +1,5 @@
+stop: pid 438 (/tmp/tier4-concat-relay.pid) is already gone
+stop: pid 121 (/tmp/tier4-autoware.pid) + 52 descendant(s)
+stop: 53 of pid 121's tree still up; SIGINT
+stop: pid 121 tree gone
+autoware launch + concat relay stopped (2 pid file(s) checked, 53 process(es) in the recorded trees, 0 survivor(s); container now: 4 running, 3 defunct)

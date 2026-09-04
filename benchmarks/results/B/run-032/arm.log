@@ -1,0 +1,14 @@
+[INFO] [1785606571.294543741] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785606573.566425032] [arm_and_goal]: arm observations [localized]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.039 ego_speed_mps=0.000
+[INFO] [1785606582.624328225] [arm_and_goal]: arm observations [pre-engage]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.67 n=8 nonzero_longitudinal=0/8 frac=0.000 peak_abs_velocity=0.000 ego_displacement_m=0.031 ego_speed_mps=0.000
+[INFO] [1785606582.734470246] [arm_and_goal]: MRM config: /control/vehicle_cmd_gate use_emergency_handling=false (the perception-off false MRM; same configuration as the proven extension sequence and as every promoted gate number)
+[WARN] [1785606582.746080128] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785606584.752353505] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785606586.755125916] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785606588.759238518] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785606590.763939748] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785606592.741139149] [arm_and_goal]: change_to_autonomous: did not succeed within 10 s -- FALLING BACK to the proven /autoware/engage publish (documented fallback, not silent; see step-11_6-adapi-engage for a refusal, task-15-adapi-engage-cellc for an acceptance, and R4.3)
+[INFO] [1785606593.755534002] [arm_and_goal]: /autoware/engage: published engage=true x5
+[INFO] [1785606642.660364250] [arm_and_goal]: post-engage state: mode_autonomous=True is_autoware_control_enabled=True (R4.3 observation; only mode_autonomous gates ARMED)
+[INFO] [1785606642.660641099] [arm_and_goal]: arm observations [post-engage]: mode=2 autonomous=True is_autoware_control_enabled=True is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.253 ego_speed_mps=0.049
+ARM FAIL: /api/operation_mode/state never reported mode == AUTONOMOUS together with /control/command/control_cmd sustaining ~5.00 Hz nominal (~4.67 Hz effective over a closed 3 s window), within 60 s after engage (see step-11_6-adapi-engage and R4.2 -- neither a service reporting success nor rate alone is enough)

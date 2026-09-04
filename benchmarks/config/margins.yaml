@@ -4,7 +4,51 @@
 # commit referencing the reason (e.g. the CAL-rmw measured transport
 # term); never after data collection has started.
 one_hop_wall_ms:
-  margin: 2.0 # provisional; revisit from CAL-rmw before P3
+  # FROZEN 2026-07-30 from the CAL-rmw measurement (Task 16), which is the
+  # revisit the previous `provisional` note registered. This is the LAST
+  # legitimate edit to this file.
+  #
+  # On this file's own amendment rule, stated rather than glossed: the rule
+  # above allows a change "only BEFORE the first P3 measurement run" and names
+  # "the CAL-rmw measured transport term" as a legitimate reason, which cannot
+  # both hold literally -- the transport term has to be MEASURED before it can
+  # be frozen from. The narrow reading is the operative one: the calibration
+  # runs this edit consumes (results/CAL-rmw/) are committed immediately before
+  # it, and NO duel data exists yet. Checkable: nothing under
+  # benchmarks/results/ is `duel_admissible: true` -- the pre-2026-07-30 runs
+  # have no such field at all and results/A/run-001..002 and
+  # results/CAL-rmw/run-001..015 record it false. So no verdict this margin
+  # gates has been computed from any run, which is what the rule protects.
+  #
+  # Formula, pre-registered and applied mechanically -- not chosen:
+  #   margin = max(2.0, ceil_to_0.5(2 x |p50_cyclonedds - p50_fastdds-udp|))
+  # at the duel size (921 600 B/msg at 10 Hz), fastdds-udp being the
+  # loopback-parity arm and fastdds-shm reported only as context. From
+  # results/CAL-rmw/run-001..015 (n = 5 per transport, interleaved), per-run
+  # p50 medianed across runs over the registered scoring window
+  # (analysis/window.py static_window, 20 s warm-up, README's unfittable
+  # branch):
+  #   p50_cyclonedds  = 0.6840 ms   p50_fastdds-udp = 1.0993 ms
+  #   |delta| = 0.4152 -> 2x = 0.8305 -> ceil_to_0.5 = 1.0 -> max(2.0, 1.0)
+  #
+  # SO THE 2.0 FLOOR BINDS. The value is unchanged from the provisional one,
+  # and that is a RESULT, not an agreement: the measurement puts 2 x |delta|
+  # at 0.83 ms, well under the floor, so the floor is what sets the margin.
+  # The floor keeps binding for any |delta| <= 1.0 ms, i.e. the measured
+  # 0.4152 ms sits 2.41x inside it. cal_report.py's unwindowed p50s give
+  # |delta| = 0.4549 ms and the same 2.0.
+  #
+  # Two limits on the transfer, both disclosed rather than implied. (1) This
+  # term is observer-windowed and UNFITTED (no /clock exists in CAL-rmw) while
+  # the duel term is /clock-windowed and fit-converted -- same measurand,
+  # different window basis and arithmetic (README's "Recorded consequence for
+  # Task 16"). (2) The two arms carried very different DELIVERED load, ~10
+  # msg/s against ~0.85 msg/s, because Fast DDS loses most 921 600 B samples;
+  # the nominal size cancels but the queueing pressure does not, so the delta
+  # is a weaker loopback-parity estimate than the formula's framing suggests.
+  # Neither changes the frozen value, because the floor binds.
+  # results/CAL-rmw/PROVENANCE.md carries the per-run table and the evidence.
+  margin: 2.0
 lidar_to_ndt_sim_ms:
   margin: 5.0
 control_staleness_ms:

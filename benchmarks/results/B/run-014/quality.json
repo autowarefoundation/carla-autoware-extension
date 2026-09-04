@@ -1,0 +1,22 @@
+{
+  "pose_err_p50_m": 0.024517748673168235,
+  "pose_err_p95_m": 0.04255063686516424,
+  "pose_err_max_m": 0.061197712375548885,
+  "pose_bias_m": 0.025158495099626997,
+  "lateral_dev_p95_m": 1.6346180862849935,
+  "goal_closest_approach_m": null,
+  "goal_terminal_distance_m": null,
+  "ndt_rate_ratio": 0.7102438918511935,
+  "gate_pass": false,
+  "reasons": [
+    "ndt rate ratio 0.71 < 0.9"
+  ],
+  "arm": "static",
+  "window_sim_ns": [
+    49965809426,
+    101666666984
+  ],
+  "goal_window_sim_ns": null,
+  "ladder_branch": "absolute",
+  "expected_ndt_hz": 10.0
+}

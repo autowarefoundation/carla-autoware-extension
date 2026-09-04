@@ -1,0 +1,52 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-08-01-21-33-07-836627-youtalk-desktop-112
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [autoware_carla_interface-1]: process started with pid [146]
+[INFO] [autoware_raw_vehicle_cmd_converter_node-2]: process started with pid [148]
+[INFO] [relay-3]: process started with pid [150]
+[INFO] [relay-4]: process started with pid [152]
+[INFO] [republish-5]: process started with pid [154]
+[INFO] [republish-6]: process started with pid [166]
+[INFO] [republish-7]: process started with pid [170]
+[INFO] [republish-8]: process started with pid [172]
+[INFO] [republish-9]: process started with pid [174]
+[INFO] [republish-10]: process started with pid [178]
+[INFO] [republish-11]: process started with pid [180]
+[INFO] [multi_camera_combiner-12]: process started with pid [182]
+[multi_camera_combiner-12] [INFO] [1785619988.149124347] [multi_camera_combiner]: Multi-camera combiner node started
+[autoware_carla_interface-1] [INFO] [1785619988.171249585] [autoware_carla_interface]: Using Autoware sensor kit calibration: carla_sensor_kit_description
+[autoware_carla_interface-1] [INFO] [1785619988.173671166] [autoware_carla_interface]: Registered sensor: CAM_FRONT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_FRONT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.173809172] [autoware_carla_interface]: Registered sensor: CAM_FRONT_LEFT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_FRONT_LEFT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.173927603] [autoware_carla_interface]: Registered sensor: CAM_FRONT_RIGHT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_FRONT_RIGHT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.174044068] [autoware_carla_interface]: Registered sensor: CAM_BACK (type: sensor.camera.rgb, topic: /sensing/camera/CAM_BACK/image_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.174158592] [autoware_carla_interface]: Registered sensor: CAM_BACK_LEFT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_BACK_LEFT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.174272627] [autoware_carla_interface]: Registered sensor: CAM_BACK_RIGHT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_BACK_RIGHT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.174388897] [autoware_carla_interface]: Registered sensor: top (type: sensor.lidar.ray_cast, topic: /sensing/lidar/top/pointcloud_before_sync)
+[autoware_carla_interface-1] [INFO] [1785619988.174505580] [autoware_carla_interface]: Registered sensor: gnss (type: sensor.other.gnss, topic: /sensing/gnss/pose_with_covariance)
+[autoware_carla_interface-1] [INFO] [1785619988.174619120] [autoware_carla_interface]: Registered sensor: imu (type: sensor.other.imu, topic: /sensing/imu/tamagawa/imu_raw)
+[autoware_carla_interface-1] [INFO] [1785619988.177000563] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_FRONT/image_raw
+[autoware_carla_interface-1] [INFO] [1785619988.177694031] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_FRONT/camera_info
+[autoware_carla_interface-1] [INFO] [1785619988.178010163] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_FRONT_LEFT/image_raw
+[autoware_carla_interface-1] [INFO] [1785619988.178294656] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_FRONT_LEFT/camera_info
+[autoware_carla_interface-1] [INFO] [1785619988.178565819] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_FRONT_RIGHT/image_raw
+[autoware_carla_interface-1] [INFO] [1785619988.178820881] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_FRONT_RIGHT/camera_info
+[autoware_carla_interface-1] [INFO] [1785619988.179063034] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_BACK/image_raw
+[autoware_carla_interface-1] [INFO] [1785619988.179312575] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_BACK/camera_info
+[autoware_carla_interface-1] [INFO] [1785619988.179568991] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_BACK_LEFT/image_raw
+[autoware_carla_interface-1] [INFO] [1785619988.179813382] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_BACK_LEFT/camera_info
+[autoware_carla_interface-1] [INFO] [1785619988.180072901] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_BACK_RIGHT/image_raw
+[autoware_carla_interface-1] [INFO] [1785619988.180321243] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_BACK_RIGHT/camera_info
+[autoware_carla_interface-1] [INFO] [1785619988.180770052] [autoware_carla_interface]: Created LiDAR publisher: /sensing/lidar/top/pointcloud_before_sync
+[autoware_carla_interface-1] [INFO] [1785619988.181992394] [autoware_carla_interface]: Created GNSS publisher: /sensing/gnss/pose_with_covariance
+[autoware_carla_interface-1] [INFO] [1785619988.182449365] [autoware_carla_interface]: Created IMU publisher: /sensing/imu/tamagawa/imu_raw
+[autoware_carla_interface-1] [INFO] [1785619988.182597472] [autoware_carla_interface]: Configured 9 sensors from mapping
+[multi_camera_combiner-12] [WARN] [1785619988.242055563] [multi_camera_combiner]: Waiting for images from: ['CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']
+[multi_camera_combiner-12] [INFO] [1785619998.591428815] [multi_camera_combiner]: Received first image from CAM_FRONT
+[multi_camera_combiner-12] [INFO] [1785619998.612767299] [multi_camera_combiner]: Received first image from CAM_FRONT_RIGHT
+[multi_camera_combiner-12] [INFO] [1785619998.621088632] [multi_camera_combiner]: Received first image from CAM_FRONT_LEFT
+[multi_camera_combiner-12] [INFO] [1785619998.631693432] [multi_camera_combiner]: Received first image from CAM_BACK
+[multi_camera_combiner-12] [INFO] [1785619998.641901557] [multi_camera_combiner]: Received first image from CAM_BACK_LEFT
+[multi_camera_combiner-12] [INFO] [1785619998.651233287] [multi_camera_combiner]: Received first image from CAM_BACK_RIGHT
+[multi_camera_combiner-12] [INFO] [1785619998.651955600] [multi_camera_combiner]: All cameras received! Starting to publish combined image.
+[republish-11] [WARN] [1785620025.914785443] [traffic_light_republish]: New publisher discovered on topic '/sensing/camera/traffic_light/image_raw', offering incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785620349.670561414] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785620353.363421464] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.

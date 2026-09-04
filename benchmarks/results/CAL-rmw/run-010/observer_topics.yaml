@@ -1,0 +1,24 @@
+# bench_observer topic list for cell CAL-rmw (calibration approach).
+#
+# No simulator and no Autoware: this cell measures the transport floor, so
+# the only topic is bench_pub's synthetic PointCloud2. The topic name is the
+# default declared in benchmarks/observer/src/bench_pub.cpp
+# (`declare_parameter<std::string>("topic", "/bench/cloud")`) and is what
+# benchmarks/cells/calibration.sh passes to bench_pub, so the two cannot
+# drift apart.
+#
+# There is no /clock publisher in this cell, so clock.csv stays header-only
+# and observer.csv's clock_ns column holds the -1 sentinel throughout --
+# expected, and the same shape the Task 5 contract test measured.
+#
+# No PublishedTime entry is coming for this cell: PublishedTime is an
+# Autoware publisher-side stamp and nothing here is an Autoware node.
+#
+# Format: "<topic>|<type>|<kind>", or "<topic>|<type>|<kind>|<arg>" for a kind
+# that takes an argument; kind in generic|odometry|pose|tf|published_time
+# (benchmarks/observer/src/bench_observer.cpp). out_dir is supplied by run.sh
+# as -p out_dir:=/out, not from this file.
+/**:
+  ros__parameters:
+    topics:
+      - /bench/cloud|sensor_msgs/msg/PointCloud2|generic

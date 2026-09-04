@@ -1,0 +1,8 @@
+stop: pid 202 (/tmp/tier4-concat-relay.pid) + 1 descendant(s)
+stop: 2 of pid 202's tree still up; SIGINT
+stop: pid 202 tree gone
+stop: SKIPPING /tmp/tier4-autoware.pid -- pid 119 was REUSED. Recorded at launch as
+stop:   'nohup ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/autoware_map/town10-regen sensor_model:=awsim_labs_sensor_kit vehicle_model:=sample_vehicle simulator_type:=awsim launch_vehicle_interface:=false use_sim_time:=true perception:=false rviz:=false '
+stop:   but pid 119 is now '/usr/bin/python3 /opt/ros/humble/bin/ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/autoware_map/town10-regen sensor_model:=awsim_labs_sensor_kit vehicle_model:=sample_vehicle simulator_type:=awsim launch_vehicle_interface:=false use_sim_time:=true perception:=false rviz:=false '. Nothing was signalled; the
+stop:   process this pid file named is already gone. Pid file kept.
+autoware launch + concat relay stopped (2 pid file(s) checked, 2 process(es) in the recorded trees, 0 survivor(s); container now: 56 running, 2 defunct)

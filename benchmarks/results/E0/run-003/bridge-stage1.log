@@ -1,0 +1,58 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-08-01-20-49-37-718070-youtalk-desktop-113
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [autoware_carla_interface-1]: process started with pid [147]
+[INFO] [autoware_raw_vehicle_cmd_converter_node-2]: process started with pid [149]
+[INFO] [relay-3]: process started with pid [151]
+[INFO] [relay-4]: process started with pid [153]
+[INFO] [republish-5]: process started with pid [155]
+[INFO] [republish-6]: process started with pid [167]
+[INFO] [republish-7]: process started with pid [169]
+[INFO] [republish-8]: process started with pid [171]
+[INFO] [republish-9]: process started with pid [173]
+[INFO] [republish-10]: process started with pid [177]
+[INFO] [republish-11]: process started with pid [179]
+[INFO] [multi_camera_combiner-12]: process started with pid [181]
+[multi_camera_combiner-12] [INFO] [1785617378.035959589] [multi_camera_combiner]: Multi-camera combiner node started
+[autoware_carla_interface-1] [INFO] [1785617378.082335275] [autoware_carla_interface]: Using Autoware sensor kit calibration: carla_sensor_kit_description
+[autoware_carla_interface-1] [INFO] [1785617378.084885702] [autoware_carla_interface]: Registered sensor: CAM_FRONT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_FRONT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.085022208] [autoware_carla_interface]: Registered sensor: CAM_FRONT_LEFT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_FRONT_LEFT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.085139391] [autoware_carla_interface]: Registered sensor: CAM_FRONT_RIGHT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_FRONT_RIGHT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.085254203] [autoware_carla_interface]: Registered sensor: CAM_BACK (type: sensor.camera.rgb, topic: /sensing/camera/CAM_BACK/image_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.085375929] [autoware_carla_interface]: Registered sensor: CAM_BACK_LEFT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_BACK_LEFT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.085488100] [autoware_carla_interface]: Registered sensor: CAM_BACK_RIGHT (type: sensor.camera.rgb, topic: /sensing/camera/CAM_BACK_RIGHT/image_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.085598756] [autoware_carla_interface]: Registered sensor: top (type: sensor.lidar.ray_cast, topic: /sensing/lidar/top/pointcloud_before_sync)
+[autoware_carla_interface-1] [INFO] [1785617378.085710210] [autoware_carla_interface]: Registered sensor: gnss (type: sensor.other.gnss, topic: /sensing/gnss/pose_with_covariance)
+[autoware_carla_interface-1] [INFO] [1785617378.085821201] [autoware_carla_interface]: Registered sensor: imu (type: sensor.other.imu, topic: /sensing/imu/tamagawa/imu_raw)
+[autoware_carla_interface-1] [INFO] [1785617378.088378735] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_FRONT/image_raw
+[autoware_carla_interface-1] [INFO] [1785617378.088867529] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_FRONT/camera_info
+[autoware_carla_interface-1] [INFO] [1785617378.089166077] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_FRONT_LEFT/image_raw
+[autoware_carla_interface-1] [INFO] [1785617378.089433377] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_FRONT_LEFT/camera_info
+[autoware_carla_interface-1] [INFO] [1785617378.089692398] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_FRONT_RIGHT/image_raw
+[autoware_carla_interface-1] [INFO] [1785617378.089944877] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_FRONT_RIGHT/camera_info
+[autoware_carla_interface-1] [INFO] [1785617378.090193951] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_BACK/image_raw
+[autoware_carla_interface-1] [INFO] [1785617378.090437553] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_BACK/camera_info
+[autoware_carla_interface-1] [INFO] [1785617378.090704267] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_BACK_LEFT/image_raw
+[autoware_carla_interface-1] [INFO] [1785617378.090960796] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_BACK_LEFT/camera_info
+[autoware_carla_interface-1] [INFO] [1785617378.091236714] [autoware_carla_interface]: Created camera publisher: /sensing/camera/CAM_BACK_RIGHT/image_raw
+[autoware_carla_interface-1] [INFO] [1785617378.091503928] [autoware_carla_interface]: Created camera info publisher: /sensing/camera/CAM_BACK_RIGHT/camera_info
+[autoware_carla_interface-1] [INFO] [1785617378.091930365] [autoware_carla_interface]: Created LiDAR publisher: /sensing/lidar/top/pointcloud_before_sync
+[autoware_carla_interface-1] [INFO] [1785617378.093150741] [autoware_carla_interface]: Created GNSS publisher: /sensing/gnss/pose_with_covariance
+[autoware_carla_interface-1] [INFO] [1785617378.093595108] [autoware_carla_interface]: Created IMU publisher: /sensing/imu/tamagawa/imu_raw
+[autoware_carla_interface-1] [INFO] [1785617378.093745008] [autoware_carla_interface]: Configured 9 sensors from mapping
+[multi_camera_combiner-12] [WARN] [1785617378.129501113] [multi_camera_combiner]: Waiting for images from: ['CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT', 'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']
+[multi_camera_combiner-12] [INFO] [1785617388.690629687] [multi_camera_combiner]: Received first image from CAM_FRONT
+[multi_camera_combiner-12] [INFO] [1785617388.750459142] [multi_camera_combiner]: Received first image from CAM_BACK
+[multi_camera_combiner-12] [INFO] [1785617388.759971679] [multi_camera_combiner]: Received first image from CAM_FRONT_LEFT
+[multi_camera_combiner-12] [INFO] [1785617388.770681008] [multi_camera_combiner]: Received first image from CAM_FRONT_RIGHT
+[multi_camera_combiner-12] [INFO] [1785617388.780842192] [multi_camera_combiner]: Received first image from CAM_BACK_RIGHT
+[multi_camera_combiner-12] [INFO] [1785617388.801342557] [multi_camera_combiner]: Received first image from CAM_BACK_LEFT
+[multi_camera_combiner-12] [INFO] [1785617388.829417873] [multi_camera_combiner]: All cameras received! Starting to publish combined image.
+[republish-11] [WARN] [1785617416.089396078] [traffic_light_republish]: New publisher discovered on topic '/sensing/camera/traffic_light/image_raw', offering incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617447.652233442] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617448.962226098] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617453.099824160] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617463.432263136] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617472.476010634] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617474.091806658] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617480.578728451] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.
+[autoware_raw_vehicle_cmd_converter_node-2] [WARN] [1785617487.206740068] [autoware_raw_vehicle_cmd_converter.accel_map]: Exceeding the acc range. Desired acc: -2.400000 < min acc on map: -2.180000. return max value.

@@ -343,7 +343,9 @@ exists — nothing else — so that is what the rule tests, applied per run:
   `header_stamp_ns` is itself wall time on such a run (the bench publishers
   stamp with wall `now()`), so the metric definitions below read the same way
   with no special case, and `one_hop_wall_ms` reduces to the direct
-  `arrival_system_ns - header_stamp_ns` — `cal_report._one_hop_ms`'s form.
+  `arrival_system_ns - header_stamp_ns` — the form `cal_report.summarize_run`
+  computes at `scripts/cal_report.py:83`, by calling `analysis/latency.py`
+  `segment_sim_ms(header_stamp_ns, arrival_system_ns)`.
 
 **Expected branch per cell, so a surprise is loud.** The calibration-approach
 cells (`cells.yaml` `approach: calibration` — `CAL-rmw` and `CAL-seam`) are
@@ -383,9 +385,9 @@ check lives there once rather than twice.
 > `cell_info.merge`'s `has_sim_clock` is true, so `run.sh` starts the clock
 > watchdog for it (step 7), waits for a sim span off `clock.csv` on the unpaced
 > path (step 10), and routes step 15 to `report.py`'s fit-strict renderer. But
-> `scripts/cal_report.py` — which is the **CAL-seam** tool specifically, not a
-> generic calibration one; its own first line says so — asserts that this cell
-> has no `/clock` and that no fit is "needed, or even possible". Both cannot
+> `scripts/cal_report.py` — the **calibration cells'** report tool, CAL-rmw's
+> as much as CAL-seam's — asserts that a CAL run has no `/clock` and that no
+> fit is "needed, or even possible". Applied to CAL-seam, both cannot
 > hold. If CAL-seam really has no `/clock`, every run of it is excluded
 > `stall:clock` before analysis sees it, and `has_sim_clock` (or the `carla:`
 > field it derives from) is wrong; if it does tick, `cal_report.py`'s premise
@@ -436,8 +438,10 @@ must not be assumed to be the same number.
 
 Relation to `scripts/cal_report.py`: the SAME measurand, a DIFFERENT code path,
 deliberately. On **`CAL-rmw`** the publisher stamps `header.stamp` with wall
-`now()` and nothing publishes `/clock`, so `cal_report._one_hop_ms` takes the
-direct `arrival_system_ns - header_stamp_ns` and no fit is possible. Both
+`now()` and nothing publishes `/clock`, so `cal_report.summarize_run` takes the
+direct `arrival_system_ns - header_stamp_ns` — `scripts/cal_report.py:83`,
+`segment_sim_ms(header_stamp_ns, arrival_system_ns)`, whose percentiles become
+`one_hop_p50_ms` on the next lines — and no fit is possible. Both
 halves are evidenced for that cell and only that cell:
 `benchmarks/observer/src/bench_pub.cpp`'s own first line scopes itself to
 CAL-rmw and states "stamp is system now() so the CAL analysis
@@ -1350,6 +1354,28 @@ than the `observer_env` row it shows up in:
   observed one-hop M1/M2 number is attributable to the recording
   transport, and it bounds exactly that: the **instrument** difference
   between a Cyclone-on-`lo` observer and a Fast-DDS-UDP observer.
+- **DISCLOSED APPROXIMATION: publisher PLACEMENT is not the duel's.** In
+  `CAL-rmw` both ends are containerised — `bench_pub` and `bench_observer` run
+  in two containers from the ONE observer image, `--net=host --ipc=host`
+  (`cells/calibration.sh:136-142`, `run.sh:605-607`), and every CAL-rmw
+  manifest records it as `placement.run_mode: container-only`. In the native
+  cells the publisher is a HOST process — the CARLA fork, whose manifests
+  record `editor-game` — and only the observer is containerised. So the
+  calibration measures a container-to-container hop where the duel has a
+  host-to-container one. **What that does bound:** the observer-side transport
+  difference between two RMW configurations, since both CAL arms share the
+  identical placement and it therefore cancels out of the cyclonedds-vs-fastdds
+  delta the `one_hop_wall_ms` margin is frozen from. **What it does NOT
+  bound:** the absolute one-hop wall latency of a native cell, because a
+  host-process publisher crossing into a container is a different path —
+  namespace boundaries, `--ipc=host` segment ownership and scheduling all
+  differ — and this campaign never measured that path with the publisher on the
+  host. Nothing corrects for it and the delta is not adjusted; it is stated so
+  a reader does not transfer a CAL absolute onto a native cell. **Registered
+  2026-07-31 (Task 16)**: this approximation had been asserted in that task's
+  dispatch as "already recorded in the README" and it was NOT — the word
+  "approximation" did not occur in this file at all — so it is recorded here
+  now rather than left as an inherited claim about itself.
 - **What `CAL-rmw` does not bound.** It contains no Autoware, so it says
   nothing about the DUT-side difference. In the B family Autoware's own
   intra-stack topics travel over Fast-DDS/UDP-loopback instead of
@@ -2595,11 +2621,30 @@ WritePointCloud` rebuilds `message->fields` from scratch on every
   `scripts/cal_report.py`'s assertion that CAL-seam has no `/clock` is
   recorded as Task 14's to settle. Completeness: the branch had been
   keyed off the `carla:` field and justified by citing `cal_report.py`,
-  which is the **CAL-seam** tool specifically, not a generic calibration
-  one — so the rule was keyed on an attribute that does not determine
-  fittability, against evidence scoped to a different cell than the one
-  it was applied to. Testing the data instead of the attribute makes the
-  rule correct whichever way Task 14 resolves the contradiction.
+  whose `/clock` premise is about a CAL run generally (that citation
+  originally read "which is the **CAL-seam** tool specifically, not a
+  generic calibration one"; scope corrected 2026-07-31, Task 16 — see the
+  amendment of that date) — so the rule was keyed on an attribute that does
+  not determine fittability, against evidence scoped to a different cell
+  than the one it was applied to. Testing the data instead of the attribute
+  makes the rule correct whichever way Task 14 resolves the contradiction.
+
+  **Finding narrowed 2026-07-31 (Task 16).** One half of the entry above is
+  SUPERSEDED, and it is quoted rather than rewritten in place: "**against
+  evidence scoped to a different cell than the one it was applied to**". That
+  conclusion followed from the PRE-correction reading of `cal_report.py` as
+  "the **CAL-seam** tool specifically". Once the same 2026-07-31 scope
+  correction restated that premise as "about a CAL run generally", the evidence
+  is no longer scoped to a different cell and the clause no longer follows —
+  yet the entry still states it as the finding. **What survives is sufficient
+  on its own:** the rule had been keyed on an attribute (`cells.yaml`'s
+  `carla:` field) that does not determine fittability. That alone is why
+  testing the run's own `clock.csv` instead of the attribute is the correct
+  fix, and it is unaffected by which cell the `cal_report.py` citation covers.
+  Nothing about the branch, the margin, any threshold or any measured value
+  changes; this is a correction to a RATIONALE that a prior correction of this
+  task's own making rendered false.
+
 - **2026-07-28** — `config/cells.yaml`: `tick_hz` set to `null` on the
   tier4 cells (`B`, `D`, `B-hf`, `B45`) and on `CAL-seam`, naming
   Tasks 13 and 14. Completeness: those values were transcribed from an
@@ -3300,20 +3345,29 @@ tick_hz)`, both simulation-time periods), so a wall span inflates the
 - **2026-07-30 — registered loss: the CAL-seam publishers are committed but
   UNEXERCISED, i.e. dead code for this campaign.** Task 14's CODE half landed
   and stays in the tree: `extension/src/publishers/BenchCloudPublisher.{h,cpp}`,
-  its `ExtensionInit.cpp` registration and `ext_on_tick` drive,
-  `benchmarks/scripts/cal_report.py`, and their tests
+  its `ExtensionInit.cpp` registration and `ext_on_tick` drive, and their tests
   (`extension/test/test_bench_cloud_publisher.cpp`,
-  `tests/benchmarks/test_cal_report.py`). **None of it will ever run in a
-  measurement**, and its presence must not be read as evidence that the seam was
-  measured — so the disclosure is written into the artifacts themselves
-  (`BenchCloudPublisher.h`'s header, `cal_report.py`'s docstring, and
-  `patches/extension/README.md`'s spec section, whose fork-side twin was never
-  written and now will not be) as well as here. **Deliberately NOT deleted**:
-  the code is unit-tested and green, it costs a production run nothing (the
-  `$CARLA_BENCH_SEAM_CLOUD` gate leaves an unset environment byte-identical to
-  today), and a later campaign reviving C1(a) inherits both the instrument and
-  the spec. No engine relink and no behaviour change: the edits are comments and
-  documentation only.
+  `tests/benchmarks/test_cal_report.py`'s seam-topic fixtures). **None of it
+  will ever run in a measurement**, and its presence must not be read as
+  evidence that the seam was measured — so the disclosure is written into the
+  artifacts themselves (`BenchCloudPublisher.h`'s header, `cal_report.py`'s
+  docstring, and `patches/extension/README.md`'s spec section, whose fork-side
+  twin was never written and now will not be) as well as here. **Deliberately
+  NOT deleted**: the code is unit-tested and green, it costs a production run
+  nothing (the `$CARLA_BENCH_SEAM_CLOUD` gate leaves an unset environment
+  byte-identical to today), and a later campaign reviving C1(a) inherits both
+  the instrument and the spec. No engine relink and no behaviour change: the
+  edits are comments and documentation only.
+
+  **Scope corrected 2026-07-31 (Task 16).** This entry's dead-code list also
+  named `benchmarks/scripts/cal_report.py`, and that module is NOT dead: Task
+  16 rendered all fifteen `results/CAL-rmw/run-*` directories through its
+  `summarize_run` and froze `config/margins.yaml`'s `one_hop_wall_ms` margin
+  from those p50s. Only the module's SEAM use is unexercised. Its own
+  docstring and `tests/benchmarks/test_cal_report.py`'s carried the same wrong
+  scope and are corrected with it. Nothing about the PUBLISHERS changes — they
+  remain committed and never run.
+
 - **2026-07-30 — registered loss: no hard-fork-maintenance finding (`B45`).**
   This cell existed to measure what it costs to carry the tier4 CARLA fork
   against a **different** Autoware release (`pins.yaml` `autoware_045`,

@@ -1,0 +1,14 @@
+[INFO] [1785611403.199023326] [arm_and_goal]: waiting for /localization/kinematic_state >= 5 Hz over 5 s (timeout 60 s)
+[INFO] [1785611404.399989009] [arm_and_goal]: arm observations [localized]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.007 ego_speed_mps=0.000
+[INFO] [1785611404.406544859] [arm_and_goal]: arm observations [pre-engage]: mode=-1 autonomous=False is_autoware_control_enabled=False is_autonomous_mode_available=False control_cmd_hz~0.00 n=0 nonzero_longitudinal=0/0 frac=nan peak_abs_velocity=0.000 ego_displacement_m=0.007 ego_speed_mps=0.000
+[INFO] [1785611404.408408740] [arm_and_goal]: MRM config: /control/vehicle_cmd_gate use_emergency_handling=false (the perception-off false MRM; same configuration as the proven extension sequence and as every promoted gate number)
+[WARN] [1785611404.410361888] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785611406.411353161] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785611408.412612128] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785611410.413741610] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785611412.414756552] [arm_and_goal]: change_to_autonomous: not yet ok (The target mode is not available. Please check the diagnostics.); retrying
+[WARN] [1785611414.409448284] [arm_and_goal]: change_to_autonomous: did not succeed within 10 s -- FALLING BACK to the proven /autoware/engage publish (documented fallback, not silent; see step-11_6-adapi-engage for a refusal, task-15-adapi-engage-cellc for an acceptance, and R4.3)
+[INFO] [1785611415.422711459] [arm_and_goal]: /autoware/engage: published engage=true x5
+[INFO] [1785611416.578172662] [arm_and_goal]: post-engage state: mode_autonomous=True is_autoware_control_enabled=True (R4.3 observation; only mode_autonomous gates ARMED)
+[INFO] [1785611416.578368957] [arm_and_goal]: arm observations [post-engage]: mode=2 autonomous=True is_autoware_control_enabled=True is_autonomous_mode_available=True control_cmd_hz~7.67 n=23 nonzero_longitudinal=0/23 frac=0.000 peak_abs_velocity=0.000 ego_displacement_m=0.070 ego_speed_mps=0.000
+ARMED: localized, route set to (81571.616, 50019.827), autonomous engaged

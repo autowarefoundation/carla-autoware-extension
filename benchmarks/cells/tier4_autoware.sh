@@ -29,6 +29,12 @@
 set -euo pipefail
 
 : "${BENCH_REPO:?}" "${BENCH_CELL:?}" "${BENCH_MAP:?}" "${BENCH_RUN_DIR:?}"
+# BENCH_ARM is required rather than defaulted: section 5 below keys the
+# vector-map delivery gate off it, and an UNSET value would silently skip
+# that gate on a closed-loop run -- the exact silent-pass this campaign
+# spent thirteen unarmed attempts paying for. cells/tier4-native.sh already
+# requires it and forwards it, so this can only fire on a wiring mistake.
+: "${BENCH_ARM:?}"
 : "${BENCH_RPC_PORT:?}" "${BENCH_ROUTE_FILE:?}" "${BENCH_AUTOWARE_IMAGE:?}"
 : "${BENCH_AW_CONTAINER:?}" "${TIER4_DEMO_PID_FILE:?}"
 
@@ -208,13 +214,39 @@ MAP_HOST="$HOME/autoware_map/$(basename "$MAP_DIR")"
 # this is the backstop that makes a wrong explicit choice fail loudly instead
 # of producing a stack that drives nothing. Same shape as
 # cells/python-bridge.sh's refusal of the `lo`-pinned Cyclone profile.
-[ "${BENCH_RMW:-}" = "rmw_fastrtps_cpp" ] ||
-  fail "cell $BENCH_CELL must run --rmw rmw_fastrtps_cpp --shm off (got
+# --- BEGIN registered-transport refusal (pinned by tests/benchmarks/test_vector_map_gate.py)
+#
+# BENCH_TIER4_TRANSPORT_DEVIATION is the ONE way past this, and it exists for
+# ONE thing: a deliberate, non-duel deviation probe that measures this family
+# under a different middleware on purpose. It takes a REASON string rather than
+# a boolean, it is never set by run.sh or by any cell, and an empty value does
+# NOT unlock it -- an exported-but-empty variable must not read as a registered
+# reason. Any run that uses it is a deviation from cell B's registered
+# transport, its manifest's `transport` block will not match cells.yaml's
+# registration, and it can never be duel data. Task 9's matrix (rows 5 and 10)
+# is why the refusal exists at all: with the lo-pinned Cyclone profile the
+# fork's topics are invisible to this stack; row 11 (cyclone, NO profile) is
+# the only non-fastrtps cell in which the fork is readable at all, and that one
+# works only via the host's routable NIC with a flaky graph, which is why the
+# README says not to use it for measurement.
+TIER4_TRANSPORT_DEVIATION="${BENCH_TIER4_TRANSPORT_DEVIATION:-}"
+if [ -n "$TIER4_TRANSPORT_DEVIATION" ]; then
+  echo "*** DEVIATION from cell $BENCH_CELL's registered transport, on purpose:"
+  echo "***   reason : $TIER4_TRANSPORT_DEVIATION"
+  echo "***   rmw    : ${BENCH_RMW:-unset} (registered: rmw_fastrtps_cpp)"
+  echo "***   profile: ${BENCH_DDS_PROFILE:-none} (registered: $UDP_ONLY)"
+  echo "*** This run is NOT a cell-$BENCH_CELL run in the normal sense and must"
+  echo "*** never be read as one. duel_admissible stays false."
+else
+  [ "${BENCH_RMW:-}" = "rmw_fastrtps_cpp" ] ||
+    fail "cell $BENCH_CELL must run --rmw rmw_fastrtps_cpp --shm off (got
   BENCH_RMW=${BENCH_RMW:-unset}). With any other middleware the fork's topics
   are invisible to this stack and its control input is undeliverable."
-[ "${BENCH_DDS_PROFILE:-none}" = "$UDP_ONLY" ] ||
-  fail "cell $BENCH_CELL needs BENCH_DDS_PROFILE=$UDP_ONLY (got
+  [ "${BENCH_DDS_PROFILE:-none}" = "$UDP_ONLY" ] ||
+    fail "cell $BENCH_CELL needs BENCH_DDS_PROFILE=$UDP_ONLY (got
   ${BENCH_DDS_PROFILE:-none}); that profile is what turns shared memory off."
+fi
+# --- END registered-transport refusal
 
 # Spawn pose, from the committed route file, in the CARLA frame -- the exact
 # six numbers cells/extension.sh feeds the extension runner as --initial-pose,
@@ -323,11 +355,28 @@ echo "OK: tier4 ego + sensor rig up, world ticking at $TIER4_TICK_HZ Hz"
 docker rm -f "$BENCH_AW_CONTAINER" >/dev/null 2>&1 || true
 DATA_MOUNT=()
 [ -d "$HOME/autoware_data" ] && DATA_MOUNT=(-v "$HOME/autoware_data:/root/autoware_data:ro")
+# The transport the container actually runs. On every REGISTERED run the
+# refusal above has already pinned BENCH_RMW=rmw_fastrtps_cpp and
+# BENCH_DDS_PROFILE=$UDP_ONLY, so this array expands to exactly the
+# `-e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTRTPS_DEFAULT_PROFILES_FILE=...
+# -v $UDP_ONLY:/dds-profile.xml:ro` it has always been -- byte-identical, which
+# is what keeps every filed B run comparable. It is written as a selection
+# rather than a literal ONLY so a registered deviation probe actually gets the
+# middleware it asked for instead of a manifest that says one thing while the
+# container runs another.
+TRANSPORT_ARGS=(-e "RMW_IMPLEMENTATION=${BENCH_RMW:-rmw_fastrtps_cpp}")
+case "${BENCH_RMW:-rmw_fastrtps_cpp}" in
+  rmw_fastrtps_cpp)
+    TRANSPORT_ARGS+=(-e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml
+      -v "${BENCH_DDS_PROFILE:-$UDP_ONLY}:/dds-profile.xml:ro") ;;
+  rmw_cyclonedds_cpp)
+    [ "${BENCH_DDS_PROFILE:-none}" = "none" ] ||
+      TRANSPORT_ARGS+=(-e CYCLONEDDS_URI=file:///dds-profile.xml
+        -v "$BENCH_DDS_PROFILE:/dds-profile.xml:ro") ;;
+esac
 docker run -d --name "$BENCH_AW_CONTAINER" --gpus all --net=host --ipc=host \
   -e ROS_DOMAIN_ID=0 \
-  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-  -e FASTRTPS_DEFAULT_PROFILES_FILE=/dds-profile.xml \
-  -v "$UDP_ONLY:/dds-profile.xml:ro" \
+  "${TRANSPORT_ARGS[@]}" \
   -v "$MAP_HOST:$MAP_DIR:ro" \
   -v "$POSE_INIT_OVERRIDE:$POSE_INIT_TARGET:ro" \
   -v "$BENCH_REPO:/work:ro" \
@@ -384,6 +433,47 @@ cx "test -f $MAP_DIR/lanelet2_map.osm" >/dev/null 2>&1 ||
 # artifacts ship); the clear-road injector stands in, which is what
 # benchmarks/README.md's perception-load confound registers for A/B/C/D.
 # launch_vehicle_interface:=false because the fork IS the vehicle interface.
+#
+# The line after echo $! writes the SAME sidecar
+# scripts/e2e/launch_autoware.sh:209-257 writes for the extension family --
+# stop_launch_tree.sh's pid-reuse guard compares a recorded pid's /proc
+# cmdline against this file (Task 17c, D2). Best-effort and never allowed to
+# fail the launch: an absent sidecar only means that guard is skipped, never
+# failed (stop_launch_tree.sh's own header), and the sidecar's REMOVAL is
+# already that script's job -- this launcher only owes the write.
+# cx() sends a DOUBLE-quoted string (unlike compose_exec's single-quoted
+# one), so $AW_PIDFILE below expands on the HOST like every other $VAR in
+# this call, and only \$-prefixed references are escaped to defer them to
+# the container's own /proc at run time.
+#
+# THE WRITE ITSELF used to race the exec (Task 18b), on this exact shape:
+# $! is valid the instant the shell forks the background job, but nohup has
+# not yet exec-ed into ros2 -- an immediate cmdline read can record the
+# PRE-exec argv ("nohup ros2 launch ...") while stop_launch_tree.sh later
+# reads the POST-exec form ("/usr/bin/python3 .../ros2 launch ..."). MEASURED
+# live on 5/10 cell-B static runs (results/B/run-017,019,020,021,022): the
+# mismatch trips the pid-reuse guard -- correctly, on a racy input -- and a
+# real teardown is silently skipped. Same fix as scripts/e2e/launch_autoware.sh
+# (see its own comment for the full reasoning): poll for the cmdline to hold
+# STEADY for 2 continuous seconds -- 21 identical reads (aw_stable starts at
+# 0 and needs 20 MATCHES against the read before it, so the 21st read is the
+# first that counts), 0.1s apart -- rewriting the sidecar each time a new
+# steady value is reached so a still-settling read mistaken for final gets
+# corrected by a later real change, as long as the true post-exec value
+# itself goes steady with >= 2s left in the budget. Capped at 50 polls so a
+# stuck read cannot hang the bring-up; that cap is a FLOOR, not a ceiling --
+# the polls, forks and sleeps measured ~5.17s idle even with nothing to wait
+# for, and load stretches it further, never shortens it. Past the cap the
+# sidecar can be left holding a STALE pre-exec value, not merely absent (see
+# fix round 1, F6.2) -- in theory, but this was not observed even at
+# effectively ZERO added delay before this fix existed. Does not touch the
+# launched process (no ptrace/strace attach, itself a launch-timing change)
+# -- only /proc reads for the pid already recorded. The `|| true` after
+# `done` is load-bearing, not decoration: without it, this loop's own exit
+# status (a `while` returns its last BODY command's status, and that command
+# is `sleep 0.1`) becomes `cx`'s exit status, so one failed fork in the ~200
+# this loop forks during the launch's own fork storm would abort a launch
+# that actually succeeded (fix round 1, F1).
 echo "OK: bringing Autoware up (map $BENCH_MAP, bundle $MAP_DIR) -- log $AW_LOG"
 # shellcheck disable=SC2016 # $AW_LOG/$! expand IN the container, on purpose
 cx "$AW_ENV
@@ -392,7 +482,22 @@ cx "$AW_ENV
     sensor_model:=awsim_labs_sensor_kit vehicle_model:=sample_vehicle \
     simulator_type:=awsim launch_vehicle_interface:=false \
     use_sim_time:=true perception:=false rviz:=false >$AW_LOG 2>&1 &
-  echo \$! >$AW_PIDFILE" ||
+  echo \$! >$AW_PIDFILE
+  aw_cmd=\"\" aw_prev=\"\" aw_stable=0 aw_tries=0
+  while [ \"\$aw_tries\" -lt 50 ]; do
+    aw_cmd=\"\$(tr '\0' ' ' </proc/\$(cat $AW_PIDFILE)/cmdline 2>/dev/null)\"
+    if [ -n \"\$aw_cmd\" ] && [ \"\$aw_cmd\" = \"\$aw_prev\" ]; then
+      aw_stable=\$((aw_stable + 1))
+      if [ \"\$aw_stable\" -ge 20 ]; then
+        printf '%s' \"\$aw_cmd\" >$AW_PIDFILE.cmd 2>/dev/null
+      fi
+    else
+      aw_stable=0
+    fi
+    aw_prev=\"\$aw_cmd\"
+    aw_tries=\$((aw_tries + 1))
+    sleep 0.1
+  done || true" ||
   fail_with_log "the Autoware launch could not be started"
 
 # ---------------------------------------------------------------------------
@@ -454,10 +559,49 @@ echo "OK: the fork's LiDAR is readable inside the stack (Task 9 rung 1 holds)"
 # above rather than deleted, per the campaign's convention that refuted
 # hypotheses stay in the record WITH what refuted them -- annotated here
 # because this is where a reader acts on it.
+#
+# Same sidecar shape as the Autoware launch step above (Task 17c, D2): a
+# best-effort, never-fatal write of the recorded pid's /proc cmdline, for
+# stop_launch_tree.sh's pid-reuse guard.
+#
+# SAME FORK/EXEC RACE AS THE AW_PIDFILE WRITE ABOVE (fix round 1, F3) --
+# this is `nohup ... &` too, so it gets the identical hold-STEADY-for-2s,
+# capped-at-50-polls loop; see the AW_PIDFILE comment above for the full
+# mechanism, including why the trailing `|| true` after `done` is required
+# (F1) and the exec-count/cap-outcome corrections (F6.2-3).
+#
+# BLAST RADIUS, stated so this reads as scoped rather than alarming (fix
+# round 1, F3): a surviving relay is worse than an ordinary survivor
+# because it keeps publishing onto RELAY_OUT, NDT's own input topic, where
+# a SECOND publisher is already a measured, gate-relevant variable in this
+# file (the "THAT PREMISE IS REFUTED" note above -- publishers=2 -> 4.89
+# Hz). But cell B is bounded TWICE against a survivor outliving a run:
+# teardown.sh:361's `docker rm -f` (taken because tier4-native.sh:144 sets
+# AW_COMPOSE="") and this file's own container removal before the next
+# `docker run` (:323) both clear it even if teardown never ran at all --
+# the duel is not at cross-run risk. What a same-run survivor would do to
+# THAT run's own NDT rate is not established from code -- duplicate
+# identical clouds may be benign or may compound the mixed-source rate
+# defect above; that needs a live stack, correctly left open by this round.
 cx "$AW_ENV
   nohup ros2 run topic_tools relay $RELAY_IN $RELAY_OUT \
     >/tmp/tier4-concat-relay.log 2>&1 &
-  echo \$! >$RELAY_PIDFILE" ||
+  echo \$! >$RELAY_PIDFILE
+  rel_cmd=\"\" rel_prev=\"\" rel_stable=0 rel_tries=0
+  while [ \"\$rel_tries\" -lt 50 ]; do
+    rel_cmd=\"\$(tr '\0' ' ' </proc/\$(cat $RELAY_PIDFILE)/cmdline 2>/dev/null)\"
+    if [ -n \"\$rel_cmd\" ] && [ \"\$rel_cmd\" = \"\$rel_prev\" ]; then
+      rel_stable=\$((rel_stable + 1))
+      if [ \"\$rel_stable\" -ge 20 ]; then
+        printf '%s' \"\$rel_cmd\" >$RELAY_PIDFILE.cmd 2>/dev/null
+      fi
+    else
+      rel_stable=0
+    fi
+    rel_prev=\"\$rel_cmd\"
+    rel_tries=\$((rel_tries + 1))
+    sleep 0.1
+  done || true" ||
   fail_with_log "the single-LiDAR concat relay could not be started"
 echo "OK: concat relay $RELAY_IN -> $RELAY_OUT"
 
@@ -608,5 +752,129 @@ $(cx "$AW_ENV
   (log saved to $BENCH_RUN_DIR/tier4-autoware.log)"
   sleep 5
 done
+
+# ---------------------------------------------------------------------------
+# 5. /map/vector_map re-publish + delivery gate -- CLOSED-LOOP ARM ONLY
+# ---------------------------------------------------------------------------
+# A HARNESS-INJECTED WORKAROUND FOR A MEASURED TRANSPORT DEFECT. It is not a
+# gate adjustment, not a threshold change, and it does not touch the DDS
+# profile: `transport.dds_profile_sha256` stays byte-identical in every
+# manifest, so this cell's already-filed runs remain transport-comparable.
+#
+# THE DEFECT, MEASURED (Task 4b, 2026-08-01; full evidence, every raw capture
+# and the refuted alternatives in benchmarks/evidence/b-vector-map-delivery/):
+# `/map/lanelet2_map_loader` publishes ONE 1 305 281-byte LaneletMapBin from
+# its constructor, RELIABLE / KEEP_LAST(1) / TRANSIENT_LOCAL, and every
+# subscriber in the stack -- behavior_path_planner included, read off the live
+# graph -- asks for exactly that QoS, so there is NO durability mismatch. A
+# late-joining subscriber with that QoS got the retained sample 9 times out of
+# 9 (0.028-2.643 s). What is unreliable is delivery to subscribers that ALREADY
+# EXIST when that single publication happens. On the in-stack
+# /system/topic_state_monitor_vector_map, same QoS, first receipt relative to
+# `Map is published.` over six Fast-DDS udp_only bring-ups was
+#
+#   +20.2s (run-028) | NEVER +98.2s (run-029) | +11.5s (run-030) |
+#   NEVER +113.35s (replica V1) | +0.97s (replica V1b) | +0.05s (replica p2)
+#
+# -- TWO OUTRIGHT FAILURES IN SIX, and REPRODUCED STANDALONE with the same
+# image, bundle and launch line, no CARLA and no harness at all (V1 vs V1b are
+# consecutive runs of one script two minutes apart). That localises it to the
+# rmw_fastrtps_cpp + observer/config/udp_only.xml transport this family alone
+# runs; A/C/E run rmw_cyclonedds_cpp, and a cyclonedds control delivered at
+# +0.24s (n=1, NOT a claim of immunity).
+#
+# WHY A RE-PUBLISH RATHER THAN A PROFILE CHANGE. The only path measured failing
+# is Fast-DDS's TRANSIENT_LOCAL historical delivery on match. Re-publishing
+# after the readers are matched turns the map into ordinary LIVE data -- the
+# path the rest of this stack uses successfully at 20 Hz. Editing udp_only.xml
+# was the obvious alternative and is REJECTED above; the 16 MiB socket-buffer
+# variant was tried once and proves nothing against a 2-in-6 failure.
+#
+# HONEST LIMIT, kept here because a reader acts on this file: the re-publish
+# creates a NEW writer, and an already-running reader must still match it --
+# the same ordering that fails for map_loader. What differs is that the helper
+# WAITS for its own subscriber matching to settle BEFORE publishing, so the
+# sample goes out as live data to already-matched readers. That is a reasoned
+# mitigation, NOT a demonstrated cure.
+#
+# THIS STEP WAS ONCE FATAL, AND IS NOW ADVISORY. It originally failed the
+# bring-up when the verification did not take. results/B/run-031 refuted that
+# design from its own log: the step failed (3 attempts, 60 s each, its
+# verification endpoint never OK) while THE SAME RUN delivered the re-published
+# map to lanelet2_map_visualization (:1123, :2149, :3147) and
+# vector_map_tf_generator (:1128, :2155, :3152) on all three attempts -- a
+# different process each time, so real inter-process receipt. The fatal form
+# turned a possibly-armable run into a crash:cell-launch and, because it fires
+# BEFORE any route exists, left the actual question untested: that run's
+# behavior_path_planner logged `waiting for scenario_topic` 38 times and never
+# evaluated its map check at all. The campaign's pass criteria are the arm
+# succeeding and control_cmd flowing; this step is an ADDED precondition and is
+# not one of them, so it now records and continues. If the map never reaches
+# the planner the run still fails -- at the arm, more informatively.
+#
+# AND WHAT THE VERIFICATION CANNOT SEE: it reads topic_state_monitor, which is
+# the same CLASS as behavior_path_planner but is not the planner --
+# results/B/run-028 has the monitor recovering at +23.2s in a run where the
+# planner reported `waiting for map` for 53.3s more, to teardown. The planner's
+# own report only exists once a route is set, i.e. after this step.
+#
+# CLOSED-LOOP ONLY, and that is a SAFETY property rather than a preference.
+# THREE DISTINCT COUNTS get confused here, so each is named: cell B has 17
+# non-excluded STATIC runs, of which 10 (run-013..run-022) are the
+# DUEL-ADMISSIBLE static verdict pool, and 0 statics are excluded. It is the
+# 10-run pool the A-vs-B static verdict is computed from; all 17 were measured
+# without this step. Branch (c) forbids recollecting them, so the static
+# bring-up must not acquire a step. (Recomputed from every manifest, 2026-08-01;
+# an earlier revision of this comment said "fifteen", which matches none of the
+# three.)
+# tests/benchmarks/test_vector_map_gate.py executes THIS block for real, with
+# both arms, and asserts the static one reaches no container command at all.
+#
+# /out is the run-directory bind-mount, so the pre-state snapshot and the
+# verification record become filed evidence instead of terminal output -- the
+# gap §7.6 recorded when a real observation had no filed artifact behind it.
+if [ "${BENCH_ARM:-}" = "closed-loop" ]; then
+  echo "closed-loop arm: re-publishing /map/vector_map (ADVISORY -- never aborts)"
+  if cx "$AW_ENV
+    python3 /work/benchmarks/injector/republish_vector_map.py \
+      --settle-s 5 --capture-timeout-s 90 --match-timeout-s 60 \
+      --verify-timeout-s 60 --attempts 3 --advisory \
+      --launch-log $AW_LOG --report /out/vector-map-delivery.json"; then
+    # RAN is not VERIFIED, and this message may not blur the two. Under
+    # --advisory the node's _finish returns EXIT_OK for EVERY verdict it can
+    # reach, so this branch is taken on 0, 3, 4 and 5 alike -- including
+    # EXIT_NO_CAPTURE, where nothing was ever published. An earlier revision
+    # said "step completed", which reads as success and is true of a run whose
+    # capture never happened. verdict_code is the outcome; this is only that
+    # the process got far enough to write one.
+    echo "OK: the /map/vector_map re-publish step RAN AND RECORDED A VERDICT" \
+      "-- which is NOT the same as the map being verified. Under --advisory" \
+      "the node exits 0 for every verdict it can reach, so read verdict_code" \
+      "in $BENCH_RUN_DIR/vector-map-delivery.json: 0 verified (and the" \
+      "verified / verified_relog keys name which oracle saw it), exit 3 the" \
+      "capture never happened, 4 the publisher matching never settled," \
+      "5 the verification never went OK. Only 0 means the map was observed" \
+      "to arrive."
+  else
+    # What actually reaches here, stated precisely: NOT verdicts 3/4/5. With
+    # --advisory the node returns EXIT_OK for all of those, so they take the
+    # branch above. This branch is the PROCESS failing -- a crash before or
+    # during the report write, or `cx` never running the command at all. An
+    # earlier revision enumerated 3/4/5 here, which no reader could ever have
+    # observed.
+    echo "ADVISORY: the /map/vector_map re-publish step did not complete" \
+      "cleanly. NOT fatal, by design (see section 5's header): the campaign's" \
+      "pass criteria are the arm and control_cmd, and this is an added" \
+      "precondition. Continuing to the arm, where the planner reports on the" \
+      "map itself via 'waiting for map' once a route exists." \
+      "This branch is NOT verdict_code 3/4/5 -- with --advisory those all" \
+      "exit 0 and take the branch above. Reaching here means the PROCESS" \
+      "failed: a crash before or during the report write (verdict_code 6)," \
+      "or the container command itself never running. So" \
+      "$BENCH_RUN_DIR/vector-map-delivery.json may hold a crash stub, or be" \
+      "absent entirely."
+  fi
+fi
+
 save_aw_log
 echo "OK: tier4 Autoware stack up on $BENCH_MAP and localizing"

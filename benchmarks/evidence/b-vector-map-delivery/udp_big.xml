@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PROBE-ONLY variant of benchmarks/observer/config/udp_only.xml.
+     Identical UDPv4-only transport, plus explicit socket buffers. Used by a
+     probe subscriber only; no harness file is modified and this is not
+     mounted into any measured process. -->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>udp_big</transport_id>
+        <type>UDPv4</type>
+        <sendBufferSize>16777216</sendBufferSize>
+        <receiveBufferSize>16777216</receiveBufferSize>
+      </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="udp_big_participant" is_default_profile="true">
+      <rtps>
+        <userTransports><transport_id>udp_big</transport_id></userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

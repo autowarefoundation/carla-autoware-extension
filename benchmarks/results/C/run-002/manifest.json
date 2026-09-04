@@ -1,0 +1,42 @@
+{
+  "cell": "C",
+  "approach": "extension",
+  "map_name": "NishishinjukuMap",
+  "run_index": 2,
+  "arm": "closed-loop",
+  "harness_git_sha": "1f439144d696ba031ec46ecfc08f6795efb8ef76",
+  "patches_git_sha": "ccff4f946a9b33dc1d5cfacac0c6217656bbe10a",
+  "transport": {
+    "rmw": "rmw_cyclonedds_cpp",
+    "shm_enabled": false,
+    "dds_profile_sha256": "1eeef31e73355aa217f7700ded3f6b2dd3859c7390099ffd2d59c85dd54f2865"
+  },
+  "carla_version": "0.10-fork",
+  "autoware_image": "ghcr.io/autowarefoundation/autoware:universe-devel",
+  "started_at_ns": 1785597518335891491,
+  "excluded": false,
+  "exclusion_reason": "",
+  "placement": {
+    "carla_rpc_port": "2000",
+    "carla_tree": "/home/youtalk/src/carla-autoware-integration",
+    "container_image": "ghcr.io/autowarefoundation/autoware:universe-devel",
+    "cpu_governor": "powersave",
+    "engine_build_id": "4210e602-78ec-46e1-8f2f-03fadbe036a3",
+    "free_gb": "459",
+    "loadavg": "1.46",
+    "map_bundle_pin": "nishishinjuku_bundle.pcd_sha256",
+    "nproc": "24",
+    "observer_env": {
+      "image": "bench-observer:universe-devel",
+      "rmw": "rmw_cyclonedds_cpp",
+      "shm": "off",
+      "topics_file": "C.yaml"
+    },
+    "results_fs": "/home",
+    "run_mode": "editor-game",
+    "shm_root_cleared": "0",
+    "shm_root_remaining": "0",
+    "shm_user_cleared": "0"
+  },
+  "duel_admissible": false
+}
