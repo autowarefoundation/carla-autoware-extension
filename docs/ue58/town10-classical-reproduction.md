@@ -8,9 +8,10 @@
 > campaign's own logs**. What survives: 17 of 160 road lanelets (17 of 246
 > relations) reference a shared bound ordered against travel, the legacy 2019
 > map has 0 of 168, and the generator reproduces the repaired map
-> byte-identically. What does not: on the _fixed_ map `Backward path is NOT
-> supported` still occurred 290 and 190 times, the _unfixed_ map produced the
-> identical route from a pose 0.024 m away and halted at the same metre by the
+> byte-identically. What does not: on the _fixed_ map
+> `Backward path is NOT supported` still occurred 290 and 190 times, the
+> _unfixed_ map produced the identical route from a pose 0.024 m away and
+> halted at the same metre by the
 > same mechanism, and a static `lanelet2` probe showed `geometry::align`
 > already recovers the correct orientation for **all 17** today, with the
 > derived centreline and the routing graph unchanged. **The map fix is
@@ -35,13 +36,13 @@
 Date: 2026-09-03. Machine: RTX 5090 (driver 580.173.02), 24 cores, 62 GB RAM,
 Ubuntu 24.04, ROS 2 Jazzy at `/opt/ros/jazzy`.
 
-| Component | Value |
-| --- | --- |
-| CARLA | `upstream/ue58-dev` `5f58df57998030cb602a0fc588db6cc5b8a23988` (worktree `~/src/carla-ue58`) |
-| Engine | `CarlaUnreal/UnrealEngine@ue58-dev-carla` `cacb25b99f14d3f584e2c7626a63d868e204809f` (5.8) |
-| Content | `carla-content@ue58-dev-carla` `981cdcbae26b015f2d4537eed4e5464e1cd5aed7` |
+| Component      | Value                                                                                                                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CARLA          | `upstream/ue58-dev` `5f58df57998030cb602a0fc588db6cc5b8a23988` (worktree `~/src/carla-ue58`)                                                                                                   |
+| Engine         | `CarlaUnreal/UnrealEngine@ue58-dev-carla` `cacb25b99f14d3f584e2c7626a63d868e204809f` (5.8)                                                                                                     |
+| Content        | `carla-content@ue58-dev-carla` `981cdcbae26b015f2d4537eed4e5464e1cd5aed7`                                                                                                                      |
 | Autoware image | `ghcr.io/autowarefoundation/autoware:universe-cuda-jazzy` digest `sha256:9c7d51a820a064c07ed2d8386b464bb69d8676e262ae20e88723918185ec0eaa`, image ID `9c7d51a820a0`, built 2026-09-02, 16.9 GB |
-| Map | `Town10HD_Opt`, map dir `PythonAPI/examples/av_stacks/autoware/map_tools/maps/Town10HD` (`projector_type: Local`) |
+| Map            | `Town10HD_Opt`, map dir `PythonAPI/examples/av_stacks/autoware/map_tools/maps/Town10HD` (`projector_type: Local`)                                                                              |
 
 Phase 1 asked one question: following upstream's own README verbatim, does the
 in-tree Autoware layer on `ue58-dev` drive the ego to a goal on Town10HD? The
@@ -98,12 +99,12 @@ are identical in all four runs: NDT convergence likelihood to 1.0,
 
 Each run changes one variable from the one before it.
 
-| Run | Log dir | Simulator RMW | Spawn | Goal (CARLA `x,y,yaw`) | Verdict |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `run1` | fastdds | random (matched lanelet `16406`) | `80.0,-16.5,90` (the README's) | **FAIL** - goal rejected, ego never moved |
-| 3 | `run3` | fastdds | random (matched lanelet `12236`, malformed) | `98.90,68.73,90.4` (derived, valid) | **FAIL** - route set, planning broke |
-| 4 | `run4` | fastdds | `--spawn-index 24` (lanelet `5013`, clean) | `-1.16,28.37,0.16` (derived, valid) | **PASS** - drove the route, ARRIVED |
-| 2 | `run2` | `--rmw cyclonedds` | `--spawn-index 24` (lanelet `5013`, clean) | `-1.16,28.37,0.16` | **PASS** - drove the route, ARRIVED |
+| Run | Log dir | Simulator RMW      | Spawn                                       | Goal (CARLA `x,y,yaw`)              | Verdict                                   |
+| --- | ------- | ------------------ | ------------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| 1   | `run1`  | fastdds            | random (matched lanelet `16406`)            | `80.0,-16.5,90` (the README's)      | **FAIL** - goal rejected, ego never moved |
+| 3   | `run3`  | fastdds            | random (matched lanelet `12236`, malformed) | `98.90,68.73,90.4` (derived, valid) | **FAIL** - route set, planning broke      |
+| 4   | `run4`  | fastdds            | `--spawn-index 24` (lanelet `5013`, clean)  | `-1.16,28.37,0.16` (derived, valid) | **PASS** - drove the route, ARRIVED       |
+| 2   | `run2`  | `--rmw cyclonedds` | `--spawn-index 24` (lanelet `5013`, clean)  | `-1.16,28.37,0.16`                  | **PASS** - drove the route, ARRIVED       |
 
 Run 2 is numbered out of chronological order because it was scheduled as the
 CycloneDDS probe; it ran last (server pgid 1665193, after run 4's 1609969). The
@@ -176,13 +177,13 @@ report was wrong:
 draws from them to the map defect is withdrawn - see the banner at the top of
 this file. One cell is corrected in place.
 
-| Message | Count | Emitting node(s) |
-| --- | --- | --- |
-| `Backward path is NOT supported, just returning input path` | **377 total** | `behavior_velocity_planner` 171, `elastic_band_smoother` 103, `path_optimizer` 103 |
-| `Caution! Invalid Trajectory published.` | 166 | `planning_validator` |
-| `planning trajectory is too far from ego in longitudinal direction!!` | 166 | `planning_validator` |
-| `EMERGENCY_STOP is operated.` | 171 operated / 172 canceled, last event a cancel, so **nothing latched** `[CORRECTED]`; median cycle 2.200 s, not ~100 ms | `mrm_handler` |
-| `Emergency!` | 427 | `control.vehicle_cmd_gate` |
+| Message                                                               | Count                                                                                                                     | Emitting node(s)                                                                   |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `Backward path is NOT supported, just returning input path`           | **377 total**                                                                                                             | `behavior_velocity_planner` 171, `elastic_band_smoother` 103, `path_optimizer` 103 |
+| `Caution! Invalid Trajectory published.`                              | 166                                                                                                                       | `planning_validator`                                                               |
+| `planning trajectory is too far from ego in longitudinal direction!!` | 166                                                                                                                       | `planning_validator`                                                               |
+| `EMERGENCY_STOP is operated.`                                         | 171 operated / 172 canceled, last event a cancel, so **nothing latched** `[CORRECTED]`; median cycle 2.200 s, not ~100 ms | `mrm_handler`                                                                      |
+| `Emergency!`                                                          | 427                                                                                                                       | `control.vehicle_cmd_gate`                                                         |
 
 `/planning/trajectory` stayed pinned at the route start, running west with
 negative longitudinal velocity, 118 m behind the ego, while still publishing at
@@ -207,7 +208,7 @@ Selection method (`33-run4-route-selection.txt`): Dijkstra by centreline length
 was run on two graphs - a strict successor graph and a permissive one that also
 connects the malformed lanelets, modelling what Autoware's own router did in
 run 3 - keeping only candidates whose globally shortest route on the
-*permissive* graph is itself entirely clean and has no malformed lane-change
+_permissive_ graph is itself entirely clean and has no malformed lane-change
 neighbour. Spawn 24 and the arclength midpoint of lanelet `16406` satisfied
 both.
 
@@ -218,20 +219,20 @@ clean: `5013 -> 27144 -> 12771 -> 36676 -> 13373 -> 25058 -> 16406`
 The controlled comparison against run 3, `[CORRECTED]`: the counts below are
 real and reproducible, but this table was written as a map-fix result and is
 not one. Run 3 and run 4 differ in spawn and route, not in the map file - both
-ran the *unrepaired* map - and on the *repaired* map the same pinned scenario
+ran the _unrepaired_ map - and on the _repaired_ map the same pinned scenario
 still produced 290 and 190 `Backward path` occurrences. Read the table as
 "a clean route plans, a route through a malformed lanelet does not", and note
 that even that reading is not attributable to the bound orientation, because
 `geometry::align` already recovers it for all 17. See the banner at the top of
 this file.
 
-| Signature | Run 3 (started inside malformed `12236`) | Run 4 (started inside clean `5013`) |
-| --- | --- | --- |
-| `Backward path is NOT supported` `[CORRECTED]` (counts real, map attribution withdrawn) | 377 | **0** |
-| `Invalid Trajectory published` | 166 | **0** |
-| `too far from ego in longitudinal direction` | 166 | **0** |
-| `EMERGENCY_STOP is operated` `[CORRECTED]` (run 3: 171 operated / 172 canceled, nothing latched) | 171, **not latched** | 11 operated / 11 cancelled |
-| `Emergency!` | 427 | 9 |
+| Signature                                                                                        | Run 3 (started inside malformed `12236`) | Run 4 (started inside clean `5013`) |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------- | ----------------------------------- |
+| `Backward path is NOT supported` `[CORRECTED]` (counts real, map attribution withdrawn)          | 377                                      | **0**                               |
+| `Invalid Trajectory published`                                                                   | 166                                      | **0**                               |
+| `too far from ego in longitudinal direction`                                                     | 166                                      | **0**                               |
+| `EMERGENCY_STOP is operated` `[CORRECTED]` (run 3: 171 operated / 172 canceled, nothing latched) | 171, **not latched**                     | 11 operated / 11 cancelled          |
+| `Emergency!`                                                                                     | 427                                      | 9                                   |
 
 `AutowareState` walked `Initializing -> WaitingForRoute -> Planning ->
 WaitingForEngage -> Driving -> ArrivedGoal -> WaitingForRoute` once, cleanly.
@@ -272,12 +273,12 @@ conclusion drawn here, but it is not a tracked path.
 
 Gates are evaluated against run 4, the verbatim-topology PASS.
 
-| Gate | Threshold (spec §6) | Measured | Source | Result |
-| --- | --- | --- | --- | --- |
-| G1 NDT localization error | < 1 m | **0.128 m** at the sampled instant; 0.04-0.05 m at both engage gates | `task-9c` decomposition; `23`/`27`/`28-live-run*.log` GATE1 lines | PASS |
-| G2 closest approach to goal | < 1 m | **0.24 m** (`base_link`) at arrival, **0.58 m** after ~6 minutes of settling drift | `24-metrics.txt` run 4 verdict block; recomputed from `35-groundtruth-run4.txt`; see basis note | PASS |
-| G3 control rate | 20 +/- 5 Hz | **19.998 / 19.999 / 20.000 Hz** stationary (min interval 0.045-0.046 s), 20.376-20.398 Hz driving | `36-metrics-run4-block1/2.txt`, `37-run4-final-state.txt` | PASS |
-| G3 LiDAR rate | spec says 20 +/- 1 Hz; see defect below | **10.000 Hz** against a configured 10 Hz | `36-metrics-run4-block1/2.txt` | PASS against the configured rate |
+| Gate                        | Threshold (spec §6)                     | Measured                                                                                          | Source                                                                                          | Result                           |
+| --------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------- |
+| G1 NDT localization error   | < 1 m                                   | **0.128 m** at the sampled instant; 0.04-0.05 m at both engage gates                              | `task-9c` decomposition; `23`/`27`/`28-live-run*.log` GATE1 lines                               | PASS                             |
+| G2 closest approach to goal | < 1 m                                   | **0.24 m** (`base_link`) at arrival, **0.58 m** after ~6 minutes of settling drift                | `24-metrics.txt` run 4 verdict block; recomputed from `35-groundtruth-run4.txt`; see basis note | PASS                             |
+| G3 control rate             | 20 +/- 5 Hz                             | **19.998 / 19.999 / 20.000 Hz** stationary (min interval 0.045-0.046 s), 20.376-20.398 Hz driving | `36-metrics-run4-block1/2.txt`, `37-run4-final-state.txt`                                       | PASS                             |
+| G3 LiDAR rate               | spec says 20 +/- 1 Hz; see defect below | **10.000 Hz** against a configured 10 Hz                                                          | `36-metrics-run4-block1/2.txt`                                                                  | PASS against the configured rate |
 
 **Spec defect.** Spec §6 states "G3 LiDAR 20 +/- 1 Hz". The `awsim_sensor_kit`
 that upstream's launch line uses configures the top LiDAR at `sensor_tick 0.1`,
@@ -344,15 +345,15 @@ Both runs used the same spawn and goal, so they are directly comparable. The
 comparison is put on the actor-origin basis, the only one measured identically
 in both.
 
-| Metric | run 4 (fastdds) | run 2 (cyclonedds) |
-| --- | --- | --- |
-| `/control/command/control_cmd` | 19.998 - 20.398 Hz | 20.000 - 20.001 Hz |
-| `/sensing/lidar/top/pointcloud_raw_ex` | 10.000 Hz | 9.999 - 10.001 Hz |
-| GATE1 localization delta | 0.02 m, 0.0 deg | 0.02 m, 0.0 deg |
-| ego actor origin -> goal (ground truth) | 1.25 m | 1.229 m |
-| NDT belief -> goal (metrics block 1) | 0.185 m | 0.241 m |
-| `/api/routing/state` | 3 (ARRIVED) | 3 (ARRIVED) |
-| `Backward path` / `Invalid Trajectory` / `too far from ego` | 0 / 0 / 0 | 0 / 0 / 0 |
+| Metric                                                      | run 4 (fastdds)    | run 2 (cyclonedds) |
+| ----------------------------------------------------------- | ------------------ | ------------------ |
+| `/control/command/control_cmd`                              | 19.998 - 20.398 Hz | 20.000 - 20.001 Hz |
+| `/sensing/lidar/top/pointcloud_raw_ex`                      | 10.000 Hz          | 9.999 - 10.001 Hz  |
+| GATE1 localization delta                                    | 0.02 m, 0.0 deg    | 0.02 m, 0.0 deg    |
+| ego actor origin -> goal (ground truth)                     | 1.25 m             | 1.229 m            |
+| NDT belief -> goal (metrics block 1)                        | 0.185 m            | 0.241 m            |
+| `/api/routing/state`                                        | 3 (ARRIVED)        | 3 (ARRIVED)        |
+| `Backward path` / `Invalid Trajectory` / `too far from ego` | 0 / 0 / 0          | 0 / 0 / 0          |
 
 **DDS interop works, in both directions and with both vendors on the simulator
 side.** The outbound (simulator to Autoware) fragmented path carried 10 Hz
@@ -383,11 +384,11 @@ not a refutation of the report.
   above). `21-autoware-docker.log`.
 - **`install_autoware.sh --check` reported the centerpoint model directory
   absent** - `centerpoint dir: /home/youtalk/autoware_data/ml_models/lidar_centerpoint
-  not present (needed for classical perception_mode:=lidar)`
+not present (needed for classical perception_mode:=lidar)`
   (`20-autoware-check.log:30`). This host's `~/autoware_data` is in the older
   pre-`ml_models` layout. Three relative symlinks
   (`~/autoware_data/ml_models/{lidar_centerpoint,traffic_light_classifier,traffic_light_fine_detector}
-  -> ../<same>`) were created after verifying inside the image which paths the
+-> ../<same>`) were created after verifying inside the image which paths the
   launcher actually resolves. TensorRT then loaded every ONNX with no
   model-path errors and rebuilt the two missing `.engine` files once
   (79 messages, self-healing).

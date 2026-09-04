@@ -10,13 +10,13 @@ deviations from the plan that a later phase has to account for.
 
 ## Versions
 
-| Component | Value |
-| --- | --- |
-| Engine | `CarlaUnreal/UnrealEngine@ue58-dev-carla` `cacb25b99f14` (5.8) |
-| CARLA | `upstream/ue58-dev` `5f58df579` (worktree `~/src/carla-ue58`) |
-| Content | `carla-content@ue58-dev-carla` `981cdcbae2` |
-| Toolchain SDK | `v26_clang-20.1.8-rockylinux8` |
-| DLSS SDK | `a291cc7` |
+| Component     | Value                                                                        |
+| ------------- | ---------------------------------------------------------------------------- |
+| Engine        | `CarlaUnreal/UnrealEngine@ue58-dev-carla` `cacb25b99f14` (5.8)               |
+| CARLA         | `upstream/ue58-dev` `5f58df579` (worktree `~/src/carla-ue58`)                |
+| Content       | `carla-content@ue58-dev-carla` `981cdcbae2`                                  |
+| Toolchain SDK | `v26_clang-20.1.8-rockylinux8`                                               |
+| DLSS SDK      | `a291cc7`                                                                    |
 | Python client | `carla-0.10.0-cp312` wheel built from this tree, installed in `~/carla-venv` |
 
 ## Steps and outcomes
@@ -26,7 +26,7 @@ deviations from the plan that a later phase has to account for.
   `v23_clang-18.1.0-rockylinux8` SDK was deleted; the ccache clang wrapper was
   re-applied to the new v26 SDK.
 - `make UnrealEditor ShaderCompileWorker`: UnrealEditor `Total execution time:
-  2500.51 seconds`, ShaderCompileWorker `78.90 seconds` - about 43 minutes
+2500.51 seconds`, ShaderCompileWorker `78.90 seconds` - about 43 minutes
   wall-clock in total, against the plan's estimate of 2-4 hours
   (`05-ue-build.log`). ccache was cold for this build: `Hits: 0 / 3327`.
 - CARLA configure (Development preset, `ENABLE_ROS2=ON`, `BUILD_CARLA_UNREAL=ON`)
@@ -34,18 +34,18 @@ deviations from the plan that a later phase has to account for.
   `carla-python-api` all built (`rc=0`); wheel
   `carla-0.10.0-cp312-cp312-linux_x86_64.whl` installed into `~/carla-venv`.
 - `libcarla_test_server` (benchmarks excluded): `279 tests from 52 test suites
-  ran. (12286 ms total)`, `[  PASSED  ] 279 tests.`, no failures
+ran. (12286 ms total)`, `[  PASSED  ] 279 tests.`, no failures
   (`09-gtest.log`). Upstream reports 266 tests on their own tree; this is our
   count on this branch, not a parity claim.
 - The filtered `*cyclonedds_fragment_gather*:*ros2*` run is green: `8 tests from
-  3 test suites ran`, `[  PASSED  ] 8 tests.`, including all six
+3 test suites ran`, `[  PASSED  ] 8 tests.`, including all six
   `cyclonedds_fragment_gather` cases, which confirms the CycloneDDS `from_ser`
   fragment-reassembly fix is present and working on this branch
   (`09-gtest-ros2.log`).
 - `carla-unreal-editor` built; the simulator runs headless as
   `-game -RenderOffScreen -nosound -ros2 -rmw=fastdds -ros-domain-id=42`.
   `LogCarlaServer: Initialized CarlaServer: Ports(rpc=2000, streaming=2001,
-  secondary=2002)` followed by `ROS2: enabled with middleware 'fastdds'` and
+secondary=2002)` followed by `ROS2: enabled with middleware 'fastdds'` and
   `Fast-DDS transport: UDPv4 only`.
 - **No `VK_ERROR_DEVICE_LOST`.** Zero occurrences across both launch logs on
   RTX 5090 / driver 580.173.02, so upstream issue `#9826` does not reproduce
@@ -55,7 +55,7 @@ deviations from the plan that a later phase has to account for.
   **not** needed - the GNSS blueprint the demo wants exists on this build.
 - 23 ROS 2 topics visible from the host, of which 15 are the Autoware-facing
   sensing / vehicle-status / clock set. `ros2 topic echo --once
-  /vehicle/status/velocity_status` returned a real, well-formed sample.
+/vehicle/status/velocity_status` returned a real, well-formed sample.
 - `smoke.test_ros2`: `OK`, 5 tests, 131.546 s - see "Smoke test" below.
 
 ## Startup cost: cold vs warm shader DDC
@@ -86,12 +86,12 @@ does not ask.
 After raising `net.core.rmem_default` to **8388608** (8 MB), the survey was
 repeated against a freshly spawned kit (`13b-topics.txt`):
 
-| Topic | Sample size | Before | After |
-| --- | --- | --- | --- |
-| `/sensing/lidar/top/pointcloud_raw_ex` | 47.5 KB this run (236.7 KB previously) | 2.0-2.6 Hz | **10.000 Hz** |
-| `/sensing/camera/front/image` | 3.69 MB | 0.8 Hz | **10.000 Hz** |
-| `/vehicle/status/velocity_status` | small | exact | 100.000 Hz (exact) |
-| `/clock` | small | exact | 99.999 Hz (exact) |
+| Topic                                  | Sample size                            | Before     | After              |
+| -------------------------------------- | -------------------------------------- | ---------- | ------------------ |
+| `/sensing/lidar/top/pointcloud_raw_ex` | 47.5 KB this run (236.7 KB previously) | 2.0-2.6 Hz | **10.000 Hz**      |
+| `/sensing/camera/front/image`          | 3.69 MB                                | 0.8 Hz     | **10.000 Hz**      |
+| `/vehicle/status/velocity_status`      | small                                  | exact      | 100.000 Hz (exact) |
+| `/clock`                               | small                                  | exact      | 99.999 Hz (exact)  |
 
 Cumulative UDP receive-buffer errors over the entire re-measurement window,
 including a 20 s `ros2 topic bw` on the 3.69 MB camera topic sustaining
@@ -116,19 +116,19 @@ Against a simulator launched with `-carla-rpc-port=3654` (see the first
 deviation below), the suite is green: `Ran 5 tests in 131.546s` / `OK`, exit
 code 0 (`14-smoke-ros2.log`).
 
-| Test | Result |
-| --- | --- |
-| `test_ros2_additional_sensors` - radar, DVS camera, semantic LiDAR publish paths | ok |
-| `test_ros2_api` - `enable_for_ros` / `disable_for_ros` / `is_enabled_for_ros` | ok |
-| `test_ros2_enable_disable_cycle` - enable, tick, disable, tick, re-enable, tick | ok |
-| `test_ros2_multi_sensor_publish` - 4 sensors + hero, 100-tick stress run | ok |
-| `test_ros2_sensor_publish` - camera and LiDAR publish over DDS | ok |
+| Test                                                                             | Result |
+| -------------------------------------------------------------------------------- | ------ |
+| `test_ros2_additional_sensors` - radar, DVS camera, semantic LiDAR publish paths | ok     |
+| `test_ros2_api` - `enable_for_ros` / `disable_for_ros` / `is_enabled_for_ros`    | ok     |
+| `test_ros2_enable_disable_cycle` - enable, tick, disable, tick, re-enable, tick  | ok     |
+| `test_ros2_multi_sensor_publish` - 4 sensors + hero, 100-tick stress run         | ok     |
+| `test_ros2_sensor_publish` - camera and LiDAR publish over DDS                   | ok     |
 
 ## Deviations and findings
 
 - **The smoke suite does not use the RPC port the plan launches on.**
   `PythonAPI/test/smoke/__init__.py` hardcodes `TESTING_ADDRESS = ('localhost',
-  3654)`, with no CLI or environment override. Against the plan's
+3654)`, with no CLI or environment override. Against the plan's
   `-carla-rpc-port=2000` simulator all five tests fail in `setUp` with
   `RuntimeError: Connection refused`. The simulator must be launched with
   `-carla-rpc-port=3654` for this suite. This is a harness/plan mismatch, not a
@@ -163,7 +163,7 @@ code 0 (`14-smoke-ros2.log`).
 
 - **UE 5.8 deprecates `bAllowUBALocalExecutor`.** The build log carries
   `The setting "bAllowUBALocalExecutor" is deprecated. Support for this setting
-  will be removed in a future version of Unreal Engine.` It still takes effect
+will be removed in a future version of Unreal Engine.` It still takes effect
   today, and it is still required for the ccache clang wrapper to work, but a
   replacement mechanism will be needed before it is removed.
 
