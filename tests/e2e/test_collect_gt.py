@@ -31,6 +31,20 @@ def test_goal_distance_is_measured_from_base_link():
     assert math.isclose(d, 0.0, abs_tol=1e-9)
 
 
+def test_goal_distance_applies_origin_to_the_ego_only_not_the_goal():
+    # Non-zero, asymmetric origin/goal so a re-applied origin on the goal side
+    # (a double-application regression) is numerically distinguishable from
+    # the correct single application: ego CARLA (50, 30, yaw=0) -> base_link
+    # (48.575, 30) -> map (1048.575, 1970.0) under origin (1000, 2000, 0); the
+    # goal (1080.0, 1970.0) is already in that map frame, so the distance is
+    # the plain metric gap, 31.425 m -- not the ~2197 m a double-applied
+    # origin would produce.
+    d = gt.goal_distance(
+        50.0, 30.0, 0.0, goal_x=1080.0, goal_y=1970.0, origin=(1000.0, 2000.0, 0.0)
+    )
+    assert math.isclose(d, 31.425, abs_tol=1e-9)
+
+
 class _Actor:
     def __init__(self, role):
         self.attributes = {"role_name": role}
@@ -59,3 +73,79 @@ def test_find_ego_returns_role_ego_and_retries():
     assert len(calls) == 2
     ego = _Actor("ego")
     assert gt.find_ego(_World([_Actor("hero"), ego]), attempts=1, sleep=lambda s: None) is ego
+
+
+# --- main() coverage: no live simulator, injected via the world_factory seam. ---
+
+
+class _Loc:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
+class _Rot:
+    def __init__(self, yaw):
+        self.yaw = yaw
+
+
+class _Transform:
+    def __init__(self, x, y, yaw):
+        self.location = _Loc(x, y)
+        self.rotation = _Rot(yaw)
+
+
+class _EgoActor(_Actor):
+    def __init__(self, x, y, yaw):
+        super().__init__("ego")
+        self._transform = _Transform(x, y, yaw)
+
+    def get_transform(self):
+        return self._transform
+
+
+class _MainWorld(_World):
+    def wait_for_tick(self, timeout=None):
+        return None
+
+
+def test_main_g1_style_invocation_writes_base_link_gt_rows(tmp_path):
+    # Mirrors Task 15's G1 invocation shape with ORIGIN unset (flag omitted):
+    #   collect_gt --window "$WIN" --out "$OUT/g1_gt.txt" --port "$PORT"
+    out = tmp_path / "g1_gt.txt"
+    ego = _EgoActor(50.0, 30.0, 0.0)  # base_link (48.575, 30) -> map (48.575, -30)
+    argv = ["--window", "0.02", "--out", str(out), "--port", "1"]
+    rc = gt.main(argv, world_factory=lambda: _MainWorld([ego]))
+    assert rc == 0
+    lines = out.read_text().strip().splitlines()
+    assert lines
+    t_str, mx_str, my_str = lines[0].split()
+    float(t_str)  # timestamp column parses as a float
+    assert (round(float(mx_str), 3), round(float(my_str), 3)) == (48.575, -30.0)
+
+
+def test_main_g2_style_invocation_writes_goal_distance_rows(tmp_path):
+    # Mirrors Task 15's G2 invocation shape with ORIGIN set:
+    #   collect_gt --window "$WIN" --out "$OUT/g2_dist.txt" --port "$PORT" \
+    #       --goal "$GX" "$GY" --map-origin "$ORIGIN"
+    # Same ego pose/origin/goal as the double-application regression test above.
+    out = tmp_path / "g2_dist.txt"
+    ego = _EgoActor(50.0, 30.0, 0.0)
+    argv = [
+        "--window",
+        "0.02",
+        "--out",
+        str(out),
+        "--port",
+        "1",
+        "--goal",
+        "1080.0",
+        "1970.0",
+        "--map-origin",
+        "1000,2000,0",
+    ]
+    rc = gt.main(argv, world_factory=lambda: _MainWorld([ego]))
+    assert rc == 0
+    lines = out.read_text().strip().splitlines()
+    assert lines
+    assert math.isclose(float(lines[0]), 31.425, abs_tol=1e-9)
