@@ -9,13 +9,15 @@ E2E gates and Nishi-Shinjuku map assets for CARLA's **in-tree** Autoware layer
 
 ## What is here
 
-| Path                                                                 | Purpose                                                                                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `scripts/e2e/run_gates.sh`                                           | Runs G1 (NDT localization), G2 (closed-loop goal), G3 (rates) against a stack started by CARLA's `run_carla_autoware.sh` |
-| `scripts/e2e/map_frame.py`, `collect_gt.py`, `measure_*.py`          | Unit-tested measurement helpers                                                                                          |
-| `docs/ue58/`                                                         | Verification records against `ue58-dev`: bring-up, Town10HD reproduction, gate results, PR candidates                    |
-| `docs/nishishinjuku-map.md`                                          | Provenance and frame of the Nishi-Shinjuku assets (not committed)                                                        |
-| `docs/e2e-report.md`, `docs/g0-report.md`, `docs/mgrs-handedness.md` | Extension-era records, kept as history                                                                                   |
+| Path                                                                 | Purpose                                                                                                                              |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/e2e/run_gates.sh`                                           | Runs G1 (NDT localization), G2 (closed-loop goal), G3 (rates) against a stack started by CARLA's `run_carla_autoware.sh`             |
+| `scripts/e2e/map_frame.py`, `collect_gt.py`, `measure_*.py`          | Unit-tested measurement helpers                                                                                                      |
+| `scripts/e2e/lanelet_pose.py`                                        | Offline: derives on-lane `--spawn-pose` / `--goal` from a lanelet2 `.osm`, for maps whose CARLA spawn points are missing or unusable |
+| `scripts/nishishinjuku/`                                             | Editor-Python tool (and its launcher) that wires `DA_MGRS_Shinjuku` into `NishishinjukuMap`'s world settings                         |
+| `docs/ue58/`                                                         | Verification records against `ue58-dev`: bring-up, Town10HD reproduction, gate results, PR candidates                                |
+| `docs/nishishinjuku-map.md`                                          | Provenance and frame of the Nishi-Shinjuku assets (not committed), and the Phase 3 in-tree flow                                      |
+| `docs/e2e-report.md`, `docs/g0-report.md`, `docs/mgrs-handedness.md` | Extension-era records, kept as history                                                                                               |
 
 ## Quick start
 

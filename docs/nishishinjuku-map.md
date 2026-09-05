@@ -137,3 +137,108 @@ printed all results — benign to the measurement, but recorded as a live-run wa
 `--map-origin "81655.73,50137.43,42.49998"` — the same converter offset recorded above
 (`NISHISHINJUKU_ORIGIN` in `scripts/e2e/map_frame.py`). Omit `--map-origin` entirely for a
 Local-projector map such as Town10HD.
+
+## In-tree flow (Phase 3)
+
+The full sequence three live cells were driven with. Gate results and every
+citation are in [`docs/ue58/phase3-nishishinjuku.md`](ue58/phase3-nishishinjuku.md).
+
+### The two umap states
+
+`NishishinjukuMap.umap` is CC BY-NC content: it lives only in the per-worktree
+`Content/`, is never committed, and both states of it are kept as local backups.
+
+| State    | `sha256` (first 8) | Meaning                                                                                                               |
+| -------- | ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| pristine | `7bb76f1e`         | `AutowareWorldSettings.MgrsDataAsset` soft pointer unset — the state the editor's `RepairWorldSettings` leaves behind |
+| wired    | `24ca4ea4`         | `DA_MGRS_Shinjuku` assigned to that soft pointer                                                                      |
+
+Back up the pristine file before wiring, and treat that backup as read-only —
+it is the only copy of a state the editor cannot restore:
+
+```bash
+UMAP=<CARLA>/Unreal/CarlaUnreal/Content/Carla/Maps/NishishinjukuMap.umap
+sha256sum "$UMAP" | tee ~/ue58-logs/p3/00-umap-pristine.sha256
+cp -n "$UMAP" ~/ue58-logs/p3/NishishinjukuMap.umap.pristine
+```
+
+Compare hashes directly when switching states — do not diff a one-line
+`sha256sum` against a multi-line recorded file, which never matches.
+
+### Wire the level's MGRS asset (the `wired` state)
+
+```bash
+export UE_ROOT=~/src/UnrealEngine CARLA_UE58=<CARLA>
+bash scripts/nishishinjuku/run_wire_mgrs_asset.sh inspect ~/ue58-logs/p3/08-wire-inspect.log
+bash scripts/nishishinjuku/run_wire_mgrs_asset.sh apply   ~/ue58-logs/p3/09-wire-apply.log
+```
+
+`inspect` prints the asset's offset and the level's current soft pointer without
+changing anything; `apply` assigns and saves. Both grep their own `RESULT:` line
+out of the editor log and fail if it is absent. The asset reads
+`x=81655.730000 y=50137.430000 z=42.499980`, grid `54SUE` — the same converter
+offset as `--map-origin`.
+
+### Derive on-lane poses (offline, no simulator)
+
+```bash
+PYTHONPATH=. python -m scripts.e2e.lanelet_pose \
+  --osm ~/autoware_map/nishishinjuku/lanelet2_map.osm \
+  --map-origin 81655.73,50137.43,42.49998 \
+  --lanelet 255 --s 7.477
+```
+
+Use the `=` form for a negative coordinate (`--nearest-to-carla=-278.39,220.54`);
+`argparse` rejects the space form. The tool emits map-frame and CARLA-frame poses
+plus ready-made `--goal` / `--spawn-pose` strings. **Z is not derived offline** —
+the CARLA ground height must come from a live `cast_ray`, and the spawn Z used in
+Phase 3 is that height plus 0.3 m.
+
+The Phase 3 poses, cross-checked live against CARLA's OpenDRIVE waypoints to
+0.018 m / 0.09° (spawn) and 0.036 m / 0.04° (goal):
+
+```bash
+SPAWN_POSE="-278.383,220.550,-0.975,-33.780"
+GOAL="-84.114,117.602,-10.442"
+ORIGIN="81655.73,50137.43,42.49998"
+```
+
+### Run a cell and measure it
+
+From CARLA's `PythonAPI/examples/av_stacks/autoware`:
+
+```bash
+./run/run_carla_autoware.sh --mode classical --stack docker --server editor \
+  --town NishishinjukuMap --map-path ~/autoware_map/nishishinjuku \
+  --map-origin "$ORIGIN" --spawn-pose "$SPAWN_POSE" --goal "$GOAL" \
+  --log-dir "$CELL" 2>&1 | tee "$CELL.log"
+```
+
+Then, from this repository, as soon as `autonomous mode engaged` appears in the
+runner's own stdout (**not** in `automation.log`, which does not carry it):
+
+```bash
+CARLA_PYTHON=~/carla-venv/bin/python bash scripts/e2e/run_gates.sh \
+  --log-dir "$CELL" --goal "$GOAL" --map-origin "$ORIGIN" \
+  --lidar-hz 10 --g2-window 420
+bash scripts/e2e/aw_exec.sh "$CELL" 42 \
+  "timeout 20 ros2 topic echo --once /api/routing/state"
+```
+
+Add `--image ghcr.io/autowarefoundation/autoware:universe-cuda-humble` to the
+runner for a Humble cell. Stop any `ros2cli` daemon from another ROS distro
+first: the container runs `--network host`, and a stale daemon on the same domain
+makes the pre-engage gate report a localisation failure while the topic publishes
+normally.
+
+At teardown, copy the engine log into the cell directory — UE rotates
+`Saved/Logs/CarlaUnreal.log` on the next launch, so a citation of that path rots
+immediately. Re-grep after refreshing any log copy: a copy taken while the
+process is still flushing is short by roughly the teardown block.
+
+### Restore
+
+```bash
+cp ~/ue58-logs/p3/NishishinjukuMap.umap.wired "$UMAP"   # or .pristine
+sha256sum "$UMAP"
+```
